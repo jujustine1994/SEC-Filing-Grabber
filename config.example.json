@@ -1,0 +1,13 @@
+{
+  "identity": "Your Name your@email.com",
+  "output_dir": "output",
+  "watchlist": [
+    {"ticker": "AAPL", "name": "Apple Inc."},
+    {"ticker": "MSFT", "name": "Microsoft Corporation"}
+  ],
+  "ai": {
+    "provider": "google",
+    "model": "gemini-flash-latest",
+    "api_key": ""
+  }
+}
