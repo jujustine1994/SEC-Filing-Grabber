@@ -11,10 +11,11 @@ Rules:
 
 from pathlib import Path
 from openpyxl import Workbook, load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 from fetcher_gaap import StatementTable
 
 
-def write_statements(tables: list[StatementTable], output_path: Path) -> None:
+def write_statements(tables: list[StatementTable], output_path: str | Path) -> None:
     """Write StatementTable list to an Excel file.
 
     Replaces all existing Data_* sheets. Preserves all other sheets.
@@ -44,11 +45,13 @@ def write_statements(tables: list[StatementTable], output_path: Path) -> None:
         ws = wb.create_sheet(tbl.sheet_name)
         _write_sheet(ws, tbl)
 
-    wb.save(output_path)
-    wb.close()
+    try:
+        wb.save(output_path)
+    finally:
+        wb.close()
 
 
-def _write_sheet(ws, tbl: StatementTable) -> None:
+def _write_sheet(ws: Worksheet, tbl: StatementTable) -> None:
     """Write one StatementTable into a worksheet.
 
     Layout:
