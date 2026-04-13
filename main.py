@@ -11,8 +11,10 @@ Persistent buttons: 管理 Watchlist, 進階設定
 import json
 import os
 import queue
+import re
 import threading
 import tkinter as tk
+import urllib.request
 from datetime import date
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
@@ -78,6 +80,8 @@ class SECFetcherApp:
         self.settings_key_toggle_btn = None
         self.settings_outdir_var = None
         self.settings_test_label = None
+        self.settings_fmt_var = None
+        self.nongaap_warn_label = None
 
         self._build_ui()
         self._poll_queue()
@@ -143,9 +147,23 @@ class SECFetcherApp:
         self.fetch_nongaap_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(row_type, text="GAAP 財報",               variable=self.fetch_gaap_var).pack(side="left", padx=(0, 16))
         ttk.Checkbutton(row_type, text="Non-GAAP（需設定 AI API）", variable=self.fetch_nongaap_var).pack(side="left")
+        self.fetch_nongaap_var.trace_add("write", self._on_nongaap_toggle)
+
+        self.nongaap_warn_label = ttk.Label(
+            tab, text="⚠ Non-GAAP 需先在「進階設定」填入 AI API Key",
+            foreground="orange", font=("", 8)
+        )
+        self.nongaap_warn_label.grid(row=2, column=0, sticky="w", padx=2)
+        self.nongaap_warn_label.grid_remove()
 
         self.btn_run_single = ttk.Button(tab, text="▶  執行", command=self._run_single, width=16)
-        self.btn_run_single.grid(row=2, column=0, pady=(8, 4))
+        self.btn_run_single.grid(row=3, column=0, pady=(8, 4))
+
+    def _on_nongaap_toggle(self, *_args):
+        if self.fetch_nongaap_var.get() and not self.cfg["ai"].get("api_key"):
+            self.nongaap_warn_label.grid()
+        else:
+            self.nongaap_warn_label.grid_remove()
 
     def _build_tab2(self):
         tab = ttk.Frame(self.notebook, padding=10)
@@ -252,7 +270,7 @@ class SECFetcherApp:
         cache_frame.grid(row=2, column=0, sticky="ew", **pad)
         self.wl_cache_label = ttk.Label(cache_frame, text=self._wl_cache_status(), foreground="gray")
         self.wl_cache_label.pack(side="left")
-        ttk.Button(cache_frame, text="更新名稱庫", command=self._wl_update_cache).pack(side="left", padx=10)
+        ttk.Button(cache_frame, text="更新名稱庫（下載完整美股清單）", command=self._wl_update_cache).pack(side="left", padx=10)
 
         ttk.Button(popup, text="關閉", command=popup.destroy, width=10).grid(row=3, column=0, pady=8)
 
@@ -328,31 +346,30 @@ class SECFetcherApp:
         threading.Thread(target=self._wl_update_cache_worker, daemon=True).start()
 
     def _wl_update_cache_worker(self):
-        from edgar import Company, set_identity
-        identity = self.cfg.get("identity", "SEC Tool sec@example.com")
-        set_identity(identity)
-        companies: dict[str, str] = {}
-        for item in self.cfg.get("watchlist", []):
-            ticker = item["ticker"]
-            try:
-                c = Company(ticker)
-                companies[ticker] = c.name or ticker
-            except Exception:
-                companies[ticker] = item.get("name", ticker)
-        cache_data = {"last_updated": str(date.today()), "companies": companies}
-        with open(CACHE_PATH, "w", encoding="utf-8") as f:
-            json.dump(cache_data, f, ensure_ascii=False, indent=2)
-        self.msg_queue.put(("wl_cache_updated", str(date.today())))
+        try:
+            identity = self.cfg.get("identity", "SEC Tool sec@example.com")
+            url = "https://www.sec.gov/files/company_tickers.json"
+            req = urllib.request.Request(url, headers={"User-Agent": identity})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = json.loads(resp.read().decode("utf-8"))
+            companies = {v["ticker"].upper(): v["title"] for v in raw.values()}
+            cache_data = {"last_updated": str(date.today()), "companies": companies}
+            with open(CACHE_PATH, "w", encoding="utf-8") as f:
+                json.dump(cache_data, f, ensure_ascii=False, indent=2)
+            self.msg_queue.put(("wl_cache_updated", (str(date.today()), len(companies))))
+        except Exception as e:
+            self.msg_queue.put(("wl_cache_update_error", str(e)))
 
     def _wl_cache_status(self) -> str:
         if CACHE_PATH.exists():
             try:
                 with open(CACHE_PATH, encoding="utf-8") as f:
                     data = json.load(f)
-                return f"上次更新：{data.get('last_updated', '未知')}"
+                count = len(data.get("companies", {}))
+                return f"已載入 {count:,} 間公司，上次更新：{data.get('last_updated', '未知')}"
             except (json.JSONDecodeError, OSError):
                 return "名稱庫：檔案損毀"
-        return "名稱庫：尚未建立"
+        return "名稱庫：尚未建立（建議先點「更新名稱庫」下載完整清單）"
 
     # =========================================================
     # Advanced settings popup
@@ -381,7 +398,7 @@ class SECFetcherApp:
         ttk.Entry(id_frame, textvariable=self.settings_identity_var, width=42).grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
         # AI Config
-        ai_frame = ttk.LabelFrame(popup, text=" AI 設定（Non-GAAP 功能需要）", padding=8)
+        ai_frame = ttk.LabelFrame(popup, text=" AI 設定（Non-GAAP 功能需要，未設定不影響 GAAP）", padding=8)
         ai_frame.grid(row=1, column=0, sticky="ew", **pad)
 
         ttk.Label(ai_frame, text="Provider:").grid(row=0, column=0, sticky="w")
@@ -419,9 +436,18 @@ class SECFetcherApp:
         self.settings_outdir_var = tk.StringVar(value=self.cfg.get("output_dir", "output"))
         ttk.Entry(out_frame, textvariable=self.settings_outdir_var, width=36).grid(row=0, column=1, sticky="ew", padx=(8, 0))
 
+        # Filename format
+        fmt_frame = ttk.LabelFrame(popup, text=" 輸出檔名格式 ", padding=8)
+        fmt_frame.grid(row=3, column=0, sticky="ew", **pad)
+        self.settings_fmt_var = tk.StringVar(value=self.cfg.get("filename_format", "ticker_name"))
+        ttk.Radiobutton(fmt_frame, text="AAPL Apple Inc. data.xlsx（預設）",
+                        variable=self.settings_fmt_var, value="ticker_name").pack(anchor="w")
+        ttk.Radiobutton(fmt_frame, text="AAPL.xlsx",
+                        variable=self.settings_fmt_var, value="ticker_only").pack(anchor="w")
+
         # Buttons
         btn_row = ttk.Frame(popup)
-        btn_row.grid(row=3, column=0, pady=10)
+        btn_row.grid(row=4, column=0, pady=10)
         ttk.Button(btn_row, text="儲存", command=lambda: self._save_settings(popup), width=10).pack(side="left", padx=6)
         ttk.Button(btn_row, text="取消", command=popup.destroy, width=10).pack(side="left", padx=6)
 
@@ -473,13 +499,47 @@ class SECFetcherApp:
             self.msg_queue.put(("ai_test_result", ("error", str(e))))
 
     def _save_settings(self, popup: tk.Toplevel):
-        self.cfg["identity"]       = self.settings_identity_var.get().strip()
-        self.cfg["output_dir"]     = self.settings_outdir_var.get().strip() or "output"
-        self.cfg["ai"]["provider"] = self.settings_provider_var.get()
-        self.cfg["ai"]["model"]    = self.settings_model_var.get().strip()
-        self.cfg["ai"]["api_key"]  = self.settings_key_var.get().strip()
+        self.cfg["identity"]        = self.settings_identity_var.get().strip()
+        self.cfg["output_dir"]      = self.settings_outdir_var.get().strip() or "output"
+        self.cfg["filename_format"] = self.settings_fmt_var.get()
+        self.cfg["ai"]["provider"]  = self.settings_provider_var.get()
+        self.cfg["ai"]["model"]     = self.settings_model_var.get().strip()
+        self.cfg["ai"]["api_key"]   = self.settings_key_var.get().strip()
         save_config(self.cfg, CONFIG_PATH)
         popup.destroy()
+
+    # =========================================================
+    # Output path helpers
+    # =========================================================
+
+    def _lookup_company_name(self, ticker: str) -> str:
+        """Look up company name: watchlist → cache → fallback to ticker."""
+        for item in self.cfg.get("watchlist", []):
+            if item["ticker"] == ticker:
+                name = item.get("name", "")
+                if name:
+                    return name
+        if CACHE_PATH.exists():
+            try:
+                with open(CACHE_PATH, encoding="utf-8") as f:
+                    cache = json.load(f).get("companies", {})
+                if ticker in cache:
+                    return cache[ticker]
+            except (json.JSONDecodeError, OSError):
+                pass
+        return ticker
+
+    def _build_output_path(self, ticker: str) -> Path:
+        """Build output file path based on filename_format setting."""
+        output_dir = SCRIPT_DIR / self.cfg.get("output_dir", "output")
+        fmt = self.cfg.get("filename_format", "ticker_name")
+        if fmt == "ticker_name":
+            name = self._lookup_company_name(ticker)
+            safe_name = re.sub(r'[\\/:*?"<>|]', "", name).strip()
+            filename = f"{ticker} {safe_name} data.xlsx"
+        else:
+            filename = f"{ticker}.xlsx"
+        return output_dir / filename
 
     # =========================================================
     # Open output folder
@@ -504,6 +564,12 @@ class SECFetcherApp:
             return
         fetch_gaap    = self.fetch_gaap_var.get()
         fetch_nongaap = self.fetch_nongaap_var.get()
+        if fetch_nongaap and not self.cfg["ai"].get("api_key"):
+            messagebox.showwarning(
+                "需要 API Key",
+                "Non-GAAP 功能需要 AI API Key。\n請先至「進階設定」填入 API Key 後再執行。"
+            )
+            return
         self._start_worker(lambda: self._worker_single(ticker, fetch_gaap, fetch_nongaap))
 
     def _run_batch(self):
@@ -552,8 +618,7 @@ class SECFetcherApp:
                 self._done(False)
                 return
 
-            output_dir  = SCRIPT_DIR / self.cfg.get("output_dir", "output")
-            output_path = output_dir / f"{ticker}.xlsx"
+            output_path = self._build_output_path(ticker)
             self._log(f"[{ticker}] 寫入 Excel...")
             write_statements(tables, output_path)
             self._log(f"[{ticker}] 完成 → {output_path.name}")
@@ -577,8 +642,7 @@ class SECFetcherApp:
             self._log(f"\n[{ticker}] 開始...")
             try:
                 tables      = fetch_gaap_statements(ticker, identity)
-                output_dir  = SCRIPT_DIR / self.cfg.get("output_dir", "output")
-                output_path = output_dir / f"{ticker}.xlsx"
+                output_path = self._build_output_path(ticker)
                 write_statements(tables, output_path)
                 self._log(f"[{ticker}] 完成（{len(tables)} 份財報）")
             except Exception as e:
@@ -647,8 +711,16 @@ class SECFetcherApp:
                             self.wl_lookup_label.config(text=f"查詢失敗：{data[1]}", foreground="red")
 
                 elif msg_type == "wl_cache_updated":
+                    update_date, count = data
                     if self.wl_cache_label:
-                        self.wl_cache_label.config(text=f"上次更新：{data}", foreground="gray")
+                        self.wl_cache_label.config(
+                            text=f"已載入 {count:,} 間公司，上次更新：{update_date}",
+                            foreground="gray"
+                        )
+
+                elif msg_type == "wl_cache_update_error":
+                    if self.wl_cache_label:
+                        self.wl_cache_label.config(text=f"更新失敗：{data}", foreground="red")
 
                 elif msg_type == "ai_test_result":
                     ok, err = data

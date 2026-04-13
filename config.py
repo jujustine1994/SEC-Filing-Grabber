@@ -13,6 +13,7 @@ DEFAULT_CONFIG: dict = {
     "identity": "",
     "output_dir": "output",
     "watchlist": [],
+    "filename_format": "ticker_name",
     "ai": {
         "provider": "google",
         "model": "gemini-flash-latest",
