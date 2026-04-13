@@ -83,6 +83,11 @@ class SECFetcherApp:
         self.settings_fmt_var = None
         self.nongaap_warn_label = None
         self.tab1_name_label = None
+        self.tab1_outdir_var = None
+        self.tab1_fmt_var = None
+        self.tab1_custom_var = None
+        self.tab1_custom_entry = None
+        self.tab1_preview_label = None
 
         self._build_ui()
         self._poll_queue()
@@ -132,16 +137,20 @@ class SECFetcherApp:
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text="  單一公司  ")
 
+        # Row 0: Ticker + inline company name
         row_ticker = ttk.Frame(tab)
         row_ticker.grid(row=0, column=0, sticky="ew", pady=4)
         ttk.Label(row_ticker, text="Ticker:").pack(side="left", padx=(0, 8))
         self.ticker_var = tk.StringVar()
-        self.ticker_entry = ttk.Entry(row_ticker, textvariable=self.ticker_var, width=18, foreground="grey")
+        self.ticker_entry = ttk.Entry(row_ticker, textvariable=self.ticker_var, width=12, foreground="grey")
         self.ticker_entry.pack(side="left")
         self.ticker_var.set(self.TICKER_PH)
         self.ticker_entry.bind("<FocusIn>",  lambda e: self._ph_in(self.ticker_entry, self.ticker_var, self.TICKER_PH))
         self.ticker_entry.bind("<FocusOut>", lambda e: self._on_ticker_focusout(e))
+        self.tab1_name_label = ttk.Label(row_ticker, text="", foreground="gray", font=("", 9))
+        self.tab1_name_label.pack(side="left", padx=(10, 0))
 
+        # Row 1: Checkboxes
         row_type = ttk.Frame(tab)
         row_type.grid(row=1, column=0, sticky="ew", pady=4)
         self.fetch_gaap_var    = tk.BooleanVar(value=True)
@@ -150,16 +159,56 @@ class SECFetcherApp:
         ttk.Checkbutton(row_type, text="Non-GAAP（需設定 AI API）", variable=self.fetch_nongaap_var).pack(side="left")
         self.fetch_nongaap_var.trace_add("write", self._on_nongaap_toggle)
 
-        self.tab1_name_label = ttk.Label(tab, text="", foreground="gray", font=("", 8))
-        self.tab1_name_label.grid(row=2, column=0, sticky="w", padx=2, pady=(0, 2))
-
+        # Row 2: Non-GAAP warning (hidden by default)
         self.nongaap_warn_label = ttk.Label(
             tab, text="⚠ Non-GAAP 需先在「進階設定」填入 AI API Key",
             foreground="orange", font=("", 8)
         )
-        self.nongaap_warn_label.grid(row=3, column=0, sticky="w", padx=2)
+        self.nongaap_warn_label.grid(row=2, column=0, sticky="w", padx=2)
         self.nongaap_warn_label.grid_remove()
 
+        # Row 3: Output settings
+        out_frame = ttk.LabelFrame(tab, text=" 輸出設定 ", padding=8)
+        out_frame.grid(row=3, column=0, sticky="ew", pady=(8, 4))
+
+        # Storage location row
+        loc_row = ttk.Frame(out_frame)
+        loc_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        ttk.Label(loc_row, text="儲存位置：").pack(side="left")
+        self.tab1_outdir_var = tk.StringVar(value=self.cfg.get("output_dir", "output"))
+        ttk.Entry(loc_row, textvariable=self.tab1_outdir_var, width=26).pack(side="left", padx=(0, 6))
+        ttk.Button(loc_row, text="瀏覽", width=5, command=self._browse_output_dir).pack(side="left")
+
+        # Filename format radios
+        ttk.Label(out_frame, text="檔名格式：").grid(row=1, column=0, sticky="w", pady=(2, 0))
+        self.tab1_fmt_var = tk.StringVar(value=self.cfg.get("filename_format", "ticker_name"))
+
+        ttk.Radiobutton(out_frame, text="Ticker + 公司名稱（如 AAPL Apple Inc. data.xlsx）",
+                        variable=self.tab1_fmt_var, value="ticker_name",
+                        command=self._on_tab1_fmt_change).grid(row=2, column=0, sticky="w", padx=(16, 0))
+        ttk.Radiobutton(out_frame, text="僅 Ticker（如 AAPL.xlsx）",
+                        variable=self.tab1_fmt_var, value="ticker_only",
+                        command=self._on_tab1_fmt_change).grid(row=3, column=0, sticky="w", padx=(16, 0))
+
+        custom_row = ttk.Frame(out_frame)
+        custom_row.grid(row=4, column=0, sticky="w", padx=(16, 0))
+        ttk.Radiobutton(custom_row, text="自訂：",
+                        variable=self.tab1_fmt_var, value="custom",
+                        command=self._on_tab1_fmt_change).pack(side="left")
+        self.tab1_custom_var = tk.StringVar(value=self.cfg.get("filename_custom", ""))
+        is_custom = self.tab1_fmt_var.get() == "custom"
+        self.tab1_custom_entry = ttk.Entry(custom_row, textvariable=self.tab1_custom_var, width=22,
+                                           state="normal" if is_custom else "disabled")
+        self.tab1_custom_entry.pack(side="left", padx=(4, 4))
+        ttk.Label(custom_row, text=".xlsx", foreground="gray").pack(side="left")
+        self.tab1_custom_var.trace_add("write", lambda *_: self._update_tab1_preview())
+
+        # Preview label
+        self.tab1_preview_label = ttk.Label(out_frame, text="", foreground="gray", font=("", 8))
+        self.tab1_preview_label.grid(row=5, column=0, sticky="w", pady=(6, 0))
+        self._update_tab1_preview()
+
+        # Row 4: Execute button
         self.btn_run_single = ttk.Button(tab, text="▶  執行", command=self._run_single, width=16)
         self.btn_run_single.grid(row=4, column=0, pady=(8, 4))
 
@@ -208,9 +257,11 @@ class SECFetcherApp:
         if not ticker:
             if self.tab1_name_label:
                 self.tab1_name_label.config(text="")
+            self._update_tab1_preview()
             return
         if self.tab1_name_label:
             self.tab1_name_label.config(text="查詢中...", foreground="gray")
+        self._update_tab1_preview()
         threading.Thread(target=lambda: self._tab1_lookup_worker(ticker), daemon=True).start()
 
     def _tab1_lookup_worker(self, ticker: str):
@@ -241,6 +292,50 @@ class SECFetcherApp:
     def _get_ph_value(self, var, placeholder) -> str:
         v = var.get().strip()
         return "" if v == placeholder else v
+
+    def _on_tab1_fmt_change(self):
+        is_custom = self.tab1_fmt_var.get() == "custom"
+        if self.tab1_custom_entry:
+            self.tab1_custom_entry.config(state="normal" if is_custom else "disabled")
+        self._save_tab1_output_settings()
+        self._update_tab1_preview()
+
+    def _update_tab1_preview(self):
+        if not self.tab1_preview_label:
+            return
+        ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper() if self.ticker_var else ""
+        fmt = self.tab1_fmt_var.get() if self.tab1_fmt_var else "ticker_name"
+        if fmt == "ticker_name":
+            if ticker:
+                name = self._lookup_company_name(ticker)
+                safe_name = re.sub(r'[\\/:*?"<>|]', "", name).strip()
+                preview = f"{ticker} {safe_name} data.xlsx"
+            else:
+                preview = "TICKER 公司名稱 data.xlsx"
+        elif fmt == "ticker_only":
+            preview = f"{ticker}.xlsx" if ticker else "TICKER.xlsx"
+        else:  # custom
+            custom = self.tab1_custom_var.get().strip() if self.tab1_custom_var else ""
+            preview = f"{custom}.xlsx" if custom else "（請輸入檔名）"
+        self.tab1_preview_label.config(text=f"預覽：{preview}")
+
+    def _browse_output_dir(self):
+        from tkinter import filedialog
+        current = self.tab1_outdir_var.get().strip() if self.tab1_outdir_var else "output"
+        initial = str(SCRIPT_DIR / current) if not os.path.isabs(current) else current
+        folder = filedialog.askdirectory(title="選擇儲存位置", initialdir=initial)
+        if folder:
+            self.tab1_outdir_var.set(folder)
+            self._save_tab1_output_settings()
+
+    def _save_tab1_output_settings(self):
+        if self.tab1_outdir_var:
+            self.cfg["output_dir"] = self.tab1_outdir_var.get().strip() or "output"
+        if self.tab1_fmt_var:
+            self.cfg["filename_format"] = self.tab1_fmt_var.get()
+        if self.tab1_custom_var:
+            self.cfg["filename_custom"] = self.tab1_custom_var.get().strip()
+        save_config(self.cfg, CONFIG_PATH)
 
     # =========================================================
     # Tab 2 watchlist list
@@ -471,25 +566,9 @@ class SECFetcherApp:
         self.settings_test_label = ttk.Label(test_row, text="", foreground="gray")
         self.settings_test_label.pack(side="left", padx=10)
 
-        # Output dir
-        out_frame = ttk.LabelFrame(popup, text=" 輸出資料夾 ", padding=8)
-        out_frame.grid(row=2, column=0, sticky="ew", **pad)
-        ttk.Label(out_frame, text="路徑:").grid(row=0, column=0, sticky="w")
-        self.settings_outdir_var = tk.StringVar(value=self.cfg.get("output_dir", "output"))
-        ttk.Entry(out_frame, textvariable=self.settings_outdir_var, width=36).grid(row=0, column=1, sticky="ew", padx=(8, 0))
-
-        # Filename format
-        fmt_frame = ttk.LabelFrame(popup, text=" 輸出檔名格式 ", padding=8)
-        fmt_frame.grid(row=3, column=0, sticky="ew", **pad)
-        self.settings_fmt_var = tk.StringVar(value=self.cfg.get("filename_format", "ticker_name"))
-        ttk.Radiobutton(fmt_frame, text="AAPL Apple Inc. data.xlsx（預設）",
-                        variable=self.settings_fmt_var, value="ticker_name").pack(anchor="w")
-        ttk.Radiobutton(fmt_frame, text="AAPL.xlsx",
-                        variable=self.settings_fmt_var, value="ticker_only").pack(anchor="w")
-
         # Buttons
         btn_row = ttk.Frame(popup)
-        btn_row.grid(row=4, column=0, pady=10)
+        btn_row.grid(row=2, column=0, pady=10)
         ttk.Button(btn_row, text="儲存", command=lambda: self._save_settings(popup), width=10).pack(side="left", padx=6)
         ttk.Button(btn_row, text="取消", command=popup.destroy, width=10).pack(side="left", padx=6)
 
@@ -541,12 +620,10 @@ class SECFetcherApp:
             self.msg_queue.put(("ai_test_result", ("error", str(e))))
 
     def _save_settings(self, popup: tk.Toplevel):
-        self.cfg["identity"]        = self.settings_identity_var.get().strip()
-        self.cfg["output_dir"]      = self.settings_outdir_var.get().strip() or "output"
-        self.cfg["filename_format"] = self.settings_fmt_var.get()
-        self.cfg["ai"]["provider"]  = self.settings_provider_var.get()
-        self.cfg["ai"]["model"]     = self.settings_model_var.get().strip()
-        self.cfg["ai"]["api_key"]   = self.settings_key_var.get().strip()
+        self.cfg["identity"]       = self.settings_identity_var.get().strip()
+        self.cfg["ai"]["provider"] = self.settings_provider_var.get()
+        self.cfg["ai"]["model"]    = self.settings_model_var.get().strip()
+        self.cfg["ai"]["api_key"]  = self.settings_key_var.get().strip()
         save_config(self.cfg, CONFIG_PATH)
         popup.destroy()
 
@@ -579,6 +656,9 @@ class SECFetcherApp:
             name = self._lookup_company_name(ticker)
             safe_name = re.sub(r'[\\/:*?"<>|]', "", name).strip()
             filename = f"{ticker} {safe_name} data.xlsx"
+        elif fmt == "custom":
+            custom = re.sub(r'[\\/:*?"<>|]', "", self.cfg.get("filename_custom", "")).strip()
+            filename = f"{custom}.xlsx" if custom else f"{ticker}.xlsx"
         else:
             filename = f"{ticker}.xlsx"
         return output_dir / filename
@@ -747,6 +827,7 @@ class SECFetcherApp:
                             self.tab1_name_label.config(text=f"　{name}", foreground="#2ecc71")
                         else:
                             self.tab1_name_label.config(text="　查無此 Ticker，請確認後再試", foreground="orange")
+                        self._update_tab1_preview()
 
                 elif msg_type == "wl_lookup_result":
                     status = data[0]
