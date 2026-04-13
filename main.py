@@ -82,6 +82,7 @@ class SECFetcherApp:
         self.settings_test_label = None
         self.settings_fmt_var = None
         self.nongaap_warn_label = None
+        self.tab1_name_label = None
 
         self._build_ui()
         self._poll_queue()
@@ -139,7 +140,7 @@ class SECFetcherApp:
         self.ticker_entry.pack(side="left")
         self.ticker_var.set(self.TICKER_PH)
         self.ticker_entry.bind("<FocusIn>",  lambda e: self._ph_in(self.ticker_entry, self.ticker_var, self.TICKER_PH))
-        self.ticker_entry.bind("<FocusOut>", lambda e: self._ph_out(self.ticker_entry, self.ticker_var, self.TICKER_PH))
+        self.ticker_entry.bind("<FocusOut>", lambda e: self._on_ticker_focusout(e))
 
         row_type = ttk.Frame(tab)
         row_type.grid(row=1, column=0, sticky="ew", pady=4)
@@ -149,15 +150,18 @@ class SECFetcherApp:
         ttk.Checkbutton(row_type, text="Non-GAAP（需設定 AI API）", variable=self.fetch_nongaap_var).pack(side="left")
         self.fetch_nongaap_var.trace_add("write", self._on_nongaap_toggle)
 
+        self.tab1_name_label = ttk.Label(tab, text="", foreground="gray", font=("", 8))
+        self.tab1_name_label.grid(row=2, column=0, sticky="w", padx=2, pady=(0, 2))
+
         self.nongaap_warn_label = ttk.Label(
             tab, text="⚠ Non-GAAP 需先在「進階設定」填入 AI API Key",
             foreground="orange", font=("", 8)
         )
-        self.nongaap_warn_label.grid(row=2, column=0, sticky="w", padx=2)
+        self.nongaap_warn_label.grid(row=3, column=0, sticky="w", padx=2)
         self.nongaap_warn_label.grid_remove()
 
         self.btn_run_single = ttk.Button(tab, text="▶  執行", command=self._run_single, width=16)
-        self.btn_run_single.grid(row=3, column=0, pady=(8, 4))
+        self.btn_run_single.grid(row=4, column=0, pady=(8, 4))
 
     def _on_nongaap_toggle(self, *_args):
         if self.fetch_nongaap_var.get() and not self.cfg["ai"].get("api_key"):
@@ -190,11 +194,49 @@ class SECFetcherApp:
         if var.get() == placeholder:
             var.set("")
             entry.configure(foreground="black")
+            if entry is self.ticker_entry and self.tab1_name_label:
+                self.tab1_name_label.config(text="")
 
     def _ph_out(self, entry, var, placeholder):
         if not var.get().strip():
             var.set(placeholder)
             entry.configure(foreground="grey")
+
+    def _on_ticker_focusout(self, event):
+        self._ph_out(self.ticker_entry, self.ticker_var, self.TICKER_PH)
+        ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
+        if not ticker:
+            if self.tab1_name_label:
+                self.tab1_name_label.config(text="")
+            return
+        if self.tab1_name_label:
+            self.tab1_name_label.config(text="查詢中...", foreground="gray")
+        threading.Thread(target=lambda: self._tab1_lookup_worker(ticker), daemon=True).start()
+
+    def _tab1_lookup_worker(self, ticker: str):
+        # Check local cache first
+        if CACHE_PATH.exists():
+            try:
+                with open(CACHE_PATH, encoding="utf-8") as f:
+                    companies = json.load(f).get("companies", {})
+                if ticker in companies:
+                    self.msg_queue.put(("tab1_name_result", ("ok", ticker, companies[ticker])))
+                    return
+            except (json.JSONDecodeError, OSError):
+                pass
+        # Fallback: live EDGAR query
+        try:
+            from edgar import Company, set_identity
+            identity = self.cfg.get("identity") or "SEC Tool sec@example.com"
+            set_identity(identity)
+            c = Company(ticker)
+            name = c.name or ""
+            if name:
+                self.msg_queue.put(("tab1_name_result", ("ok", ticker, name)))
+            else:
+                self.msg_queue.put(("tab1_name_result", ("notfound", ticker, "")))
+        except Exception:
+            self.msg_queue.put(("tab1_name_result", ("notfound", ticker, "")))
 
     def _get_ph_value(self, var, placeholder) -> str:
         v = var.get().strip()
@@ -696,6 +738,15 @@ class SECFetcherApp:
                         self.progress_label.config(text="完成！")
                     else:
                         self.progress_label.config(text="發生錯誤，請查看上方記錄")
+
+                elif msg_type == "tab1_name_result":
+                    status, looked_ticker, name = data
+                    current = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
+                    if self.tab1_name_label and current == looked_ticker:
+                        if status == "ok":
+                            self.tab1_name_label.config(text=f"　{name}", foreground="#2ecc71")
+                        else:
+                            self.tab1_name_label.config(text="　查無此 Ticker，請確認後再試", foreground="orange")
 
                 elif msg_type == "wl_lookup_result":
                     status = data[0]
