@@ -347,7 +347,7 @@ class SECFetcherApp:
 
     def _wl_update_cache_worker(self):
         try:
-            identity = self.cfg.get("identity", "SEC Tool sec@example.com")
+            identity = self.cfg.get("identity") or "SEC Tool sec@example.com"
             url = "https://www.sec.gov/files/company_tickers.json"
             req = urllib.request.Request(url, headers={"User-Agent": identity})
             with urllib.request.urlopen(req, timeout=30) as resp:
