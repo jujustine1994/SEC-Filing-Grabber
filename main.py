@@ -75,6 +75,7 @@ class SECFetcherApp:
         self.settings_model_var = None
         self.settings_key_var = None
         self.settings_key_entry = None
+        self.settings_key_toggle_btn = None
         self.settings_outdir_var = None
         self.settings_test_label = None
 
@@ -283,8 +284,11 @@ class SECFetcherApp:
     def _wl_lookup_worker(self, ticker: str):
         cache: dict[str, str] = {}
         if CACHE_PATH.exists():
-            with open(CACHE_PATH, encoding="utf-8") as f:
-                cache = json.load(f).get("companies", {})
+            try:
+                with open(CACHE_PATH, encoding="utf-8") as f:
+                    cache = json.load(f).get("companies", {})
+            except (json.JSONDecodeError, OSError):
+                cache = {}
         if ticker in cache:
             self.msg_queue.put(("wl_lookup_result", ("ok", ticker, cache[ticker])))
             return
@@ -342,9 +346,12 @@ class SECFetcherApp:
 
     def _wl_cache_status(self) -> str:
         if CACHE_PATH.exists():
-            with open(CACHE_PATH, encoding="utf-8") as f:
-                data = json.load(f)
-            return f"上次更新：{data.get('last_updated', '未知')}"
+            try:
+                with open(CACHE_PATH, encoding="utf-8") as f:
+                    data = json.load(f)
+                return f"上次更新：{data.get('last_updated', '未知')}"
+            except (json.JSONDecodeError, OSError):
+                return "名稱庫：檔案損毀"
         return "名稱庫：尚未建立"
 
     # =========================================================
@@ -394,7 +401,8 @@ class SECFetcherApp:
         self.settings_key_var = tk.StringVar(value=self.cfg["ai"].get("api_key", ""))
         self.settings_key_entry = ttk.Entry(key_row, textvariable=self.settings_key_var, width=28, show="•")
         self.settings_key_entry.pack(side="left", padx=(0, 8))
-        ttk.Button(key_row, text="顯示", width=5, command=self._toggle_key_show).pack(side="left")
+        self.settings_key_toggle_btn = ttk.Button(key_row, text="顯示", width=5, command=self._toggle_key_show)
+        self.settings_key_toggle_btn.pack(side="left")
         tk.Label(ai_frame, text="API Key 僅存於本機 config.json，請勿分享給他人。",
                  foreground="gray", font=("", 8)).grid(row=3, column=0, columnspan=2, sticky="w")
 
@@ -423,7 +431,10 @@ class SECFetcherApp:
 
     def _toggle_key_show(self):
         current = self.settings_key_entry.cget("show")
-        self.settings_key_entry.config(show="" if current else "•")
+        new_show = "" if current else "•"
+        self.settings_key_entry.config(show=new_show)
+        if self.settings_key_toggle_btn:
+            self.settings_key_toggle_btn.config(text="隱藏" if new_show == "" else "顯示")
 
     def _test_ai_connection(self):
         provider = self.settings_provider_var.get()
@@ -491,7 +502,9 @@ class SECFetcherApp:
         if not self.fetch_gaap_var.get() and not self.fetch_nongaap_var.get():
             messagebox.showerror("錯誤", "請至少勾選 GAAP 或 Non-GAAP")
             return
-        self._start_worker(lambda: self._worker_single(ticker))
+        fetch_gaap    = self.fetch_gaap_var.get()
+        fetch_nongaap = self.fetch_nongaap_var.get()
+        self._start_worker(lambda: self._worker_single(ticker, fetch_gaap, fetch_nongaap))
 
     def _run_batch(self):
         selected = [t for t, v in self.tab2_check_vars.items() if v.get()]
@@ -514,7 +527,7 @@ class SECFetcherApp:
         self.btn_run_batch.config(state="disabled")
         threading.Thread(target=target, daemon=True).start()
 
-    def _worker_single(self, ticker: str):
+    def _worker_single(self, ticker: str, fetch_gaap: bool, fetch_nongaap: bool):
         try:
             identity = self.cfg.get("identity", "")
             if not identity:
@@ -524,14 +537,14 @@ class SECFetcherApp:
 
             tables = []
 
-            if self.fetch_gaap_var.get():
+            if fetch_gaap:
                 self._log(f"[{ticker}] 抓取 GAAP 財報中...")
                 self._set_progress(0, 2, "抓取 GAAP...")
                 gaap_tables = fetch_gaap_statements(ticker, identity)
                 tables.extend(gaap_tables)
                 self._log(f"[{ticker}] GAAP：取得 {len(gaap_tables)} 份財報")
 
-            if self.fetch_nongaap_var.get():
+            if fetch_nongaap:
                 self._log(f"[{ticker}] Non-GAAP 功能尚未實作（Phase 2）")
 
             if not tables:
