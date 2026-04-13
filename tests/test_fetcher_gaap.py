@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 import pandas as pd
-from fetcher_gaap import fetch_gaap_statements, StatementTable, _parse_fiscal_label
+from fetcher_gaap import fetch_gaap_statements, StatementTable, _parse_fiscal_label, _col_to_quarter_label
 
 
 def test_parse_fiscal_label_quarter():
@@ -11,6 +11,19 @@ def test_parse_fiscal_label_quarter():
 
 def test_parse_fiscal_label_annual():
     assert _parse_fiscal_label("2024", "FY") == "FY2024"
+
+
+def test_col_to_quarter_label_quarter():
+    assert _col_to_quarter_label("2023-03-31 (Q1)") == "FY2023Q1"
+    assert _col_to_quarter_label("2023-06-30 (Q2)") == "FY2023Q2"
+
+
+def test_col_to_quarter_label_annual():
+    assert _col_to_quarter_label("2024-12-31 (FY)") == "FY2024"
+
+
+def test_col_to_quarter_label_instant_fallback():
+    assert _col_to_quarter_label("2023-03-31") == "2023-03-31"
 
 
 def test_statement_table_structure():
@@ -66,6 +79,15 @@ def test_fetch_consistent_lengths(mock_edgar_company):
         assert len(tbl.filing_dates) == n_quarters
         for row in tbl.values:
             assert len(row) == n_quarters
+
+
+def test_fetch_quarter_labels_format(mock_edgar_company):
+    with patch("fetcher_gaap.Company") as MockCompany, \
+         patch("fetcher_gaap.set_identity"):
+        MockCompany.return_value = mock_edgar_company
+        result = fetch_gaap_statements("AAPL", identity="Test User test@test.com")
+    is_table = next(t for t in result if t.sheet_name == "Data_IS")
+    assert is_table.quarter_labels == ["FY2023Q1", "FY2023Q2"]
 
 
 @pytest.fixture

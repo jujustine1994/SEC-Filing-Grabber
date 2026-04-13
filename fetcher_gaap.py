@@ -47,6 +47,25 @@ def _parse_fiscal_label(fiscal_year: str, fiscal_period: str) -> str:
     return f"FY{fiscal_year}{fiscal_period}"
 
 
+def _col_to_quarter_label(col_name: str) -> str:
+    """Parse edgartools period column name to FY quarter label format.
+
+    Examples:
+        "2023-03-31 (Q1)"  -> "FY2023Q1"
+        "2024-12-31 (FY)"  -> "FY2024"
+        "2023-03-31"       -> "2023-03-31"  (instant, no parens — return as-is)
+    """
+    import re
+    m = re.match(r"(\d{4})-\d{2}-\d{2}\s+\((\w+)\)", col_name.strip())
+    if m:
+        year, period = m.group(1), m.group(2)
+        if period.upper() == "FY":
+            return f"FY{year}"
+        return f"FY{year}{period}"
+    # No parentheses — instant column, return as-is
+    return col_name
+
+
 def _stmt_to_table(stmt, sheet_name: str) -> StatementTable | None:
     """Convert an edgartools Statement to a StatementTable.
 
@@ -89,8 +108,8 @@ def _stmt_to_table(stmt, sheet_name: str) -> StatementTable | None:
     if df.empty:
         return None
 
-    # Quarter labels: use period column names as-is (e.g. "2024-03-31 (Q1)")
-    quarter_labels = [str(c) for c in period_cols]
+    # Quarter labels: parse period column names to FY format (e.g. "FY2024Q1")
+    quarter_labels = [_col_to_quarter_label(str(c)) for c in period_cols]
     # No filing-date metadata on Statement objects — leave blank
     filing_dates = [""] * len(period_cols)
 
