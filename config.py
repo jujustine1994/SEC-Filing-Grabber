@@ -27,8 +27,12 @@ def load_config(path: Path | None = None) -> dict:
         path = SCRIPT_DIR / "config.json"
     cfg = copy.deepcopy(DEFAULT_CONFIG)
     if Path(path).exists():
-        with open(path, encoding="utf-8") as f:
-            data = json.load(f)
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            # Malformed or unreadable config — proceed with defaults
+            return cfg
         for key, default_val in DEFAULT_CONFIG.items():
             if key in data:
                 if isinstance(default_val, dict):
