@@ -90,7 +90,7 @@ if (-not (Test-Path "venv")) {
         Write-Host "[INFO] 建立虛擬環境中..." -ForegroundColor Gray
         uv venv venv
         Write-Host "[INFO] 安裝套件中（首次約需 2-3 分鐘）..." -ForegroundColor Gray
-        uv pip install -r requirements.txt --python venv\Scripts\python.exe
+        uv pip install -r requirements.txt --python venv\Scripts\python.exe -q
         if ($LASTEXITCODE -ne 0) {
             Write-Host "[ERROR] 套件安裝失敗，請確認網路連線後重新執行。" -ForegroundColor Red
             Read-Host "按 Enter 關閉"; exit 1
