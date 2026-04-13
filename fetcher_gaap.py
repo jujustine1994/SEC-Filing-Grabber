@@ -7,6 +7,7 @@ Public API:
 Each StatementTable is pre-structured for direct writing by excel_writer.py.
 """
 
+import sys
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -51,34 +52,58 @@ def _stmt_to_table(stmt, sheet_name: str) -> StatementTable | None:
 
     Returns None if the statement has no data.
 
-    edgartools Statement objects expose:
-      - .to_dataframe() -> DataFrame (concepts as index, period labels as columns)
-      - .periods        -> list of period objects with .fiscal_year, .fiscal_period, .filed
+    edgartools v5.29 Statement.to_dataframe() returns a flat DataFrame where:
+      - 'label'    column: human-readable concept name (e.g. "Revenues")
+      - 'concept'  column: XBRL concept name (e.g. "us-gaap_Revenues")
+      - 'abstract' column: bool, True for section headers with no values
+      - 'level'    column: indentation level
+      - period columns: named like "2024-03-31", "2024-03-31 (Q1)", "2024-03-31 (FY)"
+      - Index is a plain RangeIndex (NOT concept names)
     """
     if stmt is None:
         return None
     try:
         df = stmt.to_dataframe()
-    except Exception:
+    except Exception as exc:
+        print(f"[fetcher_gaap] WARNING: to_dataframe() raised {exc!r}", file=sys.stderr)
         return None
     if df is None or df.empty:
         return None
 
-    # Build quarter labels and filing dates from period metadata
-    try:
-        periods = stmt.periods
-        quarter_labels = [
-            _parse_fiscal_label(str(p.fiscal_year), str(p.fiscal_period))
-            for p in periods
-        ]
-        filing_dates = [str(p.filed) if p.filed else "" for p in periods]
-    except AttributeError:
-        # Fallback: use DataFrame column headers directly
-        quarter_labels = [str(c) for c in df.columns]
-        filing_dates   = [""] * len(df.columns)
+    # Identify metadata columns — everything else is a period column
+    META_COLS = {
+        'concept', 'label', 'standard_concept', 'level', 'abstract',
+        'dimension', 'is_breakdown', 'dimension_axis', 'dimension_member',
+        'dimension_member_label', 'dimension_label', 'unit', 'point_in_time',
+        'balance', 'weight', 'preferred_sign',
+    }
+    period_cols = [c for c in df.columns if c not in META_COLS]
 
-    concepts = list(df.index.astype(str))
-    values   = [list(df.iloc[i].values) for i in range(len(df))]
+    if not period_cols:
+        return None
+
+    # Drop abstract rows (section headers have no numeric values)
+    if 'abstract' in df.columns:
+        df = df[~df['abstract'].astype(bool)].reset_index(drop=True)
+
+    if df.empty:
+        return None
+
+    # Quarter labels: use period column names as-is (e.g. "2024-03-31 (Q1)")
+    quarter_labels = [str(c) for c in period_cols]
+    # No filing-date metadata on Statement objects — leave blank
+    filing_dates = [""] * len(period_cols)
+
+    # Concept labels: prefer 'label' column, fall back to 'concept'
+    if 'label' in df.columns:
+        concepts = list(df['label'].fillna("").astype(str))
+    elif 'concept' in df.columns:
+        concepts = list(df['concept'].fillna("").astype(str))
+    else:
+        concepts = [str(i) for i in df.index]
+
+    # Values: one list per concept, one value per period
+    values = [list(df[period_cols].iloc[i].values) for i in range(len(df))]
 
     return StatementTable(
         sheet_name=sheet_name,
@@ -139,6 +164,13 @@ def fetch_gaap_statements(ticker: str, identity: str) -> list[StatementTable]:
     set_identity(identity)
     company    = Company(ticker)
     financials = company.get_financials()
+
+    if financials is None:
+        raise ValueError(
+            f"No annual filing found for ticker '{ticker}'. "
+            "The company may not have an annual 10-K/20-F/40-F on EDGAR, "
+            "or the ticker may be invalid."
+        )
 
     tables: list[StatementTable] = []
     for method_name, sheet_name in STATEMENT_MAP:

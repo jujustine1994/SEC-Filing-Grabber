@@ -70,17 +70,27 @@ def test_fetch_consistent_lengths(mock_edgar_company):
 
 @pytest.fixture
 def mock_edgar_company():
-    """Minimal mock of edgartools Company with income statement data."""
-    mock_df = pd.DataFrame(
-        {"2023-Q1": [1000.0, 200.0], "2023-Q2": [1100.0, 220.0]},
-        index=["Revenues", "NetIncomeLoss"],
-    )
+    """Minimal mock of edgartools Company with income statement data.
+
+    Mimics the real edgartools v5.29 Statement.to_dataframe() output:
+    - Flat DataFrame with RangeIndex (NOT concept names as index)
+    - 'concept' column: XBRL concept name
+    - 'label'   column: human-readable name
+    - 'abstract' column: bool (True = section header, no values)
+    - 'level'   column: int
+    - Period columns named like "2023-03-31 (Q1)", "2023-06-30 (Q2)"
+    """
+    mock_df = pd.DataFrame({
+        "concept":  ["us-gaap_Revenues", "us-gaap_NetIncomeLoss"],
+        "label":    ["Revenues", "Net Income"],
+        "abstract": [False, False],
+        "level":    [1, 1],
+        "2023-03-31 (Q1)": [1000.0, 200.0],
+        "2023-06-30 (Q2)": [1100.0, 220.0],
+    })
 
     mock_stmt = MagicMock()
     mock_stmt.to_dataframe.return_value = mock_df
-    p1 = MagicMock(); p1.fiscal_year = "2023"; p1.fiscal_period = "Q1"; p1.filed = "2023-02-03"
-    p2 = MagicMock(); p2.fiscal_year = "2023"; p2.fiscal_period = "Q2"; p2.filed = "2023-05-05"
-    mock_stmt.periods = [p1, p2]
 
     mock_financials = MagicMock()
     mock_financials.income_statement.return_value = mock_stmt
