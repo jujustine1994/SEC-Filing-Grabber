@@ -15,6 +15,7 @@ DEFAULT_CONFIG: dict = {
     "watchlist": [],
     "filename_format": "ticker_name",
     "filename_custom": "",
+    "max_filings": 80,
     "ai": {
         "provider": "google",
         "model": "gemini-flash-latest",

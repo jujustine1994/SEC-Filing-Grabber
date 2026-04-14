@@ -47,3 +47,22 @@ def test_load_merges_missing_keys(tmp_path):
     cfg = load_config(cfg_path)
     assert "ai" in cfg
     assert cfg["ai"]["model"] == "gemini-flash-latest"
+
+
+def test_default_config_has_max_filings():
+    cfg = load_config(path=Path("/nonexistent/config.json"))
+    assert cfg["max_filings"] == 80
+
+
+def test_max_filings_loaded_from_file(tmp_path):
+    p = tmp_path / "config.json"
+    p.write_text('{"max_filings": 40}', encoding="utf-8")
+    cfg = load_config(path=p)
+    assert cfg["max_filings"] == 40
+
+
+def test_max_filings_defaults_when_missing_from_file(tmp_path):
+    p = tmp_path / "config.json"
+    p.write_text('{}', encoding="utf-8")
+    cfg = load_config(path=p)
+    assert cfg["max_filings"] == 80
