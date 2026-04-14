@@ -56,7 +56,7 @@ IS_TEMPLATE: list[tuple[str, str | None, str, str]] = [
     ("Gross Profit",           "GrossProfit",                    "GrossProfit",                                              "IS"),
     ("R&D Expense",            "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment",                                   "IS"),
     ("SG&A Expense",           "SellingGeneralAndAdminExpenses", "SellingGeneralAndAdmin",                                   "IS"),
-    ("D&A",                    "DepreciationExpense",            "DepreciationDepletionAndAmortization",                     "CF"),
+    ("D&A (CF memo)",           "DepreciationExpense",            "DepreciationDepletionAndAmortization",                     "CF"),
     ("Other Operating Expense","OtherOperatingExpenses",         "OtherOperatingExpense",                                    "IS"),
     ("Total Operating Expense","TotalOperatingExpenses",         "OperatingExpenses",                                        "IS"),
     ("Operating Income",       "OperatingIncomeLoss",            "OperatingIncome",                                          "IS"),
@@ -200,17 +200,16 @@ def _build_is_table(filings, max_filings: int) -> StatementTable:
         if label in periods:
             continue
 
-        # Fetch CF df for rows with source == "CF"
+        # Fetch CF statement for D&A / SBC rows
         cf_df: pd.DataFrame | None = None
         cf_q_col: str | None = None
-        if any(row[3] == "CF" for row in IS_TEMPLATE):
-            try:
-                cf_stmt = tenq.financials.cashflow_statement()
-                if cf_stmt is not None:
-                    cf_df = cf_stmt.to_dataframe()
-                    cf_q_col = _current_q_col(cf_df)
-            except Exception:
-                pass
+        try:
+            cf_stmt = tenq.financials.cashflow_statement()
+            if cf_stmt is not None:
+                cf_df = cf_stmt.to_dataframe()
+                cf_q_col = _current_q_col(cf_df)
+        except Exception:
+            pass
 
         row_vals: dict[int, Any] = {}
         for i, (_, std_concept, fallback, source) in enumerate(IS_TEMPLATE):
