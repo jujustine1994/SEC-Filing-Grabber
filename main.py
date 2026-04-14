@@ -533,7 +533,6 @@ class SECFetcherApp:
                   foreground="gray", font=("", 8)).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(id_frame, text="Identity:").grid(row=1, column=0, sticky="w", pady=4)
         self.settings_identity_var = tk.StringVar(value=self.cfg.get("identity", ""))
-        self.settings_max_filings_var = tk.IntVar(value=self.cfg.get("max_filings", 80))
         ttk.Entry(id_frame, textvariable=self.settings_identity_var, width=42).grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
         # AI Config
@@ -574,6 +573,7 @@ class SECFetcherApp:
         fetch_frame.columnconfigure(2, weight=1)
 
         ttk.Label(fetch_frame, text="最多季報數量:").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        self.settings_max_filings_var = tk.IntVar(value=self.cfg.get("max_filings", 80))
         max_spin = ttk.Spinbox(fetch_frame, from_=4, to=320, increment=4,
                                textvariable=self.settings_max_filings_var, width=6)
         max_spin.grid(row=0, column=1, sticky="w")
