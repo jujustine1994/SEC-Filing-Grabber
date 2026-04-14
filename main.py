@@ -81,6 +81,7 @@ class SECFetcherApp:
         self.settings_outdir_var = None
         self.settings_test_label = None
         self.settings_fmt_var = None
+        self.settings_max_filings_var = None
         self.nongaap_warn_label = None
         self.tab1_name_label = None
         self.tab1_outdir_var = None
@@ -532,6 +533,7 @@ class SECFetcherApp:
                   foreground="gray", font=("", 8)).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(id_frame, text="Identity:").grid(row=1, column=0, sticky="w", pady=4)
         self.settings_identity_var = tk.StringVar(value=self.cfg.get("identity", ""))
+        self.settings_max_filings_var = tk.IntVar(value=self.cfg.get("max_filings", 80))
         ttk.Entry(id_frame, textvariable=self.settings_identity_var, width=42).grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
         # AI Config
@@ -566,9 +568,21 @@ class SECFetcherApp:
         self.settings_test_label = ttk.Label(test_row, text="", foreground="gray")
         self.settings_test_label.pack(side="left", padx=10)
 
+        # Fetch settings frame
+        fetch_frame = ttk.LabelFrame(popup, text=" 抓取設定 ", padding=8)
+        fetch_frame.grid(row=2, column=0, sticky="ew", **pad)
+        fetch_frame.columnconfigure(2, weight=1)
+
+        ttk.Label(fetch_frame, text="最多季報數量:").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        max_spin = ttk.Spinbox(fetch_frame, from_=4, to=320, increment=4,
+                               textvariable=self.settings_max_filings_var, width=6)
+        max_spin.grid(row=0, column=1, sticky="w")
+        ttk.Label(fetch_frame, text="筆（預設 80，約 20 年）", foreground="gray").grid(
+            row=0, column=2, sticky="w", padx=(4, 0))
+
         # Buttons
         btn_row = ttk.Frame(popup)
-        btn_row.grid(row=2, column=0, pady=10)
+        btn_row.grid(row=3, column=0, pady=10)
         ttk.Button(btn_row, text="儲存", command=lambda: self._save_settings(popup), width=10).pack(side="left", padx=6)
         ttk.Button(btn_row, text="取消", command=popup.destroy, width=10).pack(side="left", padx=6)
 
@@ -624,6 +638,10 @@ class SECFetcherApp:
         self.cfg["ai"]["provider"] = self.settings_provider_var.get()
         self.cfg["ai"]["model"]    = self.settings_model_var.get().strip()
         self.cfg["ai"]["api_key"]  = self.settings_key_var.get().strip()
+        try:
+            self.cfg["max_filings"] = int(self.settings_max_filings_var.get())
+        except (ValueError, tk.TclError):
+            self.cfg["max_filings"] = 80
         save_config(self.cfg, CONFIG_PATH)
         popup.destroy()
 
@@ -692,7 +710,8 @@ class SECFetcherApp:
                 "Non-GAAP 功能需要 AI API Key。\n請先至「進階設定」填入 API Key 後再執行。"
             )
             return
-        self._start_worker(lambda: self._worker_single(ticker, fetch_gaap, fetch_nongaap))
+        max_filings = self.cfg.get("max_filings", 80)
+        self._start_worker(lambda: self._worker_single(ticker, fetch_gaap, fetch_nongaap, max_filings))
 
     def _run_batch(self):
         selected = [t for t, v in self.tab2_check_vars.items() if v.get()]
@@ -715,7 +734,7 @@ class SECFetcherApp:
         self.btn_run_batch.config(state="disabled")
         threading.Thread(target=target, daemon=True).start()
 
-    def _worker_single(self, ticker: str, fetch_gaap: bool, fetch_nongaap: bool):
+    def _worker_single(self, ticker: str, fetch_gaap: bool, fetch_nongaap: bool, max_filings: int = 80):
         try:
             identity = self.cfg.get("identity", "")
             if not identity:
@@ -728,7 +747,7 @@ class SECFetcherApp:
             if fetch_gaap:
                 self._log(f"[{ticker}] 抓取 GAAP 財報中...")
                 self._set_progress(0, 2, "抓取 GAAP...")
-                gaap_tables = fetch_gaap_statements(ticker, identity)
+                gaap_tables = fetch_gaap_statements(ticker, identity, max_filings=max_filings)
                 tables.extend(gaap_tables)
                 self._log(f"[{ticker}] GAAP：取得 {len(gaap_tables)} 份財報")
 
@@ -758,12 +777,13 @@ class SECFetcherApp:
             self._log("[ERROR] 請先在進階設定填入 Identity")
             self._done(False)
             return
+        max_filings = self.cfg.get("max_filings", 80)
 
         for i, ticker in enumerate(tickers, 1):
             self._set_progress(i - 1, total, f"處理中：{ticker} ({i}/{total})")
             self._log(f"\n[{ticker}] 開始...")
             try:
-                tables      = fetch_gaap_statements(ticker, identity)
+                tables      = fetch_gaap_statements(ticker, identity, max_filings=max_filings)
                 output_path = self._build_output_path(ticker)
                 write_statements(tables, output_path)
                 self._log(f"[{ticker}] 完成（{len(tables)} 份財報）")
