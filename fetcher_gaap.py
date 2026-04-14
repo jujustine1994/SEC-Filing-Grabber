@@ -17,12 +17,14 @@ Sheet outputs:
 
 from __future__ import annotations
 
+import math
 import re
 import sys
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
+import pandas as pd
 from edgar import Company, set_identity as set_identity
 
 
@@ -141,10 +143,9 @@ def _match_is_row(df, std_concept: str | None, fallback_suffix: str) -> int | No
 
 
 def _to_python_val(val) -> Any:
-    """Convert pandas NA / float NaN to None; leave other values as-is."""
+    """Convert pandas NA / float NaN / None to None; leave other values as-is."""
     try:
-        import math
-        if val is not None and not isinstance(val, str) and math.isnan(float(val)):
+        if pd.isna(val):
             return None
     except (TypeError, ValueError):
         pass
