@@ -8,7 +8,7 @@ Public API:
     fetch_gaap_statements(ticker, identity, max_filings=80) -> list[StatementTable]
 
 Sheet outputs:
-    Data_IS        — 18-row fixed template (NaN for missing items)
+    Data_IS        — 21-row fixed template (NaN for missing items)
     Data_BS        — all consolidated rows, dynamic union across quarters
     Data_CF        — all consolidated rows, dynamic union across quarters
     Data_Seg_*     — one sheet per IS concept that has segment breakdowns
