@@ -133,10 +133,10 @@ def test_build_is_table_returns_statement_table():
     assert isinstance(tbl, StatementTable)
     assert tbl.sheet_name == "Data_IS"
 
-def test_build_is_table_has_18_concept_rows():
+def test_build_is_table_has_21_concept_rows():
     filing = _make_filing()
     tbl = _build_is_table([filing], max_filings=1)
-    assert len(tbl.concepts) == 18
+    assert len(tbl.concepts) == 21
 
 def test_build_is_table_quarter_labels_format():
     filing = _make_filing(period_col="2025-12-27 (Q1)")
@@ -232,6 +232,13 @@ def test_fetch_passes_max_filings():
         result = fetch_gaap_statements("AAPL", identity="Test test@test.com", max_filings=3)
     is_tbl = next(t for t in result if t.sheet_name == "Data_IS")
     assert len(is_tbl.quarter_labels) <= 3
+
+
+def test_fetch_sets_ticker_on_all_tables():
+    with patch("fetcher_gaap.Company") as MockCo, patch("fetcher_gaap.set_identity"):
+        MockCo.return_value = _make_mock_company()
+        result = fetch_gaap_statements("AAPL", identity="Test test@test.com")
+    assert all(t.ticker == "AAPL" for t in result)
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────

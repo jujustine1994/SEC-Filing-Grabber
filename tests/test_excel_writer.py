@@ -5,6 +5,36 @@ from fetcher_gaap import StatementTable
 from excel_writer import write_statements
 
 
+def test_a1_shows_ticker_when_set(tmp_path):
+    tbl = StatementTable(
+        sheet_name="Data_IS",
+        quarter_labels=["FY2023Q1"],
+        filing_dates=["2023-02-03"],
+        concepts=["Revenue"],
+        values=[[1000.0]],
+        ticker="AAPL",
+    )
+    out = tmp_path / "AAPL.xlsx"
+    write_statements([tbl], out)
+    wb = openpyxl.load_workbook(out)
+    assert wb["Data_IS"]["A1"].value == "AAPL"
+
+
+def test_a1_is_none_when_ticker_empty(tmp_path):
+    tbl = StatementTable(
+        sheet_name="Data_IS",
+        quarter_labels=["FY2023Q1"],
+        filing_dates=["2023-02-03"],
+        concepts=["Revenue"],
+        values=[[1000.0]],
+        ticker="",
+    )
+    out = tmp_path / "AAPL.xlsx"
+    write_statements([tbl], out)
+    wb = openpyxl.load_workbook(out)
+    assert wb["Data_IS"]["A1"].value is None
+
+
 @pytest.fixture
 def sample_tables():
     return [

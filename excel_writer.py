@@ -60,7 +60,7 @@ def _write_sheet(ws: Worksheet, tbl: StatementTable) -> None:
         Row 3+: A=concept name, B..=values
     """
     # Row 1: quarter labels (starting at column B)
-    ws.cell(row=1, column=1, value=None)
+    ws.cell(row=1, column=1, value=tbl.ticker or None)
     for col_idx, label in enumerate(tbl.quarter_labels, start=2):
         ws.cell(row=1, column=col_idx, value=label)
 

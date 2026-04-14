@@ -38,6 +38,7 @@ class StatementTable:
     filing_dates:   list[str]
     concepts:       list[str]
     values:         list[list[Any]]
+    ticker:         str = ""
 
 
 # ── Constants ─────────────────────────────────────────────────────────────
@@ -49,25 +50,28 @@ META_COLS: set[str] = {
     'balance', 'weight', 'preferred_sign', 'parent_concept', 'parent_abstract_concept',
 }
 
-IS_TEMPLATE: list[tuple[str, str | None, str]] = [
-    ("Revenue",                       "Revenue",                        "RevenueFromContractWithCustomer"),
-    ("Cost of Revenue",               "CostOfGoodsAndServicesSold",     "CostOfGoodsSold"),
-    ("Gross Profit",                  "GrossProfit",                    "GrossProfit"),
-    ("R&D Expense",                   "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment"),
-    ("SG&A Expense",                  "SellingGeneralAndAdminExpenses", "SellingGeneralAndAdmin"),
-    ("Other Operating Expense",       "OtherOperatingExpenses",         "OtherOperatingExpense"),
-    ("Total Operating Expense",       "TotalOperatingExpenses",         "OperatingExpenses"),
-    ("Operating Income",              "OperatingIncomeLoss",            "OperatingIncome"),
-    ("Interest Expense",              "InterestExpense",                "InterestExpense"),
-    ("Interest Income",               "InterestIncome",                 "InterestIncome"),
-    ("Other Non-op Inc/(Exp)",        "NonoperatingIncomeExpense",      "NonoperatingIncome"),
-    ("Pre-tax Income",                "PretaxIncomeLoss",               "IncomeLossFromContinuingOperationsBeforeIncomeTax"),
-    ("Income Tax",                    "IncomeTaxes",                    "IncomeTaxExpense"),
-    ("Net Income",                    "NetIncome",                      "NetIncomeLoss"),
-    ("Basic EPS",                     None,                             "EarningsPerShareBasic"),
-    ("Diluted EPS",                   None,                             "EarningsPerShareDiluted"),
-    ("Basic Shares",                  "SharesAverage",                  "WeightedAverageNumberOfSharesOutstandingBasic"),
-    ("Diluted Shares",                "SharesFullyDilutedAverage",      "WeightedAverageNumberOfDilutedSharesOutstanding"),
+IS_TEMPLATE: list[tuple[str, str | None, str, str]] = [
+    ("Revenue",                "Revenue",                        "RevenueFromContractWithCustomer",                          "IS"),
+    ("Cost of Revenue",        "CostOfGoodsAndServicesSold",     "CostOfGoodsSold",                                          "IS"),
+    ("Gross Profit",           "GrossProfit",                    "GrossProfit",                                              "IS"),
+    ("R&D Expense",            "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment",                                   "IS"),
+    ("SG&A Expense",           "SellingGeneralAndAdminExpenses", "SellingGeneralAndAdmin",                                   "IS"),
+    ("D&A",                    "DepreciationExpense",            "DepreciationDepletionAndAmortization",                     "CF"),
+    ("Other Operating Expense","OtherOperatingExpenses",         "OtherOperatingExpense",                                    "IS"),
+    ("Total Operating Expense","TotalOperatingExpenses",         "OperatingExpenses",                                        "IS"),
+    ("Operating Income",       "OperatingIncomeLoss",            "OperatingIncome",                                          "IS"),
+    ("Interest Expense",       "InterestExpense",                "InterestExpense",                                          "IS"),
+    ("Interest Income",        "InterestIncome",                 "InterestIncome",                                           "IS"),
+    ("Other Non-op Inc/(Exp)", "NonoperatingIncomeExpense",      "NonoperatingIncome",                                       "IS"),
+    ("Pre-tax Income",         "PretaxIncomeLoss",               "IncomeLossFromContinuingOperationsBeforeIncomeTax",         "IS"),
+    ("Income Tax",             "IncomeTaxes",                    "IncomeTaxExpense",                                         "IS"),
+    ("Net Income",             "NetIncome",                      "NetIncomeLoss",                                            "IS"),
+    ("Minority Interest",      None,                             "NetIncomeLossAttributableToNoncontrollingInterest",         "IS"),
+    ("SBC",                    "StockBasedCompensationExpense",  "ShareBasedCompensation",                                   "CF"),
+    ("Basic EPS",              None,                             "EarningsPerShareBasic",                                    "IS"),
+    ("Diluted EPS",            None,                             "EarningsPerShareDiluted",                                  "IS"),
+    ("Basic Shares",           "SharesAverage",                  "WeightedAverageNumberOfSharesOutstandingBasic",            "IS"),
+    ("Diluted Shares",         "SharesFullyDilutedAverage",      "WeightedAverageNumberOfDilutedSharesOutstanding",          "IS"),
 ]
 
 
@@ -179,7 +183,8 @@ def _build_is_table(filings, max_filings: int) -> StatementTable:
         if len(periods) >= max_filings:
             break
         try:
-            stmt = filing.obj().financials.income_statement()
+            tenq = filing.obj()
+            stmt = tenq.financials.income_statement()
             if stmt is None:
                 continue
             df = stmt.to_dataframe()
@@ -195,10 +200,29 @@ def _build_is_table(filings, max_filings: int) -> StatementTable:
         if label in periods:
             continue
 
+        # Fetch CF df for rows with source == "CF"
+        cf_df: pd.DataFrame | None = None
+        cf_q_col: str | None = None
+        if any(row[3] == "CF" for row in IS_TEMPLATE):
+            try:
+                cf_stmt = tenq.financials.cashflow_statement()
+                if cf_stmt is not None:
+                    cf_df = cf_stmt.to_dataframe()
+                    cf_q_col = _current_q_col(cf_df)
+            except Exception:
+                pass
+
         row_vals: dict[int, Any] = {}
-        for i, (_, std_concept, fallback) in enumerate(IS_TEMPLATE):
-            idx = _match_is_row(df, std_concept, fallback)
-            val = _to_python_val(df.loc[idx, q_col]) if idx is not None else None
+        for i, (_, std_concept, fallback, source) in enumerate(IS_TEMPLATE):
+            if source == "CF":
+                if cf_df is not None and cf_q_col is not None:
+                    idx = _match_is_row(cf_df, std_concept, fallback)
+                    val = _to_python_val(cf_df.loc[idx, cf_q_col]) if idx is not None else None
+                else:
+                    val = None
+            else:
+                idx = _match_is_row(df, std_concept, fallback)
+                val = _to_python_val(df.loc[idx, q_col]) if idx is not None else None
             row_vals[i] = val
 
         periods[label] = (str(filing.filing_date), row_vals)
@@ -441,4 +465,6 @@ def fetch_gaap_statements(ticker: str, identity: str,
     company_name = getattr(company, "name", ticker) or ticker
     tables.append(_build_meta_table(ticker, company_name, tables))
 
+    for tbl in tables:
+        tbl.ticker = ticker
     return tables
