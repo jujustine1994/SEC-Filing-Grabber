@@ -83,6 +83,7 @@ class SECFetcherApp:
         self.settings_fmt_var = None
         self.settings_max_filings_var = None
         self.nongaap_warn_label = None
+        self.btn_confirm_company = None
         self.tab1_name_label = None
         self.tab1_outdir_var = None
         self.tab1_fmt_var = None
@@ -99,6 +100,11 @@ class SECFetcherApp:
 
     def _build_ui(self):
         pad = {"padx": 14, "pady": 6}
+
+        # Global font — 11pt for all ttk widgets
+        style = ttk.Style()
+        style.configure(".", font=("", 11))
+        style.configure("TNotebook.Tab", font=("", 11))
 
         # Tabs
         self.notebook = ttk.Notebook(self.root)
@@ -120,7 +126,7 @@ class SECFetcherApp:
         self.progress_bar = ttk.Progressbar(frame_log, mode="determinate", length=440)
         self.progress_bar.pack(fill="x", pady=(4, 8))
         self.log_text = scrolledtext.ScrolledText(
-            frame_log, width=60, height=10, state="disabled", font=("Consolas", 9)
+            frame_log, width=60, height=10, state="disabled", font=("Consolas", 10)
         )
         self.log_text.pack(fill="x")
 
@@ -148,7 +154,9 @@ class SECFetcherApp:
         self.ticker_var.set(self.TICKER_PH)
         self.ticker_entry.bind("<FocusIn>",  lambda e: self._ph_in(self.ticker_entry, self.ticker_var, self.TICKER_PH))
         self.ticker_entry.bind("<FocusOut>", lambda e: self._on_ticker_focusout(e))
-        self.tab1_name_label = ttk.Label(row_ticker, text="", foreground="gray", font=("", 9))
+        self.btn_confirm_company = ttk.Button(row_ticker, text="確認公司", command=self._confirm_company, width=8)
+        self.btn_confirm_company.pack(side="left", padx=(6, 0))
+        self.tab1_name_label = ttk.Label(row_ticker, text="", foreground="#555555")
         self.tab1_name_label.pack(side="left", padx=(10, 0))
 
         # Row 1: Checkboxes
@@ -163,7 +171,7 @@ class SECFetcherApp:
         # Row 2: Non-GAAP warning (hidden by default)
         self.nongaap_warn_label = ttk.Label(
             tab, text="⚠ Non-GAAP 需先在「進階設定」填入 AI API Key",
-            foreground="orange", font=("", 8)
+            foreground="orange", font=("", 10)
         )
         self.nongaap_warn_label.grid(row=2, column=0, sticky="w", padx=2)
         self.nongaap_warn_label.grid_remove()
@@ -205,7 +213,7 @@ class SECFetcherApp:
         self.tab1_custom_var.trace_add("write", lambda *_: self._update_tab1_preview())
 
         # Preview label
-        self.tab1_preview_label = ttk.Label(out_frame, text="", foreground="gray", font=("", 8))
+        self.tab1_preview_label = ttk.Label(out_frame, text="", foreground="#555555", font=("", 10))
         self.tab1_preview_label.grid(row=5, column=0, sticky="w", pady=(6, 0))
         self._update_tab1_preview()
 
@@ -261,8 +269,20 @@ class SECFetcherApp:
             self._update_tab1_preview()
             return
         if self.tab1_name_label:
-            self.tab1_name_label.config(text="查詢中...", foreground="gray")
+            self.tab1_name_label.config(text="查詢中...", foreground="#555555")
+        if self.btn_confirm_company:
+            self.btn_confirm_company.config(state="disabled")
         self._update_tab1_preview()
+        threading.Thread(target=lambda: self._tab1_lookup_worker(ticker), daemon=True).start()
+
+    def _confirm_company(self):
+        ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
+        if not ticker:
+            return
+        if self.tab1_name_label:
+            self.tab1_name_label.config(text="查詢中...", foreground="#555555")
+        if self.btn_confirm_company:
+            self.btn_confirm_company.config(state="disabled")
         threading.Thread(target=lambda: self._tab1_lookup_worker(ticker), daemon=True).start()
 
     def _tab1_lookup_worker(self, ticker: str):
@@ -406,7 +426,7 @@ class SECFetcherApp:
 
         cache_frame = ttk.Frame(popup)
         cache_frame.grid(row=2, column=0, sticky="ew", **pad)
-        self.wl_cache_label = ttk.Label(cache_frame, text=self._wl_cache_status(), foreground="gray")
+        self.wl_cache_label = ttk.Label(cache_frame, text=self._wl_cache_status(), foreground="#555555")
         self.wl_cache_label.pack(side="left")
         ttk.Button(cache_frame, text="更新名稱庫（下載完整美股清單）", command=self._wl_update_cache).pack(side="left", padx=10)
 
@@ -530,7 +550,7 @@ class SECFetcherApp:
         id_frame = ttk.LabelFrame(popup, text=" SEC EDGAR Identity ", padding=8)
         id_frame.grid(row=0, column=0, sticky="ew", **pad)
         ttk.Label(id_frame, text="格式：姓名 空格 信箱（如 John Smith john@example.com）",
-                  foreground="gray", font=("", 8)).grid(row=0, column=0, columnspan=2, sticky="w")
+                  foreground="#555555", font=("", 10)).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(id_frame, text="Identity:").grid(row=1, column=0, sticky="w", pady=4)
         self.settings_identity_var = tk.StringVar(value=self.cfg.get("identity", ""))
         ttk.Entry(id_frame, textvariable=self.settings_identity_var, width=42).grid(row=1, column=1, sticky="ew", padx=(8, 0))
@@ -559,7 +579,7 @@ class SECFetcherApp:
         self.settings_key_toggle_btn = ttk.Button(key_row, text="顯示", width=5, command=self._toggle_key_show)
         self.settings_key_toggle_btn.pack(side="left")
         tk.Label(ai_frame, text="API Key 僅存於本機 config.json，請勿分享給他人。",
-                 foreground="gray", font=("", 8)).grid(row=3, column=0, columnspan=2, sticky="w")
+                 foreground="#555555", font=("", 10)).grid(row=3, column=0, columnspan=2, sticky="w")
 
         test_row = ttk.Frame(ai_frame)
         test_row.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
@@ -577,7 +597,7 @@ class SECFetcherApp:
         max_spin = ttk.Spinbox(fetch_frame, from_=4, to=320, increment=4,
                                textvariable=self.settings_max_filings_var, width=6)
         max_spin.grid(row=0, column=1, sticky="w")
-        ttk.Label(fetch_frame, text="筆（預設 80，約 20 年）", foreground="gray").grid(
+        ttk.Label(fetch_frame, text="筆（預設 80，約 20 年）", foreground="#555555").grid(
             row=0, column=2, sticky="w", padx=(4, 0))
 
         # Buttons
@@ -667,8 +687,13 @@ class SECFetcherApp:
         return ticker
 
     def _build_output_path(self, ticker: str) -> Path:
-        """Build output file path based on filename_format setting."""
-        output_dir = SCRIPT_DIR / self.cfg.get("output_dir", "output")
+        """Build output file path. Per-ticker path takes priority over output_dir."""
+        ticker_dir = self.cfg.get("ticker_paths", {}).get(ticker)
+        if ticker_dir:
+            output_dir = Path(ticker_dir)
+        else:
+            output_dir = SCRIPT_DIR / self.cfg.get("output_dir", "output")
+
         fmt = self.cfg.get("filename_format", "ticker_name")
         if fmt == "ticker_name":
             name = self._lookup_company_name(ticker)
@@ -844,10 +869,12 @@ class SECFetcherApp:
                     current = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
                     if self.tab1_name_label and current == looked_ticker:
                         if status == "ok":
-                            self.tab1_name_label.config(text=f"　{name}", foreground="#2ecc71")
+                            self.tab1_name_label.config(text=f"　{name}", foreground="#1a7a34")
                         else:
                             self.tab1_name_label.config(text="　查無此 Ticker，請確認後再試", foreground="orange")
                         self._update_tab1_preview()
+                    if self.btn_confirm_company:
+                        self.btn_confirm_company.config(state="normal")
 
                 elif msg_type == "wl_lookup_result":
                     status = data[0]
@@ -855,7 +882,7 @@ class SECFetcherApp:
                         _, ticker, name = data
                         self._wl_found_name = name
                         if self.wl_lookup_label:
-                            self.wl_lookup_label.config(text=f"查到：{name}", foreground="#2ecc71")
+                            self.wl_lookup_label.config(text=f"查到：{name}", foreground="#1a7a34")
                         if self.wl_add_btn:
                             self.wl_add_btn.config(state="normal")
                     else:
@@ -878,7 +905,7 @@ class SECFetcherApp:
                     ok, err = data
                     if self.settings_test_label:
                         if ok == "ok":
-                            self.settings_test_label.config(text="連線成功！", foreground="#2ecc71")
+                            self.settings_test_label.config(text="連線成功！", foreground="#1a7a34")
                         else:
                             self.settings_test_label.config(text=f"失敗：{str(err)[:60]}", foreground="red")
 
