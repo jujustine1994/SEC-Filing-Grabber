@@ -139,18 +139,22 @@ match:      "first"（預設）= 最早那行；"last" = 最後那行（用於 C
 ## 待辦功能（下一個 AI 看到請提醒使用者）
 
 ### 🔴 優先（下次開始前必做）
-1. **實機測試**：對 AAPL、TSLA、BA、XOM 跑一次，確認 Data_Financials 輸出正確
-2. **main.py 確認**：fetch 改輸出 Data_Financials，確認 GUI 沒有參照舊的 Data_IS/BS/CF sheet 名稱
+1. **實機測試（GAAP）**：對 AAPL、TSLA、BA、XOM 跑一次，確認 Data_Financials 三表輸出正確
+2. **實機測試（Non-GAAP）**：對有 8-K earnings release 的公司（AAPL、NVDA 等）跑一次，確認 Data_EPS_Recon + Data_NonGAAP 正確產生，nongaap_cache.json 正確寫入
+3. **main.py 舊名稱掃描**：確認 GUI 沒有殘留 Data_IS/Data_BS/Data_CF 等舊 sheet 名稱參照（Session 2 已改成 Data_Financials）
 
 ### 🟡 中優先
-3. **金融股模板**（設計已完成，待實作）：
+4. **金融股模板**（設計已完成，待實作）：
    - GS/JPM 用不同的 IS/BS 模板
    - 自動偵測：BS 含 `TotalDeposits` std_concept → 金融股
    - UI 警告：偵測到金融股時彈出提示
-4. **Excel Template 著色功能**：
+5. **Excel Template 著色功能**：
    - 使用者建立 `template.xlsx`，預先著色各行
    - 工具開啟 template 後只填值（不改格式），利用 openpyxl 保留 cell formatting
    - 季度欄擴充時複製前一欄格式
+
+### 🟢 低優先
+6. **批量更新（Tab 2）的 Non-GAAP 支援**：目前批量只跑 GAAP，Non-GAAP 留待後續
 
 ## Known Issues
 

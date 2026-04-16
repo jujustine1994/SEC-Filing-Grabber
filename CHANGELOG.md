@@ -29,10 +29,12 @@
 - [x] match="first"|"last" + label_hint 精確比對（解決 BS 重複 std_concept 問題）
 
 ### 待辦
-- [ ] 實機測試：對真實公司（AAPL、TSLA、BA、XOM）跑一次驗證模板
-- [ ] main.py 確認：輸出改成 Data_Financials，需確認 GUI 無誤
+- [ ] 實機測試（GAAP）：AAPL、TSLA、BA、XOM 確認 Data_Financials 正確
+- [ ] 實機測試（Non-GAAP）：AAPL、NVDA 確認 Data_EPS_Recon + Data_NonGAAP + nongaap_cache.json
+- [ ] main.py 舊名稱掃描：確認無 Data_IS/BS/CF 殘留參照
 - [ ] 金融股模板（GS/JPM）：UI 自動偵測 + 警告（已設計，延後實作）
 - [ ] Excel Template 著色功能：使用者自訂顏色 template.xlsx，工具只填值不改格式
+- [ ] 批量更新（Tab 2）加入 Non-GAAP 支援
 
 ---
 
