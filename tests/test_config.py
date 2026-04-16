@@ -66,3 +66,18 @@ def test_max_filings_defaults_when_missing_from_file(tmp_path):
     p.write_text('{}', encoding="utf-8")
     cfg = load_config(path=p)
     assert cfg["max_filings"] == 80
+
+
+def test_load_config_has_ticker_paths_default():
+    cfg = load_config(Path("/nonexistent/config.json"))
+    assert "ticker_paths" in cfg
+    assert cfg["ticker_paths"] == {}
+
+
+def test_ticker_paths_persists_through_save_load(tmp_path):
+    path = tmp_path / "config.json"
+    cfg = load_config(path)
+    cfg["ticker_paths"]["TSLA"] = "C:\\Work\\TSLA"
+    save_config(cfg, path)
+    loaded = load_config(path)
+    assert loaded["ticker_paths"]["TSLA"] == "C:\\Work\\TSLA"

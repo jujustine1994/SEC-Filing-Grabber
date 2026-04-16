@@ -12,6 +12,7 @@ SCRIPT_DIR = Path(__file__).parent
 DEFAULT_CONFIG: dict = {
     "identity": "",
     "output_dir": "output",
+    "ticker_paths": {},
     "watchlist": [],
     "filename_format": "ticker_name",
     "filename_custom": "",
