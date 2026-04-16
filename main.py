@@ -347,6 +347,12 @@ class SECFetcherApp:
         folder = filedialog.askdirectory(title="選擇儲存位置", initialdir=initial)
         if folder:
             self.tab1_outdir_var.set(folder)
+            # 記住這個 ticker 的路徑
+            ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
+            if ticker:
+                if "ticker_paths" not in self.cfg:
+                    self.cfg["ticker_paths"] = {}
+                self.cfg["ticker_paths"][ticker] = folder
             self._save_tab1_output_settings()
 
     def _save_tab1_output_settings(self):
@@ -870,6 +876,10 @@ class SECFetcherApp:
                     if self.tab1_name_label and current == looked_ticker:
                         if status == "ok":
                             self.tab1_name_label.config(text=f"　{name}", foreground="#1a7a34")
+                            # 自動帶出已記憶的路徑
+                            saved_path = self.cfg.get("ticker_paths", {}).get(looked_ticker)
+                            if saved_path and self.tab1_outdir_var:
+                                self.tab1_outdir_var.set(saved_path)
                         else:
                             self.tab1_name_label.config(text="　查無此 Ticker，請確認後再試", foreground="orange")
                         self._update_tab1_preview()
