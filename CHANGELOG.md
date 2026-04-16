@@ -3,11 +3,14 @@
 ## 現狀
 
 - Phase 1 (GAAP)：萬能模板完成 ✅
-- Phase 2 (Non-GAAP)：未開始
+- Phase 2 (Non-GAAP)：完成 ✅
 
 ## 功能清單
 
 ### 已完成
+- [x] Per-ticker output path memory（ticker_paths in config.json）
+- [x] Non-GAAP fetching from 8-K press releases（Data_EPS_Recon + Data_NonGAAP）
+- [x] nongaap_cache.json 增量快取（每季 AI 呼叫結果本機快取）
 - [x] 單一公司 GAAP 財報抓取
 - [x] Excel 輸出（Data_Financials 三表合一 + Data_Seg_* + Data_Meta）
 - [x] 批量更新 (Watchlist)
@@ -30,11 +33,26 @@
 - [ ] main.py 確認：輸出改成 Data_Financials，需確認 GUI 無誤
 - [ ] 金融股模板（GS/JPM）：UI 自動偵測 + 警告（已設計，延後實作）
 - [ ] Excel Template 著色功能：使用者自訂顏色 template.xlsx，工具只填值不改格式
-- [ ] Non-GAAP 抓取（Phase 2）
 
 ---
 
 ## 更新記錄
+
+### 2026-04-17（Session 3）
+
+**Per-Ticker Output Path Memory**
+- config.json 新增 ticker_paths 欄位
+- 確認公司後自動帶出已記憶路徑
+- 瀏覽選資料夾後自動儲存至 ticker_paths
+
+**Non-GAAP Fetching（Phase 2）**
+- fetcher_nongaap.py 完整實作
+- 8-K Item 2.02 篩選，EPS reconciliation（edgartools 原生）
+- AI 從 EX-99.1 press release 提取 Non-GAAP 指標（Google / OpenAI / Anthropic）
+- nongaap_cache.json 增量快取，只對新季度呼叫 AI
+- 輸出：Data_EPS_Recon + Data_NonGAAP sheet
+
+---
 
 ### 2026-04-15（Session 2）
 

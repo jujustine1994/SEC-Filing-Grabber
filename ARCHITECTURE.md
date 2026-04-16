@@ -9,12 +9,13 @@
 | main.py | Tkinter GUI，兩個 tab + 兩個 popup |
 | config.py | load_config() / save_config() |
 | fetcher_gaap.py | edgartools XBRL 抓取 → StatementTable 列表 |
-| fetcher_nongaap.py | Non-GAAP stub（Phase 2） |
+| fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
 | excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx |
 | config.json | 使用者設定（gitignored） |
 | config.example.json | 範本（committed） |
 | company_cache.json | Ticker → 公司名快取（committed） |
 | output/ | 輸出的 Excel 檔（gitignored） |
+| nongaap_cache.json | 各公司輸出資料夾內，Non-GAAP 快取（runtime，非 git） |
 
 ## Data Flow
 
@@ -28,10 +29,18 @@ fetcher_gaap.py
     ├─ _merge_financials()  → 合併成 Data_Financials
     ├─ _build_segment_tables() → Data_Seg_* (多個)
     └─ _build_meta_table()  → Data_Meta
+
+fetcher_nongaap.py（勾選 Non-GAAP 時）
+    ├─ _get_earnings_filings()    → 8-K Item 2.02 清單
+    ├─ _extract_eps_recon()       → edgartools eps_reconciliation
+    ├─ _extract_nongaap_metrics() → AI 解析 EX-99.1 press release
+    ├─ _build_eps_recon_table()   → Data_EPS_Recon
+    └─ _build_nongaap_table()     → Data_NonGAAP
+    ↓（中間結果寫入 nongaap_cache.json，增量更新）
     ↓
 excel_writer.py
     → 全量改寫所有 Data_* sheets，不碰 My_* 等其他 sheets
-    → output/TICKER.xlsx
+    → output/TICKER.xlsx（或 ticker_paths[ticker] 指定路徑）
 ```
 
 ## Key Config Variables (config.json)
@@ -40,6 +49,7 @@ excel_writer.py
 |----|------|
 | `identity` | SEC EDGAR 身份字串（必填，格式：名字 空格 信箱） |
 | `output_dir` | Excel 輸出路徑（預設 "output"） |
+| `ticker_paths` | `{TICKER: absolute_path}` 各公司輸出資料夾記憶 |
 | `max_filings` | 最多抓幾筆 10-Q（預設 80，約 20 年） |
 | `watchlist` | [{ticker, name}, ...] 清單 |
 | `ai.provider` | "google" / "openai" / "anthropic" |
@@ -70,6 +80,14 @@ A70=Net Income  B70=Net income  ...
 ### Data_Seg_*
 
 每個有 segment breakdown 的 IS 概念一張 sheet，格式同上但沒有 B 欄 labels。
+
+### Data_EPS_Recon
+
+EPS 調和表（GAAP EPS → 調整項 → Non-GAAP EPS）。B 欄為空（無 XBRL labels）。
+
+### Data_NonGAAP
+
+AI 從 8-K press release 提取的所有 Non-GAAP / Adjusted / Excluding 指標。跨季取聯集，缺的季填 None。
 
 ## StatementTable（fetcher_gaap.py 的輸出合約）
 
@@ -133,9 +151,6 @@ match:      "first"（預設）= 最早那行；"last" = 最後那行（用於 C
    - 使用者建立 `template.xlsx`，預先著色各行
    - 工具開啟 template 後只填值（不改格式），利用 openpyxl 保留 cell formatting
    - 季度欄擴充時複製前一欄格式
-
-### 🟢 低優先
-5. **Non-GAAP 抓取**（Phase 2）：EPS reconciliation、adjusted metrics
 
 ## Known Issues
 
