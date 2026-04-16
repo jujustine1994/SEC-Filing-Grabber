@@ -55,3 +55,75 @@ def _period_to_quarter_label(period_of_report: str) -> str:
     else:
         suffix = "Q4"
     return f"FY{year}{suffix}"
+
+
+# ── StatementTable builders ──────────────────────────────────────────────────
+
+def _build_eps_recon_table(ticker: str, cache: dict) -> StatementTable | None:
+    """Build Data_EPS_Recon StatementTable from cache. Returns None if cache empty."""
+    if not cache:
+        return None
+
+    sorted_qs = sorted(cache.keys())
+    filing_dates = [cache[q].get("filing_date", "") for q in sorted_qs]
+
+    # Collect all EPS recon keys (union across quarters)
+    all_keys: list[str] = []
+    seen: set[str] = set()
+    for q in sorted_qs:
+        for key in cache[q].get("eps_recon", {}):
+            if key not in seen:
+                all_keys.append(key)
+                seen.add(key)
+
+    if not all_keys:
+        return None
+
+    values: list[list[Any]] = []
+    for key in all_keys:
+        values.append([cache[q].get("eps_recon", {}).get(key) for q in sorted_qs])
+
+    return StatementTable(
+        sheet_name="Data_EPS_Recon",
+        quarter_labels=sorted_qs,
+        filing_dates=filing_dates,
+        concepts=all_keys,
+        values=values,
+        ticker=ticker,
+        labels=[""] * len(all_keys),
+    )
+
+
+def _build_nongaap_table(ticker: str, cache: dict) -> StatementTable | None:
+    """Build Data_NonGAAP StatementTable from cache. Returns None if cache empty."""
+    if not cache:
+        return None
+
+    sorted_qs = sorted(cache.keys())
+    filing_dates = [cache[q].get("filing_date", "") for q in sorted_qs]
+
+    # Union of all metric names
+    all_metrics: list[str] = []
+    seen: set[str] = set()
+    for q in sorted_qs:
+        for key in cache[q].get("metrics", {}):
+            if key not in seen:
+                all_metrics.append(key)
+                seen.add(key)
+
+    if not all_metrics:
+        return None
+
+    values: list[list[Any]] = []
+    for metric in all_metrics:
+        values.append([cache[q].get("metrics", {}).get(metric) for q in sorted_qs])
+
+    return StatementTable(
+        sheet_name="Data_NonGAAP",
+        quarter_labels=sorted_qs,
+        filing_dates=filing_dates,
+        concepts=all_metrics,
+        values=values,
+        ticker=ticker,
+        labels=[""] * len(all_metrics),
+    )
