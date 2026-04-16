@@ -9,6 +9,7 @@ from fetcher_gaap import (
     _current_q_col,
     _match_is_row,
     _build_is_table,
+    _merge_financials,
 )
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -133,10 +134,10 @@ def test_build_is_table_returns_statement_table():
     assert isinstance(tbl, StatementTable)
     assert tbl.sheet_name == "Data_IS"
 
-def test_build_is_table_has_21_concept_rows():
+def test_build_is_table_has_22_concept_rows():
     filing = _make_filing()
     tbl = _build_is_table([filing], max_filings=1)
-    assert len(tbl.concepts) == 21
+    assert len(tbl.concepts) == 22
 
 def test_build_is_table_quarter_labels_format():
     filing = _make_filing(period_col="2025-12-27 (Q1)")
@@ -159,6 +160,88 @@ def test_build_is_table_missing_rows_are_none():
     tbl = _build_is_table([filing], max_filings=1)
     interest_idx = tbl.concepts.index("Interest Expense")
     assert tbl.values[interest_idx][0] is None
+
+
+def test_match_is_row_label_fallback():
+    """Third-tier: label column match when std_concept and concept suffix both miss."""
+    df = pd.DataFrame({
+        "concept":               ["co:CustomDepreciation"],
+        "label":                 ["Depreciation, amortization and impairment"],
+        "standard_concept":      [float("nan")],
+        "abstract":              [False],
+        "is_breakdown":          [False],
+        "level":                 [3],
+        "dimension_member_label":[None],
+        "2025-12-27 (Q1)":       [50.0],
+        "2024-12-28 (Q1)":       [45.0],
+    })
+    idx = _match_is_row(df, "DepreciationExpense", "DepreciationDepletion", label_fallback="depreciation")
+    assert idx is not None
+    assert df.loc[idx, "label"] == "Depreciation, amortization and impairment"
+
+
+def test_build_is_table_net_income_profitloss_fallback():
+    """Net Income uses ProfitLoss when NetIncome std_concept is absent (TSLA/BA/XOM/WMT)."""
+    df = pd.DataFrame({
+        "concept":               ["us-gaap_ProfitLoss"],
+        "label":                 ["Net income"],
+        "standard_concept":      ["ProfitLoss"],
+        "abstract":              [False],
+        "is_breakdown":          [False],
+        "level":                 [3],
+        "dimension_member_label":[None],
+        "2025-12-27 (Q1)":       [200.0],
+        "2024-12-28 (Q1)":       [180.0],
+    })
+    mock_stmt = MagicMock()
+    mock_stmt.to_dataframe.return_value = df
+
+    mock_financials = MagicMock()
+    mock_financials.income_statement.return_value = mock_stmt
+    mock_financials.cashflow_statement.return_value = mock_stmt
+
+    mock_tenq = MagicMock()
+    mock_tenq.financials = mock_financials
+
+    mock_filing = MagicMock()
+    mock_filing.obj.return_value = mock_tenq
+    mock_filing.filing_date = "2026-01-30"
+
+    tbl = _build_is_table([mock_filing], max_filings=1)
+    net_income_idx = tbl.concepts.index("Net Income")
+    assert tbl.values[net_income_idx][0] == 200.0
+
+
+def test_build_is_table_total_nonop_derived_from_pretax_minus_operating():
+    """Total Non-op falls back to Pre-tax − Operating when XBRL row absent."""
+    df = pd.DataFrame({
+        "concept":               ["us-gaap_OperatingIncomeLoss", "us-gaap_PretaxIncomeLoss"],
+        "label":                 ["Operating income", "Income before taxes"],
+        "standard_concept":      ["OperatingIncomeLoss", "PretaxIncomeLoss"],
+        "abstract":              [False, False],
+        "is_breakdown":          [False, False],
+        "level":                 [3, 3],
+        "dimension_member_label":[None, None],
+        "2025-12-27 (Q1)":       [100.0, 115.0],
+        "2024-12-28 (Q1)":       [90.0, 103.0],
+    })
+    mock_stmt = MagicMock()
+    mock_stmt.to_dataframe.return_value = df
+
+    mock_financials = MagicMock()
+    mock_financials.income_statement.return_value = mock_stmt
+    mock_financials.cashflow_statement.return_value = mock_stmt
+
+    mock_tenq = MagicMock()
+    mock_tenq.financials = mock_financials
+
+    mock_filing = MagicMock()
+    mock_filing.obj.return_value = mock_tenq
+    mock_filing.filing_date = "2026-01-30"
+
+    tbl = _build_is_table([mock_filing], max_filings=1)
+    nonop_idx = tbl.concepts.index("Total Non-op Income/(Loss)")
+    assert tbl.values[nonop_idx][0] == 15.0  # 115 − 100
 
 def test_build_is_table_two_filings_oldest_to_newest():
     f1 = _make_filing(period_col="2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30",
@@ -201,10 +284,12 @@ def test_fetch_includes_required_sheets():
         MockCo.return_value = _make_mock_company()
         result = fetch_gaap_statements("AAPL", identity="Test test@test.com")
     sheet_names = [t.sheet_name for t in result]
-    assert "Data_IS" in sheet_names
-    assert "Data_BS" in sheet_names
-    assert "Data_CF" in sheet_names
+    assert "Data_Financials" in sheet_names
     assert "Data_Meta" in sheet_names
+    # Separate IS/BS/CF sheets are no longer produced
+    assert "Data_IS" not in sheet_names
+    assert "Data_BS" not in sheet_names
+    assert "Data_CF" not in sheet_names
 
 def test_fetch_consistent_row_col_lengths():
     with patch("fetcher_gaap.Company") as MockCo, patch("fetcher_gaap.set_identity"):
@@ -230,8 +315,60 @@ def test_fetch_passes_max_filings():
         mock_co = _make_mock_company(n_filings=10)
         MockCo.return_value = mock_co
         result = fetch_gaap_statements("AAPL", identity="Test test@test.com", max_filings=3)
-    is_tbl = next(t for t in result if t.sheet_name == "Data_IS")
-    assert len(is_tbl.quarter_labels) <= 3
+    fin_tbl = next(t for t in result if t.sheet_name == "Data_Financials")
+    assert len(fin_tbl.quarter_labels) <= 3
+
+
+def test_merge_financials_produces_data_financials_sheet():
+    is_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024Q1"], filing_dates=["2024-02-01"],
+        concepts=["Revenue"], values=[[100.0]], labels=["Net sales"],
+    )
+    bs_tbl = StatementTable(
+        sheet_name="Data_BS", quarter_labels=["FY2024Q1"], filing_dates=["2024-02-01"],
+        concepts=["Total Assets"], values=[[5000.0]], labels=["Total assets"],
+    )
+    cf_tbl = StatementTable(
+        sheet_name="Data_CF", quarter_labels=["FY2024Q1"], filing_dates=["2024-02-01"],
+        concepts=["Operating Cash Flow"], values=[[200.0]], labels=["Net cash from ops"],
+    )
+    merged = _merge_financials(is_tbl, bs_tbl, cf_tbl)
+    assert merged.sheet_name == "Data_Financials"
+    assert "Income Statement" in merged.concepts
+    assert "Balance Sheet" in merged.concepts
+    assert "Cash Flow" in merged.concepts
+    assert "Revenue" in merged.concepts
+    assert "Total Assets" in merged.concepts
+    assert "Operating Cash Flow" in merged.concepts
+
+
+def test_merge_financials_section_headers_have_none_values():
+    is_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024Q1"], filing_dates=["2024-02-01"],
+        concepts=["Revenue"], values=[[100.0]], labels=["Net sales"],
+    )
+    bs_tbl = StatementTable(
+        sheet_name="Data_BS", quarter_labels=["FY2024Q1"], filing_dates=["2024-02-01"],
+        concepts=["Assets"], values=[[5000.0]], labels=[""],
+    )
+    cf_tbl = StatementTable(
+        sheet_name="Data_CF", quarter_labels=["FY2024Q1"], filing_dates=["2024-02-01"],
+        concepts=["Operating Cash Flow"], values=[[200.0]], labels=[""],
+    )
+    merged = _merge_financials(is_tbl, bs_tbl, cf_tbl)
+    header_idx = merged.concepts.index("Income Statement")
+    assert merged.values[header_idx] == [None]
+    assert merged.labels[header_idx] == ""
+
+
+def test_build_is_table_populates_labels():
+    """labels list should be populated with original XBRL labels."""
+    filing = _make_filing()
+    tbl = _build_is_table([filing], max_filings=1)
+    assert len(tbl.labels) == len(tbl.concepts)
+    # Revenue row should have label "Net sales" (from _make_is_df)
+    revenue_idx = tbl.concepts.index("Revenue")
+    assert tbl.labels[revenue_idx] == "Net sales"
 
 
 def test_fetch_sets_ticker_on_all_tables():

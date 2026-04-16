@@ -69,3 +69,70 @@ except (json.JSONDecodeError, OSError):
 ```
 
 **適用範圍：** `_wl_cache_status`、`_wl_lookup_worker` 的 cache 讀取都需要保護。
+
+---
+
+## 地雷五：多家公司的 Net Income 用 `ProfitLoss` 而非 `NetIncome`
+
+**問題：** BA、TSLA、XOM、WMT 在 XBRL 裡 Net Income 的 `standard_concept` 是 `ProfitLoss`（含少數股東損益），不是 `NetIncome`。直接查 `NetIncome` 會得到 None。
+
+**解法：** `_build_is_table` post-processing：
+```python
+if row_vals.get(_NET_INCOME_IDX) is None:
+    idx = _match_is_row(df, "ProfitLoss", "ProfitLoss")
+    if idx is not None:
+        row_vals[_NET_INCOME_IDX] = _to_python_val(df.loc[idx, q_col])
+```
+
+同樣的 fallback 在 CF 的 Net Income 行也需要（_build_cf_table 目前未處理，待補）。
+
+---
+
+## 地雷六：TSLA D&A 的 `standard_concept` 為 nan
+
+**問題：** TSLA 的 CF 「Depreciation, amortization and impairment」行，edgartools 的 `standard_concept` 是 `nan`（未標準化）。用 `DepreciationExpense` 比對失敗，fallback_suffix 也可能比對不到自訂的 concept 名稱。
+
+**解法：** `_match_is_row` 第三層 label fallback：
+```python
+idx = _match_is_row(cf_df, None, "", label_fallback="depreciation")
+```
+
+---
+
+## 地雷七：GOOGL BS 含非 ASCII 字元導致 cp950 編碼錯誤
+
+**問題：** GOOGL 某些 BS label 含有 `\xa0`（non-breaking space）。在 Windows 中文環境（cp950 terminal），`print()` 呼叫嘗試用 cp950 編碼時失敗。
+
+**解法：** 存 label 時先做 NFKC normalize，將 `\xa0` 等相容字元轉為一般 ASCII：
+```python
+import unicodedata
+concept_labels[key] = unicodedata.normalize("NFKC", raw_label)
+```
+
+**位置：** `_build_dynamic_table` 和所有存 XBRL label 的地方。
+
+---
+
+## 地雷八：CF 彙總行有多個相同 standard_concept
+
+**問題：** `NetCashFromOperatingActivities` 在部分公司（BA 4次、AMD 3次）會出現多次，對應中間小計和最終合計。取 first 會拿到錯誤的中間值。
+
+**解法：** CF 彙總行（Op/Inv/Fin CF）使用 `match="last"`：
+```python
+("Operating Cash Flow", "NetCashFromOperatingActivities", "...", "CF", "last", None),
+```
+
+同樣適用 `CashAndCashEquivalents`（期初 + 期末，要取 last = 期末）。
+
+---
+
+## 地雷九：openpyxl 寫入空字串後讀回來是 None
+
+**問題：** `ws.cell(value="")` 寫入空字串，`load_workbook` 後讀回來是 `None`，不是 `""`。
+
+**影響：** test 不能用 `== ""` 斷言空的 label cell，要用 `is None`。
+
+**解法：**
+```python
+assert ws["B5"].value is None   # 空 label
+```
