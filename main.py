@@ -774,27 +774,50 @@ class SECFetcherApp:
                 return
 
             tables = []
+            output_path = self._build_output_path(ticker)
+            output_dir  = output_path.parent
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            total_steps = sum([fetch_gaap, fetch_nongaap]) + 1  # +1 for write
+            step = 0
 
             if fetch_gaap:
                 self._log(f"[{ticker}] 抓取 GAAP 財報中...")
-                self._set_progress(0, 2, "抓取 GAAP...")
+                self._set_progress(step, total_steps, "抓取 GAAP...")
                 gaap_tables = fetch_gaap_statements(ticker, identity, max_filings=max_filings)
                 tables.extend(gaap_tables)
                 self._log(f"[{ticker}] GAAP：取得 {len(gaap_tables)} 份財報")
+                step += 1
 
             if fetch_nongaap:
-                self._log(f"[{ticker}] Non-GAAP 功能尚未實作（Phase 2）")
+                from fetcher_nongaap import fetch_nongaap_statements
+                ai_config = self.cfg.get("ai", {})
+                self._log(f"[{ticker}] 抓取 Non-GAAP 財報中...")
+                self._set_progress(step, total_steps, "抓取 Non-GAAP...")
+
+                def _ng_progress(current, total, label):
+                    self._log(f"[{ticker}] {label}")
+                    self._set_progress(current, total, label)
+
+                ng_tables = fetch_nongaap_statements(
+                    ticker, identity, ai_config,
+                    output_dir=output_dir,
+                    progress_cb=_ng_progress,
+                )
+                tables.extend(ng_tables)
+                self._log(f"[{ticker}] Non-GAAP：{len(ng_tables)} 張 sheet")
+                step += 1
 
             if not tables:
                 self._log("[WARNING] 無資料可寫入")
                 self._done(False)
                 return
 
-            output_path = self._build_output_path(ticker)
             self._log(f"[{ticker}] 寫入 Excel...")
+            self._set_progress(step, total_steps, "寫入 Excel...")
             write_statements(tables, output_path)
             self._log(f"[{ticker}] 完成 → {output_path.name}")
-            self._set_progress(2, 2, "完成！")
+            self._set_progress(total_steps, total_steps, "完成！")
             self._done(True)
 
         except Exception as e:
