@@ -243,6 +243,24 @@ class SECFetcherApp:
 
         self.tab2_list_frame = ttk.LabelFrame(tab, text=" Watchlist ", padding=6)
         self.tab2_list_frame.grid(row=0, column=0, sticky="ew", pady=4)
+        tab.columnconfigure(0, weight=1)
+        self.tab2_list_frame.columnconfigure(0, weight=1)
+
+        tab2_canvas = tk.Canvas(self.tab2_list_frame, height=150, highlightthickness=0)
+        tab2_sb = ttk.Scrollbar(self.tab2_list_frame, orient="vertical", command=tab2_canvas.yview)
+        tab2_canvas.configure(yscrollcommand=tab2_sb.set)
+        tab2_canvas.grid(row=0, column=0, sticky="ew")
+        tab2_sb.grid(row=0, column=1, sticky="ns")
+        tab2_inner = ttk.Frame(tab2_canvas)
+        tab2_win = tab2_canvas.create_window((0, 0), window=tab2_inner, anchor="nw")
+        tab2_inner.bind("<Configure>", lambda e: (
+            tab2_canvas.configure(scrollregion=tab2_canvas.bbox("all")),
+            tab2_canvas.itemconfig(tab2_win, width=tab2_canvas.winfo_width()),
+        ))
+        tab2_canvas.bind("<Configure>", lambda e: tab2_canvas.itemconfig(tab2_win, width=e.width))
+        self._tab2_canvas = tab2_canvas
+        self._tab2_inner = tab2_inner
+
         self.tab2_check_vars: dict[str, tk.BooleanVar] = {}
         self._refresh_tab2_list()
 
@@ -379,22 +397,24 @@ class SECFetcherApp:
     # =========================================================
 
     def _refresh_tab2_list(self):
-        for w in self.tab2_list_frame.winfo_children():
+        for w in self._tab2_inner.winfo_children():
             w.destroy()
         self.tab2_check_vars = {}
         watchlist = self.cfg.get("watchlist", [])
         if not watchlist:
-            ttk.Label(self.tab2_list_frame, text="Watchlist 為空，請先在「管理 Watchlist」新增公司。",
-                      foreground="gray").pack(anchor="w")
-            return
-        for item in watchlist:
-            var = tk.BooleanVar(value=True)
-            self.tab2_check_vars[item["ticker"]] = var
-            ttk.Checkbutton(
-                self.tab2_list_frame,
-                text=f'{item["ticker"]:6}  {item.get("name", "")}',
-                variable=var,
-            ).pack(anchor="w")
+            ttk.Label(self._tab2_inner, text="Watchlist 為空，請先在「管理 Watchlist」新增公司。",
+                      foreground="gray").grid(row=0, column=0, columnspan=3, sticky="w")
+        else:
+            cols = 3
+            for i, item in enumerate(watchlist):
+                ticker = item["ticker"]
+                var = tk.BooleanVar(value=True)
+                self.tab2_check_vars[ticker] = var
+                r, c = divmod(i, cols)
+                ttk.Checkbutton(self._tab2_inner, text=ticker, variable=var).grid(
+                    row=r, column=c, sticky="w", padx=8, pady=2)
+        self._tab2_inner.update_idletasks()
+        self._tab2_canvas.configure(scrollregion=self._tab2_canvas.bbox("all"))
 
     def _select_all(self):
         for v in self.tab2_check_vars.values():
@@ -423,8 +443,23 @@ class SECFetcherApp:
 
         list_frame = ttk.LabelFrame(popup, text=" 目前 Watchlist ", padding=6)
         list_frame.grid(row=0, column=0, sticky="ew", **pad)
-        self._wl_list_container = list_frame
-        self._refresh_wl_popup_list(list_frame)
+
+        # Scrollable canvas — fixed height, scroll when > ~5 entries
+        wl_canvas = tk.Canvas(list_frame, height=160, highlightthickness=0)
+        wl_scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=wl_canvas.yview)
+        wl_canvas.configure(yscrollcommand=wl_scrollbar.set)
+        wl_canvas.pack(side="left", fill="both", expand=True)
+        wl_scrollbar.pack(side="right", fill="y")
+        wl_inner = ttk.Frame(wl_canvas)
+        wl_win = wl_canvas.create_window((0, 0), window=wl_inner, anchor="nw")
+        wl_inner.bind("<Configure>", lambda e: (
+            wl_canvas.configure(scrollregion=wl_canvas.bbox("all")),
+            wl_canvas.itemconfig(wl_win, width=wl_canvas.winfo_width()),
+        ))
+        wl_canvas.bind("<Configure>", lambda e: wl_canvas.itemconfig(wl_win, width=e.width))
+        self._wl_list_canvas = wl_canvas
+        self._wl_list_container = wl_inner
+        self._refresh_wl_popup_list(wl_inner)
 
         add_frame = ttk.LabelFrame(popup, text=" 新增公司 ", padding=6)
         add_frame.grid(row=1, column=0, sticky="ew", **pad)
@@ -432,7 +467,9 @@ class SECFetcherApp:
         row_add.grid(row=0, column=0, sticky="ew")
         ttk.Label(row_add, text="Ticker:").pack(side="left", padx=(0, 6))
         self.wl_add_var = tk.StringVar()
-        ttk.Entry(row_add, textvariable=self.wl_add_var, width=10).pack(side="left", padx=(0, 8))
+        wl_entry = ttk.Entry(row_add, textvariable=self.wl_add_var, width=10)
+        wl_entry.pack(side="left", padx=(0, 8))
+        wl_entry.bind("<Return>", lambda e: self._wl_lookup())
         ttk.Button(row_add, text="查詢", command=lambda: self._wl_lookup()).pack(side="left")
         self.wl_lookup_label = ttk.Label(add_frame, text="", foreground="gray")
         self.wl_lookup_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
@@ -454,6 +491,9 @@ class SECFetcherApp:
         watchlist = self.cfg.get("watchlist", [])
         if not watchlist:
             ttk.Label(container, text="（空）", foreground="gray").pack(anchor="w")
+            container.update_idletasks()
+            if hasattr(self, "_wl_list_canvas"):
+                self._wl_list_canvas.configure(scrollregion=self._wl_list_canvas.bbox("all"))
             return
         for item in watchlist:
             row = ttk.Frame(container)
@@ -476,6 +516,9 @@ class SECFetcherApp:
             ttk.Label(row, text=path_text, foreground=path_fg, width=20).pack(side="left", padx=(4, 2))
             ttk.Button(row, text="[x]", width=4,
                        command=lambda t=ticker, c=container: self._wl_remove(t, c)).pack(side="left")
+        container.update_idletasks()
+        if hasattr(self, "_wl_list_canvas"):
+            self._wl_list_canvas.configure(scrollregion=self._wl_list_canvas.bbox("all"))
 
     def _wl_lookup(self):
         ticker = self.wl_add_var.get().strip().upper()
@@ -962,6 +1005,7 @@ class SECFetcherApp:
                             self.wl_lookup_label.config(text=f"查到：{name}", foreground="#1a7a34")
                         if self.wl_add_btn:
                             self.wl_add_btn.config(state="normal")
+                        self._wl_add()
                     else:
                         if self.wl_lookup_label:
                             self.wl_lookup_label.config(text=f"查詢失敗：{data[1]}", foreground="red")

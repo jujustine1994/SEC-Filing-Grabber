@@ -46,6 +46,21 @@
 
 ## 更新記錄
 
+### 2026-04-17（Session 6）
+
+**BS 抓取修復**
+- `_build_bs_table` 改為獨立實作；BS 欄位為 instant（bare date），`_current_q_col` 無法識別導致全空白
+- 修法：從同一 filing 的 IS 借用 quarter label，BS 取第一個非 meta 欄位讀值
+
+**Watchlist popup 改善**
+- 「目前 Watchlist」區加入捲軸（固定高度 160px）
+- Ticker 輸入框：Enter → 查詢，查到後自動加入（單次 Enter 完成）
+
+**Tab 2 批量更新改善**
+- Watchlist 改為捲軸顯示（固定高度 150px），只顯示 ticker 代號，3 個一列
+
+---
+
 ### 2026-04-17（Session 5）
 
 **Config 搬家 + Watchlist 路徑管理**

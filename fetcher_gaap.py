@@ -2,15 +2,16 @@
 fetcher_gaap.py — Fetch XBRL GAAP financial statements from SEC EDGAR via edgartools.
 
 Fetches quarterly data from up to `max_filings` 10-Q filings (newest first),
-building a time-series with quarterly columns oldest→newest.
+and annual data from up to `max_annual_filings` 10-K filings (newest first).
 
 Public API:
-    fetch_gaap_statements(ticker, identity, max_filings=80) -> list[StatementTable]
+    fetch_gaap_statements(ticker, identity, max_filings=80, max_annual_filings=20) -> list[StatementTable]
 
 Sheet outputs:
-    Data_Financials — merged IS + BS + CF (section headers separate the three blocks)
-    Data_Seg_*      — one sheet per IS concept that has segment breakdowns
-    Data_Meta       — ticker / company / date / quarter count
+    Data_Financials(Q) — quarterly IS + BS + CF merged (from 10-Q)
+    Data_Financials(Y) — annual IS + BS + CF merged (from 10-K)
+    Data_Seg_*         — one sheet per IS concept that has segment breakdowns
+    Data_Meta          — ticker / company / date / quarter count
 
 StatementTable layout (A / B / C+):
     Col A  = Std Name (standardised display label)
@@ -498,9 +499,79 @@ def _build_is_table(filings, max_filings: int) -> StatementTable:
 # ── BS: template-based fetch ────────────────────────────────────────────────
 
 def _build_bs_table(filings, max_filings: int) -> StatementTable:
-    """Build Data_BS StatementTable using the fixed BS template."""
-    return _build_template_table(filings, BS_TEMPLATE, "Data_BS",
-                                  "balance_sheet", max_filings)
+    """Build Data_BS StatementTable using the fixed BS template.
+
+    Balance sheet columns in edgartools are instant (bare date, e.g. "2024-03-31")
+    rather than period ("2024-03-31 (Q1)"), so _current_q_col cannot find them.
+    We derive the quarter label from the IS statement (same filing) for merge alignment.
+    """
+    periods: dict[str, tuple[str, dict[int, Any]]] = {}
+    row_labels: dict[int, str] = {}
+
+    for filing in filings:
+        if len(periods) >= max_filings:
+            break
+        try:
+            tenq = filing.obj()
+
+            # Get quarter label from IS (has "(Q1)"/"(FY)" format)
+            is_stmt = tenq.financials.income_statement()
+            is_df = is_stmt.to_dataframe() if is_stmt is not None else None
+            is_q_col = _current_q_col(is_df) if is_df is not None else None
+
+            bs_stmt = tenq.financials.balance_sheet()
+            if bs_stmt is None:
+                continue
+            df = bs_stmt.to_dataframe()
+        except Exception as exc:
+            print(f"[fetcher_gaap] BS warning: {exc!r}", file=sys.stderr)
+            continue
+
+        # BS columns are bare dates; pick first non-meta column
+        bs_col = next((c for c in df.columns if c not in META_COLS), None)
+        if bs_col is None:
+            continue
+
+        label = _col_to_quarter_label(is_q_col) if is_q_col else _col_to_quarter_label(bs_col)
+        if label in periods:
+            continue
+
+        row_vals: dict[int, Any] = {}
+        for i, (_, std_concept, fallback, source, match, label_hint) in enumerate(BS_TEMPLATE):
+            if source == "DERIVED":
+                row_vals[i] = None
+                continue
+            idx = _match_is_row(df, std_concept, fallback, match=match, label_hint=label_hint)
+            val = _to_python_val(df.loc[idx, bs_col]) if idx is not None else None
+            row_vals[i] = val
+            if idx is not None and i not in row_labels:
+                raw = str(df.loc[idx, "label"] or "")
+                row_labels[i] = unicodedata.normalize("NFKC", raw)
+
+        periods[label] = (str(filing.filing_date), row_vals)
+
+    if not periods:
+        return StatementTable(
+            sheet_name="Data_BS",
+            quarter_labels=[],
+            filing_dates=[],
+            concepts=[row[0] for row in BS_TEMPLATE],
+            values=[[] for _ in BS_TEMPLATE],
+            labels=["" for _ in BS_TEMPLATE],
+        )
+
+    sorted_labels = sorted(periods.keys())
+    filing_dates = [periods[lbl][0] for lbl in sorted_labels]
+    values = [[periods[lbl][1].get(i) for lbl in sorted_labels] for i in range(len(BS_TEMPLATE))]
+
+    return StatementTable(
+        sheet_name="Data_BS",
+        quarter_labels=sorted_labels,
+        filing_dates=filing_dates,
+        concepts=[row[0] for row in BS_TEMPLATE],
+        values=values,
+        labels=[row_labels.get(i, "") for i in range(len(BS_TEMPLATE))],
+    )
 
 
 # ── CF: template-based fetch ────────────────────────────────────────────────
@@ -544,8 +615,9 @@ def _build_cf_table(filings, max_filings: int) -> StatementTable:
 
 def _merge_financials(is_tbl: StatementTable,
                        bs_tbl: StatementTable,
-                       cf_tbl: StatementTable) -> StatementTable:
-    """Merge IS + BS + CF into a single Data_Financials StatementTable.
+                       cf_tbl: StatementTable,
+                       sheet_name: str = "Data_Financials(Q)") -> StatementTable:
+    """Merge IS + BS + CF into a single StatementTable.
 
     Quarter union is taken across all three statements; missing values are None.
     Section header rows ("Income Statement", "Balance Sheet", "Cash Flow")
@@ -573,6 +645,11 @@ def _merge_financials(is_tbl: StatementTable,
         labels_col.append("")
         values.append([None] * len(all_qs))
 
+    def _add_blank() -> None:
+        concepts.append("")
+        labels_col.append("")
+        values.append([None] * len(all_qs))
+
     def _add_rows(tbl: StatementTable) -> None:
         q_idx = {q: j for j, q in enumerate(tbl.quarter_labels)}
         for i, concept in enumerate(tbl.concepts):
@@ -585,13 +662,15 @@ def _merge_financials(is_tbl: StatementTable,
 
     _add_header("Income Statement")
     _add_rows(is_tbl)
+    _add_blank()
     _add_header("Balance Sheet")
     _add_rows(bs_tbl)
+    _add_blank()
     _add_header("Cash Flow")
     _add_rows(cf_tbl)
 
     return StatementTable(
-        sheet_name="Data_Financials",
+        sheet_name=sheet_name,
         quarter_labels=all_qs,
         filing_dates=filing_dates,
         concepts=concepts,
@@ -776,16 +855,18 @@ def _build_meta_table(ticker: str, company_name: str,
 # ── Public API ─────────────────────────────────────────────────────────────
 
 def fetch_gaap_statements(ticker: str, identity: str,
-                           max_filings: int = 80) -> list[StatementTable]:
-    """Fetch quarterly GAAP statements from 10-Q filings for a ticker.
+                           max_filings: int = 80,
+                           max_annual_filings: int = 20) -> list[StatementTable]:
+    """Fetch quarterly and annual GAAP statements for a ticker.
 
     Args:
-        ticker:      Stock ticker, e.g. "AAPL"
-        identity:    SEC EDGAR identity string
-        max_filings: Maximum number of 10-Q filings to process (default 80, ~20 years)
+        ticker:              Stock ticker, e.g. "AAPL"
+        identity:            SEC EDGAR identity string
+        max_filings:         Max 10-Q filings to process (default 80, ~20 years)
+        max_annual_filings:  Max 10-K filings to process (default 20, ~20 years)
 
     Returns:
-        List of StatementTable: Data_Financials, Data_Seg_*, Data_Meta
+        List of StatementTable: Data_Financials(Q), Data_Financials(Y), Data_Seg_*, Data_Meta
 
     Raises:
         ValueError: No 10-Q filings found for ticker
@@ -793,21 +874,29 @@ def fetch_gaap_statements(ticker: str, identity: str,
     set_identity(identity)
     company = Company(ticker)
 
-    filings = list(company.get_filings(form="10-Q", amendments=False))
-    if not filings:
+    filings_q = list(company.get_filings(form="10-Q", amendments=False))
+    if not filings_q:
         raise ValueError(
             f"No 10-Q filings found for ticker '{ticker}'. "
             "The ticker may be invalid or the company may not file 10-Qs."
         )
 
-    is_tbl = _build_is_table(filings, max_filings)
-    bs_tbl = _build_bs_table(filings, max_filings)
-    cf_tbl = _build_cf_table(filings, max_filings)
+    is_tbl = _build_is_table(filings_q, max_filings)
+    bs_tbl = _build_bs_table(filings_q, max_filings)
+    cf_tbl = _build_cf_table(filings_q, max_filings)
+    quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)")
 
-    financials_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl)
+    tables: list[StatementTable] = [quarterly_tbl]
 
-    tables: list[StatementTable] = [financials_tbl]
-    tables.extend(_build_segment_tables(filings, max_filings))
+    filings_k = list(company.get_filings(form="10-K", amendments=False))
+    if filings_k:
+        is_ann = _build_is_table(filings_k, max_annual_filings)
+        bs_ann = _build_bs_table(filings_k, max_annual_filings)
+        cf_ann = _build_cf_table(filings_k, max_annual_filings)
+        annual_tbl = _merge_financials(is_ann, bs_ann, cf_ann, sheet_name="Data_Financials(Y)")
+        tables.append(annual_tbl)
+
+    tables.extend(_build_segment_tables(filings_q, max_filings))
 
     company_name = getattr(company, "name", ticker) or ticker
     tables.append(_build_meta_table(ticker, company_name, tables))
