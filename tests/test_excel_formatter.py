@@ -63,3 +63,81 @@ def test_freeze_panes_seg_sheet():
     wb = _make_wb(sheet_name="Data_Seg_Revenue")
     format_workbook(wb, [])
     assert wb["Data_Seg_Revenue"].freeze_panes == "C3"
+
+
+# ── row styles ─────────────────────────────────────────────────────────────
+
+def _rgb(ws, cell_ref: str) -> str:
+    """Return fgColor ARGB string of a cell's fill."""
+    return ws[cell_ref].fill.fgColor.rgb
+
+
+def test_row1_fill_navy_dark():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert _rgb(ws, "A1") == "FF1F3864"
+
+def test_row1_font_bold_white():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert ws["A1"].font.bold is True
+    assert ws["A1"].font.color.rgb == "FFFFFFFF"
+
+def test_row2_fill_navy_mid():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert _rgb(ws, "A2") == "FF2D4A82"
+
+def test_section_header_fill_blue_mid():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    # A3 = "Income Statement"
+    assert _rgb(ws, "A3") == "FF2E75B6"
+
+def test_section_header_font_bold_white():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert ws["A3"].font.bold is True
+    assert ws["A3"].font.color.rgb == "FFFFFFFF"
+
+def test_blank_separator_fill_grey():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    # A5 = ""
+    assert _rgb(ws, "A5") == "FFEEEEEE"
+
+def test_data_row_alternating_white():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    # Row 4 = "Revenue" (even row number → white)
+    assert _rgb(ws, "A4") == "FFFFFFFF"
+
+def test_data_row_alternating_blue():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    # Row 7 = "Basic Shares" (odd row number → alt blue)
+    assert _rgb(ws, "A7") == "FFF5F8FF"
+
+def test_subtotal_row_bold():
+    wb = _make_wb()
+    # Add a Gross Profit row
+    wb["Data_Financials(Q)"]["A8"] = "Gross Profit"
+    wb["Data_Financials(Q)"]["C8"] = 5000000000.0
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert ws["A8"].font.bold is True
+
+def test_normal_row_not_bold():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    # A4 = "Revenue" (not a subtotal)
+    assert ws["A4"].font.bold is not True

@@ -75,6 +75,49 @@ def _set_freeze_panes(ws) -> None:
     ws.freeze_panes = "C3"
 
 
+# ── Row styles ────────────────────────────────────────────────────────────
+
+def _apply_row_styles(ws) -> None:
+    """Apply fill and font styles to all rows."""
+    white_font  = Font(color="FFFFFFFF", bold=True, size=11)
+    small_font  = Font(color="FFAABBCC", size=9)
+
+    # Row 1: ticker / quarter labels — dark navy
+    for cell in ws[1]:
+        cell.fill = _fill(NAVY_DARK)
+        cell.font = white_font
+
+    # Row 2: filing dates — medium navy
+    for cell in ws[2]:
+        cell.fill = _fill(NAVY_MID)
+        cell.font = small_font
+
+    # Row 3+: classify by col A value
+    for row_idx in range(3, ws.max_row + 1):
+        concept = ws.cell(row=row_idx, column=1).value or ""
+        concept = str(concept).strip()
+
+        if concept in SECTION_HEADERS:
+            row_fill  = _fill(BLUE_MID)
+            row_font  = Font(color="FFFFFFFF", bold=True, size=10)
+            row_height = 16
+        elif concept == "":
+            row_fill  = _fill(GREY_SEP)
+            row_font  = Font(size=9)
+            row_height = 6
+        else:
+            row_fill  = _fill(ROW_WHITE) if row_idx % 2 == 0 else _fill(ROW_ALT)
+            bold      = concept in SUBTOTAL_CONCEPTS
+            row_font  = Font(bold=bold) if bold else Font()
+            row_height = None
+
+        for cell in ws[row_idx]:
+            cell.fill = row_fill
+            cell.font = row_font
+        if row_height is not None:
+            ws.row_dimensions[row_idx].height = row_height
+
+
 # ── Public API ────────────────────────────────────────────────────────────
 
 def format_workbook(wb: Workbook, tables: list[StatementTable]) -> None:
@@ -84,3 +127,4 @@ def format_workbook(wb: Workbook, tables: list[StatementTable]) -> None:
             continue
         _apply_column_widths(ws)
         _set_freeze_panes(ws)
+        _apply_row_styles(ws)
