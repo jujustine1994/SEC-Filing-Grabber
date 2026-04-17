@@ -25,7 +25,8 @@
 
 | Sheet | 說明 |
 |-------|------|
-| `Data_Financials` | IS + BS + CF 三表合一（section header 分隔），固定行數萬能模板 |
+| `Data_Financials(Q)` | IS + BS + CF 三表合一（季報，from 10-Q），固定行數萬能模板 |
+| `Data_Financials(Y)` | IS + BS + CF 三表合一（年報，from 10-K），固定行數萬能模板 |
 | `Data_Seg_*` | 各收入/費用的地區/業務分類細項 |
 | `Data_Meta` | 申報資訊（Ticker、公司名、抓取日期、季度數） |
 

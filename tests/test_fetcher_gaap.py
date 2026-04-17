@@ -284,7 +284,8 @@ def test_fetch_includes_required_sheets():
         MockCo.return_value = _make_mock_company()
         result = fetch_gaap_statements("AAPL", identity="Test test@test.com")
     sheet_names = [t.sheet_name for t in result]
-    assert "Data_Financials" in sheet_names
+    assert "Data_Financials(Q)" in sheet_names
+    assert "Data_Financials(Y)" in sheet_names
     assert "Data_Meta" in sheet_names
     # Separate IS/BS/CF sheets are no longer produced
     assert "Data_IS" not in sheet_names
@@ -315,7 +316,7 @@ def test_fetch_passes_max_filings():
         mock_co = _make_mock_company(n_filings=10)
         MockCo.return_value = mock_co
         result = fetch_gaap_statements("AAPL", identity="Test test@test.com", max_filings=3)
-    fin_tbl = next(t for t in result if t.sheet_name == "Data_Financials")
+    fin_tbl = next(t for t in result if t.sheet_name == "Data_Financials(Q)")
     assert len(fin_tbl.quarter_labels) <= 3
 
 
@@ -333,7 +334,7 @@ def test_merge_financials_produces_data_financials_sheet():
         concepts=["Operating Cash Flow"], values=[[200.0]], labels=["Net cash from ops"],
     )
     merged = _merge_financials(is_tbl, bs_tbl, cf_tbl)
-    assert merged.sheet_name == "Data_Financials"
+    assert merged.sheet_name == "Data_Financials(Q)"
     assert "Income Statement" in merged.concepts
     assert "Balance Sheet" in merged.concepts
     assert "Cash Flow" in merged.concepts

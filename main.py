@@ -69,7 +69,8 @@ class SECFetcherApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("SEC Financial Fetcher")
-        self.root.resizable(False, False)
+        self.root.resizable(True, True)
+        self.root.minsize(520, 600)
 
         _migrate_config_if_needed()
         self.cfg = load_config(CONFIG_PATH)
@@ -82,6 +83,11 @@ class SECFetcherApp:
         self.wl_add_btn = None
         self.wl_cache_label = None
         self.wl_add_var = None
+        self.wl_group_var: tk.StringVar | None = None
+        self.wl_group_cb = None
+        self._wl_draft: dict = {}
+        self._wl_group_collapsed: dict[str, bool] = {}
+        self._last_output_folder: Path | None = None
         self.settings_identity_var = None
         self.settings_provider_var = None
         self.settings_model_var = None
@@ -130,7 +136,9 @@ class SECFetcherApp:
 
         # Progress log
         frame_log = ttk.LabelFrame(self.root, text=" 處理進度 ", padding=8)
-        frame_log.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 4))
+        frame_log.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 4))
+        frame_log.rowconfigure(2, weight=1)
+        frame_log.columnconfigure(0, weight=1)
         self.progress_label = ttk.Label(frame_log, text="等待開始...")
         self.progress_label.pack(anchor="w")
         self.progress_bar = ttk.Progressbar(frame_log, mode="determinate", length=440)
@@ -138,7 +146,7 @@ class SECFetcherApp:
         self.log_text = scrolledtext.ScrolledText(
             frame_log, width=60, height=10, state="disabled", font=("Consolas", 10)
         )
-        self.log_text.pack(fill="x")
+        self.log_text.pack(fill="both", expand=True)
 
         # Open folder button (shown after completion)
         frame_output = tk.Frame(self.root)
@@ -148,7 +156,7 @@ class SECFetcherApp:
         )
 
         self.root.columnconfigure(0, weight=1)
-        self._init_log("請輸入 Ticker 或選擇 Watchlist 後按執行。")
+        self.root.rowconfigure(2, weight=1)
 
     def _build_tab1(self):
         tab = ttk.Frame(self.notebook, padding=10)
@@ -164,8 +172,8 @@ class SECFetcherApp:
         self.ticker_var.set(self.TICKER_PH)
         self.ticker_entry.bind("<FocusIn>",  lambda e: self._ph_in(self.ticker_entry, self.ticker_var, self.TICKER_PH))
         self.ticker_entry.bind("<FocusOut>", lambda e: self._on_ticker_focusout(e))
-        self.btn_confirm_company = ttk.Button(row_ticker, text="確認公司", command=self._confirm_company, width=8)
-        self.btn_confirm_company.pack(side="left", padx=(6, 0))
+        self.ticker_entry.bind("<Return>",   lambda e: self._confirm_company())
+        self.btn_confirm_company = None
         self.tab1_name_label = ttk.Label(row_ticker, text="", foreground="#555555")
         self.tab1_name_label.pack(side="left", padx=(10, 0))
 
@@ -186,9 +194,18 @@ class SECFetcherApp:
         self.nongaap_warn_label.grid(row=2, column=0, sticky="w", padx=2)
         self.nongaap_warn_label.grid_remove()
 
-        # Row 3: Output settings
-        out_frame = ttk.LabelFrame(tab, text=" 輸出設定 ", padding=8)
-        out_frame.grid(row=3, column=0, sticky="ew", pady=(8, 4))
+        # Row 3: Output settings toggle
+        self._out_collapsed = False
+        out_toggle_row = ttk.Frame(tab)
+        out_toggle_row.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        self._out_toggle_btn = ttk.Button(out_toggle_row, text="▼ 輸出設定",
+                                           command=self._toggle_out_settings, width=12)
+        self._out_toggle_btn.pack(side="left")
+
+        # Row 4: Output settings content (collapsible)
+        out_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=8)
+        out_frame.grid(row=4, column=0, sticky="ew", pady=(0, 4))
+        self._out_settings_frame = out_frame
 
         # Storage location row
         loc_row = ttk.Frame(out_frame)
@@ -227,9 +244,18 @@ class SECFetcherApp:
         self.tab1_preview_label.grid(row=5, column=0, sticky="w", pady=(6, 0))
         self._update_tab1_preview()
 
-        # Row 4: Execute button
+        # Row 5: Execute button
         self.btn_run_single = ttk.Button(tab, text="▶  執行", command=self._run_single, width=16)
-        self.btn_run_single.grid(row=4, column=0, pady=(8, 4))
+        self.btn_run_single.grid(row=5, column=0, pady=(8, 4))
+
+    def _toggle_out_settings(self):
+        self._out_collapsed = not self._out_collapsed
+        if self._out_collapsed:
+            self._out_settings_frame.grid_remove()
+            self._out_toggle_btn.config(text="▶ 輸出設定")
+        else:
+            self._out_settings_frame.grid()
+            self._out_toggle_btn.config(text="▼ 輸出設定")
 
     def _on_nongaap_toggle(self, *_args):
         if self.fetch_nongaap_var.get() and not self.cfg["ai"].get("api_key"):
@@ -403,16 +429,40 @@ class SECFetcherApp:
         watchlist = self.cfg.get("watchlist", [])
         if not watchlist:
             ttk.Label(self._tab2_inner, text="Watchlist 為空，請先在「管理 Watchlist」新增公司。",
-                      foreground="gray").grid(row=0, column=0, columnspan=3, sticky="w")
-        else:
-            cols = 3
-            for i, item in enumerate(watchlist):
-                ticker = item["ticker"]
+                      foreground="gray").grid(row=0, column=0, columnspan=4, sticky="w")
+            self._tab2_inner.update_idletasks()
+            self._tab2_canvas.configure(scrollregion=self._tab2_canvas.bbox("all"))
+            return
+
+        self._ensure_groups(self.cfg)
+        groups = self._get_groups_sorted(self.cfg)
+        wl_set = {w["ticker"] for w in watchlist}
+        cols = 3
+        grid_row = 0
+
+        for group in groups:
+            gname = group["name"]
+            tickers = sorted(t for t in group["tickers"] if t in wl_set)
+            if not tickers:
+                continue
+            # Group header
+            hdr = ttk.Frame(self._tab2_inner)
+            hdr.grid(row=grid_row, column=0, columnspan=cols + 1, sticky="ew", pady=(6, 2))
+            ttk.Label(hdr, text=gname, font=("", 11, "bold"), foreground="#333").pack(side="left")
+            ttk.Button(hdr, text="全選", width=5,
+                       command=lambda ts=tickers: self._select_group(ts, True)).pack(side="left", padx=(8, 2))
+            ttk.Button(hdr, text="全不選", width=6,
+                       command=lambda ts=tickers: self._select_group(ts, False)).pack(side="left")
+            grid_row += 1
+            # Ticker checkboxes
+            for i, ticker in enumerate(tickers):
                 var = tk.BooleanVar(value=True)
                 self.tab2_check_vars[ticker] = var
                 r, c = divmod(i, cols)
                 ttk.Checkbutton(self._tab2_inner, text=ticker, variable=var).grid(
-                    row=r, column=c, sticky="w", padx=8, pady=2)
+                    row=grid_row + r, column=c, sticky="w", padx=8, pady=2)
+            grid_row += (len(tickers) + cols - 1) // cols
+
         self._tab2_inner.update_idletasks()
         self._tab2_canvas.configure(scrollregion=self._tab2_canvas.bbox("all"))
 
@@ -424,11 +474,23 @@ class SECFetcherApp:
         for v in self.tab2_check_vars.values():
             v.set(False)
 
+    def _select_group(self, tickers: list[str], value: bool):
+        for t in tickers:
+            if t in self.tab2_check_vars:
+                self.tab2_check_vars[t].set(value)
+
     # =========================================================
     # Watchlist popup
     # =========================================================
 
     def _open_watchlist_popup(self):
+        import copy
+        self._ensure_groups(self.cfg)
+        self._wl_draft = copy.deepcopy({
+            "watchlist": self.cfg.get("watchlist", []),
+            "groups":    self.cfg.get("groups",    []),
+        })
+        self._wl_group_collapsed = {}
         popup = tk.Toplevel(self.root)
         popup.title("管理 Watchlist")
         popup.resizable(False, False)
@@ -436,20 +498,23 @@ class SECFetcherApp:
         popup.attributes("-topmost", True)
         popup.update()
         popup.attributes("-topmost", False)
+        popup.bind("<Escape>", lambda e: popup.destroy())
         self._build_watchlist_popup(popup)
 
     def _build_watchlist_popup(self, popup: tk.Toplevel):
         pad = {"padx": 12, "pady": 4}
+        popup.columnconfigure(0, weight=1)
 
+        # ── Watchlist (scrollable, groups) ──────────────────────────
         list_frame = ttk.LabelFrame(popup, text=" 目前 Watchlist ", padding=6)
         list_frame.grid(row=0, column=0, sticky="ew", **pad)
+        list_frame.columnconfigure(0, weight=1)
 
-        # Scrollable canvas — fixed height, scroll when > ~5 entries
-        wl_canvas = tk.Canvas(list_frame, height=160, highlightthickness=0)
+        wl_canvas = tk.Canvas(list_frame, height=200, highlightthickness=0)
         wl_scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=wl_canvas.yview)
         wl_canvas.configure(yscrollcommand=wl_scrollbar.set)
-        wl_canvas.pack(side="left", fill="both", expand=True)
-        wl_scrollbar.pack(side="right", fill="y")
+        wl_canvas.grid(row=0, column=0, sticky="ew")
+        wl_scrollbar.grid(row=0, column=1, sticky="ns")
         wl_inner = ttk.Frame(wl_canvas)
         wl_win = wl_canvas.create_window((0, 0), window=wl_inner, anchor="nw")
         wl_inner.bind("<Configure>", lambda e: (
@@ -461,8 +526,13 @@ class SECFetcherApp:
         self._wl_list_container = wl_inner
         self._refresh_wl_popup_list(wl_inner)
 
+        ttk.Button(popup, text="＋ 新增群組",
+                   command=lambda: self._wl_add_group(wl_inner)).grid(
+            row=1, column=0, sticky="w", padx=12, pady=(0, 4))
+
+        # ── Add company ────────────────────────────────────────────
         add_frame = ttk.LabelFrame(popup, text=" 新增公司 ", padding=6)
-        add_frame.grid(row=1, column=0, sticky="ew", **pad)
+        add_frame.grid(row=2, column=0, sticky="ew", **pad)
         row_add = ttk.Frame(add_frame)
         row_add.grid(row=0, column=0, sticky="ew")
         ttk.Label(row_add, text="Ticker:").pack(side="left", padx=(0, 6))
@@ -470,6 +540,12 @@ class SECFetcherApp:
         wl_entry = ttk.Entry(row_add, textvariable=self.wl_add_var, width=10)
         wl_entry.pack(side="left", padx=(0, 8))
         wl_entry.bind("<Return>", lambda e: self._wl_lookup())
+        ttk.Label(row_add, text="群組:").pack(side="left", padx=(8, 4))
+        group_names = [g["name"] for g in self._get_groups_sorted(self._wl_draft)] or ["未分類"]
+        self.wl_group_var = tk.StringVar(value=group_names[0])
+        self.wl_group_cb = ttk.Combobox(row_add, textvariable=self.wl_group_var,
+                                         values=group_names, width=12, state="readonly")
+        self.wl_group_cb.pack(side="left", padx=(0, 8))
         ttk.Button(row_add, text="查詢", command=lambda: self._wl_lookup()).pack(side="left")
         self.wl_lookup_label = ttk.Label(add_frame, text="", foreground="gray")
         self.wl_lookup_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
@@ -477,45 +553,76 @@ class SECFetcherApp:
         self.wl_add_btn.grid(row=2, column=0, sticky="w", pady=4)
         self._wl_found_name = ""
 
+        # ── Cache status ───────────────────────────────────────────
         cache_frame = ttk.Frame(popup)
-        cache_frame.grid(row=2, column=0, sticky="ew", **pad)
+        cache_frame.grid(row=3, column=0, sticky="ew", **pad)
         self.wl_cache_label = ttk.Label(cache_frame, text=self._wl_cache_status(), foreground="#555555")
         self.wl_cache_label.pack(side="left")
-        ttk.Button(cache_frame, text="更新名稱庫（下載完整美股清單）", command=self._wl_update_cache).pack(side="left", padx=10)
+        ttk.Button(cache_frame, text="更新名稱庫（下載完整美股清單）",
+                   command=self._wl_update_cache).pack(side="left", padx=10)
 
-        ttk.Button(popup, text="關閉", command=popup.destroy, width=10).grid(row=3, column=0, pady=8)
+        # ── Save / discard ─────────────────────────────────────────
+        btn_row = ttk.Frame(popup)
+        btn_row.grid(row=4, column=0, pady=8)
+        ttk.Button(btn_row, text="儲存關閉", width=12,
+                   command=lambda: self._wl_save_close(popup)).pack(side="left", padx=6)
+        ttk.Button(btn_row, text="放棄關閉", width=12,
+                   command=popup.destroy).pack(side="left", padx=6)
 
     def _refresh_wl_popup_list(self, container):
         for w in container.winfo_children():
             w.destroy()
-        watchlist = self.cfg.get("watchlist", [])
-        if not watchlist:
+        watchlist = self._wl_draft.get("watchlist", [])
+        wl_map = {w["ticker"]: w for w in watchlist}
+        groups = self._get_groups_sorted(self._wl_draft)
+
+        if not watchlist and not any(g["tickers"] for g in groups):
             ttk.Label(container, text="（空）", foreground="gray").pack(anchor="w")
             container.update_idletasks()
             if hasattr(self, "_wl_list_canvas"):
                 self._wl_list_canvas.configure(scrollregion=self._wl_list_canvas.bbox("all"))
             return
-        for item in watchlist:
-            row = ttk.Frame(container)
-            row.pack(fill="x", pady=1)
-            ttk.Label(row, text=f'{item["ticker"]:6} {item.get("name", "")}', width=36).pack(side="left")
-            ticker = item["ticker"]
-            # 📁 button
-            ttk.Button(row, text="📁", width=3,
-                       command=lambda t=ticker, c=container: self._wl_set_output_dir(t, c)).pack(side="left", padx=(2, 0))
-            # path display
-            out_dir = item.get("output_dir", "")
-            if out_dir:
-                parts = Path(out_dir).parts
-                short = os.sep.join(parts[-2:]) if len(parts) >= 2 else out_dir
-                path_text = f"…{os.sep}{short}"
-                path_fg = "black"
-            else:
-                path_text = "（預設）"
-                path_fg = "gray"
-            ttk.Label(row, text=path_text, foreground=path_fg, width=20).pack(side="left", padx=(4, 2))
-            ttk.Button(row, text="[x]", width=4,
-                       command=lambda t=ticker, c=container: self._wl_remove(t, c)).pack(side="left")
+
+        for group in groups:
+            gname = group["name"]
+            tickers = sorted(t for t in group["tickers"] if t in wl_map)
+            is_collapsed = self._wl_group_collapsed.get(gname, False)
+
+            # Group header
+            hdr = ttk.Frame(container)
+            hdr.pack(fill="x", pady=(6, 0))
+            arrow = "▶" if is_collapsed else "▼"
+            ttk.Button(hdr, text=f"{arrow} {gname}", width=16,
+                       command=lambda g=gname, c=container: self._wl_toggle_group(g, c)).pack(side="left")
+            ttk.Button(hdr, text="重新命名", width=8,
+                       command=lambda g=gname, c=container: self._wl_rename_group(g, c)).pack(side="left", padx=(4, 0))
+            if gname != "未分類":
+                ttk.Button(hdr, text="刪除群組", width=8,
+                           command=lambda g=gname, c=container: self._wl_delete_group(g, c)).pack(side="left", padx=(4, 0))
+
+            if not is_collapsed:
+                if not tickers:
+                    ttk.Label(container, text="  （空群組）", foreground="gray").pack(anchor="w", padx=(20, 0))
+                for ticker in tickers:
+                    item = wl_map[ticker]
+                    row = ttk.Frame(container)
+                    row.pack(fill="x", pady=1, padx=(20, 0))
+                    ttk.Label(row, text=f'{ticker:6} {item.get("name", "")}', width=32).pack(side="left")
+                    ttk.Button(row, text="📁", width=3,
+                               command=lambda t=ticker, c=container: self._wl_set_output_dir(t, c)).pack(side="left", padx=(2, 0))
+                    out_dir = item.get("output_dir", "")
+                    if out_dir:
+                        parts = Path(out_dir).parts
+                        short = os.sep.join(parts[-2:]) if len(parts) >= 2 else out_dir
+                        path_text = f"…{os.sep}{short}"
+                        path_fg = "black"
+                    else:
+                        path_text = "（預設）"
+                        path_fg = "gray"
+                    ttk.Label(row, text=path_text, foreground=path_fg, width=18).pack(side="left", padx=(4, 2))
+                    ttk.Button(row, text="[x]", width=4,
+                               command=lambda t=ticker, c=container: self._wl_remove(t, c)).pack(side="left")
+
         container.update_idletasks()
         if hasattr(self, "_wl_list_canvas"):
             self._wl_list_canvas.configure(scrollregion=self._wl_list_canvas.bbox("all"))
@@ -555,34 +662,111 @@ class SECFetcherApp:
         folder = filedialog.askdirectory(title=f"選擇 {ticker} 的輸出資料夾")
         if not folder:
             return
-        for item in self.cfg.get("watchlist", []):
+        for item in self._wl_draft.get("watchlist", []):
             if item["ticker"] == ticker:
                 item["output_dir"] = folder
                 break
-        save_config(self.cfg, CONFIG_PATH)
         self._refresh_wl_popup_list(container)
 
     def _wl_remove(self, ticker: str, container):
-        self.cfg["watchlist"] = [w for w in self.cfg["watchlist"] if w["ticker"] != ticker]
-        save_config(self.cfg, CONFIG_PATH)
+        self._wl_draft["watchlist"] = [w for w in self._wl_draft.get("watchlist", []) if w["ticker"] != ticker]
+        for g in self._wl_draft.get("groups", []):
+            if ticker in g["tickers"]:
+                g["tickers"].remove(ticker)
         self._refresh_wl_popup_list(container)
-        self._refresh_tab2_list()
 
     def _wl_add(self):
         ticker = self.wl_add_var.get().strip().upper()
         if not ticker or not self._wl_found_name:
             return
-        if any(w["ticker"] == ticker for w in self.cfg["watchlist"]):
+        if any(w["ticker"] == ticker for w in self._wl_draft.get("watchlist", [])):
             self.wl_lookup_label.config(text=f"{ticker} 已在 Watchlist 中", foreground="orange")
             return
-        self.cfg["watchlist"].append({"ticker": ticker, "name": self._wl_found_name})
-        save_config(self.cfg, CONFIG_PATH)
+        self._wl_draft.setdefault("watchlist", []).append({"ticker": ticker, "name": self._wl_found_name})
+        target = self.wl_group_var.get() if self.wl_group_var else "未分類"
+        grp = next((g for g in self._wl_draft.get("groups", []) if g["name"] == target), None)
+        if grp is None:
+            self._wl_draft.setdefault("groups", []).append({"name": target, "tickers": [ticker]})
+        elif ticker not in grp["tickers"]:
+            grp["tickers"].append(ticker)
         self.wl_add_var.set("")
-        self.wl_lookup_label.config(text="", foreground="gray")
+        self.wl_lookup_label.config(text=f"✓ 已加入 {ticker} 到「{target}」", foreground="#1a7a34")
         self.wl_add_btn.config(state="disabled")
         self._wl_found_name = ""
         self._refresh_wl_popup_list(self._wl_list_container)
+
+    def _wl_toggle_group(self, group_name: str, container):
+        self._wl_group_collapsed[group_name] = not self._wl_group_collapsed.get(group_name, False)
+        self._refresh_wl_popup_list(container)
+
+    def _wl_add_group(self, container):
+        from tkinter import simpledialog
+        name = simpledialog.askstring("新增群組", "群組名稱：", parent=container.winfo_toplevel())
+        if not name or not name.strip():
+            return
+        name = name.strip()
+        if any(g["name"] == name for g in self._wl_draft.get("groups", [])):
+            messagebox.showwarning("重複", f"群組「{name}」已存在", parent=container.winfo_toplevel())
+            return
+        self._wl_draft.setdefault("groups", []).append({"name": name, "tickers": []})
+        self._refresh_group_dropdown()
+        self._refresh_wl_popup_list(container)
+
+    def _wl_rename_group(self, old_name: str, container):
+        from tkinter import simpledialog
+        new_name = simpledialog.askstring("重新命名", f"新名稱（原：{old_name}）：",
+                                           parent=container.winfo_toplevel())
+        if not new_name or not new_name.strip() or new_name.strip() == old_name:
+            return
+        new_name = new_name.strip()
+        if any(g["name"] == new_name for g in self._wl_draft.get("groups", [])):
+            messagebox.showwarning("重複", f"群組「{new_name}」已存在", parent=container.winfo_toplevel())
+            return
+        for g in self._wl_draft.get("groups", []):
+            if g["name"] == old_name:
+                g["name"] = new_name
+                break
+        if old_name in self._wl_group_collapsed:
+            self._wl_group_collapsed[new_name] = self._wl_group_collapsed.pop(old_name)
+        self._refresh_group_dropdown()
+        self._refresh_wl_popup_list(container)
+
+    def _wl_delete_group(self, group_name: str, container):
+        grp = next((g for g in self._wl_draft.get("groups", []) if g["name"] == group_name), None)
+        if not grp:
+            return
+        if grp["tickers"]:
+            if not messagebox.askyesno("確認刪除",
+                                        f"刪除「{group_name}」後，其中 {len(grp['tickers'])} 支股票將移至「未分類」。確定嗎？",
+                                        parent=container.winfo_toplevel()):
+                return
+            uncategorized = next((g for g in self._wl_draft["groups"] if g["name"] == "未分類"), None)
+            if uncategorized is None:
+                self._wl_draft["groups"].append({"name": "未分類", "tickers": list(grp["tickers"])})
+            else:
+                uncategorized["tickers"].extend(grp["tickers"])
+        self._wl_draft["groups"] = [g for g in self._wl_draft["groups"] if g["name"] != group_name]
+        self._wl_group_collapsed.pop(group_name, None)
+        self._refresh_group_dropdown()
+        self._refresh_wl_popup_list(container)
+
+    def _refresh_group_dropdown(self):
+        if not self.wl_group_cb:
+            return
+        try:
+            names = [g["name"] for g in self._get_groups_sorted(self._wl_draft)] or ["未分類"]
+            self.wl_group_cb["values"] = names
+            if self.wl_group_var.get() not in names:
+                self.wl_group_var.set(names[0])
+        except tk.TclError:
+            pass
+
+    def _wl_save_close(self, popup: tk.Toplevel):
+        self.cfg["watchlist"] = self._wl_draft.get("watchlist", [])
+        self.cfg["groups"]    = self._wl_draft.get("groups",    [])
+        save_config(self.cfg, CONFIG_PATH)
         self._refresh_tab2_list()
+        popup.destroy()
 
     def _wl_update_cache(self):
         self.wl_cache_label.config(text="更新中...", foreground="gray")
@@ -602,6 +786,29 @@ class SECFetcherApp:
             self.msg_queue.put(("wl_cache_updated", (str(date.today()), len(companies))))
         except Exception as e:
             self.msg_queue.put(("wl_cache_update_error", str(e)))
+
+    def _ensure_groups(self, cfg: dict) -> None:
+        """Migrate old watchlist (no groups key) to groups structure."""
+        if "groups" not in cfg:
+            tickers = [w["ticker"] for w in cfg.get("watchlist", [])]
+            cfg["groups"] = [{"name": "未分類", "tickers": tickers}] if tickers else []
+        else:
+            all_grouped = {t for g in cfg["groups"] for t in g["tickers"]}
+            ungrouped = [w["ticker"] for w in cfg.get("watchlist", []) if w["ticker"] not in all_grouped]
+            if ungrouped:
+                for g in cfg["groups"]:
+                    if g["name"] == "未分類":
+                        g["tickers"].extend(ungrouped)
+                        break
+                else:
+                    cfg["groups"].append({"name": "未分類", "tickers": ungrouped})
+
+    def _get_groups_sorted(self, cfg: dict) -> list[dict]:
+        """Return groups sorted A-Z, 未分類 always last."""
+        groups = cfg.get("groups", [])
+        known = sorted([g for g in groups if g["name"] != "未分類"], key=lambda g: g["name"])
+        uncategorized = [g for g in groups if g["name"] == "未分類"]
+        return known + uncategorized
 
     def _wl_cache_status(self) -> str:
         if CACHE_PATH.exists():
@@ -626,6 +833,7 @@ class SECFetcherApp:
         popup.attributes("-topmost", True)
         popup.update()
         popup.attributes("-topmost", False)
+        popup.bind("<Escape>", lambda e: popup.destroy())
         self._build_settings_popup(popup)
 
     def _build_settings_popup(self, popup: tk.Toplevel):
@@ -685,11 +893,52 @@ class SECFetcherApp:
         ttk.Label(fetch_frame, text="筆（預設 80，約 20 年）", foreground="#555555").grid(
             row=0, column=2, sticky="w", padx=(4, 0))
 
+        # Template mode
+        ttk.Label(fetch_frame, text="著色模板:").grid(row=1, column=0, sticky="nw", pady=(10, 0))
+        has_tpl = bool(self.cfg.get("template_path", ""))
+        self.settings_template_mode_var = tk.StringVar(value="custom" if has_tpl else "default")
+        self.settings_template_var = tk.StringVar(value=self.cfg.get("template_path", ""))
+
+        tpl_frame = ttk.Frame(fetch_frame)
+        tpl_frame.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(10, 0))
+
+        ttk.Radiobutton(tpl_frame, text="預設模板（Python 自動著色）",
+                        variable=self.settings_template_mode_var, value="default",
+                        command=self._on_template_mode_change).grid(row=0, column=0, columnspan=3, sticky="w")
+
+        ttk.Radiobutton(tpl_frame, text="自訂模板：",
+                        variable=self.settings_template_mode_var, value="custom",
+                        command=self._on_template_mode_change).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self._tpl_entry = ttk.Entry(tpl_frame, textvariable=self.settings_template_var, width=24)
+        self._tpl_entry.grid(row=1, column=1, sticky="ew", padx=(4, 4), pady=(4, 0))
+        self._tpl_browse_btn = ttk.Button(tpl_frame, text="瀏覽", width=5,
+                                           command=self._browse_template)
+        self._tpl_browse_btn.grid(row=1, column=2, pady=(4, 0))
+        self._on_template_mode_change()  # set initial enabled/disabled state
+
         # Buttons
         btn_row = ttk.Frame(popup)
         btn_row.grid(row=3, column=0, pady=10)
         ttk.Button(btn_row, text="儲存", command=lambda: self._save_settings(popup), width=10).pack(side="left", padx=6)
         ttk.Button(btn_row, text="取消", command=popup.destroy, width=10).pack(side="left", padx=6)
+
+    def _on_template_mode_change(self):
+        is_custom = getattr(self, "settings_template_mode_var", None) and \
+                    self.settings_template_mode_var.get() == "custom"
+        state = "normal" if is_custom else "disabled"
+        if hasattr(self, "_tpl_entry"):
+            self._tpl_entry.config(state=state)
+        if hasattr(self, "_tpl_browse_btn"):
+            self._tpl_browse_btn.config(state=state)
+
+    def _browse_template(self):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title="選擇著色模板",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+        )
+        if path and hasattr(self, "settings_template_var"):
+            self.settings_template_var.set(path)
 
     def _on_provider_change(self, _event=None):
         provider = self.settings_provider_var.get()
@@ -747,6 +996,11 @@ class SECFetcherApp:
             self.cfg["max_filings"] = int(self.settings_max_filings_var.get())
         except (ValueError, tk.TclError):
             self.cfg["max_filings"] = 80
+        if hasattr(self, "settings_template_mode_var"):
+            if self.settings_template_mode_var.get() == "custom":
+                self.cfg["template_path"] = self.settings_template_var.get().strip()
+            else:
+                self.cfg["template_path"] = ""
         save_config(self.cfg, CONFIG_PATH)
         popup.destroy()
 
@@ -804,7 +1058,7 @@ class SECFetcherApp:
     # =========================================================
 
     def _open_output_folder(self):
-        folder = SCRIPT_DIR / self.cfg.get("output_dir", "output")
+        folder = self._last_output_folder or SCRIPT_DIR / self.cfg.get("output_dir", "output")
         if folder.exists():
             os.startfile(str(folder))
 
@@ -902,9 +1156,11 @@ class SECFetcherApp:
 
             self._log(f"[{ticker}] 寫入 Excel...")
             self._set_progress(step, total_steps, "寫入 Excel...")
-            write_statements(tables, output_path)
+            tpl = self.cfg.get("template_path", "") or None
+            write_statements(tables, output_path, template_path=tpl)
             self._log(f"[{ticker}] 完成 → {output_path.name}")
             self._set_progress(total_steps, total_steps, "完成！")
+            self.msg_queue.put(("last_output_folder", output_path.parent))
             self._done(True)
 
         except Exception as e:
@@ -926,12 +1182,14 @@ class SECFetcherApp:
             try:
                 tables      = fetch_gaap_statements(ticker, identity, max_filings=max_filings)
                 output_path = self._build_output_path(ticker)
-                write_statements(tables, output_path)
+                tpl = self.cfg.get("template_path", "") or None
+                write_statements(tables, output_path, template_path=tpl)
                 self._log(f"[{ticker}] 完成（{len(tables)} 份財報）")
             except Exception as e:
                 self._log(f"[{ticker}] 錯誤：{e}")
 
         self._set_progress(total, total, f"完成：共處理 {total} 間公司")
+        self.msg_queue.put(("last_output_folder", self._build_output_path(tickers[-1]).parent))
         self._done(True)
 
     # =========================================================
@@ -1021,6 +1279,9 @@ class SECFetcherApp:
                 elif msg_type == "wl_cache_update_error":
                     if self.wl_cache_label:
                         self.wl_cache_label.config(text=f"更新失敗：{data}", foreground="red")
+
+                elif msg_type == "last_output_folder":
+                    self._last_output_folder = data
 
                 elif msg_type == "ai_test_result":
                     ok, err = data

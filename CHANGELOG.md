@@ -46,6 +46,33 @@
 
 ## 更新記錄
 
+### 2026-04-17（Session 7）
+
+**Bug 修復（程式碼審查後）**
+- `config.py`：修正 config 值為非 dict 時 `dict.update()` 會 crash 的問題（如舊 config 格式不相容）
+- `main.py`：修正 `_wl_add()` 中重複呼叫 `wl_group_var.get()` 的冗餘程式碼
+- `fetcher_nongaap.py`：修正 `_call_ai()` 中 AI 回傳非數字字串時 `float()` 整批失敗的問題；改為逐項 try/except
+
+**UI 改善**
+- 移除「確認公司」按鈕，Enter 鍵觸發查詢即可
+- 輸出設定改為可收合（▼/▶ toggle），預設展開
+- 視窗支援縮放（resizable），Log 區域隨視窗高度延伸
+- Advanced Settings 新增「預設模板 / 自訂模板」Radio 選擇
+
+**Excel 自訂模板**
+- `excel_writer.py` 新增 `template_path` 參數
+- 自訂模板模式：保留所有 cell 格式，只寫入數值；超出模板欄數時複製最後一欄格式
+- 新增 `_write_sheet_template()` 及 `_copy_cell_format()` helper
+- 兩種模式（預設自動著色 / 自訂模板）可在 Advanced Settings 切換
+
+**Watchlist 群組管理**
+- 支援股票分群（群組 CRUD：新增、重命名、刪除）
+- 刪除群組時自動把 ticker 移至「未分類」
+- 群組依字母排序，「未分類」固定最後
+- Watchlist popup 改為「儲存關閉 / 放棄關閉」（Escape = 放棄），操作前先建立 deep copy draft
+
+---
+
 ### 2026-04-17（Session 6）
 
 **BS 抓取修復**

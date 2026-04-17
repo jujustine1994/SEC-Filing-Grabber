@@ -27,6 +27,7 @@ DEFAULT_CONFIG: dict = {
     "filename_format": "ticker_name",
     "filename_custom": "",
     "max_filings": 80,
+    "template_path": "",
     "ai": {
         "provider": "google",
         "model": "gemini-flash-latest",
@@ -49,9 +50,9 @@ def load_config(path: Path | None = None) -> dict:
             return cfg
         for key, default_val in DEFAULT_CONFIG.items():
             if key in data:
-                if isinstance(default_val, dict):
+                if isinstance(default_val, dict) and isinstance(data[key], dict):
                     cfg[key].update(data[key])
-                else:
+                elif not isinstance(default_val, dict):
                     cfg[key] = data[key]
     return cfg
 

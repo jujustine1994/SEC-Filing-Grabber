@@ -228,7 +228,15 @@ def _call_ai(text: str, ai_config: dict) -> dict[str, Any]:
             raw = raw.rsplit("```", 1)[0]
 
         parsed = json.loads(raw.strip())
-        return {k: float(v) for k, v in parsed.items() if v is not None}
+        result = {}
+        for k, v in parsed.items():
+            if v is None:
+                continue
+            try:
+                result[k] = float(v)
+            except (ValueError, TypeError):
+                pass
+        return result
 
     except Exception as exc:
         print(f"[fetcher_nongaap] AI call failed: {exc!r}", file=sys.stderr)
@@ -281,11 +289,14 @@ def _extract_nongaap_metrics(eight_k, ai_config: dict) -> dict[str, Any]:
 
 # ── 8-K discovery ────────────────────────────────────────────────────────────
 
-def _get_earnings_filings(company) -> list[tuple[str, Any]]:
-    """Return list of (quarter_label, filing) for 8-K filings with Item 2.02.
+def _get_earnings_filings(company) -> list[tuple[str, Any, Any]]:
+    """Return list of (quarter_label, filing, eight_k) for 8-K filings with Item 2.02.
 
-    Sorted oldest → newest. Deduplicated by quarter_label.
+    Sorted oldest → newest. Deduplicated by quarter_label (keeps oldest filing per quarter).
+    eight_k is the already-parsed filing object — callers should use it directly to avoid
+    a redundant filing.obj() call.
     """
+    # edgartools returns newest-first; we reverse to get oldest-first for deduplication
     results = []
     for filing in company.get_filings(form="8-K", amendments=False):
         try:
@@ -299,7 +310,7 @@ def _get_earnings_filings(company) -> list[tuple[str, Any]]:
             if len(period) < 8:
                 continue
             label = _period_to_quarter_label(period)
-            results.append((label, filing))
+            results.append((label, filing, eight_k))
         except Exception as exc:
             print(f"[fetcher_nongaap] 8-K scan warning: {exc!r}", file=sys.stderr)
             continue
@@ -307,10 +318,10 @@ def _get_earnings_filings(company) -> list[tuple[str, Any]]:
     # Sort oldest first, deduplicate by quarter_label (keep first = oldest filing for that period)
     seen: set[str] = set()
     deduped = []
-    for label, filing in reversed(results):
+    for label, filing, eight_k in reversed(results):
         if label not in seen:
             seen.add(label)
-            deduped.append((label, filing))
+            deduped.append((label, filing, eight_k))
     return list(reversed(deduped))
 
 
@@ -342,15 +353,14 @@ def fetch_nongaap_statements(
     cache = _load_cache(cache_path)
     filings = _get_earnings_filings(company)
 
-    new_filings = [(lbl, f) for lbl, f in filings if lbl not in cache]
+    new_filings = [(lbl, f, ek) for lbl, f, ek in filings if lbl not in cache]
     total = len(new_filings)
 
-    for i, (quarter_label, filing) in enumerate(new_filings, 1):
+    for i, (quarter_label, filing, eight_k) in enumerate(new_filings, 1):
         if progress_cb:
             progress_cb(i, total, f"Non-GAAP {ticker} {quarter_label} ({i}/{total})")
 
         try:
-            eight_k = filing.obj()
             eps_recon = _extract_eps_recon(eight_k)
             metrics   = _extract_nongaap_metrics(eight_k, ai_config)
             cache[quarter_label] = {

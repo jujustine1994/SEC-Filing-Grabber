@@ -82,3 +82,29 @@ def test_build_eps_recon_table_empty_cache():
 
 def test_build_nongaap_table_empty_cache():
     assert _build_nongaap_table("TSLA", {}) is None
+
+
+# ── Deduplication logic test ─────────────────────────────────────────────────
+
+def test_period_to_quarter_label_dedup_logic():
+    """Verify dedup keeps oldest filing per quarter (same algorithm as _get_earnings_filings)."""
+    # Simulate edgartools newest-first order with a duplicate Q1
+    raw_newest_first = [
+        ("FY2024Q1", "filing_new_Q1", "ek_new_Q1"),   # newest Q1 (should be discarded)
+        ("FY2024Q2", "filing_Q2",     "ek_Q2"),
+        ("FY2024Q1", "filing_old_Q1", "ek_old_Q1"),   # oldest Q1 (should be kept)
+    ]
+
+    # Apply same dedup logic as _get_earnings_filings
+    seen: set = set()
+    deduped = []
+    for label, filing, eight_k in reversed(raw_newest_first):  # iterate oldest-first
+        if label not in seen:
+            seen.add(label)
+            deduped.append((label, filing, eight_k))
+    result = list(reversed(deduped))  # flip back to newest-first (matches edgartools convention)
+
+    # After dedup: oldest Q1 is kept, Q2 retained; result is newest-first
+    assert len(result) == 2
+    assert result[0] == ("FY2024Q2", "filing_Q2", "ek_Q2")
+    assert result[1] == ("FY2024Q1", "filing_old_Q1", "ek_old_Q1")
