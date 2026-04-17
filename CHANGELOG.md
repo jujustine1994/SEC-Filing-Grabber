@@ -9,6 +9,8 @@
 ## 功能清單
 
 ### 已完成
+- [x] config.json 搬到 %APPDATA%\SEC Financial Tools\（不進 git，啟動時自動 migrate）
+- [x] Watchlist 每間公司獨立輸出路徑（📁 按鈕，存於 watchlist item output_dir）
 - [x] Excel 自動美化（深藍色 header、交替底色、section 分隔、subtotal 粗體）
 - [x] 財務數字自動 ÷1M（EPS 除外），套用千分位格式
 - [x] Index sheet（第一頁，列出所有 sheet 用途 + 最早/最新期間）
@@ -34,8 +36,6 @@
 - [x] match="first"|"last" + label_hint 精確比對（解決 BS 重複 std_concept 問題）
 
 ### 待辦
-- [ ] Watchlist 每間公司獨立輸出路徑設定（方案 A：清單每行加 📁 按鈕）
-- [ ] config.json 搬到使用者 APPDATA 目錄（不進 git）
 - [ ] 實機測試（GAAP）：AAPL、TSLA、BA、XOM 確認 Data_Financials 正確
 - [ ] 實機測試（Non-GAAP）：AAPL、NVDA 確認 Data_EPS_Recon + Data_NonGAAP + nongaap_cache.json
 - [ ] main.py 舊名稱掃描：確認無 Data_IS/BS/CF 殘留參照
@@ -45,6 +45,15 @@
 ---
 
 ## 更新記錄
+
+### 2026-04-17（Session 5）
+
+**Config 搬家 + Watchlist 路徑管理**
+- config.json 移到 `%APPDATA%\SEC Financial Tools\config.json`，啟動時自動 migrate 舊檔
+- Watchlist 管理介面每行新增 📁 按鈕，可為每間公司設定獨立輸出資料夾
+- 路徑存於 watchlist item `output_dir` 欄位，優先順序：watchlist `output_dir` → `ticker_paths`（向後相容）→ 全域 `output_dir`
+
+---
 
 ### 2026-04-17（Session 4）
 
