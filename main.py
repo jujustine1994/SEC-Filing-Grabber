@@ -19,13 +19,22 @@ from datetime import date
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
-from config import load_config, save_config
+from config import load_config, save_config, CONFIG_PATH
 from excel_writer import write_statements
 from fetcher_gaap import fetch_gaap_statements
 
-SCRIPT_DIR  = Path(__file__).parent
-CONFIG_PATH = SCRIPT_DIR / "config.json"
-CACHE_PATH  = SCRIPT_DIR / "company_cache.json"
+SCRIPT_DIR = Path(__file__).parent
+CACHE_PATH = SCRIPT_DIR / "company_cache.json"
+
+
+def _migrate_config_if_needed():
+    """If old config.json exists in project dir, move it to APPDATA."""
+    old_path = SCRIPT_DIR / "config.json"
+    if old_path.exists() and not CONFIG_PATH.exists():
+        CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        shutil.copy2(old_path, CONFIG_PATH)
+        old_path.unlink()
 
 PROVIDER_DEFAULTS = {
     "google":    "gemini-flash-latest",
@@ -62,6 +71,7 @@ class SECFetcherApp:
         self.root.title("SEC Financial Fetcher")
         self.root.resizable(False, False)
 
+        _migrate_config_if_needed()
         self.cfg = load_config(CONFIG_PATH)
         self.msg_queue: queue.Queue = queue.Queue()
         self.is_running = False
@@ -450,6 +460,20 @@ class SECFetcherApp:
             row.pack(fill="x", pady=1)
             ttk.Label(row, text=f'{item["ticker"]:6} {item.get("name", "")}', width=36).pack(side="left")
             ticker = item["ticker"]
+            # 📁 button
+            ttk.Button(row, text="📁", width=3,
+                       command=lambda t=ticker, c=container: self._wl_set_output_dir(t, c)).pack(side="left", padx=(2, 0))
+            # path display
+            out_dir = item.get("output_dir", "")
+            if out_dir:
+                parts = Path(out_dir).parts
+                short = os.sep.join(parts[-2:]) if len(parts) >= 2 else out_dir
+                path_text = f"…{os.sep}{short}"
+                path_fg = "black"
+            else:
+                path_text = "（預設）"
+                path_fg = "gray"
+            ttk.Label(row, text=path_text, foreground=path_fg, width=20).pack(side="left", padx=(4, 2))
             ttk.Button(row, text="[x]", width=4,
                        command=lambda t=ticker, c=container: self._wl_remove(t, c)).pack(side="left")
 
@@ -482,6 +506,18 @@ class SECFetcherApp:
             self.msg_queue.put(("wl_lookup_result", ("ok", ticker, name)))
         except Exception as e:
             self.msg_queue.put(("wl_lookup_result", ("error", str(e))))
+
+    def _wl_set_output_dir(self, ticker: str, container):
+        from tkinter import filedialog
+        folder = filedialog.askdirectory(title=f"選擇 {ticker} 的輸出資料夾")
+        if not folder:
+            return
+        for item in self.cfg.get("watchlist", []):
+            if item["ticker"] == ticker:
+                item["output_dir"] = folder
+                break
+        save_config(self.cfg, CONFIG_PATH)
+        self._refresh_wl_popup_list(container)
 
     def _wl_remove(self, ticker: str, container):
         self.cfg["watchlist"] = [w for w in self.cfg["watchlist"] if w["ticker"] != ticker]
@@ -693,12 +729,20 @@ class SECFetcherApp:
         return ticker
 
     def _build_output_path(self, ticker: str) -> Path:
-        """Build output file path. Per-ticker path takes priority over output_dir."""
-        ticker_dir = self.cfg.get("ticker_paths", {}).get(ticker)
-        if ticker_dir:
-            output_dir = Path(ticker_dir)
+        """Build output file path. Priority: watchlist item output_dir → ticker_paths → global output_dir."""
+        # 1. watchlist item output_dir
+        for item in self.cfg.get("watchlist", []):
+            if item["ticker"] == ticker and item.get("output_dir"):
+                output_dir = Path(item["output_dir"])
+                break
         else:
-            output_dir = SCRIPT_DIR / self.cfg.get("output_dir", "output")
+            # 2. legacy ticker_paths
+            ticker_dir = self.cfg.get("ticker_paths", {}).get(ticker)
+            if ticker_dir:
+                output_dir = Path(ticker_dir)
+            else:
+                # 3. global output_dir
+                output_dir = SCRIPT_DIR / self.cfg.get("output_dir", "output")
 
         fmt = self.cfg.get("filename_format", "ticker_name")
         if fmt == "ticker_name":

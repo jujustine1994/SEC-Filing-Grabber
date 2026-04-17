@@ -5,9 +5,19 @@ Merges loaded data with defaults so missing keys are always present.
 
 import json
 import copy
+import os
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).parent
+
+
+def _default_config_path() -> Path:
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        return Path(appdata) / "SEC Financial Tools" / "config.json"
+    return Path.home() / ".sec_financial_tools" / "config.json"
+
+CONFIG_PATH = _default_config_path()
 
 DEFAULT_CONFIG: dict = {
     "identity": "",
@@ -28,7 +38,7 @@ DEFAULT_CONFIG: dict = {
 def load_config(path: Path | None = None) -> dict:
     """Load config.json, merging with defaults for any missing keys."""
     if path is None:
-        path = SCRIPT_DIR / "config.json"
+        path = CONFIG_PATH
     cfg = copy.deepcopy(DEFAULT_CONFIG)
     if Path(path).exists():
         try:
@@ -49,7 +59,7 @@ def load_config(path: Path | None = None) -> dict:
 def save_config(cfg: dict, path: Path | None = None) -> None:
     """Save config dict to config.json as UTF-8 JSON."""
     if path is None:
-        path = SCRIPT_DIR / "config.json"
+        path = CONFIG_PATH
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
