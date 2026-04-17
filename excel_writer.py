@@ -20,6 +20,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 from fetcher_gaap import StatementTable
+from excel_formatter import format_workbook
 
 # Data columns start at column C (index 3)
 _DATA_START_COL = 3
@@ -55,6 +56,7 @@ def write_statements(tables: list[StatementTable], output_path: str | Path) -> N
         ws = wb.create_sheet(tbl.sheet_name)
         _write_sheet(ws, tbl)
 
+    format_workbook(wb, tables)
     try:
         wb.save(output_path)
     finally:

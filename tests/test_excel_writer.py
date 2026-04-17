@@ -143,10 +143,10 @@ def test_data_values_correct(tmp_path, sample_tables):
     write_statements(sample_tables, out)
     wb = openpyxl.load_workbook(out)
     ws = wb["Data_IS"]
-    # Revenues row: C3=1000, D3=1100, E3=1200
-    assert ws["C3"].value == 1000.0
-    assert ws["D3"].value == 1100.0
-    assert ws["E3"].value == 1200.0
+    # Values are divided by 1M during formatting: 1000.0 → 0.001
+    assert ws["C3"].value == pytest.approx(1000.0 / 1_000_000)
+    assert ws["D3"].value == pytest.approx(1100.0 / 1_000_000)
+    assert ws["E3"].value == pytest.approx(1200.0 / 1_000_000)
 
 
 def test_preserves_non_data_sheets(tmp_path, sample_tables):
