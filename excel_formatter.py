@@ -162,7 +162,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     ticker       = tables[0].ticker if tables else ""
     company_name = ""
     meta = next((t for t in tables if t.sheet_name == "Data_Meta"), None)
-    if meta and len(meta.concepts) > 1 and meta.values and meta.values[1]:
+    if meta and len(meta.concepts) > 1 and len(meta.values) > 1 and meta.values[1]:
         company_name = meta.values[1][0] or ""
 
     header_text = f"{ticker} — {company_name}" if company_name else ticker
