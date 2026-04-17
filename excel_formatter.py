@@ -149,7 +149,7 @@ def _apply_number_formats(ws) -> None:
             cell = ws.cell(row=row_idx, column=col_idx)
             if isinstance(cell.value, (int, float)):
                 cell.value = cell.value / divisor
-            cell.number_format = fmt
+                cell.number_format = fmt
 
 
 # ── Public API ────────────────────────────────────────────────────────────

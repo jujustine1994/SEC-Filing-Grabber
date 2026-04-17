@@ -1,7 +1,7 @@
 """Tests for excel_formatter.py."""
 import pytest
 from openpyxl import Workbook
-from excel_formatter import format_workbook
+from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES
 
 
 def _make_wb(sheet_name="Data_Financials(Q)"):
@@ -156,10 +156,6 @@ def test_normal_row_not_bold():
 
 
 # ── number formatting + unit conversion ────────────────────────────────────
-
-FMT_FINANCIAL = "#,##0.0_ ;[Red](#,##0.0)"
-FMT_EPS       = "#,##0.00_ ;[Red](#,##0.00)"
-FMT_SHARES    = "#,##0"
 
 def test_revenue_divided_by_million():
     wb = _make_wb()
