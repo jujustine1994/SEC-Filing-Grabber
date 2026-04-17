@@ -112,18 +112,30 @@ def test_blank_separator_fill_grey():
     # A5 = ""
     assert _rgb(ws, "A5") == "FFEEEEEE"
 
+def test_section_header_row_height():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert ws.row_dimensions[3].height == 16
+
+def test_blank_separator_row_height():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert ws.row_dimensions[5].height == 6
+
 def test_data_row_alternating_white():
     wb = _make_wb()
     format_workbook(wb, [])
     ws = wb["Data_Financials(Q)"]
-    # Row 4 = "Revenue" (even row number → white)
+    # row_idx=4, even → ROW_WHITE
     assert _rgb(ws, "A4") == "FFFFFFFF"
 
 def test_data_row_alternating_blue():
     wb = _make_wb()
     format_workbook(wb, [])
     ws = wb["Data_Financials(Q)"]
-    # Row 7 = "Basic Shares" (odd row number → alt blue)
+    # row_idx=7, odd → ROW_ALT
     assert _rgb(ws, "A7") == "FFF5F8FF"
 
 def test_subtotal_row_bold():

@@ -121,7 +121,7 @@ def _apply_row_styles(ws) -> None:
 # ── Public API ────────────────────────────────────────────────────────────
 
 def format_workbook(wb: Workbook, tables: list[StatementTable]) -> None:
-    """Apply formatting to all Data_* sheets and insert Index sheet at position 0."""
+    """Apply formatting to all Data_* sheets."""
     for ws in wb.worksheets:
         if not ws.title.startswith("Data_"):
             continue
