@@ -221,3 +221,70 @@ def test_seg_sheet_financial_converted():
     wb["Data_Seg_Revenue"]["C4"] = 50000000000.0
     format_workbook(wb, [])
     assert wb["Data_Seg_Revenue"]["C4"].value == pytest.approx(50000.0)
+
+
+# ── Index sheet ────────────────────────────────────────────────────────────
+
+from fetcher_gaap import StatementTable
+
+def _make_tables(sheet_name="Data_Financials(Q)", ticker="AAPL",
+                 qs=None, dates=None):
+    qs    = qs    or ["FY2020Q1", "FY2024Q4"]
+    dates = dates or ["2020-04-30", "2025-01-30"]
+    return [StatementTable(
+        sheet_name=sheet_name, ticker=ticker,
+        quarter_labels=qs, filing_dates=dates,
+        concepts=["Revenue"], values=[[100.0, 200.0]], labels=["Revenues"],
+    )]
+
+
+def test_index_sheet_created():
+    wb = _make_wb()
+    format_workbook(wb, _make_tables())
+    assert "Index" in wb.sheetnames
+
+def test_index_sheet_is_first():
+    wb = _make_wb()
+    format_workbook(wb, _make_tables())
+    assert wb.sheetnames[0] == "Index"
+
+def test_index_sheet_ticker_in_a1():
+    wb = _make_wb()
+    format_workbook(wb, _make_tables(ticker="AAPL"))
+    ws = wb["Index"]
+    assert "AAPL" in str(ws["A1"].value)
+
+def test_index_lists_data_sheet():
+    wb = _make_wb()
+    format_workbook(wb, _make_tables())
+    ws = wb["Index"]
+    col_a_values = [ws.cell(row=r, column=1).value for r in range(1, ws.max_row + 1)]
+    assert "Data_Financials(Q)" in col_a_values
+
+def test_index_shows_earliest_period():
+    wb = _make_wb()
+    format_workbook(wb, _make_tables(qs=["FY2010Q1", "FY2024Q4"]))
+    ws = wb["Index"]
+    all_values = [ws.cell(row=r, column=c).value
+                  for r in range(1, ws.max_row + 1)
+                  for c in range(1, 5)]
+    assert "FY2010Q1" in all_values
+
+def test_index_shows_latest_period():
+    wb = _make_wb()
+    format_workbook(wb, _make_tables(qs=["FY2010Q1", "FY2024Q4"]))
+    ws = wb["Index"]
+    all_values = [ws.cell(row=r, column=c).value
+                  for r in range(1, ws.max_row + 1)
+                  for c in range(1, 5)]
+    assert "FY2024Q4" in all_values
+
+def test_index_not_deleted_on_reformat():
+    """Index must not be deleted by excel_writer (doesn't start with Data_)."""
+    wb = _make_wb()
+    format_workbook(wb, _make_tables())
+    # Simulate a second write: excel_writer deletes Data_* sheets
+    for name in list(wb.sheetnames):
+        if name.startswith("Data_"):
+            del wb[name]
+    assert "Index" in wb.sheetnames

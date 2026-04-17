@@ -152,10 +152,78 @@ def _apply_number_formats(ws) -> None:
                 cell.number_format = fmt
 
 
+# ── Index sheet ───────────────────────────────────────────────────────────
+
+def _build_index_sheet(wb: Workbook, tables: list) -> None:
+    """Insert or replace the Index sheet at position 0."""
+    if "Index" in wb.sheetnames:
+        del wb["Index"]
+
+    ticker       = tables[0].ticker if tables else ""
+    company_name = ""
+    meta = next((t for t in tables if t.sheet_name == "Data_Meta"), None)
+    if meta and len(meta.concepts) > 1 and meta.values and meta.values[1]:
+        company_name = meta.values[1][0] or ""
+
+    header_text = f"{ticker} — {company_name}" if company_name else ticker
+
+    ws = wb.create_sheet("Index", 0)
+
+    # Row 1: company header
+    ws["A1"] = header_text
+    ws["A1"].fill = _fill(NAVY_DARK)
+    ws["A1"].font = Font(color="FFFFFFFF", bold=True, size=14)
+    ws.merge_cells("A1:D1")
+
+    # Row 2: metadata
+    ws["A2"] = f"抓取日期：{date.today()}　　資料來源：SEC EDGAR"
+    ws["A2"].fill = _fill(NAVY_MID)
+    ws["A2"].font = Font(color="FFAABBCC", size=9)
+    ws.merge_cells("A2:D2")
+
+    # Row 3: blank
+    ws.row_dimensions[3].height = 6
+
+    # Row 4: column headers
+    hdr_font = Font(bold=True, size=10)
+    hdr_fill = _fill(BLUE_HDR)
+    for col, label in enumerate(["Sheet", "說明", "最早期間", "最新期間"], start=1):
+        cell = ws.cell(row=4, column=col, value=label)
+        cell.font = hdr_font
+        cell.fill = hdr_fill
+
+    # Row 5+: one row per Data_* sheet
+    data_sheets = [t for t in tables if t.sheet_name.startswith("Data_")]
+    for i, tbl in enumerate(data_sheets):
+        row = 5 + i
+        earliest = tbl.quarter_labels[0]  if tbl.quarter_labels else "—"
+        latest   = tbl.quarter_labels[-1] if tbl.quarter_labels else "—"
+
+        is_primary = tbl.sheet_name in ("Data_Financials(Q)", "Data_Financials(Y)")
+        name_font  = Font(color="FF1F3864" if is_primary else "FF666666",
+                          bold=is_primary, size=10)
+        row_fill   = _fill(ROW_WHITE) if row % 2 == 0 else _fill(ROW_ALT)
+
+        for col, val in enumerate([tbl.sheet_name,
+                                    _sheet_description(tbl.sheet_name),
+                                    earliest, latest], start=1):
+            cell = ws.cell(row=row, column=col, value=val)
+            cell.fill = row_fill
+            if col == 1:
+                cell.font = name_font
+
+    # Column widths
+    ws.column_dimensions["A"].width = 22
+    ws.column_dimensions["B"].width = 30
+    ws.column_dimensions["C"].width = 12
+    ws.column_dimensions["D"].width = 12
+
+
 # ── Public API ────────────────────────────────────────────────────────────
 
 def format_workbook(wb: Workbook, tables: list[StatementTable]) -> None:
     """Apply formatting to all Data_* sheets."""
+    _build_index_sheet(wb, tables)
     for ws in wb.worksheets:
         if not ws.title.startswith("Data_"):
             continue
