@@ -4,10 +4,15 @@
 
 - Phase 1 (GAAP)：萬能模板完成 ✅
 - Phase 2 (Non-GAAP)：完成 ✅
+- Phase 3 (Excel 美化)：完成 ✅
 
 ## 功能清單
 
 ### 已完成
+- [x] Excel 自動美化（深藍色 header、交替底色、section 分隔、subtotal 粗體）
+- [x] 財務數字自動 ÷1M（EPS 除外），套用千分位格式
+- [x] Index sheet（第一頁，列出所有 sheet 用途 + 最早/最新期間）
+- [x] Data_Financials(Q)（季報）+ Data_Financials(Y)（年報 10-K）雙 sheet
 - [x] Per-ticker output path memory（ticker_paths in config.json）
 - [x] Non-GAAP fetching from 8-K press releases（Data_EPS_Recon + Data_NonGAAP）
 - [x] nongaap_cache.json 增量快取（每季 AI 呼叫結果本機快取）
@@ -29,16 +34,31 @@
 - [x] match="first"|"last" + label_hint 精確比對（解決 BS 重複 std_concept 問題）
 
 ### 待辦
+- [ ] Watchlist 每間公司獨立輸出路徑設定（方案 A：清單每行加 📁 按鈕）
+- [ ] config.json 搬到使用者 APPDATA 目錄（不進 git）
 - [ ] 實機測試（GAAP）：AAPL、TSLA、BA、XOM 確認 Data_Financials 正確
 - [ ] 實機測試（Non-GAAP）：AAPL、NVDA 確認 Data_EPS_Recon + Data_NonGAAP + nongaap_cache.json
 - [ ] main.py 舊名稱掃描：確認無 Data_IS/BS/CF 殘留參照
 - [ ] 金融股模板（GS/JPM）：UI 自動偵測 + 警告（已設計，延後實作）
-- [ ] Excel Template 著色功能：使用者自訂顏色 template.xlsx，工具只填值不改格式
 - [ ] 批量更新（Tab 2）加入 Non-GAAP 支援
 
 ---
 
 ## 更新記錄
+
+### 2026-04-17（Session 4）
+
+**Excel 自動美化（Phase 3）**
+- 新增 `excel_formatter.py`：format_workbook() 在存檔前自動套用所有格式
+- 欄寬修正（A=22, B=24, 資料欄=13）：解決科學記號顯示問題
+- 深藍色 header 列（Row 1/2）、藍色 section header、灰色分隔列、交替底色、subtotal 粗體
+- 財務數字自動 ÷1M，套用 `#,##0.0` 千分位格式；EPS 保留原值用 2 位小數；Shares ÷1M 整數
+- Index sheet 自動插入第一頁：列出所有 Data_* sheet 用途、最早/最新期間
+- 凍結窗格 C3（Rows 1–2 + Cols A–B 固定）
+- 新增 Data_Financials(Y)（年報 10-K），原 Data_Financials 更名為 Data_Financials(Q）
+- 新增 72 個 unit tests，全數通過（總計 106 tests）
+
+---
 
 ### 2026-04-17（Session 3）
 
