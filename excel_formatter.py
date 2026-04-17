@@ -75,7 +75,12 @@ def _set_freeze_panes(ws) -> None:
     ws.freeze_panes = "C3"
 
 
-# ── Row styles ────────────────────────────────────────────────────────────
+# ── Number formatting and unit conversion ────────────────────────────────
+
+FMT_FINANCIAL = "#,##0.0_ ;[Red](#,##0.0)"
+FMT_EPS       = "#,##0.00_ ;[Red](#,##0.00)"
+FMT_SHARES    = "#,##0"
+
 
 def _apply_row_styles(ws) -> None:
     """Apply fill and font styles to all rows."""
@@ -118,6 +123,35 @@ def _apply_row_styles(ws) -> None:
             ws.row_dimensions[row_idx].height = row_height
 
 
+def _apply_number_formats(ws) -> None:
+    """Convert values to millions and apply number formats. Skips section/blank rows."""
+    for row_idx in range(3, ws.max_row + 1):
+        concept = str(ws.cell(row=row_idx, column=1).value or "").strip()
+
+        # Section headers and blank separators have no numeric data
+        if concept in SECTION_HEADERS or concept == "":
+            continue
+
+        is_eps    = _is_eps_concept(concept)
+        is_shares = "Shares" in concept
+
+        if is_eps:
+            fmt = FMT_EPS
+            divisor = 1
+        elif is_shares:
+            fmt = FMT_SHARES
+            divisor = 1_000_000
+        else:
+            fmt = FMT_FINANCIAL
+            divisor = 1_000_000
+
+        for col_idx in range(3, ws.max_column + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            if isinstance(cell.value, (int, float)):
+                cell.value = cell.value / divisor
+            cell.number_format = fmt
+
+
 # ── Public API ────────────────────────────────────────────────────────────
 
 def format_workbook(wb: Workbook, tables: list[StatementTable]) -> None:
@@ -128,3 +162,5 @@ def format_workbook(wb: Workbook, tables: list[StatementTable]) -> None:
         _apply_column_widths(ws)
         _set_freeze_panes(ws)
         _apply_row_styles(ws)
+        if ws.title != "Data_Meta":
+            _apply_number_formats(ws)

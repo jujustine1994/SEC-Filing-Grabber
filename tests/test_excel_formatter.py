@@ -153,3 +153,75 @@ def test_normal_row_not_bold():
     ws = wb["Data_Financials(Q)"]
     # A4 = "Revenue" (not a subtotal)
     assert ws["A4"].font.bold is not True
+
+
+# ── number formatting + unit conversion ────────────────────────────────────
+
+FMT_FINANCIAL = "#,##0.0_ ;[Red](#,##0.0)"
+FMT_EPS       = "#,##0.00_ ;[Red](#,##0.00)"
+FMT_SHARES    = "#,##0"
+
+def test_revenue_divided_by_million():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    # C4 = "Revenue" row, raw = 117154000000
+    assert ws["C4"].value == pytest.approx(117154.0)
+
+def test_revenue_second_col_divided():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert ws["D4"].value == pytest.approx(94836.0)
+
+def test_revenue_number_format():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C4"].number_format == FMT_FINANCIAL
+
+def test_eps_not_divided():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    # C6 = "Basic EPS" = 1.52 → must stay 1.52
+    assert wb["Data_Financials(Q)"]["C6"].value == pytest.approx(1.52)
+
+def test_eps_number_format():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C6"].number_format == FMT_EPS
+
+def test_shares_divided_by_million():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    # C7 = "Basic Shares" = 15787000000 → 15787.0
+    assert wb["Data_Financials(Q)"]["C7"].value == pytest.approx(15787.0)
+
+def test_shares_number_format():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C7"].number_format == FMT_SHARES
+
+def test_section_header_values_unchanged():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    # C3 = "Income Statement" row — all None
+    assert wb["Data_Financials(Q)"]["C3"].value is None
+
+def test_data_meta_values_not_converted():
+    """Data_Meta contains strings — must not be divided."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data_Meta"
+    ws["A1"] = "AAPL"
+    ws["C1"] = "FY2023Q1"
+    ws["A3"] = "Ticker"
+    ws["C3"] = "AAPL"
+    format_workbook(wb, [])
+    assert wb["Data_Meta"]["C3"].value == "AAPL"
+
+def test_seg_sheet_financial_converted():
+    wb = _make_wb(sheet_name="Data_Seg_Revenue")
+    wb["Data_Seg_Revenue"]["A4"] = "Americas"
+    wb["Data_Seg_Revenue"]["C4"] = 50000000000.0
+    format_workbook(wb, [])
+    assert wb["Data_Seg_Revenue"]["C4"].value == pytest.approx(50000.0)
