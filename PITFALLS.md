@@ -136,3 +136,40 @@ concept_labels[key] = unicodedata.normalize("NFKC", raw_label)
 ```python
 assert ws["B5"].value is None   # 空 label
 ```
+
+---
+
+## 地雷十：XOM 等公司的 CF 彙總行末尾有 noncash 項目共用同一 standard_concept
+
+**問題：** XOM 的 `NetCashFromOperatingActivities` 在 edgartools 中出現 4 次：正確的彙總行（"Net cash provided by operating activities"）在 index 26，但末尾還有兩行 ROU lease noncash 調整項目（index 55, 56）也用同樣的 `standard_concept`。`match="last"` 會拿到 index 56（$6M），而非正確的 $12.95B。
+
+**解法：** CF 三大彙總行改加 `label_hint="net cash"`，讓 `_match_is_row` 先縮到 label 含 "net cash" 的候選行再取 last：
+```python
+("Operating Cash Flow", "NetCashFromOperatingActivities", ..., "CF", "last", "net cash"),
+("Investing Cash Flow", "NetCashFromInvestingActivities", ..., "CF", "last", "net cash"),
+("Financing Cash Flow", "NetCashFromFinancingActivities", ..., "CF", "last", "net cash"),
+```
+
+**已修復（2026-04-18）。**
+
+---
+
+## 地雷十一：部分公司 Capex 以負數回報（現金流出）導致 FCF 計算錯誤
+
+**問題：** US GAAP XBRL 中，Capex（`PaymentsToAcquirePropertyPlantAndEquipment`）可以是正數（大多數公司）或負數（XOM 等）。若 Capex = -5,898，FCF = OCF - capex = OCF + 5,898，結果偏高。
+
+**解法：** FCF 計算改用 `abs(capex)`：
+```python
+tbl.values[_CF_FCF_IDX][j] = op_cf - abs(capex)
+```
+兩種符號均正確。**已修復（2026-04-18）。**
+
+---
+
+## 地雷十二：10-Q Q2/Q3 的 CF 欄位是 YTD，`_current_q_col` 會跳過
+
+**問題：** edgartools 對 Q2/Q3 的 10-Q CF 表回傳 YTD（年初至今）欄位，如 `2025-06-30 (YTD)` 和 `2025-09-30 (YTD)`。`_is_q_col` 只認 `Q1`/`FY` 格式，故 `_current_q_col` 對 Q2/Q3 回傳 None，整個 filing 被跳過。
+
+**影響：** TSLA、BA、XOM 等公司每年 CF 資料只有 Q1 有值，Q2/Q3 全為 None。這是美國 GAAP 規定 interim CF 用累計方式呈現的結果。
+
+**正確修法（未實作）：** Q2 quarterly = Q2 YTD − Q1 YTD；Q3 quarterly = Q3 YTD − Q2 YTD。需要跨 filing 減法，屬於較大重構。目前列為已知限制。

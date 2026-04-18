@@ -36,7 +36,7 @@
 - [x] match="first"|"last" + label_hint 精確比對（解決 BS 重複 std_concept 問題）
 
 ### 待辦
-- [ ] 實機測試（GAAP）：AAPL、TSLA、BA、XOM 確認 Data_Financials 正確
+- [x] 實機測試（GAAP）：AAPL ✅；TSLA ✅、BA ✅、XOM ✅（2026-04-18）
 - [ ] 實機測試（Non-GAAP）：AAPL、NVDA 確認 Data_EPS_Recon + Data_NonGAAP + nongaap_cache.json
 - [ ] main.py 舊名稱掃描：確認無 Data_IS/BS/CF 殘留參照
 - [ ] 金融股模板（GS/JPM）：UI 自動偵測 + 警告（已設計，延後實作）
@@ -45,6 +45,32 @@
 ---
 
 ## 更新記錄
+
+### 2026-04-18（Session 9）
+
+**Bug 修復（實機測試發現）**
+- `fetcher_gaap.py`：CF 三大彙總行（Operating/Investing/Financing Cash Flow）新增 `label_hint="net cash"`，避免 `match="last"` 因相同 `standard_concept` 拿到 trailing noncash 項目（如 XOM 的 ROU lease 調整項）
+- `fetcher_gaap.py`：FCF 計算改為 `OCF − abs(Capex)`，修正 XOM 等以負數回報 Capex 的公司 FCF 加倍的問題
+
+**實機測試結果**
+- TSLA、BA：三表輸出正常，IS/BS 數值與公開財報吻合 ✅
+- XOM：OCF 從 $6M（誤）修正為 $12,953M，FCF 從 $5,904M（偶然正確）修正為 $7,055M ✅
+- 已知限制：Q2/Q3 CF 全為 None（XOM/TSLA/BA 均以 YTD 格式回報，`_current_q_col` 跳過）
+
+---
+
+### 2026-04-17（Session 8）
+
+**Bug 修復**
+- `fetcher_nongaap.py`：`fetch_nongaap_statements` 新增 `max_filings` 參數（預設 80），首次抓取不再無限往回到 2004 年
+- `main.py`：呼叫 `fetch_nongaap_statements` 時傳入 `max_filings`，與 GAAP 上限保持一致
+
+**程式碼文件化**
+- `main.py`：補上 SECFetcherApp class docstring（說明 thread/queue 架構）及 27 個 method docstring（涵蓋所有原本空白的方法）
+- 重點標注非顯而易見的行為：`_wl_draft` 暫存模式、cache-first 查詢邏輯、Tkinter thread 安全機制（msg_queue + _poll_queue）、double-run 防護等
+- 其他五個檔案（config.py、excel_formatter.py、excel_writer.py、fetcher_gaap.py、fetcher_nongaap.py）原本已有完整 docstring，無需異動
+
+---
 
 ### 2026-04-17（Session 7）
 
