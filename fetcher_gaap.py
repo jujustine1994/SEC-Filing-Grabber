@@ -148,19 +148,19 @@ CF_TEMPLATE: list[_T] = [
     ("Change in Deferred Revenue", "ChangeInDeferredRevenue",            "IncreaseDecreaseInDeferredRevenue",                     "CF", "first", None),
     ("Other Working Capital",      "ChangeInOtherWorkingCapital",        "IncreaseDecreaseInOtherOperatingLiabilities",           "CF", "first", None),
     ("Other Non-cash Items",       "OtherNonCashItemsCF",                "OtherNoncashIncomeExpense",                             "CF", "first", None),
-    ("Operating Cash Flow",        "NetCashFromOperatingActivities",     "NetCashProvidedByUsedInOperatingActivities",            "CF", "last",  None),
+    ("Operating Cash Flow",        "NetCashFromOperatingActivities",     "NetCashProvidedByUsedInOperatingActivities",            "CF", "last",  "net cash"),
     # ── Investing ────────────────────────────────────────────────────────
     ("Capex",                      "CapitalExpenses",                    "PaymentsToAcquirePropertyPlantAndEquipment",            "CF", "first", "property"),
     ("Acquisitions",               "AcquisitionsNet",                    "PaymentsToAcquireBusinessesNetOfCashAcquired",          "CF", "first", None),
     ("Investment Purchases",       "InvestmentPurchases",                "PaymentsToAcquireInvestments",                          "CF", "first", None),
     ("Investment Proceeds",        "InvestmentProceeds",                 "ProceedsFromSaleOfInvestments",                         "CF", "first", None),
-    ("Investing Cash Flow",        "NetCashFromInvestingActivities",     "NetCashProvidedByUsedInInvestingActivities",            "CF", "last",  None),
+    ("Investing Cash Flow",        "NetCashFromInvestingActivities",     "NetCashProvidedByUsedInInvestingActivities",            "CF", "last",  "net cash"),
     # ── Financing ────────────────────────────────────────────────────────
     ("Debt Proceeds",              "DebtProceeds",                       "ProceedsFromIssuanceOfDebt",                            "CF", "first", None),
     ("Debt Repayments",            "DebtRepayments",                     "RepaymentsOfDebt",                                      "CF", "first", None),
     ("Share Repurchases",          "EquityExpenseIncomeBuybackIssued",   "PaymentsForRepurchaseOfCommonStock",                    "CF", "first", "repurchas"),
     ("Dividends Paid",             "DistributionsToMinorityInterests",   "PaymentsOfDividends",                                   "CF", "first", "dividend"),
-    ("Financing Cash Flow",        "NetCashFromFinancingActivities",     "NetCashProvidedByUsedInFinancingActivities",            "CF", "last",  None),
+    ("Financing Cash Flow",        "NetCashFromFinancingActivities",     "NetCashProvidedByUsedInFinancingActivities",            "CF", "last",  "net cash"),
     # ── Other ────────────────────────────────────────────────────────────
     ("FX Effect on Cash",          "ForeignExchangeEffectOnCash",        "EffectOfExchangeRateOnCashAndCashEquivalents",          "CF", "first", None),
     ("Net Change in Cash",         "NetChangeInCash",                    "CashAndCashEquivalentsPeriodIncreaseDecrease",          "CF", "first", None),
@@ -602,11 +602,13 @@ def _build_cf_table(filings, max_filings: int) -> StatementTable:
         #    _build_template_table doesn't have access to per-filing df.
         #    Handled instead via the broad fallback_suffix already in CF_TEMPLATE.
 
-        # 3. Free Cash Flow = Operating CF − Capex
+        # 3. Free Cash Flow = Operating CF − |Capex|
+        # abs() normalises sign: some companies report Capex positive (outflow),
+        # others negative. Both cases produce the correct FCF.
         op_cf  = tbl.values[_CF_OP_CASH_IDX][j]
         capex  = tbl.values[_CF_CAPEX_IDX][j]
         if op_cf is not None and capex is not None:
-            tbl.values[_CF_FCF_IDX][j] = op_cf - capex
+            tbl.values[_CF_FCF_IDX][j] = op_cf - abs(capex)
 
     return tbl
 
