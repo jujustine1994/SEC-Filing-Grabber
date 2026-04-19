@@ -37,8 +37,12 @@
 
 ### 待辦
 - [x] 實機測試（GAAP）：AAPL ✅；TSLA ✅、BA ✅、XOM ✅（2026-04-18）
-- [ ] 實機測試（Non-GAAP）：AAPL、NVDA 確認 Data_EPS_Recon + Data_NonGAAP + nongaap_cache.json
-- [ ] main.py 舊名稱掃描：確認無 Data_IS/BS/CF 殘留參照
+- [x] 實機測試（Non-GAAP）：NVDA ✅ Data_NonGAAP 97 指標正常；AAPL ⚠️ 少報 Non-GAAP 屬預期行為（2026-04-19）
+- [x] main.py 舊名稱掃描：確認無 Data_IS/BS/CF 殘留參照 ✅（2026-04-19）
+- [ ] Non-GAAP：Data_EPS_Recon 從未產生（edgartools eps_reconciliation 對 AAPL/NVDA 均回傳空）
+- [ ] Non-GAAP：nongaap_cache.json 無 ticker 隔離（多公司共用同一 output_dir 時資料互蓋）
+- [ ] Non-GAAP：NVDA 指標名稱帶期間後綴（同指標跨季是不同 row，表格超稀疏）
+- [ ] CF：Q2/Q3 全為 None（EDGAR 10-Q Q2/Q3 的 CF 以 YTD 格式回報，需實作 YTD→季度換算）
 - [ ] 金融股模板（GS/JPM）：UI 自動偵測 + 警告（已設計，延後實作）
 - [ ] 批量更新（Tab 2）加入 Non-GAAP 支援
 
