@@ -64,9 +64,16 @@ def show_cth_banner():
 # ---- App ----
 
 class SECFetcherApp:
+    """Two-tab SEC financial fetcher UI.
+
+    All background work runs in daemon threads; results are pushed to msg_queue
+    and applied in _poll_queue every 100ms because Tkinter is not thread-safe.
+    """
+
     TICKER_PH = "輸入 Ticker（如 AAPL）"
 
     def __init__(self, root: tk.Tk):
+        """Load config, initialise state, build UI, start the 100ms queue poll."""
         self.root = root
         self.root.title("SEC Financial Fetcher")
         self.root.resizable(True, True)
@@ -115,6 +122,7 @@ class SECFetcherApp:
     # =========================================================
 
     def _build_ui(self):
+        """Build full window layout: notebook (row 0), persistent buttons (row 1), log (row 2), open-folder (row 3)."""
         pad = {"padx": 14, "pady": 6}
 
         # Global font — 11pt for all ttk widgets
@@ -159,6 +167,7 @@ class SECFetcherApp:
         self.root.rowconfigure(2, weight=1)
 
     def _build_tab1(self):
+        """Build Tab 1 (單一公司): ticker input, GAAP/Non-GAAP toggles, output settings, run button."""
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text="  單一公司  ")
 
@@ -249,6 +258,7 @@ class SECFetcherApp:
         self.btn_run_single.grid(row=5, column=0, pady=(8, 4))
 
     def _toggle_out_settings(self):
+        """Collapse or expand the output-settings section, updating the toggle button arrow."""
         self._out_collapsed = not self._out_collapsed
         if self._out_collapsed:
             self._out_settings_frame.grid_remove()
@@ -258,12 +268,14 @@ class SECFetcherApp:
             self._out_toggle_btn.config(text="▼ 輸出設定")
 
     def _on_nongaap_toggle(self, *_args):
+        """Show the API Key warning when Non-GAAP is enabled but api_key is not yet configured."""
         if self.fetch_nongaap_var.get() and not self.cfg["ai"].get("api_key"):
             self.nongaap_warn_label.grid()
         else:
             self.nongaap_warn_label.grid_remove()
 
     def _build_tab2(self):
+        """Build Tab 2 (批量更新): scrollable group-organised watchlist + batch run button."""
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text="  批量更新  ")
 
@@ -303,6 +315,7 @@ class SECFetcherApp:
     # =========================================================
 
     def _ph_in(self, entry, var, placeholder):
+        """Clear placeholder text when the user focuses into an entry field."""
         if var.get() == placeholder:
             var.set("")
             entry.configure(foreground="black")
@@ -310,11 +323,13 @@ class SECFetcherApp:
                 self.tab1_name_label.config(text="")
 
     def _ph_out(self, entry, var, placeholder):
+        """Restore placeholder text (grey) when user leaves an empty entry field."""
         if not var.get().strip():
             var.set(placeholder)
             entry.configure(foreground="grey")
 
     def _on_ticker_focusout(self, event):
+        """Restore placeholder and spawn a background company-name lookup when user leaves the ticker field."""
         self._ph_out(self.ticker_entry, self.ticker_var, self.TICKER_PH)
         ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
         if not ticker:
@@ -330,6 +345,7 @@ class SECFetcherApp:
         threading.Thread(target=lambda: self._tab1_lookup_worker(ticker), daemon=True).start()
 
     def _confirm_company(self):
+        """Trigger company-name lookup manually (bound to Enter key in ticker entry)."""
         ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
         if not ticker:
             return
@@ -340,6 +356,7 @@ class SECFetcherApp:
         threading.Thread(target=lambda: self._tab1_lookup_worker(ticker), daemon=True).start()
 
     def _tab1_lookup_worker(self, ticker: str):
+        """Background thread: resolve company name for Tab 1 inline display (local cache first, then live EDGAR)."""
         # Check local cache first
         if CACHE_PATH.exists():
             try:
@@ -369,6 +386,7 @@ class SECFetcherApp:
         return "" if v == placeholder else v
 
     def _on_tab1_fmt_change(self):
+        """Enable/disable the custom filename entry and refresh the preview when format radio changes."""
         is_custom = self.tab1_fmt_var.get() == "custom"
         if self.tab1_custom_entry:
             self.tab1_custom_entry.config(state="normal" if is_custom else "disabled")
@@ -376,6 +394,7 @@ class SECFetcherApp:
         self._update_tab1_preview()
 
     def _update_tab1_preview(self):
+        """Refresh the filename preview label based on current format setting and ticker."""
         if not self.tab1_preview_label:
             return
         ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper() if self.ticker_var else ""
@@ -395,6 +414,7 @@ class SECFetcherApp:
         self.tab1_preview_label.config(text=f"預覽：{preview}")
 
     def _browse_output_dir(self):
+        """Open folder picker and save selection globally and as a per-ticker path memory."""
         from tkinter import filedialog
         current = self.tab1_outdir_var.get().strip() if self.tab1_outdir_var else "output"
         initial = str(SCRIPT_DIR / current) if not os.path.isabs(current) else current
@@ -410,6 +430,7 @@ class SECFetcherApp:
             self._save_tab1_output_settings()
 
     def _save_tab1_output_settings(self):
+        """Persist Tab 1 output settings (dir, filename format, custom name) to config.json."""
         if self.tab1_outdir_var:
             self.cfg["output_dir"] = self.tab1_outdir_var.get().strip() or "output"
         if self.tab1_fmt_var:
@@ -423,6 +444,7 @@ class SECFetcherApp:
     # =========================================================
 
     def _refresh_tab2_list(self):
+        """Rebuild Tab 2 watchlist display with group headers and per-group select/deselect buttons."""
         for w in self._tab2_inner.winfo_children():
             w.destroy()
         self.tab2_check_vars = {}
@@ -484,6 +506,7 @@ class SECFetcherApp:
     # =========================================================
 
     def _open_watchlist_popup(self):
+        """Open watchlist manager. All edits are staged in _wl_draft and committed only on '儲存關閉'."""
         import copy
         self._ensure_groups(self.cfg)
         self._wl_draft = copy.deepcopy({
@@ -502,6 +525,7 @@ class SECFetcherApp:
         self._build_watchlist_popup(popup)
 
     def _build_watchlist_popup(self, popup: tk.Toplevel):
+        """Build watchlist popup: scrollable list, add-company section, cache status, save/discard buttons."""
         pad = {"padx": 12, "pady": 4}
         popup.columnconfigure(0, weight=1)
 
@@ -570,6 +594,7 @@ class SECFetcherApp:
                    command=popup.destroy).pack(side="left", padx=6)
 
     def _refresh_wl_popup_list(self, container):
+        """Redraw the watchlist inside the popup from _wl_draft, with collapsible group headers."""
         for w in container.winfo_children():
             w.destroy()
         watchlist = self._wl_draft.get("watchlist", [])
@@ -628,6 +653,7 @@ class SECFetcherApp:
             self._wl_list_canvas.configure(scrollregion=self._wl_list_canvas.bbox("all"))
 
     def _wl_lookup(self):
+        """Start async company-name lookup for the ticker in the add-company input."""
         ticker = self.wl_add_var.get().strip().upper()
         if not ticker:
             self.wl_lookup_label.config(text="請輸入 Ticker", foreground="red")
@@ -638,6 +664,7 @@ class SECFetcherApp:
         threading.Thread(target=lambda: self._wl_lookup_worker(ticker), daemon=True).start()
 
     def _wl_lookup_worker(self, ticker: str):
+        """Background thread: resolve company name for watchlist add (local cache first, then live EDGAR)."""
         cache: dict[str, str] = {}
         if CACHE_PATH.exists():
             try:
@@ -669,6 +696,7 @@ class SECFetcherApp:
         self._refresh_wl_popup_list(container)
 
     def _wl_remove(self, ticker: str, container):
+        """Remove ticker from both the watchlist array and all groups in _wl_draft."""
         self._wl_draft["watchlist"] = [w for w in self._wl_draft.get("watchlist", []) if w["ticker"] != ticker]
         for g in self._wl_draft.get("groups", []):
             if ticker in g["tickers"]:
@@ -676,6 +704,7 @@ class SECFetcherApp:
         self._refresh_wl_popup_list(container)
 
     def _wl_add(self):
+        """Add the looked-up ticker to _wl_draft watchlist and assign it to the selected group."""
         ticker = self.wl_add_var.get().strip().upper()
         if not ticker or not self._wl_found_name:
             return
@@ -732,6 +761,7 @@ class SECFetcherApp:
         self._refresh_wl_popup_list(container)
 
     def _wl_delete_group(self, group_name: str, container):
+        """Delete a group, moving its tickers to 未分類 with a confirmation dialog if the group is non-empty."""
         grp = next((g for g in self._wl_draft.get("groups", []) if g["name"] == group_name), None)
         if not grp:
             return
@@ -762,6 +792,7 @@ class SECFetcherApp:
             pass
 
     def _wl_save_close(self, popup: tk.Toplevel):
+        """Commit _wl_draft to live config, save to disk, refresh Tab 2, and close the popup."""
         self.cfg["watchlist"] = self._wl_draft.get("watchlist", [])
         self.cfg["groups"]    = self._wl_draft.get("groups",    [])
         save_config(self.cfg, CONFIG_PATH)
@@ -773,6 +804,7 @@ class SECFetcherApp:
         threading.Thread(target=self._wl_update_cache_worker, daemon=True).start()
 
     def _wl_update_cache_worker(self):
+        """Background thread: download full SEC ticker list from EDGAR and save to company_cache.json."""
         try:
             identity = self.cfg.get("identity") or "SEC Tool sec@example.com"
             url = "https://www.sec.gov/files/company_tickers.json"
@@ -837,6 +869,7 @@ class SECFetcherApp:
         self._build_settings_popup(popup)
 
     def _build_settings_popup(self, popup: tk.Toplevel):
+        """Build settings popup: SEC identity, AI config, fetch limits, template mode."""
         pad = {"padx": 12, "pady": 4}
 
         # SEC Identity
@@ -941,6 +974,7 @@ class SECFetcherApp:
             self.settings_template_var.set(path)
 
     def _on_provider_change(self, _event=None):
+        """Auto-fill the default model name when the AI provider selection changes."""
         provider = self.settings_provider_var.get()
         self.settings_model_var.set(PROVIDER_DEFAULTS.get(provider, ""))
 
@@ -964,6 +998,7 @@ class SECFetcherApp:
         ).start()
 
     def _test_ai_worker(self, provider: str, model: str, api_key: str):
+        """Background thread: send a trivial prompt to verify AI API connectivity."""
         try:
             if provider == "google":
                 import google.generativeai as genai
@@ -1067,6 +1102,7 @@ class SECFetcherApp:
     # =========================================================
 
     def _run_single(self):
+        """Validate inputs then launch the single-ticker fetch+write worker in a background thread."""
         ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
         if not ticker:
             messagebox.showerror("錯誤", "請輸入 Ticker")
@@ -1093,6 +1129,7 @@ class SECFetcherApp:
         self._start_worker(lambda: self._worker_batch(selected))
 
     def _start_worker(self, target):
+        """Clear log, disable run buttons, and start target as a daemon thread. Guards against double-runs."""
         if self.is_running:
             return
         self.log_text.config(state="normal")
@@ -1107,6 +1144,7 @@ class SECFetcherApp:
         threading.Thread(target=target, daemon=True).start()
 
     def _worker_single(self, ticker: str, fetch_gaap: bool, fetch_nongaap: bool, max_filings: int = 80):
+        """Background thread: orchestrate GAAP and/or Non-GAAP fetch, then write to Excel."""
         try:
             identity = self.cfg.get("identity", "")
             if not identity:
@@ -1144,6 +1182,7 @@ class SECFetcherApp:
                     ticker, identity, ai_config,
                     output_dir=output_dir,
                     progress_cb=_ng_progress,
+                    max_filings=max_filings,
                 )
                 tables.extend(ng_tables)
                 self._log(f"[{ticker}] Non-GAAP：{len(ng_tables)} 張 sheet")
@@ -1168,6 +1207,7 @@ class SECFetcherApp:
             self._done(False)
 
     def _worker_batch(self, tickers: list[str]):
+        """Background thread: fetch GAAP statements for each selected ticker and write to Excel."""
         total = len(tickers)
         identity = self.cfg.get("identity", "")
         if not identity:
@@ -1197,6 +1237,7 @@ class SECFetcherApp:
     # =========================================================
 
     def _log(self, msg: str):
+        """Queue a log line to be appended by _poll_queue in the main thread."""
         self.msg_queue.put(("log", msg))
 
     def _init_log(self, msg: str):
@@ -1205,12 +1246,19 @@ class SECFetcherApp:
         self.log_text.config(state="disabled")
 
     def _set_progress(self, current: int, total: int, label: str):
+        """Queue a progress bar update to be applied in the main thread."""
         self.msg_queue.put(("progress", (current, total, label)))
 
     def _done(self, success: bool):
+        """Queue a run-complete signal so _poll_queue re-enables buttons."""
         self.msg_queue.put(("done", success))
 
     def _poll_queue(self):
+        """Drain msg_queue and apply GUI updates. Runs every 100ms on the main thread.
+
+        All worker threads push results here rather than touching Tkinter directly,
+        because Tkinter is not thread-safe.
+        """
         try:
             while True:
                 msg_type, data = self.msg_queue.get_nowait()
@@ -1301,6 +1349,7 @@ class SECFetcherApp:
 # =========================================================
 
 def main():
+    """Entry point: show banner, create Tk root, launch app, enter event loop."""
     show_cth_banner()
     root = tk.Tk()
     root.attributes("-topmost", True)

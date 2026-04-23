@@ -9,7 +9,10 @@ from fetcher_gaap import (
     _current_q_col,
     _match_is_row,
     _build_is_table,
+    _build_cf_table,
     _merge_financials,
+    _ytd_col,
+    _prev_quarter_label,
 )
 
 # ── helpers ──────────────────────────────────────────────────────────────
@@ -402,3 +405,157 @@ def _make_mock_company(n_filings=2):
     mock_co.name = "Apple Inc."
     mock_co.get_filings.return_value = mock_filings_obj
     return mock_co
+
+
+# ── _ytd_col tests ────────────────────────────────────────────────────────
+
+def test_ytd_col_returns_ytd_column():
+    df = pd.DataFrame({
+        "concept": ["c"], "label": ["l"], "standard_concept": ["s"],
+        "abstract": [False], "is_breakdown": [False], "level": [1],
+        "dimension_member_label": [None],
+        "2025-06-30 (YTD)": [100.0],
+    })
+    assert _ytd_col(df) == "2025-06-30 (YTD)"
+
+def test_ytd_col_ignores_q_columns():
+    df = pd.DataFrame({
+        "concept": ["c"], "label": ["l"], "standard_concept": ["s"],
+        "abstract": [False], "is_breakdown": [False], "level": [1],
+        "dimension_member_label": [None],
+        "2025-03-31 (Q1)": [100.0],
+    })
+    assert _ytd_col(df) is None
+
+def test_ytd_col_returns_none_when_no_period_cols():
+    df = pd.DataFrame({"concept": ["c"], "label": ["l"]})
+    assert _ytd_col(df) is None
+
+def test_ytd_col_returns_q3_ytd_column():
+    df = pd.DataFrame({
+        "concept": ["c"], "label": ["l"], "standard_concept": ["s"],
+        "abstract": [False], "is_breakdown": [False], "level": [1],
+        "dimension_member_label": [None],
+        "2025-09-30 (YTD)": [300.0],
+        "2024-09-30 (YTD)": [270.0],
+    })
+    assert _ytd_col(df) == "2025-09-30 (YTD)"
+
+
+# ── _prev_quarter_label tests ─────────────────────────────────────────────
+
+def test_prev_quarter_label_q2_returns_q1():
+    assert _prev_quarter_label("FY2025Q2") == "FY2025Q1"
+
+def test_prev_quarter_label_q3_returns_q2():
+    assert _prev_quarter_label("FY2025Q3") == "FY2025Q2"
+
+def test_prev_quarter_label_q4_returns_q3():
+    assert _prev_quarter_label("FY2025Q4") == "FY2025Q3"
+
+def test_prev_quarter_label_q1_returns_none():
+    assert _prev_quarter_label("FY2025Q1") is None
+
+def test_prev_quarter_label_annual_returns_none():
+    assert _prev_quarter_label("FY2025") is None
+
+
+# ── CF YTD subtraction integration tests ─────────────────────────────────
+
+def _make_cf_df_minimal(period_col, net_income_val, ocf_val):
+    """Minimal CF DataFrame with Net Income and OCF rows."""
+    return pd.DataFrame({
+        "concept":               ["us-gaap_NetIncomeLoss",  "us-gaap_NetCashProvidedByUsedInOperatingActivities"],
+        "label":                 ["Net income",             "Net cash provided by operating activities"],
+        "standard_concept":      ["NetIncome",              "NetCashFromOperatingActivities"],
+        "abstract":              [False,                     False],
+        "is_breakdown":          [False,                     False],
+        "level":                 [3,                         3],
+        "dimension_member_label":[None,                      None],
+        period_col:              [net_income_val,            ocf_val],
+    })
+
+def _make_is_df_minimal(period_col):
+    """Minimal IS DataFrame for quarter label derivation."""
+    return pd.DataFrame({
+        "concept": ["us-gaap_RevenueFromContractWithCustomer"],
+        "label": ["Net sales"],
+        "standard_concept": ["Revenue"],
+        "abstract": [False], "is_breakdown": [False], "level": [4],
+        "dimension_member_label": [None],
+        period_col: [1000.0],
+    })
+
+def _make_cf_filing(is_period_col, cf_period_col, ni, ocf, filing_date):
+    """Mock a 10-Q filing with given IS and CF columns."""
+    is_df = _make_is_df_minimal(is_period_col)
+    cf_df = _make_cf_df_minimal(cf_period_col, ni, ocf)
+    mock_is = MagicMock(); mock_is.to_dataframe.return_value = is_df
+    mock_cf = MagicMock(); mock_cf.to_dataframe.return_value = cf_df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_is
+    mock_fin.cashflow_statement.return_value = mock_cf
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    mock_filing = MagicMock()
+    mock_filing.obj.return_value = mock_tenq
+    mock_filing.filing_date = filing_date
+    return mock_filing
+
+
+def test_build_cf_table_q1_standalone_unchanged():
+    """Q1 has a standalone (Q1) CF column — value should pass through as-is."""
+    q1 = _make_cf_filing("2025-03-31 (Q1)", "2025-03-31 (Q1)", ni=100.0, ocf=150.0,
+                          filing_date="2025-04-30")
+    tbl = _build_cf_table([q1], max_filings=80)
+    assert "FY2025Q1" in tbl.quarter_labels
+    ni_idx = tbl.concepts.index("Net Income")
+    assert tbl.values[ni_idx][0] == pytest.approx(100.0)
+
+
+def test_build_cf_table_q2_ytd_subtracted_from_q1():
+    """Q2 standalone = Q2 YTD − Q1."""
+    q1_ni, q1_ocf = 100.0, 150.0
+    q2_ni, q2_ocf = 130.0, 180.0          # target standalone values
+    q2_ytd_ni  = q1_ni  + q2_ni            # 230.0 cumulative
+    q2_ytd_ocf = q1_ocf + q2_ocf           # 330.0 cumulative
+
+    q1 = _make_cf_filing("2025-03-31 (Q1)", "2025-03-31 (Q1)", q1_ni, q1_ocf, "2025-04-30")
+    q2 = _make_cf_filing("2025-06-30 (Q2)", "2025-06-30 (YTD)", q2_ytd_ni, q2_ytd_ocf, "2025-07-30")
+
+    tbl = _build_cf_table([q2, q1], max_filings=80)  # newest-first order
+
+    assert "FY2025Q1" in tbl.quarter_labels
+    assert "FY2025Q2" in tbl.quarter_labels
+    ni_idx = tbl.concepts.index("Net Income")
+    q2_col = tbl.quarter_labels.index("FY2025Q2")
+    assert tbl.values[ni_idx][q2_col] == pytest.approx(q2_ni)
+
+
+def test_build_cf_table_q3_ytd_subtracted_from_q2_ytd():
+    """Q3 standalone = Q3 YTD − Q2 YTD (uses raw YTD, not computed Q2 standalone)."""
+    q1_ni, q2_ni, q3_ni = 100.0, 130.0, 150.0
+    q2_ytd_ni = q1_ni + q2_ni              # 230.0
+    q3_ytd_ni = q1_ni + q2_ni + q3_ni     # 380.0
+
+    q1 = _make_cf_filing("2025-03-31 (Q1)", "2025-03-31 (Q1)", q1_ni, q1_ni * 1.5, "2025-04-30")
+    q2 = _make_cf_filing("2025-06-30 (Q2)", "2025-06-30 (YTD)", q2_ytd_ni, q2_ytd_ni * 1.5, "2025-07-30")
+    q3 = _make_cf_filing("2025-09-30 (Q3)", "2025-09-30 (YTD)", q3_ytd_ni, q3_ytd_ni * 1.5, "2025-10-30")
+
+    tbl = _build_cf_table([q3, q2, q1], max_filings=80)
+
+    ni_idx = tbl.concepts.index("Net Income")
+    q3_col = tbl.quarter_labels.index("FY2025Q3")
+    assert tbl.values[ni_idx][q3_col] == pytest.approx(q3_ni)
+
+
+def test_build_cf_table_q2_ytd_without_q1_keeps_raw():
+    """When Q1 is absent, Q2 YTD value is kept as-is (best-effort)."""
+    ytd_ni = 230.0
+    q2 = _make_cf_filing("2025-06-30 (Q2)", "2025-06-30 (YTD)", ytd_ni, ytd_ni * 1.5, "2025-07-30")
+
+    tbl = _build_cf_table([q2], max_filings=80)
+
+    assert "FY2025Q2" in tbl.quarter_labels
+    ni_idx = tbl.concepts.index("Net Income")
+    q2_col = tbl.quarter_labels.index("FY2025Q2")
+    assert tbl.values[ni_idx][q2_col] == pytest.approx(ytd_ni)

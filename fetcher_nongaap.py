@@ -333,6 +333,7 @@ def fetch_nongaap_statements(
     ai_config: dict,
     output_dir: Path,
     progress_cb=None,
+    max_filings: int = 80,
 ) -> list[StatementTable]:
     """Fetch Non-GAAP statements from 8-K filings for a ticker.
 
@@ -342,6 +343,7 @@ def fetch_nongaap_statements(
         ai_config:   {"provider": ..., "model": ..., "api_key": ...}
         output_dir:  Directory where nongaap_cache.json will be stored
         progress_cb: Optional callable(current, total, label) for progress updates
+        max_filings: Max number of earnings quarters to process (newest first, default 80)
 
     Returns:
         List of StatementTable: [Data_EPS_Recon, Data_NonGAAP] (omits None tables)
@@ -351,7 +353,7 @@ def fetch_nongaap_statements(
     cache_path = Path(output_dir) / CACHE_FILENAME
 
     cache = _load_cache(cache_path)
-    filings = _get_earnings_filings(company)
+    filings = _get_earnings_filings(company)[:max_filings]  # newest max_filings quarters only
 
     new_filings = [(lbl, f, ek) for lbl, f, ek in filings if lbl not in cache]
     total = len(new_filings)

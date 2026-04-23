@@ -67,14 +67,14 @@ _T = tuple[str, str | None, str, str, str, str | None]
 
 IS_TEMPLATE: list[_T] = [
     ("Revenue",                    "Revenue",                        "RevenueFromContractWithCustomer",                        "IS", "first", None),
-    ("Cost of Revenue",            "CostOfGoodsAndServicesSold",     "CostOfGoodsSold",                                       "IS", "first", None),
+    ("Cost of Revenue",            "CostOfGoodsAndServicesSold",     "CostOfGoodsSold",                                       "IS", "first", "cost"),
     ("Gross Profit",               "GrossProfit",                    "GrossProfit",                                            "IS", "first", None),
     ("R&D Expense",                "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment",                                 "IS", "first", None),
     ("SG&A Expense",               "SellingGeneralAndAdminExpenses", "SellingGeneralAndAdmin",                                 "IS", "first", None),
     ("D&A (CF memo)",              "DepreciationExpense",            "DepreciationDepletionAndAmortization",                   "CF", "first", None),
     ("Other Operating Expense",    "OtherOperatingExpenses",         "OtherOperatingExpense",                                  "IS", "first", None),
     ("Total Operating Expense",    "TotalOperatingExpenses",         "OperatingExpenses",                                      "IS", "first", None),
-    ("Operating Income",           "OperatingIncomeLoss",            "OperatingIncome",                                        "IS", "first", None),
+    ("Operating Income",           "OperatingIncomeLoss",            "OperatingIncomeLoss",                                    "IS", "first", None),
     ("Interest Expense",           "InterestExpense",                "InterestExpense",                                        "IS", "first", None),
     ("Interest Income",            "InterestIncome",                 "InterestIncome",                                         "IS", "first", None),
     ("Other Non-op Inc/(Exp)",     None,                             "OtherNonoperatingIncome",                                "IS", "first", None),
@@ -139,34 +139,34 @@ BS_TEMPLATE: list[_T] = [
 
 CF_TEMPLATE: list[_T] = [
     # ── Operating ────────────────────────────────────────────────────────
-    ("Net Income",                 "NetIncome",                          "NetIncomeLoss",                                         "CF", "first", None),
+    ("Net Income",                 "NetIncome",                          "NetIncomeLoss|ProfitLoss",                              "CF", "first", None),
     ("D&A",                        "DepreciationExpense",                "DepreciationDepletionAndAmortization",                  "CF", "first", None),
     ("SBC",                        "StockBasedCompensationExpense",      "ShareBasedCompensation",                                "CF", "first", None),
     ("Amortization of Intangibles","AmortizationOfIntangibles",          "AmortizationOfIntangibleAssets",                        "CF", "first", None),
-    ("Change in Receivables",      "ChangeInReceivables",                "IncreaseDecreaseInAccountsReceivable",                  "CF", "first", None),
+    ("Change in Receivables",      "ChangeInReceivables",                "IncreaseDecreaseInAccountsReceivable",                  "CF", "first", "receivable"),
     ("Change in Inventories",      None,                                 "IncreaseDecreaseInInventories",                         "CF", "first", "inventories"),
     ("Change in Deferred Revenue", "ChangeInDeferredRevenue",            "IncreaseDecreaseInDeferredRevenue",                     "CF", "first", None),
     ("Other Working Capital",      "ChangeInOtherWorkingCapital",        "IncreaseDecreaseInOtherOperatingLiabilities",           "CF", "first", None),
     ("Other Non-cash Items",       "OtherNonCashItemsCF",                "OtherNoncashIncomeExpense",                             "CF", "first", None),
-    ("Operating Cash Flow",        "NetCashFromOperatingActivities",     "NetCashProvidedByUsedInOperatingActivities",            "CF", "last",  "net cash"),
+    ("Operating Cash Flow",        "NetCashFromOperatingActivities",     "NetCashProvidedByUsedInOperatingActivities",            "CF", "last",  "^net cash|^cash"),
     # ── Investing ────────────────────────────────────────────────────────
     ("Capex",                      "CapitalExpenses",                    "PaymentsToAcquirePropertyPlantAndEquipment",            "CF", "first", "property"),
     ("Acquisitions",               "AcquisitionsNet",                    "PaymentsToAcquireBusinessesNetOfCashAcquired",          "CF", "first", None),
     ("Investment Purchases",       "InvestmentPurchases",                "PaymentsToAcquireInvestments",                          "CF", "first", None),
     ("Investment Proceeds",        "InvestmentProceeds",                 "ProceedsFromSaleOfInvestments",                         "CF", "first", None),
-    ("Investing Cash Flow",        "NetCashFromInvestingActivities",     "NetCashProvidedByUsedInInvestingActivities",            "CF", "last",  "net cash"),
+    ("Investing Cash Flow",        "NetCashFromInvestingActivities",     "NetCashProvidedByUsedInInvestingActivities",            "CF", "last",  "^net cash|^cash"),
     # ── Financing ────────────────────────────────────────────────────────
     ("Debt Proceeds",              "DebtProceeds",                       "ProceedsFromIssuanceOfDebt",                            "CF", "first", None),
     ("Debt Repayments",            "DebtRepayments",                     "RepaymentsOfDebt",                                      "CF", "first", None),
     ("Share Repurchases",          "EquityExpenseIncomeBuybackIssued",   "PaymentsForRepurchaseOfCommonStock",                    "CF", "first", "repurchas"),
     ("Dividends Paid",             "DistributionsToMinorityInterests",   "PaymentsOfDividends",                                   "CF", "first", "dividend"),
-    ("Financing Cash Flow",        "NetCashFromFinancingActivities",     "NetCashProvidedByUsedInFinancingActivities",            "CF", "last",  "net cash"),
+    ("Financing Cash Flow",        "NetCashFromFinancingActivities",     "NetCashProvidedByUsedInFinancingActivities",            "CF", "last",  "^net cash|^cash"),
     # ── Other ────────────────────────────────────────────────────────────
     ("FX Effect on Cash",          "ForeignExchangeEffectOnCash",        "EffectOfExchangeRateOnCashAndCashEquivalents",          "CF", "first", None),
     ("Net Change in Cash",         "NetChangeInCash",                    "CashAndCashEquivalentsPeriodIncreaseDecrease",          "CF", "first", None),
     ("Ending Cash",                "CashAndCashEquivalents",             "CashAndCashEquivalentsAtCarryingValue",                 "CF", "last",  None),
-    ("Cash Taxes Paid",            "IncomeTaxes",                        "IncomeTaxesPaid",                                       "CF", "first", "income tax"),
-    ("Cash Interest Paid",         "InterestExpense",                    "InterestPaid",                                          "CF", "first", "interest paid"),
+    ("Cash Taxes Paid",            "IncomeTaxes",                        "IncomeTaxesPaid",                                       "CF", "first", "paid"),
+    ("Cash Interest Paid",         "InterestExpense",                    "InterestPaid",                                          "CF", "first", "paid"),
     # ── Derived (computed, not from XBRL) ────────────────────────────────
     ("Free Cash Flow",             None,                                 "",                                                      "DERIVED", "first", None),
 ]
@@ -174,11 +174,14 @@ CF_TEMPLATE: list[_T] = [
 # ── Index maps for post-processing derived / fallback rows ────────────────
 
 _IS_IDX: dict[str, int] = {row[0]: i for i, row in enumerate(IS_TEMPLATE)}
-_NONOP_TOTAL_IDX = _IS_IDX["Total Non-op Income/(Loss)"]
-_OP_INCOME_IDX   = _IS_IDX["Operating Income"]
-_PRETAX_IDX      = _IS_IDX["Pre-tax Income"]
-_NET_INCOME_IDX  = _IS_IDX["Net Income"]
-_DA_CF_IDX       = _IS_IDX["D&A (CF memo)"]
+_NONOP_TOTAL_IDX   = _IS_IDX["Total Non-op Income/(Loss)"]
+_OP_INCOME_IDX     = _IS_IDX["Operating Income"]
+_PRETAX_IDX        = _IS_IDX["Pre-tax Income"]
+_NET_INCOME_IDX    = _IS_IDX["Net Income"]
+_DA_CF_IDX         = _IS_IDX["D&A (CF memo)"]
+_REVENUE_IDX       = _IS_IDX["Revenue"]
+_COGS_IDX          = _IS_IDX["Cost of Revenue"]
+_GROSS_PROFIT_IDX  = _IS_IDX["Gross Profit"]
 
 _CF_IDX: dict[str, int] = {row[0]: i for i, row in enumerate(CF_TEMPLATE)}
 _CF_NET_INCOME_IDX      = _CF_IDX["Net Income"]
@@ -224,6 +227,34 @@ def _current_q_col(df) -> str | None:
     return None
 
 
+def _ytd_col(df) -> str | None:
+    """Return the first YTD period column (labeled '(YTD)'), or None."""
+    for col in df.columns:
+        if col in META_COLS:
+            continue
+        m = re.search(r"\((\w+)\)", col)
+        if m and m.group(1).upper() == "YTD":
+            return col
+    return None
+
+
+def _prev_quarter_label(label: str) -> str | None:
+    """Return the label of the previous quarter, or None for Q1 / annual.
+
+    Examples:
+        "FY2025Q2" → "FY2025Q1"
+        "FY2025Q1" → None
+        "FY2025"   → None
+    """
+    m = re.match(r"(FY\d{4})Q(\d+)$", label)
+    if not m:
+        return None
+    fy, q = m.group(1), int(m.group(2))
+    if q <= 1:
+        return None
+    return f"{fy}Q{q - 1}"
+
+
 def _consolidated_mask(df):
     """Boolean mask: non-abstract, non-breakdown, no dimension."""
     mask = ~df.get("abstract", False).astype(bool)
@@ -234,52 +265,64 @@ def _consolidated_mask(df):
     return mask
 
 
+# TODO: Verify fallback accuracy against ≥10 tickers.
+#       Tested: AAPL, TSLA, BA, XOM (Session 9).
+#       Still needed: MSFT, AMZN, META, GOOGL, NVDA, JPM, GS, JNJ.
 def _match_is_row(df, std_concept: str | None, fallback_suffix: str,
                    label_fallback: str | None = None,
                    match: str = "first",
                    label_hint: str | None = None) -> int | None:
     """Find the row index in df matching a template entry.
 
-    Priority:
+    Priority order (each level only tried when previous level produces no usable result):
         1. standard_concept == std_concept (consolidated rows only)
         2. concept column contains fallback_suffix (case-insensitive, consolidated only)
         3. label column contains label_fallback (case-insensitive, consolidated only)
 
-    label_hint: when multiple rows match, prefer rows whose label contains this string.
-    match:      "first" → earliest matching row; "last" → latest matching row.
+    label_hint: when candidates are found at a priority level, filter to those whose
+        label contains this string.  If the filter leaves no candidates, the entire
+        priority level is skipped and the next level is tried — candidates that fail
+        label_hint are never returned as a fallback.
+    match: "first" → earliest matching row; "last" → latest matching row.
 
-    Returns None if no match found.
+    Returns None if no match found at any priority level.
     """
     mask = _consolidated_mask(df)
     df_c = df[mask]
 
-    candidates = None
+    def _pick(rows) -> int | None:
+        """Apply label_hint filter and return the selected index, or None if filtered out."""
+        if rows.empty:
+            return None
+        if label_hint:
+            hinted = rows[rows["label"].astype(str).str.contains(label_hint, case=False, na=False)]
+            if hinted.empty:
+                return None          # hint not satisfied → skip this priority level
+            rows = hinted
+        return rows.index[-1] if match == "last" else rows.index[0]
 
+    # Priority 1: standard_concept exact match
     if std_concept:
         rows = df_c[df_c["standard_concept"].astype(str) == std_concept]
-        if not rows.empty:
-            candidates = rows
+        result = _pick(rows)
+        if result is not None:
+            return result
 
-    if candidates is None and fallback_suffix:
+    # Priority 2: concept contains fallback_suffix (supports regex OR via "|")
+    if fallback_suffix:
         rows = df_c[df_c["concept"].astype(str).str.contains(fallback_suffix, case=False, na=False)]
-        if not rows.empty:
-            candidates = rows
+        result = _pick(rows)
+        if result is not None:
+            return result
 
-    if candidates is None and label_fallback:
+    # Priority 3: label contains label_fallback
+    if label_fallback:
         rows = df_c[df_c["label"].astype(str).str.contains(label_fallback, case=False, na=False)]
-        if not rows.empty:
-            candidates = rows
+        result = _pick(rows)
+        if result is not None:
+            return result
 
-    if candidates is None or candidates.empty:
-        return None
-
-    # Narrow by label_hint (prefer rows whose label contains the hint)
-    if label_hint:
-        hinted = candidates[candidates["label"].astype(str).str.contains(label_hint, case=False, na=False)]
-        if not hinted.empty:
-            candidates = hinted
-
-    return candidates.index[-1] if match == "last" else candidates.index[0]
+    return None
 
 
 def _to_python_val(val) -> Any:
@@ -467,6 +510,13 @@ def _build_is_table(filings, max_filings: int) -> StatementTable:
                     row_labels[_DA_CF_IDX] = unicodedata.normalize(
                         "NFKC", str(cf_df.loc[idx, "label"] or ""))
 
+        # 4. Gross Profit: DERIVED = Revenue − COGS (companies without explicit GP in XBRL)
+        if row_vals.get(_GROSS_PROFIT_IDX) is None:
+            rev  = row_vals.get(_REVENUE_IDX)
+            cogs = row_vals.get(_COGS_IDX)
+            if rev is not None and cogs is not None:
+                row_vals[_GROSS_PROFIT_IDX] = rev - cogs
+
         periods[label] = (str(filing.filing_date), row_vals)
 
     if not periods:
@@ -577,36 +627,119 @@ def _build_bs_table(filings, max_filings: int) -> StatementTable:
 # ── CF: template-based fetch ────────────────────────────────────────────────
 
 def _build_cf_table(filings, max_filings: int) -> StatementTable:
-    """Build Data_CF StatementTable using the fixed CF template."""
-    tbl = _build_template_table(filings, CF_TEMPLATE, "Data_CF",
-                                 "cashflow_statement", max_filings)
+    """Build Data_CF StatementTable using the fixed CF template.
 
-    if not tbl.quarter_labels:
-        return tbl
+    Q1 and FY filings have standalone period columns (Q1/FY) and are used directly.
+    Q2 and Q3 filings have YTD (cumulative) CF columns; standalone quarter values are
+    derived by subtracting the prior period's YTD: Q2 = Q2_YTD − Q1, Q3 = Q3_YTD − Q2_YTD.
+    The IS statement of each filing is consulted for the quarter label (same approach as BS).
+    """
+    # collected: label → (filing_date, {row_i: raw_value}, is_ytd)
+    collected: dict[str, tuple[str, dict[int, Any], bool]] = {}
+    # ytd_raw: stores raw values (standalone for Q1/FY, cumulative for YTD)
+    # used as the subtraction base for the next YTD period
+    ytd_raw: dict[str, dict[int, Any]] = {}
+    row_labels: dict[int, str] = {}
 
-    # ── Post-processing for CF ──────────────────────────────────────────
+    for filing in filings:
+        if len(collected) >= max_filings:
+            break
+        try:
+            tenq = filing.obj()
+            is_stmt = tenq.financials.income_statement()
+            is_df = is_stmt.to_dataframe() if is_stmt is not None else None
+            is_q_col = _current_q_col(is_df) if is_df is not None else None
 
-    # Build a quick period → row_vals lookup for post-processing
-    # (tbl.values[i][j] = value for row i, quarter j)
-    n_q = len(tbl.quarter_labels)
+            cf_stmt = tenq.financials.cashflow_statement()
+            if cf_stmt is None:
+                continue
+            df = cf_stmt.to_dataframe()
+        except Exception as exc:
+            print(f"[fetcher_gaap] CF warning: {exc!r}", file=sys.stderr)
+            continue
 
-    for j in range(n_q):
-        # 1. Net Income: ProfitLoss fallback
-        if tbl.values[_CF_NET_INCOME_IDX][j] is None:
-            # We don't have the raw df here; ProfitLoss fallback is handled
-            # in the generic builder only for IS. For CF, re-fetch would be needed.
-            # Leave as None — most companies' CF already report net income correctly.
-            pass
+        q_col = _current_q_col(df)
+        if q_col is not None:
+            label = _col_to_quarter_label(q_col)
+            if label in collected:
+                continue
+            is_ytd = False
+            data_col = q_col
+        else:
+            ytd_col = _ytd_col(df)
+            if ytd_col is None or is_q_col is None:
+                continue
+            label = _col_to_quarter_label(is_q_col)
+            if label in collected:
+                continue
+            is_ytd = True
+            data_col = ytd_col
 
-        # 2. D&A label fallback is not applicable here because
-        #    _build_template_table doesn't have access to per-filing df.
-        #    Handled instead via the broad fallback_suffix already in CF_TEMPLATE.
+        row_vals: dict[int, Any] = {}
+        for i, (_, std_concept, fallback, source, match, label_hint) in enumerate(CF_TEMPLATE):
+            if source == "DERIVED":
+                row_vals[i] = None
+                continue
+            idx = _match_is_row(df, std_concept, fallback, match=match, label_hint=label_hint)
+            val = _to_python_val(df.loc[idx, data_col]) if idx is not None else None
+            row_vals[i] = val
+            if idx is not None and i not in row_labels:
+                raw = str(df.loc[idx, "label"] or "")
+                row_labels[i] = unicodedata.normalize("NFKC", raw)
 
-        # 3. Free Cash Flow = Operating CF − |Capex|
-        # abs() normalises sign: some companies report Capex positive (outflow),
-        # others negative. Both cases produce the correct FCF.
-        op_cf  = tbl.values[_CF_OP_CASH_IDX][j]
-        capex  = tbl.values[_CF_CAPEX_IDX][j]
+        collected[label] = (str(filing.filing_date), row_vals, is_ytd)
+        ytd_raw[label] = row_vals  # Q1 standalone doubles as Q1 YTD base
+
+    if not collected:
+        return StatementTable(
+            sheet_name="Data_CF",
+            quarter_labels=[],
+            filing_dates=[],
+            concepts=[row[0] for row in CF_TEMPLATE],
+            values=[[] for _ in CF_TEMPLATE],
+            labels=["" for _ in CF_TEMPLATE],
+        )
+
+    sorted_labels = sorted(collected.keys())
+
+    # Convert YTD periods to standalone quarters via subtraction
+    standalone: dict[str, dict[int, Any]] = {}
+    for label in sorted_labels:
+        _, row_vals, is_ytd = collected[label]
+        if not is_ytd:
+            standalone[label] = row_vals
+        else:
+            prev_label = _prev_quarter_label(label)
+            if prev_label and prev_label in ytd_raw:
+                prev = ytd_raw[prev_label]
+                standalone[label] = {
+                    i: (row_vals.get(i) - prev.get(i)
+                        if row_vals.get(i) is not None and prev.get(i) is not None
+                        else None)
+                    for i in range(len(CF_TEMPLATE))
+                }
+            else:
+                standalone[label] = row_vals  # no prior YTD — keep cumulative as best-effort
+
+    filing_dates = [collected[lbl][0] for lbl in sorted_labels]
+    values: list[list[Any]] = [
+        [standalone[lbl].get(i) for lbl in sorted_labels]
+        for i in range(len(CF_TEMPLATE))
+    ]
+
+    tbl = StatementTable(
+        sheet_name="Data_CF",
+        quarter_labels=sorted_labels,
+        filing_dates=filing_dates,
+        concepts=[row[0] for row in CF_TEMPLATE],
+        values=values,
+        labels=[row_labels.get(i, "") for i in range(len(CF_TEMPLATE))],
+    )
+
+    # FCF = OCF − |Capex| (abs normalises sign: some companies report Capex negative)
+    for j in range(len(sorted_labels)):
+        op_cf = tbl.values[_CF_OP_CASH_IDX][j]
+        capex = tbl.values[_CF_CAPEX_IDX][j]
         if op_cf is not None and capex is not None:
             tbl.values[_CF_FCF_IDX][j] = op_cf - abs(capex)
 
