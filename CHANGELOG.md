@@ -9,6 +9,7 @@
 ## 功能清單
 
 ### 已完成
+- [x] Auto-repair override engine（新 ticker 首次 fetch 自動診斷並修復缺失 key rows）
 - [x] config.json 搬到 %APPDATA%\SEC Financial Tools\（不進 git，啟動時自動 migrate）
 - [x] Watchlist 每間公司獨立輸出路徑（📁 按鈕，存於 watchlist item output_dir）
 - [x] Excel 自動美化（深藍色 header、交替底色、section 分隔、subtotal 粗體）
@@ -53,6 +54,38 @@
 ---
 
 ## 更新記錄
+
+### 2026-04-24（Session 11）
+
+**Auto-repair Override Engine**
+
+新增 `override_engine.py`，fetch 完成後自動偵測並修復關鍵欄位缺失，無需人工介入。
+
+設計文件：`docs/superpowers/specs/2026-04-23-auto-repair-design.md`
+
+- **`override_engine.py`（新檔）**：
+  - `check_key_rows()`：檢查 9 個 key rows（Revenue / Operating Income / Net Income / EPS Diluted / Total Assets / Total Liabilities / Total Equity / OCF / Capex）最近 4 期是否全為 None
+  - `e1_fuzzy_match()`：Rule-based，用 `SYNONYM_MAP` 對 EDGAR DataFrame 做子字串比對（免 API 費用）
+  - `e2_llm_diagnose()`：E1 失敗時呼叫現有 AI API，提供概念清單給 LLM 識別正確 std_concept 或確認為 structural_absence
+  - `load_overrides()` / `save_overrides()`：永久記錄診斷結果至 `%APPDATA%/SEC_Financial_Tools/ticker_overrides.json`，下次同 ticker 不重診斷
+  - `run_diagnosis()`：串接 E1 → E2，診斷完自動存檔
+
+- **`fetcher_gaap.py` 整合**：
+  - `_apply_row_override()`：新 helper，按 override 的 fix_type（concept_override / structural_absence）從 DataFrame 取值
+  - `_build_is_table` / `_build_bs_table` / `_build_cf_table`：各加 `*_overrides` 參數，filing loop 開頭先套用 override，不再呼叫 `_match_is_row`
+  - `fetch_gaap_statements()`：加 `ai_config` 參數；三表建完後自動 check_key_rows → run_diagnosis；有新 override 時重建三表（當次 fetch 直接出正確結果）
+
+- **`main.py`**：兩處 `fetch_gaap_statements` 呼叫改傳 `ai_config=self.cfg.get("ai", {})`
+
+**Bug 修復：E2 LLM response 解析**
+
+- 舊邏輯 `response.upper() == "ABSENT"` 只能抓完全等於 "ABSENT" 的回應
+- 新邏輯：`re.search(r'\bABSENT\b', ..., re.IGNORECASE)` 處理 ABSENT 嵌在句子中的情況
+- 新增垃圾回應防護：含空格或長度 >100 → 回傳 None，不存入 override
+
+新增 **28 個 unit tests**（`tests/test_override_engine.py`）+ 4 個 override 整合測試（`tests/test_fetcher_gaap.py`）；**總計 151 tests，全數通過**
+
+---
 
 ### 2026-04-23（Session 10）
 

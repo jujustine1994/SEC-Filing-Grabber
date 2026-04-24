@@ -32,6 +32,8 @@ from typing import Any
 import pandas as pd
 from edgar import Company, set_identity as set_identity
 
+from override_engine import load_overrides, run_diagnosis, check_key_rows
+
 
 # ── Data contract ────────────────────────────────────────────────────────
 
@@ -325,6 +327,24 @@ def _match_is_row(df, std_concept: str | None, fallback_suffix: str,
     return None
 
 
+def _apply_row_override(df: pd.DataFrame, col: str, override_entry: dict) -> Any:
+    """Look up a value from df using a pre-diagnosed override entry.
+
+    concept_override: re-query df with the override's std_concept.
+    structural_absence: return None immediately (confirmed missing in XBRL).
+    """
+    fix_type = override_entry.get("fix_type")
+    if fix_type == "structural_absence":
+        return None
+    if fix_type == "concept_override":
+        sc = override_entry.get("std_concept", "")
+        if sc and col in df.columns:
+            idx = _match_is_row(df, sc, sc)
+            if idx is not None:
+                return _to_python_val(df.loc[idx, col])
+    return None
+
+
 def _to_python_val(val) -> Any:
     """Convert pandas NA / float NaN / None to None; leave other values as-is."""
     try:
@@ -425,8 +445,9 @@ def _build_template_table(filings, template: list[_T], sheet_name: str,
 
 # ── IS: template-based fetch ────────────────────────────────────────────────
 
-def _build_is_table(filings, max_filings: int) -> StatementTable:
+def _build_is_table(filings, max_filings: int, is_overrides: dict | None = None) -> StatementTable:
     """Build Data_IS StatementTable from 10-Q filings using the fixed IS template."""
+    is_overrides = is_overrides or {}
     periods: dict[str, tuple[str, dict[int, Any]]] = {}
     row_labels: dict[int, str] = {}
 
@@ -463,7 +484,18 @@ def _build_is_table(filings, max_filings: int) -> StatementTable:
             pass
 
         row_vals: dict[int, Any] = {}
-        for i, (_, std_concept, fallback, source, match, label_hint) in enumerate(IS_TEMPLATE):
+        for i, (row_name, std_concept, fallback, source, match, label_hint) in enumerate(IS_TEMPLATE):
+            # Apply override if one exists for this row (concept_override or structural_absence)
+            if row_name in is_overrides:
+                ov = is_overrides[row_name]
+                if ov.get("fix_type") == "structural_absence":
+                    row_vals[i] = None
+                    continue
+                # concept_override: try in IS df; CF-sourced rows are not in KEY_ROWS so no IS overrides expected
+                val = _apply_row_override(df, q_col, ov)
+                row_vals[i] = val
+                continue
+
             if source == "CF":
                 if cf_df is not None and cf_q_col is not None:
                     idx = _match_is_row(cf_df, std_concept, fallback,
@@ -548,13 +580,14 @@ def _build_is_table(filings, max_filings: int) -> StatementTable:
 
 # ── BS: template-based fetch ────────────────────────────────────────────────
 
-def _build_bs_table(filings, max_filings: int) -> StatementTable:
+def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None) -> StatementTable:
     """Build Data_BS StatementTable using the fixed BS template.
 
     Balance sheet columns in edgartools are instant (bare date, e.g. "2024-03-31")
     rather than period ("2024-03-31 (Q1)"), so _current_q_col cannot find them.
     We derive the quarter label from the IS statement (same filing) for merge alignment.
     """
+    bs_overrides = bs_overrides or {}
     periods: dict[str, tuple[str, dict[int, Any]]] = {}
     row_labels: dict[int, str] = {}
 
@@ -587,9 +620,16 @@ def _build_bs_table(filings, max_filings: int) -> StatementTable:
             continue
 
         row_vals: dict[int, Any] = {}
-        for i, (_, std_concept, fallback, source, match, label_hint) in enumerate(BS_TEMPLATE):
+        for i, (row_name, std_concept, fallback, source, match, label_hint) in enumerate(BS_TEMPLATE):
             if source == "DERIVED":
                 row_vals[i] = None
+                continue
+            if row_name in bs_overrides:
+                ov = bs_overrides[row_name]
+                if ov.get("fix_type") == "structural_absence":
+                    row_vals[i] = None
+                    continue
+                row_vals[i] = _apply_row_override(df, bs_col, ov)
                 continue
             idx = _match_is_row(df, std_concept, fallback, match=match, label_hint=label_hint)
             val = _to_python_val(df.loc[idx, bs_col]) if idx is not None else None
@@ -626,7 +666,7 @@ def _build_bs_table(filings, max_filings: int) -> StatementTable:
 
 # ── CF: template-based fetch ────────────────────────────────────────────────
 
-def _build_cf_table(filings, max_filings: int) -> StatementTable:
+def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None) -> StatementTable:
     """Build Data_CF StatementTable using the fixed CF template.
 
     Q1 and FY filings have standalone period columns (Q1/FY) and are used directly.
@@ -634,6 +674,7 @@ def _build_cf_table(filings, max_filings: int) -> StatementTable:
     derived by subtracting the prior period's YTD: Q2 = Q2_YTD − Q1, Q3 = Q3_YTD − Q2_YTD.
     The IS statement of each filing is consulted for the quarter label (same approach as BS).
     """
+    cf_overrides = cf_overrides or {}
     # collected: label → (filing_date, {row_i: raw_value}, is_ytd)
     collected: dict[str, tuple[str, dict[int, Any], bool]] = {}
     # ytd_raw: stores raw values (standalone for Q1/FY, cumulative for YTD)
@@ -676,9 +717,16 @@ def _build_cf_table(filings, max_filings: int) -> StatementTable:
             data_col = ytd_col
 
         row_vals: dict[int, Any] = {}
-        for i, (_, std_concept, fallback, source, match, label_hint) in enumerate(CF_TEMPLATE):
+        for i, (row_name, std_concept, fallback, source, match, label_hint) in enumerate(CF_TEMPLATE):
             if source == "DERIVED":
                 row_vals[i] = None
+                continue
+            if row_name in cf_overrides:
+                ov = cf_overrides[row_name]
+                if ov.get("fix_type") == "structural_absence":
+                    row_vals[i] = None
+                    continue
+                row_vals[i] = _apply_row_override(df, data_col, ov)
                 continue
             idx = _match_is_row(df, std_concept, fallback, match=match, label_hint=label_hint)
             val = _to_python_val(df.loc[idx, data_col]) if idx is not None else None
@@ -991,7 +1039,8 @@ def _build_meta_table(ticker: str, company_name: str,
 
 def fetch_gaap_statements(ticker: str, identity: str,
                            max_filings: int = 80,
-                           max_annual_filings: int = 20) -> list[StatementTable]:
+                           max_annual_filings: int = 20,
+                           ai_config: dict | None = None) -> list[StatementTable]:
     """Fetch quarterly and annual GAAP statements for a ticker.
 
     Args:
@@ -999,6 +1048,7 @@ def fetch_gaap_statements(ticker: str, identity: str,
         identity:            SEC EDGAR identity string
         max_filings:         Max 10-Q filings to process (default 80, ~20 years)
         max_annual_filings:  Max 10-K filings to process (default 20, ~20 years)
+        ai_config:           AI config dict (provider/model/api_key) for E2 diagnosis
 
     Returns:
         List of StatementTable: Data_Financials(Q), Data_Financials(Y), Data_Seg_*, Data_Meta
@@ -1006,6 +1056,7 @@ def fetch_gaap_statements(ticker: str, identity: str,
     Raises:
         ValueError: No 10-Q filings found for ticker
     """
+    ai_config = ai_config or {}
     set_identity(identity)
     company = Company(ticker)
 
@@ -1016,18 +1067,66 @@ def fetch_gaap_statements(ticker: str, identity: str,
             "The ticker may be invalid or the company may not file 10-Qs."
         )
 
-    is_tbl = _build_is_table(filings_q, max_filings)
-    bs_tbl = _build_bs_table(filings_q, max_filings)
-    cf_tbl = _build_cf_table(filings_q, max_filings)
-    quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)")
+    # Load existing overrides (empty on first fetch of new ticker)
+    overrides = load_overrides(ticker)
 
+    is_tbl = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}))
+    bs_tbl = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}))
+    cf_tbl = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}))
+
+    # Diagnose key rows that are all-None in recent quarters
+    missing_is = check_key_rows(is_tbl.concepts, is_tbl.values, "IS")
+    missing_bs = check_key_rows(bs_tbl.concepts, bs_tbl.values, "BS")
+    missing_cf = check_key_rows(cf_tbl.concepts, cf_tbl.values, "CF")
+
+    if missing_is or missing_bs or missing_cf:
+        # Fetch latest filing's DataFrames for diagnosis (one HTTP request)
+        try:
+            tenq_latest = filings_q[0].obj()
+            latest_is_df = tenq_latest.financials.income_statement().to_dataframe()
+            latest_bs_df = tenq_latest.financials.balance_sheet().to_dataframe()
+            latest_cf_df = tenq_latest.financials.cashflow_statement().to_dataframe()
+        except Exception as exc:
+            print(f"[{ticker}] 診斷：無法取得最新 filing DataFrame — {exc!r}", file=sys.stderr)
+            latest_is_df = latest_bs_df = latest_cf_df = None
+
+        new_overrides: dict[str, dict] = {}
+        if missing_is and latest_is_df is not None:
+            fixes = run_diagnosis(ticker, "IS", latest_is_df, missing_is, ai_config)
+            if fixes:
+                new_overrides["IS"] = fixes
+        if missing_bs and latest_bs_df is not None:
+            fixes = run_diagnosis(ticker, "BS", latest_bs_df, missing_bs, ai_config)
+            if fixes:
+                new_overrides["BS"] = fixes
+        if missing_cf and latest_cf_df is not None:
+            fixes = run_diagnosis(ticker, "CF", latest_cf_df, missing_cf, ai_config)
+            if fixes:
+                new_overrides["CF"] = fixes
+
+        if new_overrides:
+            total = sum(len(v) for v in new_overrides.values())
+            print(f"[{ticker}] 自動修復：找到 {total} 項缺失指標修復方案，重新建表。", file=sys.stderr)
+            # Reload and rebuild with new overrides applied
+            overrides = load_overrides(ticker)
+            is_tbl = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}))
+            bs_tbl = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}))
+            cf_tbl = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}))
+        else:
+            # Log any rows that could not be diagnosed
+            remaining = missing_is + missing_bs + missing_cf
+            if remaining:
+                no_key = "" if ai_config.get("api_key") else "（未設 AI API key，E2 診斷已跳過）"
+                print(f"[{ticker}] 警告：{remaining} 在 EDGAR 中無對應概念{no_key}。", file=sys.stderr)
+
+    quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)")
     tables: list[StatementTable] = [quarterly_tbl]
 
     filings_k = list(company.get_filings(form="10-K", amendments=False))
     if filings_k:
-        is_ann = _build_is_table(filings_k, max_annual_filings)
-        bs_ann = _build_bs_table(filings_k, max_annual_filings)
-        cf_ann = _build_cf_table(filings_k, max_annual_filings)
+        is_ann = _build_is_table(filings_k, max_annual_filings, is_overrides=overrides.get("IS", {}))
+        bs_ann = _build_bs_table(filings_k, max_annual_filings, bs_overrides=overrides.get("BS", {}))
+        cf_ann = _build_cf_table(filings_k, max_annual_filings, cf_overrides=overrides.get("CF", {}))
         annual_tbl = _merge_financials(is_ann, bs_ann, cf_ann, sheet_name="Data_Financials(Y)")
         tables.append(annual_tbl)
 

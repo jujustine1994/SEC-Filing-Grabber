@@ -1163,7 +1163,10 @@ class SECFetcherApp:
             if fetch_gaap:
                 self._log(f"[{ticker}] 抓取 GAAP 財報中...")
                 self._set_progress(step, total_steps, "抓取 GAAP...")
-                gaap_tables = fetch_gaap_statements(ticker, identity, max_filings=max_filings)
+                gaap_tables = fetch_gaap_statements(
+                    ticker, identity, max_filings=max_filings,
+                    ai_config=self.cfg.get("ai", {}),
+                )
                 tables.extend(gaap_tables)
                 self._log(f"[{ticker}] GAAP：取得 {len(gaap_tables)} 份財報")
                 step += 1
@@ -1220,7 +1223,10 @@ class SECFetcherApp:
             self._set_progress(i - 1, total, f"處理中：{ticker} ({i}/{total})")
             self._log(f"\n[{ticker}] 開始...")
             try:
-                tables      = fetch_gaap_statements(ticker, identity, max_filings=max_filings)
+                tables      = fetch_gaap_statements(
+                    ticker, identity, max_filings=max_filings,
+                    ai_config=self.cfg.get("ai", {}),
+                )
                 output_path = self._build_output_path(ticker)
                 tpl = self.cfg.get("template_path", "") or None
                 write_statements(tables, output_path, template_path=tpl)

@@ -136,25 +136,45 @@ match:      "first"（預設）= 最早那行；"last" = 最後那行（用於 C
 
 - **Free Cash Flow** = `Operating Cash Flow − Capex`（每季計算）
 
-## 待辦功能（下一個 AI 看到請提醒使用者）
+## Override Engine（自動修復缺失指標）
 
-### 🔴 優先（下次開始前必做）
-1. **實機測試（GAAP）**：對 AAPL、TSLA、BA、XOM 跑一次，確認 Data_Financials 三表輸出正確
-2. **實機測試（Non-GAAP）**：對有 8-K earnings release 的公司（AAPL、NVDA 等）跑一次，確認 Data_EPS_Recon + Data_NonGAAP 正確產生，nongaap_cache.json 正確寫入
-3. **main.py 舊名稱掃描**：確認 GUI 沒有殘留 Data_IS/Data_BS/Data_CF 等舊 sheet 名稱參照（Session 2 已改成 Data_Financials）
+spec: `docs/superpowers/specs/2026-04-23-auto-repair-design.md`
+
+```
+fetch_ticker(ticker)
+    ↓ 三表跑完
+check_key_rows()       ← 找「最近 4 期全為 None」的 key rows（約 9 個）
+    ↓ 有缺失
+load_overrides()       ← APPDATA/ticker_overrides.json，已診斷過就直接套用
+    ↓ 無 override
+E1: fuzzy_match()      ← rule-based，無 API 費用
+    ↓ E1 未命中
+E2: llm_diagnose()     ← 呼叫現有 AI API（需 api_key）
+    ↓
+save_overrides()       ← 診斷結果永久寫入，下次同 ticker 不重跑
+```
+
+**Override 套用時機**：每個 filing 的 row_vals 計算前（loop 開頭），不是 post-processing。  
+**新增檔案**：`override_engine.py`
+
+## 待辦功能
+
+### 🔴 優先（下次開始前）
+1. **實作 override_engine.py**：E1 fuzzy match + E2 LLM diagnose + override 讀寫（設計已完成）
+2. **整合 fetcher_gaap.py**：三個 build 函式加 override 套用邏輯
+3. **main.py 加 AI API 用途說明**：Settings 頁說明 AI 在非 GAAP 提取與指標診斷的用途及 key 缺失影響
 
 ### 🟡 中優先
-4. **金融股模板**（設計已完成，待實作）：
+4. **Fallback 驗證**：對 MSFT/AMZN/META/GOOGL/NVDA/JPM/GS/JNJ 跑 max_filings=8，確認 key rows 正確率
+5. **金融股模板**（設計已完成，待實作）：
    - GS/JPM 用不同的 IS/BS 模板
    - 自動偵測：BS 含 `TotalDeposits` std_concept → 金融股
-   - UI 警告：偵測到金融股時彈出提示
-5. **Excel Template 著色功能**：
+6. **Excel Template 著色功能**：
    - 使用者建立 `template.xlsx`，預先著色各行
-   - 工具開啟 template 後只填值（不改格式），利用 openpyxl 保留 cell formatting
-   - 季度欄擴充時複製前一欄格式
+   - openpyxl 保留 cell formatting，季度欄擴充時複製前一欄格式
 
 ### 🟢 低優先
-6. **批量更新（Tab 2）的 Non-GAAP 支援**：目前批量只跑 GAAP，Non-GAAP 留待後續
+7. **批量更新（Tab 2）的 Non-GAAP 支援**：目前批量只跑 GAAP
 
 ## Known Issues
 

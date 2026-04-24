@@ -9,6 +9,7 @@ from fetcher_gaap import (
     _current_q_col,
     _match_is_row,
     _build_is_table,
+    _build_bs_table,
     _build_cf_table,
     _merge_financials,
     _ytd_col,
@@ -559,3 +560,73 @@ def test_build_cf_table_q2_ytd_without_q1_keeps_raw():
     ni_idx = tbl.concepts.index("Net Income")
     q2_col = tbl.quarter_labels.index("FY2025Q2")
     assert tbl.values[ni_idx][q2_col] == pytest.approx(ytd_ni)
+
+
+# ── Override integration tests ────────────────────────────────────────────
+
+def _make_filing_odd_concepts(period_col="2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30"):
+    """Filing where Revenue uses 'TotalRevenues' std_concept (not in IS_TEMPLATE priority 1)."""
+    df = pd.DataFrame({
+        "concept":               ["us-gaap_TotalRevenues", "us-gaap_GrossProfit", "us-gaap_NetIncomeLoss"],
+        "label":                 ["Total revenues", "Gross margin", "Net income"],
+        "standard_concept":      ["TotalRevenues", "GrossProfit", "NetIncome"],
+        "abstract":              [False, False, False],
+        "is_breakdown":          [False, False, False],
+        "level":                 [4, 3, 3],
+        "dimension_member_label":[None, None, None],
+        period_col:              [val * 10, val * 7, val * 2],
+        "2024-12-28 (Q1)":       [val * 9, val * 6, val * 1.5],
+    })
+    mock_stmt = MagicMock()
+    mock_stmt.to_dataframe.return_value = df
+
+    mock_financials = MagicMock()
+    mock_financials.income_statement.return_value = mock_stmt
+    mock_financials.balance_sheet.return_value = mock_stmt
+    mock_financials.cashflow_statement.return_value = mock_stmt
+
+    mock_tenq = MagicMock()
+    mock_tenq.financials = mock_financials
+
+    mock_filing = MagicMock()
+    mock_filing.obj.return_value = mock_tenq
+    mock_filing.filing_date = filing_date
+    return mock_filing
+
+
+def test_build_is_table_revenue_none_without_override():
+    """Revenue is None when std_concept doesn't match and no fallback."""
+    filing = _make_filing_odd_concepts(val=100.0)
+    tbl = _build_is_table([filing], max_filings=1)
+    revenue_idx = tbl.concepts.index("Revenue")
+    # "TotalRevenues" doesn't match "Revenue" std_concept or "RevenueFromContractWithCustomer" suffix
+    assert tbl.values[revenue_idx][0] is None
+
+
+def test_build_is_table_concept_override_restores_revenue():
+    """concept_override makes Revenue resolve via the override's std_concept."""
+    filing = _make_filing_odd_concepts(val=100.0)
+    overrides = {"Revenue": {"fix_type": "concept_override", "std_concept": "TotalRevenues"}}
+    tbl = _build_is_table([filing], max_filings=1, is_overrides=overrides)
+    revenue_idx = tbl.concepts.index("Revenue")
+    assert tbl.values[revenue_idx][0] == pytest.approx(1000.0)  # val * 10
+
+
+def test_build_is_table_structural_absence_keeps_none():
+    """structural_absence override skips lookup and keeps None (no crash)."""
+    filing = _make_filing_odd_concepts(val=100.0)
+    overrides = {"Revenue": {"fix_type": "structural_absence", "confirmed_absent": True}}
+    tbl = _build_is_table([filing], max_filings=1, is_overrides=overrides)
+    revenue_idx = tbl.concepts.index("Revenue")
+    assert tbl.values[revenue_idx][0] is None
+
+
+def test_build_is_table_override_applies_to_all_filings():
+    """Override is applied to every filing in the loop, not just the first."""
+    f1 = _make_filing_odd_concepts("2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30")
+    f2 = _make_filing_odd_concepts("2024-12-28 (Q1)", val=90.0, filing_date="2025-01-30")
+    overrides = {"Revenue": {"fix_type": "concept_override", "std_concept": "TotalRevenues"}}
+    tbl = _build_is_table([f1, f2], max_filings=2, is_overrides=overrides)
+    revenue_idx = tbl.concepts.index("Revenue")
+    assert len(tbl.quarter_labels) == 2
+    assert all(v is not None for v in tbl.values[revenue_idx])
