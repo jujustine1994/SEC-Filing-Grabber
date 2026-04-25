@@ -493,11 +493,22 @@ def _build_template_table(filings, template: list[_T], sheet_name: str,
 
 # ── IS: template-based fetch ────────────────────────────────────────────────
 
-def _build_is_table(filings, max_filings: int, is_overrides: dict | None = None) -> StatementTable:
-    """Build Data_IS StatementTable from 10-Q filings using the fixed IS template."""
+def _build_is_table(
+    filings, max_filings: int, is_overrides: dict | None = None
+) -> tuple[StatementTable, StatementTable]:
+    """Build IS StatementTables from 10-Q filings using the fixed IS template.
+
+    Returns (gaap_tbl, ng_tbl):
+      gaap_tbl — template rows + GAAP overflow rows (unmatched XBRL items)
+      ng_tbl   — Non-GAAP overflow rows (labels containing "adjusted", "non-gaap", etc.)
+                 Empty table when no Non-GAAP rows are found.
+    """
     is_overrides = is_overrides or {}
     periods: dict[str, tuple[str, dict[int, Any]]] = {}
     row_labels: dict[int, str] = {}
+    # Overflow dicts accumulate across all filings; key = XBRL concept name
+    gaap_overflow: dict[str, dict] = {}
+    ng_overflow:   dict[str, dict] = {}
 
     for filing in filings:
         if len(periods) >= max_filings:
@@ -531,6 +542,10 @@ def _build_is_table(filings, max_filings: int, is_overrides: dict | None = None)
         except Exception:
             pass
 
+        # Tracks which IS df indices are consumed by template matching this filing.
+        # CF-sourced rows (source == "CF") consume cf_df indices — not tracked here.
+        consumed: set[int] = set()
+
         row_vals: dict[int, Any] = {}
         for i, (row_name, std_concept, fallback, source, match, label_hint) in enumerate(IS_TEMPLATE):
             # Apply override if one exists for this row (concept_override or structural_absence)
@@ -545,6 +560,8 @@ def _build_is_table(filings, max_filings: int, is_overrides: dict | None = None)
                 continue
 
             if source == "CF":
+                # CF-sourced rows look in cf_df; those indices are NOT tracked in IS consumed set
+                # (CF overflow is handled separately by _build_cf_table)
                 if cf_df is not None and cf_q_col is not None:
                     idx = _match_is_row(cf_df, std_concept, fallback,
                                         match=match, label_hint=label_hint)
@@ -557,6 +574,8 @@ def _build_is_table(filings, max_filings: int, is_overrides: dict | None = None)
             else:
                 idx = _match_is_row(df, std_concept, fallback,
                                     match=match, label_hint=label_hint)
+                if idx is not None:
+                    consumed.add(idx)   # mark as consumed so overflow skips this row
                 val = _to_python_val(df.loc[idx, q_col]) if idx is not None else None
                 if idx is not None and i not in row_labels:
                     raw = str(df.loc[idx, "label"] or "")
@@ -576,12 +595,14 @@ def _build_is_table(filings, max_filings: int, is_overrides: dict | None = None)
         if row_vals.get(_NET_INCOME_IDX) is None:
             idx = _match_is_row(df, "ProfitLoss", "ProfitLoss")
             if idx is not None:
+                consumed.add(idx)   # also track this fallback index
                 row_vals[_NET_INCOME_IDX] = _to_python_val(df.loc[idx, q_col])
                 if _NET_INCOME_IDX not in row_labels:
                     row_labels[_NET_INCOME_IDX] = unicodedata.normalize(
                         "NFKC", str(df.loc[idx, "label"] or ""))
 
         # 3. D&A label fallback: for companies where standard_concept = nan (TSLA)
+        #    This searches cf_df, not IS df — no IS consumed tracking needed
         if row_vals.get(_DA_CF_IDX) is None and cf_df is not None and cf_q_col is not None:
             idx = _match_is_row(cf_df, None, "", label_fallback="depreciation")
             if idx is not None:
@@ -597,10 +618,13 @@ def _build_is_table(filings, max_filings: int, is_overrides: dict | None = None)
             if rev is not None and cogs is not None:
                 row_vals[_GROSS_PROFIT_IDX] = rev - cogs
 
+        # Collect unmatched IS df rows into overflow buckets
+        _collect_overflow(df, consumed, q_col, label, gaap_overflow, ng_overflow)
+
         periods[label] = (str(filing.filing_date), row_vals)
 
     if not periods:
-        return StatementTable(
+        empty = StatementTable(
             sheet_name="Data_IS",
             quarter_labels=[],
             filing_dates=[],
@@ -608,36 +632,83 @@ def _build_is_table(filings, max_filings: int, is_overrides: dict | None = None)
             values=[[] for _ in IS_TEMPLATE],
             labels=["" for _ in IS_TEMPLATE],
         )
+        empty_ng = StatementTable(
+            sheet_name="Data_IS_NG",
+            quarter_labels=[], filing_dates=[],
+            concepts=[], values=[], labels=[],
+        )
+        return empty, empty_ng
 
     sorted_labels = sorted(periods.keys())
     filing_dates  = [periods[lbl][0] for lbl in sorted_labels]
 
-    values: list[list[Any]] = []
-    for i in range(len(IS_TEMPLATE)):
-        values.append([periods[lbl][1].get(i) for lbl in sorted_labels])
+    # ── Build GAAP table: template rows + GAAP overflow ───────────────────
+    concepts_g: list[str]       = [row[0] for row in IS_TEMPLATE]
+    labels_g:   list[str]       = [row_labels.get(i, "") for i in range(len(IS_TEMPLATE))]
+    values_g:   list[list[Any]] = [
+        [periods[lbl][1].get(i) for lbl in sorted_labels]
+        for i in range(len(IS_TEMPLATE))
+    ]
+    for key in sorted(gaap_overflow):
+        entry = gaap_overflow[key]
+        row = [entry["periods"].get(q) for q in sorted_labels]
+        if all(v is None for v in row):
+            continue   # skip entirely-empty overflow rows
+        concepts_g.append(entry["label"] or key)
+        labels_g.append(key)
+        values_g.append(row)
 
-    return StatementTable(
+    gaap_tbl = StatementTable(
         sheet_name="Data_IS",
         quarter_labels=sorted_labels,
         filing_dates=filing_dates,
-        concepts=[row[0] for row in IS_TEMPLATE],
-        values=values,
-        labels=[row_labels.get(i, "") for i in range(len(IS_TEMPLATE))],
+        concepts=concepts_g,
+        labels=labels_g,
+        values=values_g,
     )
+
+    # ── Build NG table: Non-GAAP overflow rows only (no template rows) ────
+    concepts_n: list[str]       = []
+    labels_n:   list[str]       = []
+    values_n:   list[list[Any]] = []
+    for key in sorted(ng_overflow):
+        entry = ng_overflow[key]
+        row = [entry["periods"].get(q) for q in sorted_labels]
+        if all(v is None for v in row):
+            continue
+        concepts_n.append(entry["label"] or key)
+        labels_n.append(key)
+        values_n.append(row)
+
+    ng_tbl = StatementTable(
+        sheet_name="Data_IS_NG",
+        quarter_labels=sorted_labels,
+        filing_dates=filing_dates,
+        concepts=concepts_n,
+        labels=labels_n,
+        values=values_n,
+    )
+
+    return gaap_tbl, ng_tbl
 
 
 # ── BS: template-based fetch ────────────────────────────────────────────────
 
-def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None) -> StatementTable:
+def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None) -> tuple[StatementTable, StatementTable]:
     """Build Data_BS StatementTable using the fixed BS template.
 
     Balance sheet columns in edgartools are instant (bare date, e.g. "2024-03-31")
     rather than period ("2024-03-31 (Q1)"), so _current_q_col cannot find them.
     We derive the quarter label from the IS statement (same filing) for merge alignment.
+
+    Returns (gaap_tbl, ng_tbl). gaap_tbl = template rows + GAAP overflow;
+    ng_tbl = Non-GAAP overflow rows only (sheet "Data_BS_NG").
     """
     bs_overrides = bs_overrides or {}
     periods: dict[str, tuple[str, dict[int, Any]]] = {}
     row_labels: dict[int, str] = {}
+    gaap_overflow: dict[str, dict] = {}  # {concept_key: {"label": str, "periods": {q: val}}}
+    ng_overflow: dict[str, dict] = {}
 
     for filing in filings:
         if len(periods) >= max_filings:
@@ -667,6 +738,7 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None)
         if label in periods:
             continue
 
+        consumed: set[int] = set()
         row_vals: dict[int, Any] = {}
         for i, (row_name, std_concept, fallback, source, match, label_hint) in enumerate(BS_TEMPLATE):
             if source == "DERIVED":
@@ -682,12 +754,19 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None)
             idx = _match_is_row(df, std_concept, fallback, match=match, label_hint=label_hint)
             val = _to_python_val(df.loc[idx, bs_col]) if idx is not None else None
             row_vals[i] = val
-            if idx is not None and i not in row_labels:
-                raw = str(df.loc[idx, "label"] or "")
-                row_labels[i] = unicodedata.normalize("NFKC", raw)
+            if idx is not None:
+                consumed.add(idx)
+                if i not in row_labels:
+                    raw = str(df.loc[idx, "label"] or "")
+                    row_labels[i] = unicodedata.normalize("NFKC", raw)
 
+        _collect_overflow(df, consumed, bs_col, label, gaap_overflow, ng_overflow)
         periods[label] = (str(filing.filing_date), row_vals)
 
+    empty_ng = StatementTable(
+        sheet_name="Data_BS_NG", quarter_labels=[], filing_dates=[],
+        concepts=[], values=[], labels=[],
+    )
     if not periods:
         return StatementTable(
             sheet_name="Data_BS",
@@ -696,31 +775,73 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None)
             concepts=[row[0] for row in BS_TEMPLATE],
             values=[[] for _ in BS_TEMPLATE],
             labels=["" for _ in BS_TEMPLATE],
-        )
+        ), empty_ng
 
     sorted_labels = sorted(periods.keys())
     filing_dates = [periods[lbl][0] for lbl in sorted_labels]
-    values = [[periods[lbl][1].get(i) for lbl in sorted_labels] for i in range(len(BS_TEMPLATE))]
 
-    return StatementTable(
+    # ── Build GAAP table: template rows + GAAP overflow ─────────────────────
+    concepts_g: list[str]       = [row[0] for row in BS_TEMPLATE]
+    labels_g:   list[str]       = [row_labels.get(i, "") for i in range(len(BS_TEMPLATE))]
+    values_g:   list[list[Any]] = [
+        [periods[lbl][1].get(i) for lbl in sorted_labels]
+        for i in range(len(BS_TEMPLATE))
+    ]
+    for key in sorted(gaap_overflow):
+        entry = gaap_overflow[key]
+        row = [entry["periods"].get(q) for q in sorted_labels]
+        if all(v is None for v in row):
+            continue
+        concepts_g.append(entry["label"] or key)
+        labels_g.append(key)
+        values_g.append(row)
+
+    gaap_tbl = StatementTable(
         sheet_name="Data_BS",
         quarter_labels=sorted_labels,
         filing_dates=filing_dates,
-        concepts=[row[0] for row in BS_TEMPLATE],
-        values=values,
-        labels=[row_labels.get(i, "") for i in range(len(BS_TEMPLATE))],
+        concepts=concepts_g,
+        labels=labels_g,
+        values=values_g,
     )
+
+    # ── Build NG table: Non-GAAP overflow rows only (no template rows) ───────
+    concepts_n: list[str]       = []
+    labels_n:   list[str]       = []
+    values_n:   list[list[Any]] = []
+    for key in sorted(ng_overflow):
+        entry = ng_overflow[key]
+        row = [entry["periods"].get(q) for q in sorted_labels]
+        if all(v is None for v in row):
+            continue
+        concepts_n.append(entry["label"] or key)
+        labels_n.append(key)
+        values_n.append(row)
+
+    ng_tbl = StatementTable(
+        sheet_name="Data_BS_NG",
+        quarter_labels=sorted_labels,
+        filing_dates=filing_dates,
+        concepts=concepts_n,
+        labels=labels_n,
+        values=values_n,
+    )
+    return gaap_tbl, ng_tbl
 
 
 # ── CF: template-based fetch ────────────────────────────────────────────────
 
-def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None) -> StatementTable:
+def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None) -> tuple[StatementTable, StatementTable]:
     """Build Data_CF StatementTable using the fixed CF template.
 
     Q1 and FY filings have standalone period columns (Q1/FY) and are used directly.
     Q2 and Q3 filings have YTD (cumulative) CF columns; standalone quarter values are
     derived by subtracting the prior period's YTD: Q2 = Q2_YTD − Q1, Q3 = Q3_YTD − Q2_YTD.
-    The IS statement of each filing is consulted for the quarter label (same approach as BS).
+    Overflow rows are only collected from standalone (non-YTD) filings to avoid the
+    cross-filing subtraction that YTD rows would require.
+
+    Returns (gaap_tbl, ng_tbl). gaap_tbl = template rows + GAAP overflow;
+    ng_tbl = Non-GAAP overflow rows only (sheet "Data_CF_NG").
     """
     cf_overrides = cf_overrides or {}
     # collected: label → (filing_date, {row_i: raw_value}, is_ytd)
@@ -729,6 +850,8 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
     # used as the subtraction base for the next YTD period
     ytd_raw: dict[str, dict[int, Any]] = {}
     row_labels: dict[int, str] = {}
+    gaap_overflow: dict[str, dict] = {}  # {concept_key: {"label": str, "periods": {q: val}}}
+    ng_overflow: dict[str, dict] = {}
 
     for filing in filings:
         if len(collected) >= max_filings:
@@ -764,6 +887,7 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
             is_ytd = True
             data_col = ytd_col
 
+        consumed: set[int] = set()
         row_vals: dict[int, Any] = {}
         for i, (row_name, std_concept, fallback, source, match, label_hint) in enumerate(CF_TEMPLATE):
             if source == "DERIVED":
@@ -779,13 +903,24 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
             idx = _match_is_row(df, std_concept, fallback, match=match, label_hint=label_hint)
             val = _to_python_val(df.loc[idx, data_col]) if idx is not None else None
             row_vals[i] = val
-            if idx is not None and i not in row_labels:
-                raw = str(df.loc[idx, "label"] or "")
-                row_labels[i] = unicodedata.normalize("NFKC", raw)
+            if idx is not None:
+                consumed.add(idx)
+                if i not in row_labels:
+                    raw = str(df.loc[idx, "label"] or "")
+                    row_labels[i] = unicodedata.normalize("NFKC", raw)
+
+        # YTD Q2/Q3 overflow would need the same cross-filing subtraction as
+        # template rows — skip for now; only standalone filings contribute.
+        if not is_ytd:
+            _collect_overflow(df, consumed, data_col, label, gaap_overflow, ng_overflow)
 
         collected[label] = (str(filing.filing_date), row_vals, is_ytd)
         ytd_raw[label] = row_vals  # Q1 standalone doubles as Q1 YTD base
 
+    empty_ng = StatementTable(
+        sheet_name="Data_CF_NG", quarter_labels=[], filing_dates=[],
+        concepts=[], values=[], labels=[],
+    )
     if not collected:
         return StatementTable(
             sheet_name="Data_CF",
@@ -794,7 +929,7 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
             concepts=[row[0] for row in CF_TEMPLATE],
             values=[[] for _ in CF_TEMPLATE],
             labels=["" for _ in CF_TEMPLATE],
-        )
+        ), empty_ng
 
     sorted_labels = sorted(collected.keys())
 
@@ -839,7 +974,50 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
         if op_cf is not None and capex is not None:
             tbl.values[_CF_FCF_IDX][j] = op_cf - abs(capex)
 
-    return tbl
+    # ── Build GAAP table: template rows (from tbl) + GAAP overflow ──────────
+    concepts_g = tbl.concepts[:]
+    labels_g   = tbl.labels[:]
+    values_g   = [row[:] for row in tbl.values]
+    for key in sorted(gaap_overflow):
+        entry = gaap_overflow[key]
+        row = [entry["periods"].get(q) for q in sorted_labels]
+        if all(v is None for v in row):
+            continue
+        concepts_g.append(entry["label"] or key)
+        labels_g.append(key)
+        values_g.append(row)
+
+    gaap_tbl = StatementTable(
+        sheet_name="Data_CF",
+        quarter_labels=sorted_labels,
+        filing_dates=filing_dates,
+        concepts=concepts_g,
+        labels=labels_g,
+        values=values_g,
+    )
+
+    # ── Build NG table: Non-GAAP overflow rows only (no template rows) ───────
+    concepts_n: list[str]       = []
+    labels_n:   list[str]       = []
+    values_n:   list[list[Any]] = []
+    for key in sorted(ng_overflow):
+        entry = ng_overflow[key]
+        row = [entry["periods"].get(q) for q in sorted_labels]
+        if all(v is None for v in row):
+            continue
+        concepts_n.append(entry["label"] or key)
+        labels_n.append(key)
+        values_n.append(row)
+
+    ng_tbl = StatementTable(
+        sheet_name="Data_CF_NG",
+        quarter_labels=sorted_labels,
+        filing_dates=filing_dates,
+        concepts=concepts_n,
+        labels=labels_n,
+        values=values_n,
+    )
+    return gaap_tbl, ng_tbl
 
 
 # ── Three-statement merge ───────────────────────────────────────────────────
@@ -1118,9 +1296,9 @@ def fetch_gaap_statements(ticker: str, identity: str,
     # Load existing overrides (empty on first fetch of new ticker)
     overrides = load_overrides(ticker)
 
-    is_tbl = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}))
-    bs_tbl = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}))
-    cf_tbl = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}))
+    is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}))
+    bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}))
+    cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}))
 
     # Diagnose key rows that are all-None in recent quarters
     missing_is = check_key_rows(is_tbl.concepts, is_tbl.values, "IS")
@@ -1157,9 +1335,9 @@ def fetch_gaap_statements(ticker: str, identity: str,
             print(f"[{ticker}] 自動修復：找到 {total} 項缺失指標修復方案，重新建表。", file=sys.stderr)
             # Reload and rebuild with new overrides applied
             overrides = load_overrides(ticker)
-            is_tbl = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}))
-            bs_tbl = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}))
-            cf_tbl = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}))
+            is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}))
+            bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}))
+            cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}))
         else:
             # Log any rows that could not be diagnosed
             remaining = missing_is + missing_bs + missing_cf
@@ -1170,13 +1348,23 @@ def fetch_gaap_statements(ticker: str, identity: str,
     quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)")
     tables: list[StatementTable] = [quarterly_tbl]
 
+    # Append NG quarterly sheet when any section has Non-GAAP overflow rows
+    if any(tbl.concepts for tbl in [is_ng, bs_ng, cf_ng]):
+        ng_q_tbl = _merge_financials(is_ng, bs_ng, cf_ng, sheet_name="Data_Financials_NG(Q)")
+        tables.append(ng_q_tbl)
+
     filings_k = list(company.get_filings(form="10-K", amendments=False))
     if filings_k:
-        is_ann = _build_is_table(filings_k, max_annual_filings, is_overrides=overrides.get("IS", {}))
-        bs_ann = _build_bs_table(filings_k, max_annual_filings, bs_overrides=overrides.get("BS", {}))
-        cf_ann = _build_cf_table(filings_k, max_annual_filings, cf_overrides=overrides.get("CF", {}))
+        is_ann, is_ann_ng = _build_is_table(filings_k, max_annual_filings, is_overrides=overrides.get("IS", {}))
+        bs_ann, bs_ann_ng = _build_bs_table(filings_k, max_annual_filings, bs_overrides=overrides.get("BS", {}))
+        cf_ann, cf_ann_ng = _build_cf_table(filings_k, max_annual_filings, cf_overrides=overrides.get("CF", {}))
         annual_tbl = _merge_financials(is_ann, bs_ann, cf_ann, sheet_name="Data_Financials(Y)")
         tables.append(annual_tbl)
+
+        # Append NG annual sheet when any section has Non-GAAP overflow rows
+        if any(tbl.concepts for tbl in [is_ann_ng, bs_ann_ng, cf_ann_ng]):
+            ng_y_tbl = _merge_financials(is_ann_ng, bs_ann_ng, cf_ann_ng, sheet_name="Data_Financials_NG(Y)")
+            tables.append(ng_y_tbl)
 
     tables.extend(_build_segment_tables(filings_q, max_filings))
 
