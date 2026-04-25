@@ -372,6 +372,54 @@ def _seg_sheet_suffix(concept: str, standard_concept: str | None) -> str:
     return raw[:22]
 
 
+# ── Overflow helpers ──────────────────────────────────────────────────────────
+
+# Labels containing any of these substrings are routed to the Non-GAAP overflow
+# sheet instead of the GAAP overflow section.  Matching is case-insensitive.
+_NONGAAP_KEYWORDS: frozenset[str] = frozenset({
+    "non-gaap", "non gaap", "adjusted", "excluding", "excl.", "ex-",
+})
+
+
+def _is_nongaap_label(label: str) -> bool:
+    """Return True if label looks like a Non-GAAP / adjusted metric."""
+    low = label.lower()
+    return any(kw in low for kw in _NONGAAP_KEYWORDS)
+
+
+def _collect_overflow(
+    df: pd.DataFrame,
+    consumed: set[int],
+    data_col: str,
+    quarter_label: str,
+    gaap_out: dict,
+    ng_out: dict,
+) -> None:
+    """Collect unmatched XBRL rows from df into gaap_out or ng_out dicts.
+
+    Rows whose index is in `consumed` are skipped (already captured by template).
+    Abstract, breakdown, and dimension rows are excluded via _consolidated_mask.
+    When a value is None the key is still recorded (so the concept appears in
+    output even when it has no data for this specific quarter); periods dict
+    only stores non-None values — the caller decides whether to drop all-None rows.
+    """
+    mask = _consolidated_mask(df)
+    df_c = df[mask]
+    remaining = df_c[~df_c.index.isin(consumed)]
+    for _, row in remaining.iterrows():
+        key = str(row.get("concept", "") or "")
+        if not key or key == "nan":
+            continue
+        raw = str(row.get("label", "") or "")
+        display = unicodedata.normalize("NFKC", raw)
+        out = ng_out if _is_nongaap_label(display) else gaap_out
+        if key not in out:
+            out[key] = {"label": display, "periods": {}}
+        val = _to_python_val(row.get(data_col))
+        if val is not None:
+            out[key]["periods"][quarter_label] = val
+
+
 def _build_template_table(filings, template: list[_T], sheet_name: str,
                            stmt_method: str, max_filings: int) -> StatementTable:
     """Generic fixed-template builder used by IS, BS, and CF."""

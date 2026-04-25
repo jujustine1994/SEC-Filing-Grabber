@@ -1,4 +1,13 @@
-"""Tests for fetcher_gaap.py — quarterly multi-filing approach."""
+"""Tests for fetcher_gaap.py — quarterly multi-filing approach.
+
+New tests (overflow feature):
+  - _is_nongaap_label: keyword-based Non-GAAP label detector
+  - _collect_overflow: routing unmatched XBRL rows into GAAP / NG buckets
+  - Build function return-type smoke tests (now return tuple[StatementTable, StatementTable])
+
+Existing tests have been updated: _build_is_table / _build_cf_table now return
+(gaap_tbl, ng_tbl) tuples.  All existing assertions target gaap_tbl (first element).
+"""
 import pytest
 from unittest.mock import MagicMock, patch
 import pandas as pd
@@ -14,9 +23,11 @@ from fetcher_gaap import (
     _merge_financials,
     _ytd_col,
     _prev_quarter_label,
+    _is_nongaap_label,
+    _collect_overflow,
 )
 
-# ── helpers ──────────────────────────────────────────────────────────────
+# ── helpers ───────────────────────────────────────────────────────────────────
 
 META_COLS = {
     'concept', 'label', 'standard_concept', 'level', 'abstract',
@@ -63,7 +74,165 @@ def _make_filing(period_col="2025-12-27 (Q1)", val=100.0,
     return mock_filing
 
 
-# ── unit tests ────────────────────────────────────────────────────────────
+# ── _is_nongaap_label ─────────────────────────────────────────────────────────
+
+def test_nongaap_label_non_gaap():
+    assert _is_nongaap_label("Non-GAAP Revenue") is True
+
+def test_nongaap_label_adjusted():
+    assert _is_nongaap_label("Adjusted Operating Income") is True
+
+def test_nongaap_label_excluding():
+    assert _is_nongaap_label("Gross profit excluding discontinued ops") is True
+
+def test_nongaap_label_excl_dot():
+    assert _is_nongaap_label("Operating income, excl. SBC") is True
+
+def test_nongaap_label_gaap_row():
+    assert _is_nongaap_label("Revenue") is False
+
+def test_nongaap_label_total_assets():
+    assert _is_nongaap_label("Total assets") is False
+
+def test_nongaap_label_case_insensitive():
+    assert _is_nongaap_label("NON-GAAP EPS") is True
+
+def test_nongaap_label_non_gaap_space():
+    assert _is_nongaap_label("non gaap gross profit") is True
+
+
+# ── _collect_overflow ─────────────────────────────────────────────────────────
+
+def _make_overflow_df() -> pd.DataFrame:
+    """
+    Minimal DataFrame with 3 rows:
+      index 0 — GrossProfit (will be marked consumed)
+      index 1 — OperatingLeaseAsset (GAAP overflow)
+      index 2 — AdjustedGrossProfit (NG overflow, label triggers NG routing)
+    """
+    return pd.DataFrame({
+        "concept":                ["GrossProfit",  "OperatingLeaseAsset", "AdjustedGrossProfit"],
+        "label":                  ["Gross profit", "Operating lease ROU", "Adjusted gross profit"],
+        "standard_concept":       ["GrossProfit",  None,                  None],
+        "abstract":               [False,          False,                 False],
+        "is_breakdown":           [False,          False,                 False],
+        "dimension_member_label": [None,           None,                  None],
+        "2024-03-31 (Q1)":        [50_000,         10_000,                55_000],
+    })
+
+
+def test_collect_overflow_gaap_row_captured():
+    df = _make_overflow_df()
+    consumed = {0}
+    gaap, ng = {}, {}
+    _collect_overflow(df, consumed, "2024-03-31 (Q1)", "FY2024Q1", gaap, ng)
+    assert "OperatingLeaseAsset" in gaap
+    assert gaap["OperatingLeaseAsset"]["periods"]["FY2024Q1"] == 10_000
+
+
+def test_collect_overflow_ng_row_routed():
+    df = _make_overflow_df()
+    consumed = {0}
+    gaap, ng = {}, {}
+    _collect_overflow(df, consumed, "2024-03-31 (Q1)", "FY2024Q1", gaap, ng)
+    assert "AdjustedGrossProfit" in ng
+    assert ng["AdjustedGrossProfit"]["periods"]["FY2024Q1"] == 55_000
+
+
+def test_collect_overflow_consumed_excluded():
+    df = _make_overflow_df()
+    consumed = {0}
+    gaap, ng = {}, {}
+    _collect_overflow(df, consumed, "2024-03-31 (Q1)", "FY2024Q1", gaap, ng)
+    assert "GrossProfit" not in gaap
+    assert "GrossProfit" not in ng
+
+
+def test_collect_overflow_none_value_not_stored():
+    """None values are not stored in periods dict; key still created."""
+    df = _make_overflow_df()
+    df.loc[1, "2024-03-31 (Q1)"] = None
+    consumed = {0}
+    gaap, ng = {}, {}
+    _collect_overflow(df, consumed, "2024-03-31 (Q1)", "FY2024Q1", gaap, ng)
+    assert "OperatingLeaseAsset" in gaap
+    assert gaap["OperatingLeaseAsset"]["periods"] == {}
+
+
+def test_collect_overflow_accumulates_across_quarters():
+    """Calling _collect_overflow twice with different quarters merges into same dict."""
+    df1 = _make_overflow_df()
+    df2 = _make_overflow_df().rename(columns={"2024-03-31 (Q1)": "2024-06-30 (Q2)"})
+    consumed = {0}
+    gaap, ng = {}, {}
+    _collect_overflow(df1, consumed, "2024-03-31 (Q1)", "FY2024Q1", gaap, ng)
+    _collect_overflow(df2, consumed, "2024-06-30 (Q2)", "FY2024Q2", gaap, ng)
+    assert "FY2024Q1" in gaap["OperatingLeaseAsset"]["periods"]
+    assert "FY2024Q2" in gaap["OperatingLeaseAsset"]["periods"]
+
+
+def test_collect_overflow_abstract_rows_excluded():
+    """Abstract rows must not appear in overflow."""
+    df = _make_overflow_df()
+    df.loc[1, "abstract"] = True
+    consumed = {0}
+    gaap, ng = {}, {}
+    _collect_overflow(df, consumed, "2024-03-31 (Q1)", "FY2024Q1", gaap, ng)
+    assert "OperatingLeaseAsset" not in gaap
+
+
+def test_collect_overflow_dimension_rows_excluded():
+    """Rows with dimension_member_label must not appear in overflow."""
+    df = _make_overflow_df()
+    df.loc[1, "dimension_member_label"] = "SomeSegment"
+    consumed = {0}
+    gaap, ng = {}, {}
+    _collect_overflow(df, consumed, "2024-03-31 (Q1)", "FY2024Q1", gaap, ng)
+    assert "OperatingLeaseAsset" not in gaap
+
+
+def test_collect_overflow_empty_concept_skipped():
+    """Rows with empty concept field are silently skipped."""
+    df = _make_overflow_df()
+    df.loc[1, "concept"] = ""
+    consumed = {0}
+    gaap, ng = {}, {}
+    _collect_overflow(df, consumed, "2024-03-31 (Q1)", "FY2024Q1", gaap, ng)
+    assert "" not in gaap
+
+
+# ── Build function return-type smoke tests (empty filings) ────────────────────
+
+def test_build_is_table_empty_filings_returns_tuple():
+    """_build_is_table must return a 2-tuple of StatementTables even for empty input."""
+    result = _build_is_table([], max_filings=8)
+    assert isinstance(result, tuple) and len(result) == 2
+    gaap_tbl, ng_tbl = result
+    assert isinstance(gaap_tbl, StatementTable)
+    assert isinstance(ng_tbl, StatementTable)
+    assert len(gaap_tbl.concepts) > 0   # IS template concepts present
+    assert ng_tbl.concepts == []
+
+
+def test_build_bs_table_empty_filings_returns_tuple():
+    result = _build_bs_table([], max_filings=8)
+    assert isinstance(result, tuple) and len(result) == 2
+    gaap_tbl, ng_tbl = result
+    assert isinstance(gaap_tbl, StatementTable)
+    assert len(gaap_tbl.concepts) > 0   # BS template concepts present
+    assert ng_tbl.concepts == []
+
+
+def test_build_cf_table_empty_filings_returns_tuple():
+    result = _build_cf_table([], max_filings=8)
+    assert isinstance(result, tuple) and len(result) == 2
+    gaap_tbl, ng_tbl = result
+    assert isinstance(gaap_tbl, StatementTable)
+    assert len(gaap_tbl.concepts) > 0   # CF template concepts present
+    assert ng_tbl.concepts == []
+
+
+# ── unit tests ────────────────────────────────────────────────────────────────
 
 def test_col_to_quarter_label_q1():
     assert _col_to_quarter_label("2023-03-31 (Q1)") == "FY2023Q1"
@@ -132,38 +301,42 @@ def test_match_is_row_ignores_dimensional_rows():
     assert idx is None
 
 
+# _build_is_table tests — unpack (gaap_tbl, ng_tbl) tuple
+
 def test_build_is_table_returns_statement_table():
     filing = _make_filing()
-    tbl = _build_is_table([filing], max_filings=1)
-    assert isinstance(tbl, StatementTable)
-    assert tbl.sheet_name == "Data_IS"
+    gaap_tbl, ng_tbl = _build_is_table([filing], max_filings=1)
+    assert isinstance(gaap_tbl, StatementTable)
+    assert gaap_tbl.sheet_name == "Data_IS"
+    assert isinstance(ng_tbl, StatementTable)
 
 def test_build_is_table_has_22_concept_rows():
+    # Mock IS df has only 3 rows; all 3 are consumed by template → no overflow
     filing = _make_filing()
-    tbl = _build_is_table([filing], max_filings=1)
-    assert len(tbl.concepts) == 22
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    assert len(gaap_tbl.concepts) == 22
 
 def test_build_is_table_quarter_labels_format():
     filing = _make_filing(period_col="2025-12-27 (Q1)")
-    tbl = _build_is_table([filing], max_filings=1)
-    assert tbl.quarter_labels == ["FY2025Q1"]
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    assert gaap_tbl.quarter_labels == ["FY2025Q1"]
 
 def test_build_is_table_filing_dates():
     filing = _make_filing(filing_date="2026-01-30")
-    tbl = _build_is_table([filing], max_filings=1)
-    assert tbl.filing_dates == ["2026-01-30"]
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    assert gaap_tbl.filing_dates == ["2026-01-30"]
 
 def test_build_is_table_revenue_value():
     filing = _make_filing(period_col="2025-12-27 (Q1)", val=100.0)
-    tbl = _build_is_table([filing], max_filings=1)
-    revenue_idx = tbl.concepts.index("Revenue")
-    assert tbl.values[revenue_idx][0] == 1000.0  # val * 10
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    revenue_idx = gaap_tbl.concepts.index("Revenue")
+    assert gaap_tbl.values[revenue_idx][0] == 1000.0  # val * 10
 
 def test_build_is_table_missing_rows_are_none():
     filing = _make_filing()
-    tbl = _build_is_table([filing], max_filings=1)
-    interest_idx = tbl.concepts.index("Interest Expense")
-    assert tbl.values[interest_idx][0] is None
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    interest_idx = gaap_tbl.concepts.index("Interest Expense")
+    assert gaap_tbl.values[interest_idx][0] is None
 
 
 def test_match_is_row_label_fallback():
@@ -199,21 +372,18 @@ def test_build_is_table_net_income_profitloss_fallback():
     })
     mock_stmt = MagicMock()
     mock_stmt.to_dataframe.return_value = df
-
     mock_financials = MagicMock()
     mock_financials.income_statement.return_value = mock_stmt
     mock_financials.cashflow_statement.return_value = mock_stmt
-
     mock_tenq = MagicMock()
     mock_tenq.financials = mock_financials
-
     mock_filing = MagicMock()
     mock_filing.obj.return_value = mock_tenq
     mock_filing.filing_date = "2026-01-30"
 
-    tbl = _build_is_table([mock_filing], max_filings=1)
-    net_income_idx = tbl.concepts.index("Net Income")
-    assert tbl.values[net_income_idx][0] == 200.0
+    gaap_tbl, _ = _build_is_table([mock_filing], max_filings=1)
+    net_income_idx = gaap_tbl.concepts.index("Net Income")
+    assert gaap_tbl.values[net_income_idx][0] == 200.0
 
 
 def test_build_is_table_total_nonop_derived_from_pretax_minus_operating():
@@ -231,50 +401,47 @@ def test_build_is_table_total_nonop_derived_from_pretax_minus_operating():
     })
     mock_stmt = MagicMock()
     mock_stmt.to_dataframe.return_value = df
-
     mock_financials = MagicMock()
     mock_financials.income_statement.return_value = mock_stmt
     mock_financials.cashflow_statement.return_value = mock_stmt
-
     mock_tenq = MagicMock()
     mock_tenq.financials = mock_financials
-
     mock_filing = MagicMock()
     mock_filing.obj.return_value = mock_tenq
     mock_filing.filing_date = "2026-01-30"
 
-    tbl = _build_is_table([mock_filing], max_filings=1)
-    nonop_idx = tbl.concepts.index("Total Non-op Income/(Loss)")
-    assert tbl.values[nonop_idx][0] == 15.0  # 115 − 100
+    gaap_tbl, _ = _build_is_table([mock_filing], max_filings=1)
+    nonop_idx = gaap_tbl.concepts.index("Total Non-op Income/(Loss)")
+    assert gaap_tbl.values[nonop_idx][0] == 15.0  # 115 − 100
 
 def test_build_is_table_two_filings_oldest_to_newest():
     f1 = _make_filing(period_col="2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30",
                        prior_col="2024-12-28 (Q1)", prior_val=90.0)
     f2 = _make_filing(period_col="2024-12-28 (Q1)", val=90.0, filing_date="2025-01-31",
                        prior_col="2023-12-30 (Q1)", prior_val=80.0)
-    tbl = _build_is_table([f1, f2], max_filings=2)
-    assert tbl.quarter_labels[0] == "FY2024Q1"
-    assert tbl.quarter_labels[1] == "FY2025Q1"
+    gaap_tbl, _ = _build_is_table([f1, f2], max_filings=2)
+    assert gaap_tbl.quarter_labels[0] == "FY2024Q1"
+    assert gaap_tbl.quarter_labels[1] == "FY2025Q1"
 
 def test_build_is_table_deduplicates_same_period():
     f1 = _make_filing(period_col="2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30",
                        prior_col="2024-12-28 (Q1)", prior_val=90.0)
     f2 = _make_filing(period_col="2024-12-28 (Q1)", val=90.0, filing_date="2025-01-31",
                        prior_col="2023-12-30 (Q1)", prior_val=80.0)
-    tbl = _build_is_table([f1, f2], max_filings=2)
-    assert len(tbl.quarter_labels) == 2
-    assert len(set(tbl.quarter_labels)) == 2
+    gaap_tbl, _ = _build_is_table([f1, f2], max_filings=2)
+    assert len(gaap_tbl.quarter_labels) == 2
+    assert len(set(gaap_tbl.quarter_labels)) == 2
 
 def test_build_is_table_respects_max_filings():
     filings = [_make_filing(period_col=f"202{i}-12-27 (Q1)", val=float(i),
                              prior_col=f"202{i-1}-12-28 (Q1)", prior_val=float(i-1),
                              filing_date=f"202{i+1}-01-30")
                for i in range(1, 6)]
-    tbl = _build_is_table(filings, max_filings=3)
-    assert len(tbl.quarter_labels) == 3
+    gaap_tbl, _ = _build_is_table(filings, max_filings=3)
+    assert len(gaap_tbl.quarter_labels) == 3
 
 
-# ── integration tests ─────────────────────────────────────────────────────
+# ── integration tests ─────────────────────────────────────────────────────────
 
 def test_fetch_returns_list_of_statement_tables():
     with patch("fetcher_gaap.Company") as MockCo, patch("fetcher_gaap.set_identity"):
@@ -291,7 +458,7 @@ def test_fetch_includes_required_sheets():
     assert "Data_Financials(Q)" in sheet_names
     assert "Data_Financials(Y)" in sheet_names
     assert "Data_Meta" in sheet_names
-    # Separate IS/BS/CF sheets are no longer produced
+    # Separate IS/BS/CF sheets are not produced (internal use only)
     assert "Data_IS" not in sheet_names
     assert "Data_BS" not in sheet_names
     assert "Data_CF" not in sheet_names
@@ -369,11 +536,10 @@ def test_merge_financials_section_headers_have_none_values():
 def test_build_is_table_populates_labels():
     """labels list should be populated with original XBRL labels."""
     filing = _make_filing()
-    tbl = _build_is_table([filing], max_filings=1)
-    assert len(tbl.labels) == len(tbl.concepts)
-    # Revenue row should have label "Net sales" (from _make_is_df)
-    revenue_idx = tbl.concepts.index("Revenue")
-    assert tbl.labels[revenue_idx] == "Net sales"
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    assert len(gaap_tbl.labels) == len(gaap_tbl.concepts)
+    revenue_idx = gaap_tbl.concepts.index("Revenue")
+    assert gaap_tbl.labels[revenue_idx] == "Net sales"
 
 
 def test_fetch_sets_ticker_on_all_tables():
@@ -383,7 +549,7 @@ def test_fetch_sets_ticker_on_all_tables():
     assert all(t.ticker == "AAPL" for t in result)
 
 
-# ── fixtures ──────────────────────────────────────────────────────────────
+# ── fixtures ──────────────────────────────────────────────────────────────────
 
 def _make_mock_company(n_filings=2):
     """Mock Company with n_filings 10-Q filings."""
@@ -408,7 +574,7 @@ def _make_mock_company(n_filings=2):
     return mock_co
 
 
-# ── _ytd_col tests ────────────────────────────────────────────────────────
+# ── _ytd_col tests ────────────────────────────────────────────────────────────
 
 def test_ytd_col_returns_ytd_column():
     df = pd.DataFrame({
@@ -443,7 +609,7 @@ def test_ytd_col_returns_q3_ytd_column():
     assert _ytd_col(df) == "2025-09-30 (YTD)"
 
 
-# ── _prev_quarter_label tests ─────────────────────────────────────────────
+# ── _prev_quarter_label tests ─────────────────────────────────────────────────
 
 def test_prev_quarter_label_q2_returns_q1():
     assert _prev_quarter_label("FY2025Q2") == "FY2025Q1"
@@ -461,7 +627,7 @@ def test_prev_quarter_label_annual_returns_none():
     assert _prev_quarter_label("FY2025") is None
 
 
-# ── CF YTD subtraction integration tests ─────────────────────────────────
+# ── CF YTD subtraction integration tests ─────────────────────────────────────
 
 def _make_cf_df_minimal(period_col, net_income_val, ocf_val):
     """Minimal CF DataFrame with Net Income and OCF rows."""
@@ -507,46 +673,46 @@ def test_build_cf_table_q1_standalone_unchanged():
     """Q1 has a standalone (Q1) CF column — value should pass through as-is."""
     q1 = _make_cf_filing("2025-03-31 (Q1)", "2025-03-31 (Q1)", ni=100.0, ocf=150.0,
                           filing_date="2025-04-30")
-    tbl = _build_cf_table([q1], max_filings=80)
-    assert "FY2025Q1" in tbl.quarter_labels
-    ni_idx = tbl.concepts.index("Net Income")
-    assert tbl.values[ni_idx][0] == pytest.approx(100.0)
+    gaap_tbl, _ = _build_cf_table([q1], max_filings=80)
+    assert "FY2025Q1" in gaap_tbl.quarter_labels
+    ni_idx = gaap_tbl.concepts.index("Net Income")
+    assert gaap_tbl.values[ni_idx][0] == pytest.approx(100.0)
 
 
 def test_build_cf_table_q2_ytd_subtracted_from_q1():
     """Q2 standalone = Q2 YTD − Q1."""
     q1_ni, q1_ocf = 100.0, 150.0
-    q2_ni, q2_ocf = 130.0, 180.0          # target standalone values
-    q2_ytd_ni  = q1_ni  + q2_ni            # 230.0 cumulative
-    q2_ytd_ocf = q1_ocf + q2_ocf           # 330.0 cumulative
+    q2_ni, q2_ocf = 130.0, 180.0
+    q2_ytd_ni  = q1_ni  + q2_ni
+    q2_ytd_ocf = q1_ocf + q2_ocf
 
     q1 = _make_cf_filing("2025-03-31 (Q1)", "2025-03-31 (Q1)", q1_ni, q1_ocf, "2025-04-30")
     q2 = _make_cf_filing("2025-06-30 (Q2)", "2025-06-30 (YTD)", q2_ytd_ni, q2_ytd_ocf, "2025-07-30")
 
-    tbl = _build_cf_table([q2, q1], max_filings=80)  # newest-first order
+    gaap_tbl, _ = _build_cf_table([q2, q1], max_filings=80)  # newest-first order
 
-    assert "FY2025Q1" in tbl.quarter_labels
-    assert "FY2025Q2" in tbl.quarter_labels
-    ni_idx = tbl.concepts.index("Net Income")
-    q2_col = tbl.quarter_labels.index("FY2025Q2")
-    assert tbl.values[ni_idx][q2_col] == pytest.approx(q2_ni)
+    assert "FY2025Q1" in gaap_tbl.quarter_labels
+    assert "FY2025Q2" in gaap_tbl.quarter_labels
+    ni_idx = gaap_tbl.concepts.index("Net Income")
+    q2_col = gaap_tbl.quarter_labels.index("FY2025Q2")
+    assert gaap_tbl.values[ni_idx][q2_col] == pytest.approx(q2_ni)
 
 
 def test_build_cf_table_q3_ytd_subtracted_from_q2_ytd():
-    """Q3 standalone = Q3 YTD − Q2 YTD (uses raw YTD, not computed Q2 standalone)."""
+    """Q3 standalone = Q3 YTD − Q2 YTD."""
     q1_ni, q2_ni, q3_ni = 100.0, 130.0, 150.0
-    q2_ytd_ni = q1_ni + q2_ni              # 230.0
-    q3_ytd_ni = q1_ni + q2_ni + q3_ni     # 380.0
+    q2_ytd_ni = q1_ni + q2_ni
+    q3_ytd_ni = q1_ni + q2_ni + q3_ni
 
     q1 = _make_cf_filing("2025-03-31 (Q1)", "2025-03-31 (Q1)", q1_ni, q1_ni * 1.5, "2025-04-30")
     q2 = _make_cf_filing("2025-06-30 (Q2)", "2025-06-30 (YTD)", q2_ytd_ni, q2_ytd_ni * 1.5, "2025-07-30")
     q3 = _make_cf_filing("2025-09-30 (Q3)", "2025-09-30 (YTD)", q3_ytd_ni, q3_ytd_ni * 1.5, "2025-10-30")
 
-    tbl = _build_cf_table([q3, q2, q1], max_filings=80)
+    gaap_tbl, _ = _build_cf_table([q3, q2, q1], max_filings=80)
 
-    ni_idx = tbl.concepts.index("Net Income")
-    q3_col = tbl.quarter_labels.index("FY2025Q3")
-    assert tbl.values[ni_idx][q3_col] == pytest.approx(q3_ni)
+    ni_idx = gaap_tbl.concepts.index("Net Income")
+    q3_col = gaap_tbl.quarter_labels.index("FY2025Q3")
+    assert gaap_tbl.values[ni_idx][q3_col] == pytest.approx(q3_ni)
 
 
 def test_build_cf_table_q2_ytd_without_q1_keeps_raw():
@@ -554,15 +720,15 @@ def test_build_cf_table_q2_ytd_without_q1_keeps_raw():
     ytd_ni = 230.0
     q2 = _make_cf_filing("2025-06-30 (Q2)", "2025-06-30 (YTD)", ytd_ni, ytd_ni * 1.5, "2025-07-30")
 
-    tbl = _build_cf_table([q2], max_filings=80)
+    gaap_tbl, _ = _build_cf_table([q2], max_filings=80)
 
-    assert "FY2025Q2" in tbl.quarter_labels
-    ni_idx = tbl.concepts.index("Net Income")
-    q2_col = tbl.quarter_labels.index("FY2025Q2")
-    assert tbl.values[ni_idx][q2_col] == pytest.approx(ytd_ni)
+    assert "FY2025Q2" in gaap_tbl.quarter_labels
+    ni_idx = gaap_tbl.concepts.index("Net Income")
+    q2_col = gaap_tbl.quarter_labels.index("FY2025Q2")
+    assert gaap_tbl.values[ni_idx][q2_col] == pytest.approx(ytd_ni)
 
 
-# ── Override integration tests ────────────────────────────────────────────
+# ── Override integration tests ────────────────────────────────────────────────
 
 def _make_filing_odd_concepts(period_col="2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30"):
     """Filing where Revenue uses 'TotalRevenues' std_concept (not in IS_TEMPLATE priority 1)."""
@@ -579,15 +745,12 @@ def _make_filing_odd_concepts(period_col="2025-12-27 (Q1)", val=100.0, filing_da
     })
     mock_stmt = MagicMock()
     mock_stmt.to_dataframe.return_value = df
-
     mock_financials = MagicMock()
     mock_financials.income_statement.return_value = mock_stmt
     mock_financials.balance_sheet.return_value = mock_stmt
     mock_financials.cashflow_statement.return_value = mock_stmt
-
     mock_tenq = MagicMock()
     mock_tenq.financials = mock_financials
-
     mock_filing = MagicMock()
     mock_filing.obj.return_value = mock_tenq
     mock_filing.filing_date = filing_date
@@ -597,28 +760,27 @@ def _make_filing_odd_concepts(period_col="2025-12-27 (Q1)", val=100.0, filing_da
 def test_build_is_table_revenue_none_without_override():
     """Revenue is None when std_concept doesn't match and no fallback."""
     filing = _make_filing_odd_concepts(val=100.0)
-    tbl = _build_is_table([filing], max_filings=1)
-    revenue_idx = tbl.concepts.index("Revenue")
-    # "TotalRevenues" doesn't match "Revenue" std_concept or "RevenueFromContractWithCustomer" suffix
-    assert tbl.values[revenue_idx][0] is None
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    revenue_idx = gaap_tbl.concepts.index("Revenue")
+    assert gaap_tbl.values[revenue_idx][0] is None
 
 
 def test_build_is_table_concept_override_restores_revenue():
     """concept_override makes Revenue resolve via the override's std_concept."""
     filing = _make_filing_odd_concepts(val=100.0)
     overrides = {"Revenue": {"fix_type": "concept_override", "std_concept": "TotalRevenues"}}
-    tbl = _build_is_table([filing], max_filings=1, is_overrides=overrides)
-    revenue_idx = tbl.concepts.index("Revenue")
-    assert tbl.values[revenue_idx][0] == pytest.approx(1000.0)  # val * 10
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1, is_overrides=overrides)
+    revenue_idx = gaap_tbl.concepts.index("Revenue")
+    assert gaap_tbl.values[revenue_idx][0] == pytest.approx(1000.0)  # val * 10
 
 
 def test_build_is_table_structural_absence_keeps_none():
-    """structural_absence override skips lookup and keeps None (no crash)."""
+    """structural_absence override skips lookup and keeps None."""
     filing = _make_filing_odd_concepts(val=100.0)
     overrides = {"Revenue": {"fix_type": "structural_absence", "confirmed_absent": True}}
-    tbl = _build_is_table([filing], max_filings=1, is_overrides=overrides)
-    revenue_idx = tbl.concepts.index("Revenue")
-    assert tbl.values[revenue_idx][0] is None
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1, is_overrides=overrides)
+    revenue_idx = gaap_tbl.concepts.index("Revenue")
+    assert gaap_tbl.values[revenue_idx][0] is None
 
 
 def test_build_is_table_override_applies_to_all_filings():
@@ -626,7 +788,7 @@ def test_build_is_table_override_applies_to_all_filings():
     f1 = _make_filing_odd_concepts("2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30")
     f2 = _make_filing_odd_concepts("2024-12-28 (Q1)", val=90.0, filing_date="2025-01-30")
     overrides = {"Revenue": {"fix_type": "concept_override", "std_concept": "TotalRevenues"}}
-    tbl = _build_is_table([f1, f2], max_filings=2, is_overrides=overrides)
-    revenue_idx = tbl.concepts.index("Revenue")
-    assert len(tbl.quarter_labels) == 2
-    assert all(v is not None for v in tbl.values[revenue_idx])
+    gaap_tbl, _ = _build_is_table([f1, f2], max_filings=2, is_overrides=overrides)
+    revenue_idx = gaap_tbl.concepts.index("Revenue")
+    assert len(gaap_tbl.quarter_labels) == 2
+    assert all(v is not None for v in gaap_tbl.values[revenue_idx])
