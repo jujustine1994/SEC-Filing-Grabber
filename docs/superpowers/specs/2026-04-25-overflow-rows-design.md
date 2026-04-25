@@ -107,9 +107,28 @@ for key in sorted(overflow_data):
 
 **Overflow rows with all-None values are skipped** (no point adding them — concept exists in XBRL but has no numerical data).
 
+### Non-GAAP Separation
+
+During overflow collection, each row is classified as GAAP or Non-GAAP based on its label:
+
+```python
+_NONGAAP_KEYWORDS = {"non-gaap", "non gaap", "adjusted", "excluding", "ex-", "excl."}
+
+def _is_nongaap_label(label: str) -> bool:
+    l = label.lower()
+    return any(kw in l for kw in _NONGAAP_KEYWORDS)
+```
+
+- **GAAP overflow** rows: appended to `Data_Financials(Q/Y)` after template rows (as described above)
+- **Non-GAAP overflow** rows: collected separately → written to `Data_Financials_NG(Q/Y)` (same section structure: IS / BS / CF)
+- `Data_Financials_NG` sheet is only produced when at least one Non-GAAP overflow row is found
+- Does not conflict with existing `Data_EPS_Recon` / `Data_NonGAAP` sheets from `fetcher_nongaap.py`
+
+Classification is keyword-based and not 100% accurate. Misclassification direction: some GAAP rows may appear in the NG sheet (e.g., "Gross profit excluding discontinued operations"). This is the safer error direction.
+
 ### No changes required
 
-- `_merge_financials` — already iterates all rows generically
+- `_merge_financials` — already iterates all rows generically; used for both GAAP and NG merged tables
 - `override_engine.py` — `check_key_rows` finds template rows by name; overflow names don't collide
 - `excel_formatter.py` — overflow rows get default formatting (no standard name to trigger special rules)
 - `test_live_snapshots.py`, `test_override_engine.py` — template row indices unchanged
@@ -143,5 +162,21 @@ for key in sorted(overflow_data):
 1. Implement in `_build_is_table` (largest, most complex due to CF-source rows)
 2. Implement in `_build_bs_table`
 3. Implement in `_build_cf_table`
-4. Smoke test: COHR (known to have Shares data missing in template) and one standard ticker (AAPL)
-5. Verify `excel_formatter.py` handles unknown concept names gracefully
+4. Update `fetch_gaap_statements` to also produce `Data_Financials_NG(Q/Y)` sheets
+5. Smoke test: COHR (known to have Shares data missing in template) and one standard ticker (AAPL)
+6. Verify `excel_formatter.py` handles unknown concept names gracefully
+
+---
+
+## Known Remaining Gap (TODO — not in this spec)
+
+**CF Q2/Q3 YTD→Quarterly Conversion** (地雷十二)
+
+10-Q Q2/Q3 CF statements use YTD columns (`(YTD)`), which are currently skipped entirely. All CF rows (including template and overflow) are None for Q2/Q3. Fix requires cross-filing subtraction:
+
+```
+Q2 standalone CF = Q2 YTD CF − Q1 YTD CF
+Q3 standalone CF = Q3 YTD CF − Q2 YTD CF
+```
+
+This affects `_build_cf_table` and is a separate implementation task. IS and BS are not affected.
