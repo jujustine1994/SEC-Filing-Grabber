@@ -9,6 +9,8 @@
 ## 功能清單
 
 ### 已完成
+- [x] B1 Overflow Rows：IS/BS/CF 三表各自追加未被模板消耗的 XBRL rows，確保不遺漏任何財務數字
+- [x] Non-GAAP overflow 自動分流至 `Data_Financials_NG(Q/Y)` 獨立 sheet（label 含 "adjusted"/"non-gaap"/"excluding" 等）
 - [x] Auto-repair override engine（新 ticker 首次 fetch 自動診斷並修復缺失 key rows）
 - [x] config.json 搬到 %APPDATA%\SEC Financial Tools\（不進 git，啟動時自動 migrate）
 - [x] Watchlist 每間公司獨立輸出路徑（📁 按鈕，存於 watchlist item output_dir）
@@ -55,6 +57,35 @@
 
 ## 更新記錄
 
+### 2026-04-25（Session 13）
+
+**B1 Overflow Rows — 確保所有 XBRL 財務數字都不遺漏**
+
+設計文件：`docs/superpowers/specs/2026-04-25-overflow-rows-design.md`
+
+核心概念：每次 filing 建表時追蹤模板已消耗的 XBRL row indices（`consumed: set[int]`），未被消耗的 rows 以 overflow 形式追加在模板行之後。
+
+- **`fetcher_gaap.py`**：
+  - 新增 `_NONGAAP_KEYWORDS: frozenset` + `_is_nongaap_label(label)` — keyword-based 分類，label 含 "adjusted"/"non-gaap"/"excluding"/"excl."/"ex-" 的視為 Non-GAAP
+  - 新增 `_collect_overflow(df, consumed, data_col, quarter_label, gaap_out, ng_out)` — 從未消耗的 XBRL rows 中收集數值，分流至 GAAP / NG 兩個 output dict；跳過 abstract / breakdown / dimension rows（沿用 `_consolidated_mask`）
+  - `_build_is_table` → 回傳 `tuple[StatementTable, StatementTable]`：
+    - IS df 的 consumed 追蹤；CF-source rows 只追蹤 IS df consumed（CF overflow 由 `_build_cf_table` 負責）
+    - `gaap_tbl`（`Data_IS`）= 22 個模板行 + GAAP overflow 行；`ng_tbl`（`Data_IS_NG`）= NG overflow 行
+  - `_build_bs_table` → 回傳 `tuple[StatementTable, StatementTable]`（`Data_BS` / `Data_BS_NG`）
+  - `_build_cf_table` → 回傳 `tuple[StatementTable, StatementTable]`（`Data_CF` / `Data_CF_NG`）；只對非 YTD filings（Q1/FY）收集 overflow，避免需要跨 filing 減法
+  - `fetch_gaap_statements` → 所有 6 次 build 呼叫改用 tuple unpacking；若任一段有 NG overflow rows，則建 `Data_Financials_NG(Q)` / `Data_Financials_NG(Y)` 並加入輸出清單
+
+- **`tests/test_fetcher_gaap.py`**：
+  - 新增 16 個 helper tests（`_is_nongaap_label` × 8，`_collect_overflow` × 8）
+  - 新增 3 個 smoke tests（`_build_is/bs/cf_table` 空 filings 回傳 tuple）
+  - 所有現有 `_build_is_table` / `_build_cf_table` tests 改為 `gaap_tbl, _ = ...` 解包
+
+已知限制（待辦，不在本次範圍）：CF Q2/Q3 YTD overflow 需要跨 filing 減法，目前跳過；地雷十二仍存在。
+
+**69/69 unit tests 全數通過**
+
+---
+
 ### 2026-04-24（Session 11）
 
 **Auto-repair Override Engine**
@@ -84,6 +115,37 @@
 - 新增垃圾回應防護：含空格或長度 >100 → 回傳 None，不存入 override
 
 新增 **28 個 unit tests**（`tests/test_override_engine.py`）+ 4 個 override 整合測試（`tests/test_fetcher_gaap.py`）；**總計 151 tests，全數通過**
+
+---
+
+### 2026-04-24（Session 12）
+
+**Live Snapshot Tests（自動化實機驗證）**
+
+新增 `tests/test_live_snapshots.py`，對真實 EDGAR API 抓資料，斷言 key rows 不全為 None。
+
+- **`tests/test_live_snapshots.py`（新檔）**：
+  - 24 個 `@pytest.mark.slow` tests（8 tickers × IS/BS/CF）
+  - Tickers：MSFT、AMZN、META、GOOGL、NVDA、JPM、GS、JNJ
+  - `all_tables` fixture（module-scoped）：8 間公司只抓一次（max_filings=8）
+  - 金融股（GS/JPM）IS 允許 Operating Income 缺失；JPM CF 允許 Capex 缺失
+  - 實跑結果：**24/24 PASSED**（總耗時約 36 分鐘）
+
+- **`conftest.py`（新檔）**：註冊 `slow` marker，避免 PytestUnknownMarkWarning
+
+- **`override_engine.py` bug 修正**：
+  - KEY_ROWS 三個命名錯誤（與 StatementTable concept 名稱不符）
+  - `"EPS Diluted"` → `"Diluted EPS"`；`"Total Equity"` → `"Total Equity — Parent"`；`"Capital Expenditures"` → `"Capex"`
+  - 同步更新 SYNONYM_MAP key 名稱
+  - 影響：原本 3/9 key rows 的 override 自動診斷為無效 no-op，現已修復
+
+- **`tests/test_override_engine.py`**：更新 IS_CONCEPTS mock 及 e1_fuzzy_match 測試名稱
+
+- **`PITFALLS.md` 地雷十六**：JPM CF Capex structural absence（銀行類公司使用不同 XBRL 概念名）
+
+執行方式：`pytest -m slow`（~36 分鐘）、`pytest -m "not slow"`（~9 秒）
+
+**總計 175 tests（151 unit + 24 live），全數通過**
 
 ---
 
