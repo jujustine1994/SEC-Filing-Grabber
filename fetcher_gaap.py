@@ -26,7 +26,7 @@ import re
 import sys
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, date as _date
 from typing import Any
 
 import pandas as pd
@@ -57,6 +57,11 @@ META_COLS: set[str] = {
     'dimension_member_label', 'dimension_label', 'unit', 'point_in_time',
     'balance', 'weight', 'preferred_sign', 'parent_concept', 'parent_abstract_concept',
 }
+
+# EDGAR began requiring XBRL from ~2009; filings before this date have no XBRL data.
+# Filing lists are returned newest-first, so hitting a pre-cutoff filing means we can
+# break the loop immediately rather than continuing through decades of empty filings.
+_XBRL_CUTOFF: _date = _date(2008, 1, 1)
 
 # Tuple: (label, std_concept, fallback_suffix, source, match, label_hint)
 #   label         — display name (Col A)
@@ -513,6 +518,9 @@ def _build_is_table(
     for filing in filings:
         if len(periods) >= max_filings:
             break
+        _fd = getattr(filing, "filing_date", None)
+        if isinstance(_fd, _date) and _fd < _XBRL_CUTOFF:
+            break   # filings are newest-first; everything older is also pre-XBRL
         try:
             tenq = filing.obj()
             stmt = tenq.financials.income_statement()
@@ -713,6 +721,9 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None)
     for filing in filings:
         if len(periods) >= max_filings:
             break
+        _fd = getattr(filing, "filing_date", None)
+        if isinstance(_fd, _date) and _fd < _XBRL_CUTOFF:
+            break   # filings are newest-first; everything older is also pre-XBRL
         try:
             tenq = filing.obj()
 
@@ -859,6 +870,9 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
     for filing in filings:
         if len(collected) >= max_filings:
             break
+        _fd = getattr(filing, "filing_date", None)
+        if isinstance(_fd, _date) and _fd < _XBRL_CUTOFF:
+            break   # filings are newest-first; everything older is also pre-XBRL
         try:
             tenq = filing.obj()
             is_stmt = tenq.financials.income_statement()
@@ -1197,6 +1211,9 @@ def _build_segment_tables(filings, max_filings: int) -> list[StatementTable]:
     for filing in filings:
         if len(periods_seen) >= max_filings:
             break
+        _fd = getattr(filing, "filing_date", None)
+        if isinstance(_fd, _date) and _fd < _XBRL_CUTOFF:
+            break   # filings are newest-first; everything older is also pre-XBRL
         try:
             stmt = filing.obj().financials.income_statement()
             if stmt is None:

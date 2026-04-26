@@ -907,3 +907,43 @@ def test_cf_overflow_q2_without_q1_is_none():
         idx = gaap_tbl.labels.index("us-gaap_SpecialItemCashFlow")
         q2_col = gaap_tbl.quarter_labels.index("FY2025Q2")
         assert gaap_tbl.values[idx][q2_col] is None
+
+
+# ── Task 1: pre-XBRL early exit ───────────────────────────────────────────────
+
+from datetime import date as _date
+from unittest.mock import PropertyMock
+
+def _make_old_filing(filing_date_str: str):
+    """Mock filing with given date but no XBRL (pre-2008)."""
+    f = MagicMock()
+    f.filing_date = _date.fromisoformat(filing_date_str)
+    f.obj.side_effect = Exception("No XBRL")
+    return f
+
+
+def test_build_is_table_stops_before_pre_xbrl():
+    """Filings dated before 2008-01-01 should cause early loop termination, not exception."""
+    modern = _make_filing(period_col="2024-03-31 (Q1)", val=100.0, filing_date="2024-04-30")
+    modern.filing_date = _date(2024, 4, 30)
+    old = _make_old_filing("2007-04-30")
+
+    # Should not raise even though old.obj() raises Exception
+    gaap_tbl, _ = _build_is_table([modern, old], max_filings=80)
+    assert len(gaap_tbl.quarter_labels) == 1   # only the modern one
+
+
+def test_build_bs_table_stops_before_pre_xbrl():
+    modern = _make_filing(period_col="2024-03-31 (Q1)", val=100.0, filing_date="2024-04-30")
+    modern.filing_date = _date(2024, 4, 30)
+    old = _make_old_filing("2007-04-30")
+    gaap_tbl, _ = _build_bs_table([modern, old], max_filings=80)
+    assert len(gaap_tbl.quarter_labels) == 1
+
+
+def test_build_cf_table_stops_before_pre_xbrl():
+    modern = _make_cf_filing("2024-03-31 (Q1)", "2024-03-31 (Q1)", 100.0, 150.0, "2024-04-30")
+    modern.filing_date = _date(2024, 4, 30)
+    old = _make_old_filing("2007-04-30")
+    gaap_tbl, _ = _build_cf_table([modern, old], max_filings=80)
+    assert len(gaap_tbl.quarter_labels) == 1
