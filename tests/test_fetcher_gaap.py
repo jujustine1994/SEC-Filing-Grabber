@@ -948,3 +948,41 @@ def test_build_cf_table_stops_before_pre_xbrl():
     gaap_tbl, _ = _build_cf_table([modern, old], max_filings=80)
     assert len(gaap_tbl.quarter_labels) == 1
     old.obj.assert_not_called()
+
+
+# ── Task 2: Dividends std_concept bug ─────────────────────────────────────────
+
+def _make_cf_dividends_df():
+    """CF df with NCI distribution row AND a real dividends row."""
+    return pd.DataFrame({
+        "concept":               [
+            "us-gaap_NetCashProvidedByUsedInOperatingActivities",
+            "us-gaap_DistributionsToMinorityInterests",   # NCI — must NOT be picked
+            "us-gaap_PaymentsOfDividendsCommonStock",     # real dividends — must be picked
+        ],
+        "label":                 ["Net cash from ops", "Distributions to NCI", "Dividends paid"],
+        "standard_concept":      ["NetCashFromOperatingActivities", "DistributionsToMinorityInterests", None],
+        "abstract":              [False, False, False],
+        "is_breakdown":          [False, False, False],
+        "level":                 [3, 4, 4],
+        "dimension_member_label":[None, None, None],
+        "2024-03-31 (Q1)":       [500.0, 30.0, 80.0],
+    })
+
+
+def test_dividends_paid_does_not_pick_nci_distribution():
+    """Dividends Paid must pick PaymentsOfDividends, not DistributionsToMinorityInterests."""
+    df = _make_cf_dividends_df()
+    mock_is = MagicMock(); mock_is.to_dataframe.return_value = _make_is_df_minimal("2024-03-31 (Q1)")
+    mock_cf = MagicMock(); mock_cf.to_dataframe.return_value = df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_is
+    mock_fin.cashflow_statement.return_value = mock_cf
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    filing = MagicMock(); filing.obj.return_value = mock_tenq; filing.filing_date = "2024-04-30"
+
+    gaap_tbl, _ = _build_cf_table([filing], max_filings=1)
+    div_idx = gaap_tbl.concepts.index("Dividends Paid")
+    assert gaap_tbl.values[div_idx][0] == pytest.approx(80.0), (
+        f"Expected 80.0 (real dividends), got {gaap_tbl.values[div_idx][0]}"
+    )
