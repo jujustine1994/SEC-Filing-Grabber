@@ -912,7 +912,6 @@ def test_cf_overflow_q2_without_q1_is_none():
 # ── Task 1: pre-XBRL early exit ───────────────────────────────────────────────
 
 from datetime import date as _date
-from unittest.mock import PropertyMock
 
 def _make_old_filing(filing_date_str: str):
     """Mock filing with given date but no XBRL (pre-2008)."""
@@ -928,9 +927,9 @@ def test_build_is_table_stops_before_pre_xbrl():
     modern.filing_date = _date(2024, 4, 30)
     old = _make_old_filing("2007-04-30")
 
-    # Should not raise even though old.obj() raises Exception
     gaap_tbl, _ = _build_is_table([modern, old], max_filings=80)
     assert len(gaap_tbl.quarter_labels) == 1   # only the modern one
+    old.obj.assert_not_called()  # break must have fired, not the exception handler
 
 
 def test_build_bs_table_stops_before_pre_xbrl():
@@ -939,6 +938,7 @@ def test_build_bs_table_stops_before_pre_xbrl():
     old = _make_old_filing("2007-04-30")
     gaap_tbl, _ = _build_bs_table([modern, old], max_filings=80)
     assert len(gaap_tbl.quarter_labels) == 1
+    old.obj.assert_not_called()
 
 
 def test_build_cf_table_stops_before_pre_xbrl():
@@ -947,3 +947,4 @@ def test_build_cf_table_stops_before_pre_xbrl():
     old = _make_old_filing("2007-04-30")
     gaap_tbl, _ = _build_cf_table([modern, old], max_filings=80)
     assert len(gaap_tbl.quarter_labels) == 1
+    old.obj.assert_not_called()
