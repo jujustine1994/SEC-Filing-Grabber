@@ -23,14 +23,22 @@
 使用者輸入 Ticker（Tab 1）或從 Watchlist 選取（Tab 2）
     ↓
 fetcher_gaap.py
-    ├─ _build_is_table()    → IS 22-row 固定模板
-    ├─ _build_bs_table()    → BS 41-row 固定模板
-    ├─ _build_cf_table()    → CF 25-row 固定模板 + FCF 衍生
-    ├─ _merge_financials()  → 合併成 Data_Financials
-    ├─ _build_segment_tables() → Data_Seg_* (多個)
-    └─ _build_meta_table()  → Data_Meta
+    ├─ _build_is_table()  → (gaap_tbl, ng_tbl)  IS 22-row 模板 + GAAP/NG overflow
+    ├─ _build_bs_table()  → (gaap_tbl, ng_tbl)  BS 41-row 模板 + GAAP/NG overflow
+    ├─ _build_cf_table()  → (gaap_tbl, ng_tbl)  CF 26-row 模板 + GAAP/NG overflow
+    │
+    ├─ override_engine.check_key_rows()  → 找全 None 的 key rows
+    ├─ override_engine.run_diagnosis()   → E1 fuzzy + E2 LLM → save_overrides()
+    │   （有新 override 時重跑三個 build 函式）
+    │
+    ├─ _merge_financials(is, bs, cf)    → Data_Financials(Q)    ← 主輸出
+    ├─ _merge_financials(ng_is, ng_bs, ng_cf) → Data_Financials_NG(Q)  ← 有 NG overflow 時
+    ├─ _merge_financials(annual...)     → Data_Financials(Y)    ← 10-K
+    ├─ _merge_financials(ng annual...)  → Data_Financials_NG(Y) ← 有 NG overflow 時
+    ├─ _build_segment_tables()          → Data_Seg_* (多個)
+    └─ _build_meta_table()              → Data_Meta
 
-fetcher_nongaap.py（勾選 Non-GAAP 時）
+fetcher_nongaap.py（勾選 Non-GAAP 時，完全獨立於 GAAP fetcher）
     ├─ _get_earnings_filings()    → 8-K Item 2.02 清單
     ├─ _extract_eps_recon()       → edgartools eps_reconciliation
     ├─ _extract_nongaap_metrics() → AI 解析 EX-99.1 press release
@@ -58,24 +66,36 @@ excel_writer.py
 
 ## Excel Sheet Layout
 
-### Data_Financials（主要輸出）
+### Data_Financials(Q) / Data_Financials(Y)（主要輸出）
 
 ```
 A1=ticker  B1=空  C1=FY2024Q1  D1=FY2024Q2  ...
 A2=空      B2=空  C2=2024-02-01 D2=2024-05-03 ...
-A3=Income Statement  B3=空  C3..=None  (section header)
-A4=Revenue  B4=Net sales  C4=100.0  D4=105.0  ...
+A3=Income Statement  (section header, all values = None)
+A4=Revenue  B4=Net sales  C4=100.0  ...   ← 22 IS 固定模板行
 ...
-A26=Balance Sheet  (section header)
-A27=Cash  B27=Cash and cash equivalents  ...
+A25=〔IS overflow 行〕  B25=us-gaap_ConceptXxx   ← 可能 0 到 N 行
+A26=空  (blank separator)
+A27=Balance Sheet  (section header)
+A28=Cash  B28=Cash and cash equivalents  ...   ← 41 BS 固定模板行
 ...
-A69=Cash Flow  (section header)
-A70=Net Income  B70=Net income  ...
+A70=〔BS overflow 行〕                          ← 可能 0 到 N 行
+A71=空
+A72=Cash Flow  (section header)
+A73=Net Income  B73=Net income  ...            ← 26 CF 固定模板行（含 FCF DERIVED）
+...
+A99=〔CF overflow 行〕                          ← 可能 0 到 N 行（僅 Q1/FY filings）
 ```
 
-- **Col A** = 標準指標名稱（Std Name）
-- **Col B** = Original Item（公司 XBRL 原始標籤，section header 行為空）
+- **Col A** = 標準指標名稱（template 行）或 XBRL 原始 label（overflow 行）
+- **Col B** = Original Item（XBRL 原始標籤，overflow 行為 concept name）
 - **Col C+** = 季度數據（oldest → newest）
+
+### Data_Financials_NG(Q) / Data_Financials_NG(Y)（有 Non-GAAP overflow 時才產生）
+
+格式與 Data_Financials 完全相同，但每個 section 只含 Non-GAAP overflow 行（無固定模板行）。  
+Non-GAAP 判斷：label 含 "adjusted"/"non-gaap"/"non gaap"/"excluding"/"excl."/"ex-"。  
+**與 Data_EPS_Recon / Data_NonGAAP 完全獨立**（來源不同：這裡是 XBRL，那裡是 8-K press release）。
 
 ### Data_Seg_*
 
@@ -122,7 +142,30 @@ match:      "first"（預設）= 最早那行；"last" = 最後那行（用於 C
 |------|------|------|
 | IS_TEMPLATE | 22 | 6-tuple (label, std_concept, fallback_suffix, source, match, label_hint) |
 | BS_TEMPLATE | 41 | 同上 |
-| CF_TEMPLATE | 26 | 同上（含 Free Cash Flow DERIVED 行） |
+| CF_TEMPLATE | 26 | 同上（第 26 行為 Free Cash Flow，DERIVED = OCF − |Capex|） |
+
+source 欄位值：`"IS"` / `"BS"` / `"CF"` = 從哪個 DataFrame 取值；`"DERIVED"` = 不做 XBRL 比對，由 post-processing 計算。
+
+## B1 Overflow Rows（三表 GAAP / NG 分流）
+
+每個 `_build_*_table` 函式現在回傳 `tuple[StatementTable, StatementTable]`：`(gaap_tbl, ng_tbl)`。
+
+**Consumed tracking：**
+- 每個 filing 的 template 比對迴圈維護 `consumed: set[int]`
+- `_match_is_row()` 找到 index 時 → `consumed.add(idx)`
+- IS 的 CF-source rows（D&A 等）消耗 `cf_df` 的 index，不計入 IS `consumed`（由 `_build_cf_table` 各自追蹤）
+- ProfitLoss fallback 也計入 IS `consumed`
+
+**Overflow 收集（`_collect_overflow`）：**
+```python
+_collect_overflow(df, consumed, data_col, quarter_label, gaap_out, ng_out)
+```
+- 套用 `_consolidated_mask`（排除 abstract / breakdown / dimension rows）
+- 跳過 `consumed` 中的 index
+- `_is_nongaap_label(label)` 為 True → 進 `ng_out`；否則進 `gaap_out`
+- all-None 的 overflow row 最終不追加（build 函式末段過濾）
+
+**CF 限制：** YTD filings（Q2/Q3）的 overflow 不收集，因為 YTD overflow 需要跨 filing 減法（地雷十二延伸）。
 
 ## IS Post-processing Fallbacks
 
@@ -159,24 +202,19 @@ save_overrides()       ← 診斷結果永久寫入，下次同 ticker 不重跑
 
 ## 待辦功能
 
-### 🔴 優先（下次開始前）
-1. **實作 override_engine.py**：E1 fuzzy match + E2 LLM diagnose + override 讀寫（設計已完成）
-2. **整合 fetcher_gaap.py**：三個 build 函式加 override 套用邏輯
-3. **main.py 加 AI API 用途說明**：Settings 頁說明 AI 在非 GAAP 提取與指標診斷的用途及 key 缺失影響
-
 ### 🟡 中優先
-4. **Fallback 驗證**：對 MSFT/AMZN/META/GOOGL/NVDA/JPM/GS/JNJ 跑 max_filings=8，確認 key rows 正確率
-5. **金融股模板**（設計已完成，待實作）：
-   - GS/JPM 用不同的 IS/BS 模板
-   - 自動偵測：BS 含 `TotalDeposits` std_concept → 金融股
-6. **Excel Template 著色功能**：
-   - 使用者建立 `template.xlsx`，預先著色各行
-   - openpyxl 保留 cell formatting，季度欄擴充時複製前一欄格式
+1. **Non-GAAP cache ticker 隔離**：多公司共用同一 output_dir 時 `nongaap_cache.json` 互蓋
+2. **CF Q2/Q3 YTD overflow**（地雷十二延伸）：YTD filings 的 overflow 目前跳過；需跨 filing 減法
+3. **Non-GAAP：NVDA 指標名稱帶期間後綴**：同指標跨季是不同 row，表格超稀疏
 
 ### 🟢 低優先
-7. **批量更新（Tab 2）的 Non-GAAP 支援**：目前批量只跑 GAAP
+4. **金融股模板**（GS/JPM）：UI 自動偵測 + 警告（已設計，延後實作）
+5. **批量更新（Tab 2）的 Non-GAAP 支援**：目前批量只跑 GAAP
+6. **Non-GAAP：Data_EPS_Recon 從未產生**：edgartools eps_reconciliation API 對主要公司回傳空
 
-## Known Issues
+## Known Issues（已知限制，暫不修）
 
-- **Investment Proceeds**：XBRL 沒有單一加總行，取 first match（已知限制，不修）
-- **金融股（GS/JPM）**：現行模板 BS/IS 大量空白，待獨立模板實作
+- **Investment Proceeds**：XBRL 沒有單一加總行，取 first match
+- **金融股（GS/JPM）**：現行模板 BS/IS 部分空白，待獨立模板
+- **CF Q2/Q3 overflow 跳過**：YTD filings overflow 需跨 filing 減法（見 待辦 2）
+- **NG 分類誤判**：keyword-based 分類，label 含 "excluding" 的 GAAP 行可能誤進 NG sheet（可接受方向）
