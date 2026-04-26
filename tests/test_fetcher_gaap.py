@@ -996,11 +996,16 @@ def test_dividends_paid_does_not_pick_nci_distribution():
 # ── Task 3: Net Income fallback chain ─────────────────────────────────────────
 
 def test_build_is_table_prefers_attributable_to_parent_over_profitloss():
-    """NetIncomeLossAttributableToParent should be picked before ProfitLoss."""
+    """NetIncomeLossAttributableToParent should be picked before ProfitLoss.
+
+    Concept name deliberately avoids 'NetIncomeLoss' substring so the IS_TEMPLATE
+    fallback_suffix doesn't match it — only the post-processing 2a block (which
+    matches by standard_concept) can pick it up.
+    """
     df = pd.DataFrame({
-        "concept":               ["us-gaap_ProfitLoss",                       "us-gaap_NetIncomeLossAttributableToParent"],
-        "label":                 ["Net income incl. NCI",                      "Net income attributable to common"],
-        "standard_concept":      ["ProfitLoss",                                "NetIncomeLossAttributableToParent"],
+        "concept":               ["us-gaap_ProfitLoss",   "us-gaap_ParentCompanyNetIncome"],
+        "label":                 ["Net income incl. NCI", "Net income attributable to common"],
+        "standard_concept":      ["ProfitLoss",           "NetIncomeLossAttributableToParent"],
         "abstract":              [False,                                        False],
         "is_breakdown":          [False,                                        False],
         "level":                 [3,                                            3],
