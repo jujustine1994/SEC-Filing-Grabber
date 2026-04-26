@@ -20,23 +20,63 @@ CACHE_FILENAME = "nongaap_cache.json"
 
 
 # ── Cache I/O ───────────────────────────────────────────────────────────────
+#
+# Cache format (new):  {ticker: {quarter_label: {filing_date, eps_recon, metrics}}}
+# Cache format (old):  {quarter_label: {...}}  — single-ticker, no isolation
+#
+# Old-format detection: top-level key starts with "FY" (quarter labels look like FY2024Q1).
+# On first load of an old file, the data is treated as belonging to the current ticker
+# and will be written in new format on the next save.
 
-def _load_cache(cache_path: Path) -> dict:
-    """Load nongaap_cache.json. Returns {} if missing or malformed."""
+def _load_cache(cache_path: Path, ticker: str) -> dict:
+    """Return ticker's cached quarters from nongaap_cache.json.
+
+    Returns {} if file is missing, malformed, or ticker has no cached data.
+    Transparently handles old single-ticker format (no ticker key).
+    """
     if not cache_path.exists():
         return {}
     try:
         with open(cache_path, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (json.JSONDecodeError, OSError):
         return {}
 
+    if not isinstance(data, dict) or not data:
+        return {}
 
-def _save_cache(cache_path: Path, data: dict) -> None:
-    """Save cache dict to JSON. Creates parent dirs if needed."""
+    # Old format: keys are quarter labels like "FY2024Q1"
+    if next(iter(data)).startswith("FY"):
+        return data  # treat as this ticker's data; migrated to new format on next save
+
+    return data.get(ticker, {})
+
+
+def _save_cache(cache_path: Path, ticker: str, ticker_data: dict) -> None:
+    """Write ticker's data into nongaap_cache.json (multi-ticker format).
+
+    Reads the existing file, updates this ticker's slice, and writes back.
+    Old-format files are silently replaced with new format on first write
+    (ticker_data already contains all previously loaded quarters).
+    """
+    if cache_path.exists():
+        try:
+            with open(cache_path, encoding="utf-8") as f:
+                all_data = json.load(f)
+            if not isinstance(all_data, dict):
+                all_data = {}
+            # Old-format file: discard raw dict — ticker_data already has the migrated content
+            if all_data and next(iter(all_data)).startswith("FY"):
+                all_data = {}
+        except (json.JSONDecodeError, OSError):
+            all_data = {}
+    else:
+        all_data = {}
+
+    all_data[ticker] = ticker_data
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     with open(cache_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(all_data, f, ensure_ascii=False, indent=2)
 
 
 # ── Period helpers ───────────────────────────────────────────────────────────
@@ -352,7 +392,7 @@ def fetch_nongaap_statements(
     company = Company(ticker)
     cache_path = Path(output_dir) / CACHE_FILENAME
 
-    cache = _load_cache(cache_path)
+    cache = _load_cache(cache_path, ticker)
     filings = _get_earnings_filings(company)[:max_filings]  # newest max_filings quarters only
 
     new_filings = [(lbl, f, ek) for lbl, f, ek in filings if lbl not in cache]
@@ -371,7 +411,7 @@ def fetch_nongaap_statements(
                 "metrics":     metrics,
             }
             # Save after each quarter (crash-safe incremental)
-            _save_cache(cache_path, cache)
+            _save_cache(cache_path, ticker, cache)
         except Exception as exc:
             print(f"[fetcher_nongaap] {quarter_label} failed: {exc!r}", file=sys.stderr)
 

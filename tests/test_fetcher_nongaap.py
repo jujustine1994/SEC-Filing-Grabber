@@ -20,15 +20,59 @@ def test_period_with_dashes():
     assert _period_to_quarter_label("2024-03-31") == "FY2024Q1"
 
 def test_load_cache_missing_file():
-    result = _load_cache(Path("/nonexistent/nongaap_cache.json"))
+    result = _load_cache(Path("/nonexistent/nongaap_cache.json"), "AAPL")
     assert result == {}
 
 def test_save_and_load_cache(tmp_path):
     cache_path = tmp_path / "nongaap_cache.json"
     data = {"FY2024Q1": {"metrics": {"Non-GAAP EPS": 0.71}}}
-    _save_cache(cache_path, data)
-    loaded = _load_cache(cache_path)
+    _save_cache(cache_path, "AAPL", data)
+    loaded = _load_cache(cache_path, "AAPL")
     assert loaded["FY2024Q1"]["metrics"]["Non-GAAP EPS"] == 0.71
+
+def test_cache_ticker_isolation(tmp_path):
+    """Two tickers in the same output_dir must not interfere with each other."""
+    cache_path = tmp_path / "nongaap_cache.json"
+    aapl_data = {"FY2024Q1": {"metrics": {"Non-GAAP EPS": 1.50}}}
+    nvda_data = {"FY2024Q1": {"metrics": {"Non-GAAP EPS": 5.20}}}
+    _save_cache(cache_path, "AAPL", aapl_data)
+    _save_cache(cache_path, "NVDA", nvda_data)
+    assert _load_cache(cache_path, "AAPL")["FY2024Q1"]["metrics"]["Non-GAAP EPS"] == 1.50
+    assert _load_cache(cache_path, "NVDA")["FY2024Q1"]["metrics"]["Non-GAAP EPS"] == 5.20
+
+def test_cache_second_save_does_not_erase_other_ticker(tmp_path):
+    """Saving AAPL a second time must not delete NVDA's data."""
+    cache_path = tmp_path / "nongaap_cache.json"
+    _save_cache(cache_path, "AAPL", {"FY2024Q1": {"metrics": {}}})
+    _save_cache(cache_path, "NVDA", {"FY2024Q1": {"metrics": {}}})
+    _save_cache(cache_path, "AAPL", {"FY2024Q1": {"metrics": {}}, "FY2024Q2": {"metrics": {}}})
+    assert "FY2024Q1" in _load_cache(cache_path, "NVDA")
+
+def test_cache_old_format_migration(tmp_path):
+    """Old single-ticker cache (no ticker key) is loaded transparently."""
+    import json
+    cache_path = tmp_path / "nongaap_cache.json"
+    old_data = {"FY2024Q1": {"metrics": {"Non-GAAP EPS": 0.99}}}
+    cache_path.write_text(json.dumps(old_data), encoding="utf-8")
+    loaded = _load_cache(cache_path, "AAPL")
+    assert loaded["FY2024Q1"]["metrics"]["Non-GAAP EPS"] == 0.99
+
+def test_cache_old_format_rewritten_on_save(tmp_path):
+    """After loading old format and saving, file is in new multi-ticker format."""
+    import json
+    cache_path = tmp_path / "nongaap_cache.json"
+    old_data = {"FY2024Q1": {"metrics": {"Non-GAAP EPS": 0.99}}}
+    cache_path.write_text(json.dumps(old_data), encoding="utf-8")
+    # Simulate: load old data, add a new quarter, save
+    loaded = _load_cache(cache_path, "AAPL")
+    loaded["FY2024Q2"] = {"metrics": {"Non-GAAP EPS": 1.10}}
+    _save_cache(cache_path, "AAPL", loaded)
+    # File should now be in new format
+    on_disk = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert "AAPL" in on_disk                             # new format
+    assert "FY2024Q1" in on_disk["AAPL"]                # old data preserved
+    assert "FY2024Q2" in on_disk["AAPL"]                # new data added
+    assert _load_cache(cache_path, "AAPL")["FY2024Q1"]["metrics"]["Non-GAAP EPS"] == 0.99
 
 
 # ── EPS Recon and NonGAAP Table Builder Tests ───────────────────────────────
