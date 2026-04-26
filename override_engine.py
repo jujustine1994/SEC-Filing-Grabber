@@ -38,9 +38,9 @@ DEFAULT_OVERRIDE_PATH = _default_override_path()
 # ── Key rows to monitor (per statement) ──────────────────────────────────
 
 KEY_ROWS: dict[str, list[str]] = {
-    "IS": ["Revenue", "Operating Income", "Net Income", "EPS Diluted"],
-    "BS": ["Total Assets", "Total Liabilities", "Total Equity"],
-    "CF": ["Operating Cash Flow", "Capital Expenditures"],
+    "IS": ["Revenue", "Operating Income", "Net Income", "Diluted EPS"],
+    "BS": ["Total Assets", "Total Liabilities", "Total Equity — Parent"],
+    "CF": ["Operating Cash Flow", "Capex"],
 }
 
 # Synonyms for E1 fuzzy match: target_std_name → list of substrings to look for
@@ -58,13 +58,13 @@ SYNONYM_MAP: dict[str, list[str]] = {
         "NetIncome", "ProfitLoss", "NetEarnings", "NetIncomeLoss",
         "NetIncomeLossAvailableToCommonStockholders",
     ],
-    "EPS Diluted": [
+    "Diluted EPS": [
         "EarningsPerShareDiluted", "DilutedEPS", "EPSDiluted",
         "IncomeLossPerDilutedShare",
     ],
     "Total Assets": ["Assets", "TotalAssets"],
     "Total Liabilities": ["Liabilities", "TotalLiabilities", "LiabilitiesAndStockholdersEquity"],
-    "Total Equity": [
+    "Total Equity — Parent": [
         "Equity", "StockholdersEquity", "ShareholdersEquity",
         "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
     ],
@@ -72,7 +72,7 @@ SYNONYM_MAP: dict[str, list[str]] = {
         "NetCashFromOperatingActivities", "NetCashProvidedByOperatingActivities",
         "OperatingCashFlow", "CashGeneratedFromOperations",
     ],
-    "Capital Expenditures": [
+    "Capex": [
         "PaymentsToAcquirePropertyPlantAndEquipment", "Capex",
         "CapitalExpenditures", "PurchaseOfPropertyPlantAndEquipment",
     ],

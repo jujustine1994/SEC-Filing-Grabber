@@ -4,12 +4,15 @@ Live snapshot tests — hit real EDGAR API, ~12 min total for 8 tickers.
 Run:   pytest -m slow                                            # all live tests
        pytest -m slow -v
        pytest -m "slow and b1"                                   # B1 overflow tests only
+       pytest -m "slow and cf_overflow"                          # CF YTD overflow tests only
        pytest -m slow tests/test_live_snapshots.py::test_snapshot_is[AAPL]
 
 Tickers: MSFT AMZN META GOOGL NVDA JPM GS JNJ
+CF overflow tickers: COHR LITE AAPL NVDA GOOGL
 Marks:
-  @pytest.mark.slow — excluded from default CI run (requires network)
-  @pytest.mark.b1   — B1 overflow-specific tests (subset of slow)
+  @pytest.mark.slow       — excluded from default CI run (requires network)
+  @pytest.mark.b1         — B1 overflow-specific tests (subset of slow)
+  @pytest.mark.cf_overflow — CF YTD overflow correctness tests (subset of slow)
 
 Pass definitions:
 - Snapshot tests: IS/BS/CF key rows have ≥1 non-None value in recent 4Q
@@ -17,6 +20,9 @@ Pass definitions:
   - Each section in Data_Financials(Q) has ≥ template row count
   - Every overflow row has at least one non-None value across its quarters
   - If Data_Financials_NG(Q) exists, every non-header row has ≥1 non-None value
+- CF overflow tests:
+  - CF overflow rows present for ≥2 distinct quarters (verifies Q2/Q3 are filled in)
+  - No CF overflow row is all-None after the fix (filtering is still applied)
 """
 import pytest
 from config import load_config
@@ -25,6 +31,7 @@ from override_engine import check_key_rows
 
 FINANCIAL_TICKERS = {"GS", "JPM"}
 TICKERS = ["MSFT", "AMZN", "META", "GOOGL", "NVDA", "JPM", "GS", "JNJ"]
+CF_OVERFLOW_TICKERS = ["COHR", "LITE", "AAPL", "NVDA", "GOOGL"]
 
 # Template row counts per section (must stay in sync with IS/BS/CF_TEMPLATE in fetcher_gaap.py)
 _IS_TEMPLATE_ROWS = 22
@@ -255,3 +262,124 @@ def test_b1_ng_sheet_structure(all_tables, ticker):
             failures.append(f"NG row '{concept}' (labels='{ng_tbl.labels[i]}') is all-None")
 
     assert not failures, f"[{ticker}] all-None NG data rows:\n" + "\n".join(failures)
+
+
+# ── CF Overflow YTD Correctness Tests ────────────────────────────────────────
+#
+# Run with:  pytest -m "slow and cf_overflow" -v
+#
+# Validates the CF YTD overflow fix: Q2 and Q3 overflow rows must be populated
+# (not skipped) after the cross-filing subtraction was implemented.
+# Before the fix, CF overflow only had data for Q1 and FY quarters.
+
+@pytest.fixture(scope="module")
+def cf_overflow_tables(identity, ai_config):
+    """Fetch CF overflow tickers (COHR, LITE, AAPL, NVDA, GOOGL)."""
+    result: dict = {}
+    for ticker in CF_OVERFLOW_TICKERS:
+        try:
+            result[ticker] = fetch_gaap_statements(
+                ticker, identity, max_filings=12, ai_config=ai_config
+            )
+        except Exception as exc:
+            result[ticker] = exc
+    return result
+
+
+def _cf_overflow_rows(tbl):
+    """Return overflow rows from the CF section of a merged financials table.
+
+    Returns list of (concept_name, values_list) for rows beyond the template rows.
+    """
+    c = tbl.concepts
+    try:
+        cf_hdr = c.index("Cash Flow")
+    except ValueError:
+        return []
+    cf_start = cf_hdr + 1
+    overflow_start = cf_start + _CF_TEMPLATE_ROWS
+    rows = []
+    for i in range(overflow_start, len(c)):
+        rows.append((c[i], tbl.values[i]))
+    return rows
+
+
+@pytest.mark.slow
+@pytest.mark.cf_overflow
+@pytest.mark.parametrize("ticker", CF_OVERFLOW_TICKERS)
+def test_cf_overflow_rows_exist(cf_overflow_tables, ticker):
+    """CF section must have at least one overflow row.
+
+    If zero overflow rows, either the company has no unmatched CF XBRL items
+    (acceptable) or the fix broke collection — fails only when we expect overflow
+    based on known COHR/LITE behaviour.
+    """
+    result = cf_overflow_tables[ticker]
+    if isinstance(result, Exception):
+        pytest.fail(f"{ticker}: fetch failed — {result}")
+    tbl = _quarterly_financials(result)
+    assert tbl is not None, f"{ticker}: Data_Financials(Q) not found"
+    overflow = _cf_overflow_rows(tbl)
+    if ticker in ("COHR", "LITE"):
+        assert len(overflow) > 0, (
+            f"[{ticker}] Expected CF overflow rows but none found — "
+            "check that _collect_overflow is being called for CF"
+        )
+
+
+@pytest.mark.slow
+@pytest.mark.cf_overflow
+@pytest.mark.parametrize("ticker", CF_OVERFLOW_TICKERS)
+def test_cf_overflow_multi_quarter_coverage(cf_overflow_tables, ticker):
+    """CF overflow rows should have data across ≥2 distinct quarters.
+
+    Before the YTD fix, only Q1/FY filings contributed overflow → most rows
+    had data in only 1 quarter.  After the fix, Q2 and Q3 are subtracted and
+    populated, so a row with Q1 data should also show Q2/Q3.
+
+    Test: at least one overflow row has non-None values in ≥2 quarters.
+    Skipped if no CF overflow rows exist for this ticker.
+    """
+    result = cf_overflow_tables[ticker]
+    if isinstance(result, Exception):
+        pytest.skip(f"{ticker}: fetch failed")
+    tbl = _quarterly_financials(result)
+    if tbl is None:
+        pytest.skip(f"{ticker}: no Data_Financials(Q)")
+    overflow = _cf_overflow_rows(tbl)
+    if not overflow:
+        pytest.skip(f"[{ticker}] No CF overflow rows — nothing to test")
+
+    # Count rows with ≥2 non-None values
+    multi_q = sum(
+        1 for _, vals in overflow
+        if sum(v is not None for v in vals) >= 2
+    )
+    assert multi_q > 0, (
+        f"[{ticker}] All CF overflow rows have data in only 1 quarter — "
+        f"YTD subtraction may not be working. "
+        f"Overflow rows: {[name for name, _ in overflow]}"
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.cf_overflow
+@pytest.mark.parametrize("ticker", CF_OVERFLOW_TICKERS)
+def test_cf_overflow_no_all_none_rows(cf_overflow_tables, ticker):
+    """No CF overflow row should be all-None (filter applied at build time)."""
+    result = cf_overflow_tables[ticker]
+    if isinstance(result, Exception):
+        pytest.skip(f"{ticker}: fetch failed")
+    tbl = _quarterly_financials(result)
+    if tbl is None:
+        pytest.skip(f"{ticker}: no Data_Financials(Q)")
+    overflow = _cf_overflow_rows(tbl)
+    if not overflow:
+        pytest.skip(f"[{ticker}] No CF overflow rows")
+
+    failures = [
+        name for name, vals in overflow if all(v is None for v in vals)
+    ]
+    assert not failures, (
+        f"[{ticker}] All-None CF overflow rows (should have been filtered): {failures}"
+    )

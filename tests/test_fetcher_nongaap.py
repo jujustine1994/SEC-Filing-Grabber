@@ -1,7 +1,7 @@
 # tests/test_fetcher_nongaap.py
 import json
 from pathlib import Path
-from fetcher_nongaap import _load_cache, _save_cache, _period_to_quarter_label, _build_eps_recon_table, _build_nongaap_table
+from fetcher_nongaap import _load_cache, _save_cache, _period_to_quarter_label, _build_eps_recon_table, _build_nongaap_table, _normalize_nongaap_metrics
 
 
 def test_period_to_quarter_label_q1():
@@ -152,3 +152,111 @@ def test_period_to_quarter_label_dedup_logic():
     assert len(result) == 2
     assert result[0] == ("FY2024Q2", "filing_Q2", "ek_Q2")
     assert result[1] == ("FY2024Q1", "filing_old_Q1", "ek_old_Q1")
+
+
+# ── _normalize_nongaap_metrics tests ─────────────────────────────────────────
+
+def test_normalize_strips_quarterly_suffix():
+    raw = {"Non-GAAP Gross margin (Q4 FY26)": 75.2}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Gross margin": 75.2}
+
+def test_normalize_strips_fy_suffix():
+    raw = {"Non-GAAP Net income (FY26)": 4000000000.0}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Net income": 4000000000.0}
+
+def test_normalize_quarterly_wins_over_fy():
+    """When Q and FY versions of same metric exist, quarterly value is kept."""
+    raw = {
+        "Non-GAAP EPS (Q4 FY26)": 1.62,
+        "Non-GAAP EPS (FY26)": 6.01,
+    }
+    result = _normalize_nongaap_metrics(raw)
+    assert result == {"Non-GAAP EPS": 1.62}
+
+def test_normalize_fy_fills_gap_when_no_quarterly():
+    """FY value is kept when no quarterly version of the metric exists."""
+    raw = {"Non-GAAP Annual Tax Rate (FY26)": 17.0}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Annual Tax Rate": 17.0}
+
+def test_normalize_drops_expected_prefix():
+    raw = {"Expected Non-GAAP Gross margin (Q1 FY27)": 75.0}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_drops_outlook_prefix():
+    raw = {"Outlook Non-GAAP Operating expenses": 7500000000.0}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_drops_outlook_in_name():
+    raw = {"Non-GAAP Outlook Gross margin": 75.0}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_drops_guidance_prefix():
+    raw = {"Guidance Non-GAAP EPS": 1.80}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_keeps_clean_names_unchanged():
+    """Names without period suffix pass through unchanged."""
+    raw = {"Non-GAAP Revenue": 39300000000.0, "Non-GAAP EPS": 1.62}
+    assert _normalize_nongaap_metrics(raw) == raw
+
+def test_normalize_fy2digit_and_4digit():
+    """Both FY26 (2-digit) and FY2026 (4-digit) suffixes are stripped."""
+    assert _normalize_nongaap_metrics({"Non-GAAP EPS (FY26)": 1.0}) == {"Non-GAAP EPS": 1.0}
+    assert _normalize_nongaap_metrics({"Non-GAAP EPS (FY2026)": 1.0}) == {"Non-GAAP EPS": 1.0}
+
+def test_normalize_period_in_middle():
+    """Period token embedded in name: 'Non-GAAP Q4 FY26 Gross margin' → 'Non-GAAP Gross margin'."""
+    raw = {"Non-GAAP Q4 FY26 Gross margin": 75.2}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Gross margin": 75.2}
+
+def test_normalize_period_as_prefix():
+    """Period token at front: 'Q2 FY26 Non-GAAP Revenue' → 'Non-GAAP Revenue'."""
+    raw = {"Q2 FY26 Non-GAAP Revenue": 30040000000.0}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Revenue": 30040000000.0}
+
+def test_normalize_comparison_periods_deduplicated():
+    """When same metric appears for current + prior quarters, first occurrence wins."""
+    raw = {
+        "Non-GAAP Q4 FY26 Gross margin": 75.2,   # current Q4 — keep
+        "Non-GAAP Q3 FY26 Gross margin": 73.6,   # prior Q — discard
+        "Non-GAAP Q4 FY25 Gross margin": 73.5,   # year-ago Q — discard
+    }
+    result = _normalize_nongaap_metrics(raw)
+    assert result == {"Non-GAAP Gross margin": 75.2}
+
+def test_normalize_trailing_table_label_stripped():
+    """Trailing '(Table)' noise label is removed."""
+    raw = {"Non-GAAP Q4 FY26 Gross margin (Table)": 75.2}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Gross margin": 75.2}
+
+def test_normalize_meaningful_parens_kept():
+    """Parentheticals with actual content are NOT stripped."""
+    raw = {"Non-GAAP EPS excluding H20 charges": 1.62}
+    result = _normalize_nongaap_metrics(raw)
+    assert "Non-GAAP EPS excluding H20 charges" in result
+
+def test_normalize_empty_input():
+    assert _normalize_nongaap_metrics({}) == {}
+
+def test_normalize_mixed_nvda_real_data():
+    """Mirrors actual NVDA Q4 FY26 AI output: period-in-name + FY dups + guidance."""
+    raw = {
+        "Non-GAAP Q4 FY26 Gross margin": 75.2,       # current Q — keep
+        "Non-GAAP Q3 FY26 Gross margin": 73.6,        # comparison Q — discard
+        "Non-GAAP Q4 FY25 Gross margin": 73.5,        # comparison Q — discard
+        "Non-GAAP FY2026 Gross margin": 74.8,         # FY dup — discard (Q exists)
+        "Non-GAAP Q4 FY26 Net income": 22067000000.0, # keep
+        "Non-GAAP FY2026 Net income": 76019000000.0,  # FY dup — discard
+        "Q2 FY26 Non-GAAP Revenue": 30040000000.0,    # period-as-prefix — keep
+        "Expected Non-GAAP Gross margin (Q1 FY27)": 75.0,       # guidance — drop
+        "Outlook Non-GAAP Operating expenses": 7500000000.0,    # guidance — drop
+    }
+    result = _normalize_nongaap_metrics(raw)
+    assert set(result.keys()) == {
+        "Non-GAAP Gross margin",
+        "Non-GAAP Net income",
+        "Non-GAAP Revenue",
+    }
+    assert result["Non-GAAP Gross margin"] == 75.2      # current Q value
+    assert result["Non-GAAP Net income"] == 22067000000.0
+    assert result["Non-GAAP Revenue"] == 30040000000.0

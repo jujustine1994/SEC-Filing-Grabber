@@ -26,6 +26,8 @@ from fetcher_gaap import fetch_gaap_statements
 SCRIPT_DIR = Path(__file__).parent
 CACHE_PATH = SCRIPT_DIR / "company_cache.json"
 
+_FINANCIAL_SECTOR_TICKERS = frozenset({"GS", "JPM", "BAC", "C", "WFC", "MS", "BLK", "BX", "KKR"})
+
 
 def _migrate_config_if_needed():
     """If old config.json exists in project dir, move it to APPDATA."""
@@ -274,6 +276,12 @@ class SECFetcherApp:
         else:
             self.nongaap_warn_label.grid_remove()
 
+    def _on_batch_nongaap_toggle(self, *_args):
+        if self.batch_nongaap_var.get() and not self.cfg["ai"].get("api_key"):
+            self.batch_nongaap_warn.pack(side="left", padx=8)
+        else:
+            self.batch_nongaap_warn.pack_forget()
+
     def _build_tab2(self):
         """Build Tab 2 (批量更新): scrollable group-organised watchlist + batch run button."""
         tab = ttk.Frame(self.notebook, padding=10)
@@ -307,8 +315,20 @@ class SECFetcherApp:
         ttk.Button(row_sel, text="全選",   command=self._select_all,   width=8).pack(side="left", padx=(0, 8))
         ttk.Button(row_sel, text="全不選", command=self._deselect_all, width=8).pack(side="left")
 
+        row_opts = ttk.Frame(tab)
+        row_opts.grid(row=2, column=0, sticky="w", pady=(4, 0))
+        self.batch_nongaap_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row_opts, text="同時抓取 Non-GAAP（需設定 AI API）",
+                        variable=self.batch_nongaap_var).pack(side="left")
+        self.batch_nongaap_warn = ttk.Label(
+            row_opts, text="⚠ 請先在進階設定填入 AI API Key", foreground="#cc8800"
+        )
+        self.batch_nongaap_warn.pack(side="left", padx=8)
+        self.batch_nongaap_warn.pack_forget()
+        self.batch_nongaap_var.trace_add("write", self._on_batch_nongaap_toggle)
+
         self.btn_run_batch = ttk.Button(tab, text="▶  開始批量更新", command=self._run_batch, width=20)
-        self.btn_run_batch.grid(row=2, column=0, pady=(8, 4))
+        self.btn_run_batch.grid(row=3, column=0, pady=(8, 4))
 
     # =========================================================
     # Placeholder helpers
@@ -1126,7 +1146,11 @@ class SECFetcherApp:
         if not selected:
             messagebox.showerror("錯誤", "請至少勾選一間公司")
             return
-        self._start_worker(lambda: self._worker_batch(selected))
+        fetch_nongaap = self.batch_nongaap_var.get()
+        if fetch_nongaap and not self.cfg["ai"].get("api_key"):
+            messagebox.showerror("錯誤", "Non-GAAP 需先在「進階設定」填入 AI API Key")
+            return
+        self._start_worker(lambda: self._worker_batch(selected, fetch_nongaap))
 
     def _start_worker(self, target):
         """Clear log, disable run buttons, and start target as a daemon thread. Guards against double-runs."""
@@ -1169,6 +1193,8 @@ class SECFetcherApp:
                 )
                 tables.extend(gaap_tables)
                 self._log(f"[{ticker}] GAAP：取得 {len(gaap_tables)} 份財報")
+                if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
+                    self._log(f"[{ticker}] ⚠ 金融股：BS/IS 部分欄位可能為空（模板尚未針對金融業最佳化）")
                 step += 1
 
             if fetch_nongaap:
@@ -1209,8 +1235,8 @@ class SECFetcherApp:
             self._log(f"[ERROR] {e}")
             self._done(False)
 
-    def _worker_batch(self, tickers: list[str]):
-        """Background thread: fetch GAAP statements for each selected ticker and write to Excel."""
+    def _worker_batch(self, tickers: list[str], fetch_nongaap: bool = False):
+        """Background thread: fetch GAAP (and optionally Non-GAAP) for each ticker."""
         total = len(tickers)
         identity = self.cfg.get("identity", "")
         if not identity:
@@ -1218,15 +1244,37 @@ class SECFetcherApp:
             self._done(False)
             return
         max_filings = self.cfg.get("max_filings", 80)
+        ai_config   = self.cfg.get("ai", {})
 
         for i, ticker in enumerate(tickers, 1):
             self._set_progress(i - 1, total, f"處理中：{ticker} ({i}/{total})")
             self._log(f"\n[{ticker}] 開始...")
             try:
-                tables      = fetch_gaap_statements(
-                    ticker, identity, max_filings=max_filings,
-                    ai_config=self.cfg.get("ai", {}),
+                tables = fetch_gaap_statements(
+                    ticker, identity, max_filings=max_filings, ai_config=ai_config,
                 )
+
+                if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
+                    self._log(f"[{ticker}] ⚠ 金融股：BS/IS 部分欄位可能為空（模板尚未針對金融業最佳化）")
+
+                if fetch_nongaap:
+                    from fetcher_nongaap import fetch_nongaap_statements
+                    output_path = self._build_output_path(ticker)
+                    output_dir  = output_path.parent
+                    output_dir.mkdir(parents=True, exist_ok=True)
+
+                    def _ng_cb(current, total_ng, label, _t=ticker):
+                        self._log(f"[{_t}] {label}")
+
+                    ng_tables = fetch_nongaap_statements(
+                        ticker, identity, ai_config,
+                        output_dir=output_dir,
+                        progress_cb=_ng_cb,
+                        max_filings=max_filings,
+                    )
+                    tables.extend(ng_tables)
+                    self._log(f"[{ticker}] Non-GAAP：{len(ng_tables)} 張 sheet")
+
                 output_path = self._build_output_path(ticker)
                 tpl = self.cfg.get("template_path", "") or None
                 write_statements(tables, output_path, template_path=tpl)

@@ -792,3 +792,118 @@ def test_build_is_table_override_applies_to_all_filings():
     revenue_idx = gaap_tbl.concepts.index("Revenue")
     assert len(gaap_tbl.quarter_labels) == 2
     assert all(v is not None for v in gaap_tbl.values[revenue_idx])
+
+
+# ── CF overflow YTD subtraction unit tests ────────────────────────────────────
+
+def _make_cf_df_with_overflow(period_col, ni_val, ocf_val, overflow_val):
+    """CF DataFrame with Net Income, OCF (template rows) and one overflow row."""
+    return pd.DataFrame({
+        "concept":               [
+            "us-gaap_NetIncomeLoss",
+            "us-gaap_NetCashProvidedByUsedInOperatingActivities",
+            "us-gaap_SpecialItemCashFlow",    # overflow: not in template
+        ],
+        "label":                 ["Net income", "Net cash from operations", "Special item"],
+        "standard_concept":      ["NetIncome",  "NetCashFromOperatingActivities", None],
+        "abstract":              [False, False, False],
+        "is_breakdown":          [False, False, False],
+        "level":                 [3, 3, 4],
+        "dimension_member_label":[None, None, None],
+        period_col:              [ni_val, ocf_val, overflow_val],
+    })
+
+
+def _make_cf_filing_with_overflow(is_period_col, cf_period_col, ni, ocf, overflow, filing_date):
+    is_df  = _make_is_df_minimal(is_period_col)
+    cf_df  = _make_cf_df_with_overflow(cf_period_col, ni, ocf, overflow)
+    mock_is = MagicMock(); mock_is.to_dataframe.return_value = is_df
+    mock_cf = MagicMock(); mock_cf.to_dataframe.return_value = cf_df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_is
+    mock_fin.cashflow_statement.return_value = mock_cf
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    mock_filing = MagicMock()
+    mock_filing.obj.return_value = mock_tenq
+    mock_filing.filing_date = filing_date
+    return mock_filing
+
+
+def test_cf_overflow_q1_standalone_captured():
+    """Overflow concept from Q1 standalone filing is included in GAAP overflow."""
+    q1 = _make_cf_filing_with_overflow(
+        "2025-03-31 (Q1)", "2025-03-31 (Q1)",
+        ni=100.0, ocf=150.0, overflow=20.0, filing_date="2025-04-30",
+    )
+    gaap_tbl, _ = _build_cf_table([q1], max_filings=80)
+    assert "us-gaap_SpecialItemCashFlow" in gaap_tbl.labels
+    idx = gaap_tbl.labels.index("us-gaap_SpecialItemCashFlow")
+    q1_col = gaap_tbl.quarter_labels.index("FY2025Q1")
+    assert gaap_tbl.values[idx][q1_col] == pytest.approx(20.0)
+
+
+def test_cf_overflow_q2_ytd_subtracted():
+    """Overflow Q2 standalone = Q2_YTD_overflow − Q1_overflow."""
+    q1_ov, q2_ov = 20.0, 35.0         # standalone quarterly values
+    q2_ytd_ov    = q1_ov + q2_ov      # = 55.0
+
+    q1 = _make_cf_filing_with_overflow(
+        "2025-03-31 (Q1)", "2025-03-31 (Q1)",
+        ni=100.0, ocf=150.0, overflow=q1_ov, filing_date="2025-04-30",
+    )
+    q2 = _make_cf_filing_with_overflow(
+        "2025-06-30 (Q2)", "2025-06-30 (YTD)",
+        ni=230.0, ocf=330.0, overflow=q2_ytd_ov, filing_date="2025-07-30",
+    )
+    gaap_tbl, _ = _build_cf_table([q2, q1], max_filings=80)  # newest-first
+
+    assert "us-gaap_SpecialItemCashFlow" in gaap_tbl.labels
+    idx = gaap_tbl.labels.index("us-gaap_SpecialItemCashFlow")
+    q2_col = gaap_tbl.quarter_labels.index("FY2025Q2")
+    assert gaap_tbl.values[idx][q2_col] == pytest.approx(q2_ov)
+
+
+def test_cf_overflow_q3_ytd_subtracted():
+    """Overflow Q3 standalone = Q3_YTD_overflow − Q2_YTD_overflow."""
+    q1_ov, q2_ov, q3_ov = 20.0, 35.0, 40.0
+    q2_ytd_ov = q1_ov + q2_ov
+    q3_ytd_ov = q1_ov + q2_ov + q3_ov
+
+    q1 = _make_cf_filing_with_overflow(
+        "2025-03-31 (Q1)", "2025-03-31 (Q1)",
+        ni=100.0, ocf=150.0, overflow=q1_ov, filing_date="2025-04-30",
+    )
+    q2 = _make_cf_filing_with_overflow(
+        "2025-06-30 (Q2)", "2025-06-30 (YTD)",
+        ni=230.0, ocf=330.0, overflow=q2_ytd_ov, filing_date="2025-07-30",
+    )
+    q3 = _make_cf_filing_with_overflow(
+        "2025-09-30 (Q3)", "2025-09-30 (YTD)",
+        ni=380.0, ocf=480.0, overflow=q3_ytd_ov, filing_date="2025-10-30",
+    )
+    gaap_tbl, _ = _build_cf_table([q3, q2, q1], max_filings=80)
+
+    idx = gaap_tbl.labels.index("us-gaap_SpecialItemCashFlow")
+    q3_col = gaap_tbl.quarter_labels.index("FY2025Q3")
+    assert gaap_tbl.values[idx][q3_col] == pytest.approx(q3_ov)
+
+
+def test_cf_overflow_q2_without_q1_is_none():
+    """When Q1 overflow is absent (None), Q2 YTD can't be subtracted → no entry."""
+    q2_ytd_ov = 55.0
+
+    q1_no_ov = _make_cf_filing(
+        "2025-03-31 (Q1)", "2025-03-31 (Q1)",
+        ni=100.0, ocf=150.0, filing_date="2025-04-30",
+    )  # no overflow row in this filing
+    q2 = _make_cf_filing_with_overflow(
+        "2025-06-30 (Q2)", "2025-06-30 (YTD)",
+        ni=230.0, ocf=330.0, overflow=q2_ytd_ov, filing_date="2025-07-30",
+    )
+    gaap_tbl, _ = _build_cf_table([q2, q1_no_ov], max_filings=80)
+
+    # Concept may not appear at all, or Q2 value should be None
+    if "us-gaap_SpecialItemCashFlow" in gaap_tbl.labels:
+        idx = gaap_tbl.labels.index("us-gaap_SpecialItemCashFlow")
+        q2_col = gaap_tbl.quarter_labels.index("FY2025Q2")
+        assert gaap_tbl.values[idx][q2_col] is None

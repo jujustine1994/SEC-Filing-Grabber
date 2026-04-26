@@ -837,8 +837,8 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
     Q1 and FY filings have standalone period columns (Q1/FY) and are used directly.
     Q2 and Q3 filings have YTD (cumulative) CF columns; standalone quarter values are
     derived by subtracting the prior period's YTD: Q2 = Q2_YTD − Q1, Q3 = Q3_YTD − Q2_YTD.
-    Overflow rows are only collected from standalone (non-YTD) filings to avoid the
-    cross-filing subtraction that YTD rows would require.
+    Overflow rows use the same subtraction logic: raw values are collected per filing and
+    converted to standalone after the filing loop.
 
     Returns (gaap_tbl, ng_tbl). gaap_tbl = template rows + GAAP overflow;
     ng_tbl = Non-GAAP overflow rows only (sheet "Data_CF_NG").
@@ -852,6 +852,9 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
     row_labels: dict[int, str] = {}
     gaap_overflow: dict[str, dict] = {}  # {concept_key: {"label": str, "periods": {q: val}}}
     ng_overflow: dict[str, dict] = {}
+    # Raw overflow per filing; YTD subtraction applied after loop (mirrors template logic)
+    # {q_label: {concept_key: (display_label, is_nongaap, raw_val)}}
+    overflow_per_filing: dict[str, dict] = {}
 
     for filing in filings:
         if len(collected) >= max_filings:
@@ -909,10 +912,19 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
                     raw = str(df.loc[idx, "label"] or "")
                     row_labels[i] = unicodedata.normalize("NFKC", raw)
 
-        # YTD Q2/Q3 overflow would need the same cross-filing subtraction as
-        # template rows — skip for now; only standalone filings contribute.
-        if not is_ytd:
-            _collect_overflow(df, consumed, data_col, label, gaap_overflow, ng_overflow)
+        # Collect raw overflow for all filings (incl. YTD); YTD subtraction applied after loop
+        df_c = df[_consolidated_mask(df)]
+        remaining = df_c[~df_c.index.isin(consumed)]
+        filing_ov: dict[str, tuple[str, bool, Any]] = {}
+        for _, ov_row in remaining.iterrows():
+            ov_key = str(ov_row.get("concept", "") or "")
+            if not ov_key or ov_key == "nan":
+                continue
+            ov_raw = str(ov_row.get("label", "") or "")
+            ov_display = unicodedata.normalize("NFKC", ov_raw)
+            ov_val = _to_python_val(ov_row.get(data_col))
+            filing_ov[ov_key] = (ov_display, _is_nongaap_label(ov_display), ov_val)
+        overflow_per_filing[label] = filing_ov
 
         collected[label] = (str(filing.filing_date), row_vals, is_ytd)
         ytd_raw[label] = row_vals  # Q1 standalone doubles as Q1 YTD base
@@ -951,6 +963,32 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
                 }
             else:
                 standalone[label] = row_vals  # no prior YTD — keep cumulative as best-effort
+
+    # ── Convert YTD overflow to standalone (mirrors template subtraction above) ──
+    # Union of all concepts seen in any filing's overflow
+    all_overflow_keys: dict[str, tuple[str, bool]] = {}  # concept_key → (label, is_nongaap)
+    for filing_ov in overflow_per_filing.values():
+        for ov_key, (ov_lbl, ov_is_ng, _) in filing_ov.items():
+            if ov_key not in all_overflow_keys:
+                all_overflow_keys[ov_key] = (ov_lbl, ov_is_ng)
+
+    for ov_key, (display_label, is_ng) in all_overflow_keys.items():
+        out = ng_overflow if is_ng else gaap_overflow
+        if ov_key not in out:
+            out[ov_key] = {"label": display_label, "periods": {}}
+        for q_lbl in sorted_labels:
+            _, _, lbl_is_ytd = collected[q_lbl]
+            filing_ov = overflow_per_filing.get(q_lbl, {})
+            raw_val = filing_ov[ov_key][2] if ov_key in filing_ov else None
+            if not lbl_is_ytd:
+                if raw_val is not None:
+                    out[ov_key]["periods"][q_lbl] = raw_val
+            else:
+                prev_lbl = _prev_quarter_label(q_lbl)
+                prev_ov = overflow_per_filing.get(prev_lbl, {})
+                prev_val = prev_ov[ov_key][2] if ov_key in prev_ov else None
+                if raw_val is not None and prev_val is not None:
+                    out[ov_key]["periods"][q_lbl] = raw_val - prev_val
 
     filing_dates = [collected[lbl][0] for lbl in sorted_labels]
     values: list[list[Any]] = [

@@ -103,7 +103,7 @@ def test_save_overrides_overwrites_same_ticker(tmp_path):
 IS_CONCEPTS = [
     "Revenue", "COGS", "Gross Profit", "R&D", "SG&A", "Other Op Expense",
     "Operating Income", "Interest Expense", "Other Non-op", "Pre-tax Income",
-    "Tax", "Net Income", "EPS Basic", "EPS Diluted", "Shares Basic",
+    "Tax", "Net Income", "EPS Basic", "Diluted EPS", "Shares Basic",
     "Shares Diluted", "D&A", "Stock Comp", "EBITDA", "Op Margin",
     "Net Margin", "ROE",
 ]
@@ -192,7 +192,7 @@ def test_e1_fuzzy_match_returns_none_when_no_match():
         std_concepts=["Revenues", "OperatingIncomeLoss", "NetIncome"],
         labels=["Revenue", "Operating income", "Net income"],
     )
-    result = e1_fuzzy_match(df, "EPS Diluted")
+    result = e1_fuzzy_match(df, "Diluted EPS")
     assert result is None
 
 

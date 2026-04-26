@@ -10,3 +10,7 @@ def pytest_configure(config):
         "markers",
         "b1: B1 overflow-row tests (subset of slow, run with: pytest -m 'slow and b1')",
     )
+    config.addinivalue_line(
+        "markers",
+        "cf_overflow: CF YTD overflow correctness tests (subset of slow, run with: pytest -m 'slow and cf_overflow')",
+    )

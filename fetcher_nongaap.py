@@ -7,6 +7,7 @@ Flow:
 """
 
 import json
+import re
 import sys
 import unicodedata
 from pathlib import Path
@@ -209,6 +210,83 @@ def _extract_eps_recon(eight_k) -> dict[str, float]:
         return {}
 
 
+# ── Metric name normalisation ────────────────────────────────────────────────
+#
+# Press releases (especially NVDA) embed period tokens and comparison-period
+# rows in their Non-GAAP tables, causing the AI to return names like:
+#
+#   "Non-GAAP Gross margin (Q4 FY26)"   ← trailing suffix — strip
+#   "Non-GAAP Q4 FY26 Gross margin"     ← period in middle — strip
+#   "Q2 FY26 Non-GAAP Revenue"          ← period as prefix — strip
+#   "Non-GAAP Q3 FY26 Gross margin"     ← comparison quarter — dedup, discard
+#   "Non-GAAP FY2026 Gross margin"      ← annual duplicate — discard if Q exists
+#   "Expected Non-GAAP Gross margin (Q1 FY27)"  ← guidance — always discard
+#
+# Strategy:
+#   1. Drop guidance / outlook entries.
+#   2. Strip ALL period tokens (Q\d FY\d+ or FY\d+) and trailing noise labels.
+#   3. Two-pass dedup: quarterly-tagged entries win over FY-only entries;
+#      first occurrence wins within each bucket (press release shows current
+#      quarter first, so comparison-period rows are skipped automatically).
+
+_PERIOD_TOKEN_RE = re.compile(r"\b(?:Q[1-4]\s+)?FY\d{2,4}\b", re.IGNORECASE)
+_QTR_TOKEN_RE    = re.compile(r"\bQ[1-4]\s+FY\d{2,4}\b", re.IGNORECASE)
+_TRAILING_LABEL_RE = re.compile(
+    r"\s*\(\s*(?:Table|Summary|Chart|Note|Detail|Details)\s*\)\s*$", re.IGNORECASE
+)
+_GUIDANCE_PREFIXES = ("expected", "outlook", "guidance", "anticipated", "projected")
+
+
+def _clean_metric_name(name: str) -> str:
+    """Strip period tokens and trailing noise labels, normalise whitespace."""
+    clean = _PERIOD_TOKEN_RE.sub("", name)
+    clean = _TRAILING_LABEL_RE.sub("", clean)
+    clean = re.sub(r"\(\s*\)", "", clean)   # remove empty parens left by period removal
+    return re.sub(r"\s+", " ", clean).strip()
+
+
+def _normalize_nongaap_metrics(raw: dict[str, Any]) -> dict[str, Any]:
+    """Strip period tokens, drop guidance rows, deduplicate (quarterly > FY).
+
+    Two-pass approach:
+      Pass 1 — entries that had a Q# token (quarterly) or no period token at all.
+      Pass 2 — entries that had only an FY token (annual totals).
+    First occurrence of each clean name wins within each pass.
+    """
+    quarterly: dict[str, Any] = {}
+    fy_only: dict[str, Any] = {}
+
+    for name, val in raw.items():
+        name_lower = name.lower().strip()
+        # Drop guidance / outlook / forward-looking entries
+        if any(name_lower.startswith(p) for p in _GUIDANCE_PREFIXES):
+            continue
+        if "outlook" in name_lower:
+            continue
+
+        has_qtr  = bool(_QTR_TOKEN_RE.search(name))
+        has_period = bool(_PERIOD_TOKEN_RE.search(name))
+        is_fy_only = has_period and not has_qtr  # FY token present but no Q# token
+
+        clean = _clean_metric_name(name)
+        if not clean:
+            continue
+
+        if is_fy_only:
+            if clean not in fy_only:
+                fy_only[clean] = val
+        else:
+            if clean not in quarterly:
+                quarterly[clean] = val
+
+    # Quarterly (incl. no-token) wins; FY fills gaps only
+    result = dict(quarterly)
+    for clean, val in fy_only.items():
+        if clean not in result:
+            result[clean] = val
+    return result
+
+
 # ── AI extraction ────────────────────────────────────────────────────────────
 
 _NONGAAP_PROMPT = """\
@@ -276,7 +354,7 @@ def _call_ai(text: str, ai_config: dict) -> dict[str, Any]:
                 result[k] = float(v)
             except (ValueError, TypeError):
                 pass
-        return result
+        return _normalize_nongaap_metrics(result)
 
     except Exception as exc:
         print(f"[fetcher_nongaap] AI call failed: {exc!r}", file=sys.stderr)
