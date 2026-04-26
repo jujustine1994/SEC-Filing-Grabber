@@ -88,7 +88,7 @@ IS_TEMPLATE: list[_T] = [
     ("Total Non-op Income/(Loss)", "NonoperatingIncomeExpense",      "NonoperatingIncome",                                     "IS", "first", None),
     ("Pre-tax Income",             "PretaxIncomeLoss",               "IncomeLossFromContinuingOperationsBeforeIncomeTax",       "IS", "first", None),
     ("Income Tax",                 "IncomeTaxes",                    "IncomeTaxExpense",                                       "IS", "first", None),
-    ("Net Income",                 "NetIncome",                      "NetIncomeLoss",                                          "IS", "first", None),
+    ("Net Income",                 "NetIncome",                      "NetIncomeLoss|NetIncomeLossAttributableToParent",         "IS", "first", None),
     ("Minority Interest",          None,                             "NetIncomeLossAttributableToNoncontrollingInterest",       "IS", "first", None),
     ("SBC",                        "StockBasedCompensationExpense",  "ShareBasedCompensation",                                 "CF", "first", None),
     ("Basic EPS",                  None,                             "EarningsPerShareBasic",                                  "IS", "first", None),
@@ -599,11 +599,23 @@ def _build_is_table(
             if op_val is not None and pretax_val is not None:
                 row_vals[_NONOP_TOTAL_IDX] = pretax_val - op_val
 
-        # 2. Net Income: ProfitLoss fallback (BA, TSLA, XOM, WMT)
+        # 2. Net Income fallback chain
         if row_vals.get(_NET_INCOME_IDX) is None:
+            # 2a. Parent-only net income (more precise than ProfitLoss)
+            idx = _match_is_row(df, "NetIncomeLossAttributableToParent",
+                                 "NetIncomeLossAttributableToParent")
+            if idx is not None:
+                consumed.add(idx)
+                row_vals[_NET_INCOME_IDX] = _to_python_val(df.loc[idx, q_col])
+                if _NET_INCOME_IDX not in row_labels:
+                    row_labels[_NET_INCOME_IDX] = unicodedata.normalize(
+                        "NFKC", str(df.loc[idx, "label"] or ""))
+
+        if row_vals.get(_NET_INCOME_IDX) is None:
+            # 2b. ProfitLoss last resort (includes NCI — use only when parent-only unavailable)
             idx = _match_is_row(df, "ProfitLoss", "ProfitLoss")
             if idx is not None:
-                consumed.add(idx)   # also track this fallback index
+                consumed.add(idx)
                 row_vals[_NET_INCOME_IDX] = _to_python_val(df.loc[idx, q_col])
                 if _NET_INCOME_IDX not in row_labels:
                     row_labels[_NET_INCOME_IDX] = unicodedata.normalize(

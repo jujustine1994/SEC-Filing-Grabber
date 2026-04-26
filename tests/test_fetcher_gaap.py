@@ -991,3 +991,32 @@ def test_dividends_paid_does_not_pick_nci_distribution():
     assert gaap_tbl.values[div_idx][0] == pytest.approx(80.0), (
         f"Expected 80.0 (real dividends), got {gaap_tbl.values[div_idx][0]}"
     )
+
+
+# ── Task 3: Net Income fallback chain ─────────────────────────────────────────
+
+def test_build_is_table_prefers_attributable_to_parent_over_profitloss():
+    """NetIncomeLossAttributableToParent should be picked before ProfitLoss."""
+    df = pd.DataFrame({
+        "concept":               ["us-gaap_ProfitLoss",                       "us-gaap_NetIncomeLossAttributableToParent"],
+        "label":                 ["Net income incl. NCI",                      "Net income attributable to common"],
+        "standard_concept":      ["ProfitLoss",                                "NetIncomeLossAttributableToParent"],
+        "abstract":              [False,                                        False],
+        "is_breakdown":          [False,                                        False],
+        "level":                 [3,                                            3],
+        "dimension_member_label":[None,                                         None],
+        "2024-03-31 (Q1)":       [300.0,                                        280.0],   # 300 = 280 parent + 20 NCI
+        "2023-03-31 (Q1)":       [270.0,                                        255.0],
+    })
+    mock_stmt = MagicMock(); mock_stmt.to_dataframe.return_value = df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_stmt
+    mock_fin.cashflow_statement.return_value = mock_stmt
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    filing = MagicMock(); filing.obj.return_value = mock_tenq; filing.filing_date = "2024-04-30"
+
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    ni_idx = gaap_tbl.concepts.index("Net Income")
+    assert gaap_tbl.values[ni_idx][0] == pytest.approx(280.0), (
+        f"Expected 280.0 (parent-only), got {gaap_tbl.values[ni_idx][0]}"
+    )
