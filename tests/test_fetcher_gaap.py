@@ -953,14 +953,19 @@ def test_build_cf_table_stops_before_pre_xbrl():
 # ── Task 2: Dividends std_concept bug ─────────────────────────────────────────
 
 def _make_cf_dividends_df():
-    """CF df with NCI distribution row AND a real dividends row."""
+    """CF df with NCI distribution row AND a real dividends row.
+
+    NCI row label contains 'dividend' to ensure label_hint doesn't rescue the old
+    std_concept=DistributionsToMinorityInterests bug (label_hint would allow the NCI
+    row through priority-1 matching, picking 30.0 instead of 80.0).
+    """
     return pd.DataFrame({
         "concept":               [
             "us-gaap_NetCashProvidedByUsedInOperatingActivities",
             "us-gaap_DistributionsToMinorityInterests",   # NCI — must NOT be picked
             "us-gaap_PaymentsOfDividendsCommonStock",     # real dividends — must be picked
         ],
-        "label":                 ["Net cash from ops", "Distributions to NCI", "Dividends paid"],
+        "label":                 ["Net cash from ops", "Dividend distributions to NCI", "Dividends paid"],
         "standard_concept":      ["NetCashFromOperatingActivities", "DistributionsToMinorityInterests", None],
         "abstract":              [False, False, False],
         "is_breakdown":          [False, False, False],
