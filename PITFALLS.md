@@ -219,3 +219,13 @@ def _pick(rows):
 **影響：** Gross Profit / Operating Income 在這些公司的輸出為 None（非 bug，是原始資料缺失）。
 
 **部分緩解：** Gross Profit 新增 DERIVED fallback（Revenue − COGS），有 COGS 的公司（如 COHR）可衍生出 Gross Profit。Operating Income 目前無 DERIVED 邏輯。
+
+---
+
+## 地雷十六：金融股（JPM）的 CF Capex 全部為 None
+
+**問題：** JPM 的 CF 中，Capex（PaymentsToAcquirePropertyPlantAndEquipment）全為 None。銀行類公司對不動產購置使用不同的 XBRL 概念（如 `PurchasesOfPremisesAndEquipment`），不符合我們模板的 fallback 條件。
+
+**影響：** JPM 的 `Capex` row 在 live snapshot test 中被標記為 structural_absence。GS 沒有此問題（GS 的 Capex 可正常匹配）。
+
+**已知限制，不修：** `test_snapshot_cf` 的金融股測試已將 `"Capex"` 加入 `allowed_missing`，與 IS 的 `"Operating Income"` 同等處理。

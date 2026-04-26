@@ -44,18 +44,90 @@
 - [x] 實機測試（GAAP）：AAPL ✅ TSLA ✅ BA ✅ XOM ✅ NVDA ✅ COHR ✅（2026-04-23）
 
 ### 待辦
-- [x] 實機測試（Non-GAAP）：NVDA ✅ Data_NonGAAP 97 指標正常；AAPL ⚠️ 少報 Non-GAAP 屬預期行為（2026-04-19）
+- [x] 實機測試（Non-GAAP）：NVDA ✅（正規化後每季 6 指標整齊；修前 34 個稀疏 row）；AAPL ⚠️ 少報屬預期行為（2026-04-19）
 - [x] main.py 舊名稱掃描：確認無 Data_IS/BS/CF 殘留參照 ✅（2026-04-19）
+- [x] Non-GAAP：nongaap_cache.json ticker 隔離（多公司共用 output_dir 安全）✅（2026-04-25）
+- [x] CF：Q2/Q3 YTD overflow 跨 filing 減法 — overflow 行與模板行同邏輯 ✅（2026-04-26）
 - [ ] Non-GAAP：Data_EPS_Recon 從未產生（edgartools eps_reconciliation 對 AAPL/NVDA 均回傳空）
-- [ ] Non-GAAP：nongaap_cache.json 無 ticker 隔離（多公司共用同一 output_dir 時資料互蓋）
-- [ ] Non-GAAP：NVDA 指標名稱帶期間後綴（同指標跨季是不同 row，表格超稀疏）
+- [x] Non-GAAP：NVDA 指標名稱正規化（剝除期間 token、去重比較期間、過濾展望指標）✅（2026-04-26）
 - [x] CF：Q2/Q3 YTD→季度換算（Q2 = Q2_YTD − Q1；Q3 = Q3_YTD − Q2_YTD）✅（2026-04-23）
-- [ ] 金融股模板（GS/JPM）：UI 自動偵測 + 警告（已設計，延後實作）
-- [ ] 批量更新（Tab 2）加入 Non-GAAP 支援
+- [x] 金融股警告（GS/JPM 等）：fetch 完成後 log 顯示模板限制警告 ✅（2026-04-26）
+- [x] 批量更新（Tab 2）加入 Non-GAAP 支援：新增 checkbox + `_worker_batch` 支援 Non-GAAP ✅（2026-04-26）
 
 ---
 
 ## 更新記錄
+
+### 2026-04-26（Session 14）
+
+**CF YTD Overflow 修復 + 測試套件（COHR/LITE/AAPL/NVDA/GOOGL）**
+
+- **`fetcher_gaap.py`**：
+  - `_build_cf_table`：移除 `if not is_ytd: _collect_overflow(...)` 限制
+  - 新增 `overflow_per_filing: dict[str, dict]` — 對所有 filing（含 YTD）收集原始 overflow 值
+  - Filing loop 結束後，與模板行相同的跨 filing 減法計算出 Q2/Q3 standalone overflow
+  - Q2 overflow standalone = Q2_YTD_overflow − Q1_overflow；Q3 = Q3_YTD − Q2_YTD
+  - 若前一季無對應 concept，Q2/Q3 overflow 保持 None（保守策略，與模板行一致）
+
+- **`tests/test_fetcher_gaap.py`**：
+  - 新增 4 個 CF overflow YTD unit tests：
+    - `test_cf_overflow_q1_standalone_captured` — Q1 overflow 正常收集
+    - `test_cf_overflow_q2_ytd_subtracted` — Q2 overflow = Q2_YTD − Q1
+    - `test_cf_overflow_q3_ytd_subtracted` — Q3 overflow = Q3_YTD − Q2_YTD
+    - `test_cf_overflow_q2_without_q1_is_none` — 前一季缺失時結果為 None
+  - **73/73 unit tests 全數通過**
+
+- **`tests/test_live_snapshots.py`**：
+  - 新增 `CF_OVERFLOW_TICKERS = ["COHR", "LITE", "AAPL", "NVDA", "GOOGL"]`
+  - 新增 `cf_overflow_tables` fixture（module scope，同 `all_tables`）
+  - 3 個 `@pytest.mark.cf_overflow` live tests：
+    - `test_cf_overflow_rows_exist` — COHR/LITE 至少有 1 個 CF overflow row
+    - `test_cf_overflow_multi_quarter_coverage` — 至少 1 個 overflow row 有 ≥2 季數據（驗證 YTD 減法有效）
+    - `test_cf_overflow_no_all_none_rows` — 無全 None 的 overflow row
+  - 執行：`pytest -m "slow and cf_overflow"` 實測約 5 分鐘
+
+- **`conftest.py`**：新增 `cf_overflow` marker 定義
+
+**Live 驗證結果（2026-04-26）：15/15 PASSED**
+- COHR ✅ LITE ✅ AAPL ✅ NVDA ✅ GOOGL ✅（5:05 分鐘）
+- 三項驗證全過：overflow rows 存在、≥2 季有數據、無全 None rows
+
+---
+
+**Non-GAAP 指標名稱正規化（NVDA 稀疏表格修復）**
+
+問題：NVDA press release 的表格包含多個比較期間，AI 回傳如：
+- `"Non-GAAP Q4 FY26 Gross margin"` / `"Non-GAAP Q3 FY26 Gross margin"` / `"Non-GAAP Q4 FY25 Gross margin"` — 同一指標三個版本
+- `"Non-GAAP FY2026 Gross margin"` — 全年版（重複）
+- `"Expected Non-GAAP Gross margin (Q1 FY27)"` — 展望指標（不應存）
+- 修前 Q4 FY26 filing 回傳 34 個 metrics；修後 6 個
+
+- **`fetcher_nongaap.py`**：
+  - 新增 `_clean_metric_name(name)` — 用 `_PERIOD_TOKEN_RE` 移除所有期間 token（`Q4 FY26`、`FY2026`），再移除空括號和噪音標籤
+  - 新增 `_normalize_nongaap_metrics(raw)` — 兩段式去重：quarterly token（或無 token）優先，FY-only token 補缺；同類別內第一次出現的值優先（press release 以最新期為首，比較期自動被丟棄）
+  - `_call_ai()` 回傳前呼叫 `_normalize_nongaap_metrics(result)`
+
+- **`tests/test_fetcher_nongaap.py`**：新增 12 個正規化 unit tests（37/37 通過）
+
+**Unit tests：110/110 通過**
+
+---
+
+**金融股警告 + Tab 2 Non-GAAP 批量支援**
+
+- **`main.py`**：
+  - 新增 `_FINANCIAL_SECTOR_TICKERS = frozenset({"GS", "JPM", "BAC", "C", "WFC", "MS", "BLK", "BX", "KKR"})`
+  - `_worker_single` / `_worker_batch`：fetch 完成後若 ticker 在金融股集合內，log 警告「BS/IS 部分欄位可能為空」
+  - Tab 2 新增「同時抓取 Non-GAAP」Checkbutton + API Key 警告 label
+  - `_on_batch_nongaap_toggle()`：切換 checkbox 時顯示/隱藏 API Key 警告
+  - `_run_batch()`：讀取 Non-GAAP checkbox 狀態，未設 API Key 時 error dialog
+  - `_worker_batch(fetch_nongaap: bool)`：若啟用，對每個 ticker 呼叫 `fetch_nongaap_statements` 並合併 tables
+
+**Data_EPS_Recon 說明**：edgartools `eps_reconciliation` 對 NVDA/AAPL/MSFT 均回傳 None（非 XBRL tagged），無法從 edgartools 取得。此功能保留為已知限制，待 edgartools 改善或改用 AI 解析方案。
+- COHR ✅ LITE ✅ AAPL ✅ NVDA ✅ GOOGL ✅（5:05 分鐘）
+- 三項驗證全過：overflow rows 存在、≥2 季有數據、無全 None rows
+
+---
 
 ### 2026-04-25（Session 13）
 

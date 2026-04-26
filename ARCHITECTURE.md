@@ -42,6 +42,7 @@ fetcher_nongaap.py（勾選 Non-GAAP 時，完全獨立於 GAAP fetcher）
     ├─ _get_earnings_filings()    → 8-K Item 2.02 清單
     ├─ _extract_eps_recon()       → edgartools eps_reconciliation
     ├─ _extract_nongaap_metrics() → AI 解析 EX-99.1 press release
+    │       └─ _normalize_nongaap_metrics() → 剝除期間 token、去重比較期間、過濾展望指標
     ├─ _build_eps_recon_table()   → Data_EPS_Recon
     └─ _build_nongaap_table()     → Data_NonGAAP
     ↓（中間結果寫入 nongaap_cache.json，增量更新）
@@ -165,7 +166,12 @@ _collect_overflow(df, consumed, data_col, quarter_label, gaap_out, ng_out)
 - `_is_nongaap_label(label)` 為 True → 進 `ng_out`；否則進 `gaap_out`
 - all-None 的 overflow row 最終不追加（build 函式末段過濾）
 
-**CF 限制：** YTD filings（Q2/Q3）的 overflow 不收集，因為 YTD overflow 需要跨 filing 減法（地雷十二延伸）。
+**CF YTD overflow（2026-04-26 修復）：**
+Q2/Q3 overflow 使用與模板行相同的跨 filing 減法：
+- Filing loop 內：對所有 filing（含 YTD）收集原始 overflow 值至 `overflow_per_filing[label]`
+- Loop 結束後：非 YTD 季 → 直接使用原始值；YTD 季 → `raw[q] - raw[prev_q]`
+- 若前一季無對應 concept → 保持 None（與模板行行為一致）
+- 驗證：`pytest -m "slow and cf_overflow"` 15/15 PASSED（COHR/LITE/AAPL/NVDA/GOOGL）
 
 ## IS Post-processing Fallbacks
 
@@ -200,21 +206,30 @@ save_overrides()       ← 診斷結果永久寫入，下次同 ticker 不重跑
 **Override 套用時機**：每個 filing 的 row_vals 計算前（loop 開頭），不是 post-processing。  
 **新增檔案**：`override_engine.py`
 
+## 測試分層
+
+| 指令 | 時間 | 測試數 | 用途 |
+|------|------|--------|------|
+| `pytest` | ~6 秒 | 93 | Unit tests（每次改 code 後跑） |
+| `pytest -m "slow and b1"` | ~12 分鐘 | 24 | B1 overflow live 驗證（8 tickers） |
+| `pytest -m "slow and cf_overflow"` | ~5 分鐘 | 15 | CF YTD overflow 驗收（COHR/LITE/AAPL/NVDA/GOOGL） |
+| `pytest -m slow` | ~25 分鐘 | 全部 slow | 完整 live 驗收 |
+
+**Markers：**
+- `slow` — 需要網路，排除於預設 CI
+- `b1` — B1 overflow-row tests（slow 子集）
+- `cf_overflow` — CF YTD overflow 正確性測試（slow 子集）
+
 ## 待辦功能
 
-### 🟡 中優先
-1. **Non-GAAP cache ticker 隔離**：多公司共用同一 output_dir 時 `nongaap_cache.json` 互蓋
-2. **CF Q2/Q3 YTD overflow**（地雷十二延伸）：YTD filings 的 overflow 目前跳過；需跨 filing 減法
-3. **Non-GAAP：NVDA 指標名稱帶期間後綴**：同指標跨季是不同 row，表格超稀疏
-
-### 🟢 低優先
-4. **金融股模板**（GS/JPM）：UI 自動偵測 + 警告（已設計，延後實作）
-5. **批量更新（Tab 2）的 Non-GAAP 支援**：目前批量只跑 GAAP
-6. **Non-GAAP：Data_EPS_Recon 從未產生**：edgartools eps_reconciliation API 對主要公司回傳空
+### ✅ 已完成（本階段）
+- **Non-GAAP 指標名稱正規化**（2026-04-26）：`_normalize_nongaap_metrics()` 剝除期間 token、去重比較期間、過濾展望指標
+- **金融股警告**（2026-04-26）：`_FINANCIAL_SECTOR_TICKERS` + fetch 後 log 警告
+- **Tab 2 Non-GAAP 批量支援**（2026-04-26）：Checkbutton + `_worker_batch(fetch_nongaap)` 
 
 ## Known Issues（已知限制，暫不修）
 
 - **Investment Proceeds**：XBRL 沒有單一加總行，取 first match
-- **金融股（GS/JPM）**：現行模板 BS/IS 部分空白，待獨立模板
-- **CF Q2/Q3 overflow 跳過**：YTD filings overflow 需跨 filing 減法（見 待辦 2）
+- **金融股（GS/JPM）**：現行模板 BS/IS 部分空白，待獨立模板（已有 UI 警告）
 - **NG 分類誤判**：keyword-based 分類，label 含 "excluding" 的 GAAP 行可能誤進 NG sheet（可接受方向）
+- **Data_EPS_Recon 從未產生**：edgartools `eps_reconciliation` 對 NVDA/AAPL/MSFT 均回傳 None，非 XBRL-tagged 公司無解；待 edgartools 改善或改用 AI 解析方案
