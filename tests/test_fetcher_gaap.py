@@ -698,6 +698,69 @@ def test_build_cf_table_q2_ytd_subtracted_from_q1():
     assert gaap_tbl.values[ni_idx][q2_col] == pytest.approx(q2_ni)
 
 
+# ── Task 4: Revenue fallback expansion ────────────────────────────────────────
+
+def _make_is_df_revenues_only(period_col="2024-03-31 (Q1)", val=1000.0):
+    """IS df where Revenue uses us-gaap_Revenues (not RevenueFromContractWithCustomer)."""
+    return pd.DataFrame({
+        "concept":               ["us-gaap_Revenues", "us-gaap_NetIncomeLoss"],
+        "label":                 ["Revenues",         "Net income"],
+        "standard_concept":      ["TotalRevenues",    "NetIncome"],   # not "Revenue"
+        "abstract":              [False, False],
+        "is_breakdown":          [False, False],
+        "level":                 [3, 3],
+        "dimension_member_label":[None, None],
+        period_col:              [val, val * 0.1],
+        "2023-03-31 (Q1)":       [val * 0.9, val * 0.08],
+    })
+
+
+def _make_filing_revenues_only(**kwargs):
+    df = _make_is_df_revenues_only(**kwargs)
+    mock_stmt = MagicMock(); mock_stmt.to_dataframe.return_value = df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_stmt
+    mock_fin.cashflow_statement.return_value = mock_stmt
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    filing = MagicMock(); filing.obj.return_value = mock_tenq; filing.filing_date = "2024-04-30"
+    return filing
+
+
+def test_revenue_fallback_picks_us_gaap_revenues():
+    """Revenue must resolve when XBRL uses us-gaap_Revenues (concept ends with _Revenues)."""
+    filing = _make_filing_revenues_only(val=2000.0)
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    rev_idx = gaap_tbl.concepts.index("Revenue")
+    assert gaap_tbl.values[rev_idx][0] == pytest.approx(2000.0), (
+        f"Expected 2000.0, got {gaap_tbl.values[rev_idx][0]}"
+    )
+
+
+def test_revenue_fallback_picks_sales_revenue_net():
+    """Revenue must resolve when XBRL uses us-gaap_SalesRevenueNet."""
+    df = pd.DataFrame({
+        "concept":               ["us-gaap_SalesRevenueNet", "us-gaap_NetIncomeLoss"],
+        "label":                 ["Net sales",               "Net income"],
+        "standard_concept":      ["SalesRevenueNet",          "NetIncome"],
+        "abstract":              [False, False],
+        "is_breakdown":          [False, False],
+        "level":                 [3, 3],
+        "dimension_member_label":[None, None],
+        "2024-03-31 (Q1)":       [3000.0, 300.0],
+        "2023-03-31 (Q1)":       [2700.0, 270.0],
+    })
+    mock_stmt = MagicMock(); mock_stmt.to_dataframe.return_value = df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_stmt
+    mock_fin.cashflow_statement.return_value = mock_stmt
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    filing = MagicMock(); filing.obj.return_value = mock_tenq; filing.filing_date = "2024-04-30"
+
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    rev_idx = gaap_tbl.concepts.index("Revenue")
+    assert gaap_tbl.values[rev_idx][0] == pytest.approx(3000.0)
+
+
 def test_build_cf_table_q3_ytd_subtracted_from_q2_ytd():
     """Q3 standalone = Q3 YTD − Q2 YTD."""
     q1_ni, q2_ni, q3_ni = 100.0, 130.0, 150.0

@@ -73,7 +73,7 @@ _XBRL_CUTOFF: _date = _date(2008, 1, 1)
 _T = tuple[str, str | None, str, str, str, str | None]
 
 IS_TEMPLATE: list[_T] = [
-    ("Revenue",                    "Revenue",                        "RevenueFromContractWithCustomer",                        "IS", "first", None),
+    ("Revenue",                    "Revenue",                        r"RevenueFromContractWithCustomer|SalesRevenueNet|SalesRevenueGoodsNet|_Revenues$|^Revenues$", "IS", "first", None),
     ("Cost of Revenue",            "CostOfGoodsAndServicesSold",     "CostOfGoodsSold",                                       "IS", "first", "cost"),
     ("Gross Profit",               "GrossProfit",                    "GrossProfit",                                            "IS", "first", None),
     ("R&D Expense",                "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment",                                 "IS", "first", None),
