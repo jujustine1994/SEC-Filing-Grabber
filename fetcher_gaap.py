@@ -197,6 +197,20 @@ _CF_OP_CASH_IDX         = _CF_IDX["Operating Cash Flow"]
 _CF_CAPEX_IDX           = _CF_IDX["Capex"]
 _CF_FCF_IDX             = _CF_IDX["Free Cash Flow"]
 
+_CF_INV_PURCHASES_IDX  = _CF_IDX["Investment Purchases"]
+_CF_INV_PROCEEDS_IDX   = _CF_IDX["Investment Proceeds"]
+_CF_DEBT_PROCEEDS_IDX   = _CF_IDX["Debt Proceeds"]
+_CF_DEBT_REPAYMENTS_IDX = _CF_IDX["Debt Repayments"]
+
+_INV_PROCEEDS_PATTERNS: list[str] = [
+    r"ProceedsFromSaleOfInvestments",
+    r"ProceedsFromSaleOfAvailableForSaleSecurities",
+    r"ProceedsFromMaturitiesPrepaymentsAndCallsOfAvailableForSaleSecurities",
+    r"ProceedsFromSaleAndMaturityOfMarketableSecurities",
+    r"ProceedsFromSaleOfShortTermInvestments",
+    r"ProceedsFromSaleMaturityAndCollectionOfShorttermInvestments",
+]
+
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -423,6 +437,37 @@ def _collect_overflow(
         val = _to_python_val(row.get(data_col))
         if val is not None:
             out[key]["periods"][quarter_label] = val
+
+
+def _sum_matching_rows(
+    df: pd.DataFrame,
+    col: str,
+    patterns: list[str],
+    consumed: set[int],
+) -> tuple[Any, list[int]]:
+    """Sum values from consolidated rows whose concept matches any pattern in patterns.
+
+    Skips rows already in consumed. Returns (total_or_None, list_of_matched_indices).
+    """
+    mask = _consolidated_mask(df)
+    df_c = df[mask]
+    total: float | None = None
+    indices: list[int] = []
+    seen_concepts: set[str] = set()
+    for pattern in patterns:
+        matches = df_c[df_c["concept"].astype(str).str.contains(pattern, case=False, na=False, regex=True)]
+        for idx, row in matches.iterrows():
+            if idx in consumed:
+                continue
+            concept = str(row.get("concept", "") or "")
+            if concept in seen_concepts:
+                continue
+            seen_concepts.add(concept)
+            val = _to_python_val(row.get(col))
+            if val is not None:
+                total = (total or 0.0) + val
+                indices.append(idx)
+    return total, indices
 
 
 def _build_template_table(filings, template: list[_T], sheet_name: str,
@@ -939,6 +984,12 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
                 if i not in row_labels:
                     raw = str(df.loc[idx, "label"] or "")
                     row_labels[i] = unicodedata.normalize("NFKC", raw)
+
+        # Post-processing (BEFORE overflow): Investment Proceeds — sum all relevant rows
+        inv_proc_val, inv_proc_indices = _sum_matching_rows(df, data_col, _INV_PROCEEDS_PATTERNS, consumed)
+        if inv_proc_val is not None:
+            row_vals[_CF_INV_PROCEEDS_IDX] = inv_proc_val
+            consumed.update(inv_proc_indices)
 
         # Collect raw overflow for all filings (incl. YTD); YTD subtraction applied after loop
         df_c = df[_consolidated_mask(df)]

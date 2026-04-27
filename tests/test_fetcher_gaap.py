@@ -1146,3 +1146,49 @@ def test_total_nonop_derived_normally_without_discontinued_ops():
     gaap_tbl, _ = _build_is_table([filing], max_filings=1)
     nonop_idx = gaap_tbl.concepts.index("Total Non-op Income/(Loss)")
     assert gaap_tbl.values[nonop_idx][0] == pytest.approx(15.0)  # 115 - 100
+
+
+# ── Task 6: Investment Proceeds multi-sum ─────────────────────────────────────
+
+def _make_cf_df_investment_proceeds():
+    """CF df with multiple investment proceeds lines (no single sum row)."""
+    return pd.DataFrame({
+        "concept":               [
+            "us-gaap_NetCashProvidedByUsedInOperatingActivities",
+            "us-gaap_ProceedsFromSaleOfAvailableForSaleSecurities",
+            "us-gaap_ProceedsFromMaturitiesPrepaymentsAndCallsOfAvailableForSaleSecurities",
+            "us-gaap_ProceedsFromSaleOfShortTermInvestments",
+        ],
+        "label":                 [
+            "Net cash from ops",
+            "Proceeds from sale of AFS securities",
+            "Proceeds from maturities of AFS securities",
+            "Proceeds from sale of ST investments",
+        ],
+        "standard_concept":      ["NetCashFromOperatingActivities", None, None, None],
+        "abstract":              [False, False, False, False],
+        "is_breakdown":          [False, False, False, False],
+        "level":                 [3, 4, 4, 4],
+        "dimension_member_label":[None, None, None, None],
+        "2024-03-31 (Q1)":       [500.0, 200.0, 150.0, 100.0],
+    })
+
+
+def test_investment_proceeds_sums_multiple_concepts():
+    """Investment Proceeds must sum all ProceedsFrom*AFS*|ShortTerm* rows."""
+    is_df = _make_is_df_minimal("2024-03-31 (Q1)")
+    cf_df = _make_cf_df_investment_proceeds()
+    mock_is = MagicMock(); mock_is.to_dataframe.return_value = is_df
+    mock_cf = MagicMock(); mock_cf.to_dataframe.return_value = cf_df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_is
+    mock_fin.cashflow_statement.return_value = mock_cf
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    filing = MagicMock(); filing.obj.return_value = mock_tenq; filing.filing_date = "2024-04-30"
+
+    gaap_tbl, _ = _build_cf_table([filing], max_filings=1)
+    proc_idx = gaap_tbl.concepts.index("Investment Proceeds")
+    # 200 + 150 + 100 = 450
+    assert gaap_tbl.values[proc_idx][0] == pytest.approx(450.0), (
+        f"Expected 450.0 (sum), got {gaap_tbl.values[proc_idx][0]}"
+    )
