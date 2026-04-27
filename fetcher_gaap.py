@@ -593,10 +593,12 @@ def _build_is_table(
         # ── Post-processing: fallbacks not expressible in the 6-tuple ──
 
         # 1. Total Non-op: DERIVED = Pre-tax − Operating Income
+        #    Guard: skip if discontinued operations present (would distort the difference)
         if row_vals.get(_NONOP_TOTAL_IDX) is None:
             op_val     = row_vals.get(_OP_INCOME_IDX)
             pretax_val = row_vals.get(_PRETAX_IDX)
-            if op_val is not None and pretax_val is not None:
+            has_discontinued = _match_is_row(df, None, "DiscontinuedOperations") is not None
+            if op_val is not None and pretax_val is not None and not has_discontinued:
                 row_vals[_NONOP_TOTAL_IDX] = pretax_val - op_val
 
         # 2. Net Income fallback chain

@@ -1088,3 +1088,61 @@ def test_build_is_table_prefers_attributable_to_parent_over_profitloss():
     assert gaap_tbl.values[ni_idx][0] == pytest.approx(280.0), (
         f"Expected 280.0 (parent-only), got {gaap_tbl.values[ni_idx][0]}"
     )
+
+
+# ── Task 5: Total Non-op derived guard ────────────────────────────────────────
+
+def test_total_nonop_not_derived_when_discontinued_ops_present():
+    """When discontinued operations exist, Total Non-op should NOT be derived (return None)."""
+    df = pd.DataFrame({
+        "concept":               [
+            "us-gaap_OperatingIncomeLoss",
+            "us-gaap_IncomeLossFromDiscontinuedOperationsNetOfTax",
+            "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTax",
+        ],
+        "label":                 ["Operating income", "Discont. ops income", "Income before taxes"],
+        "standard_concept":      ["OperatingIncomeLoss", None, "PretaxIncomeLoss"],
+        "abstract":              [False, False, False],
+        "is_breakdown":          [False, False, False],
+        "level":                 [3, 3, 3],
+        "dimension_member_label":[None, None, None],
+        "2024-03-31 (Q1)":       [100.0, 20.0, 120.0],   # Non-op = 0, Discont = 20
+        "2023-03-31 (Q1)":       [90.0, 15.0, 105.0],
+    })
+    mock_stmt = MagicMock(); mock_stmt.to_dataframe.return_value = df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_stmt
+    mock_fin.cashflow_statement.return_value = mock_stmt
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    filing = MagicMock(); filing.obj.return_value = mock_tenq; filing.filing_date = "2024-04-30"
+
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    nonop_idx = gaap_tbl.concepts.index("Total Non-op Income/(Loss)")
+    assert gaap_tbl.values[nonop_idx][0] is None, (
+        f"Expected None (discontinued ops present), got {gaap_tbl.values[nonop_idx][0]}"
+    )
+
+
+def test_total_nonop_derived_normally_without_discontinued_ops():
+    """When no discontinued ops, Total Non-op should still be derived as Pretax - Operating."""
+    df = pd.DataFrame({
+        "concept":               ["us-gaap_OperatingIncomeLoss", "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTax"],
+        "label":                 ["Operating income",            "Income before taxes"],
+        "standard_concept":      ["OperatingIncomeLoss",         "PretaxIncomeLoss"],
+        "abstract":              [False, False],
+        "is_breakdown":          [False, False],
+        "level":                 [3, 3],
+        "dimension_member_label":[None, None],
+        "2024-03-31 (Q1)":       [100.0, 115.0],
+        "2023-03-31 (Q1)":       [90.0, 103.0],
+    })
+    mock_stmt = MagicMock(); mock_stmt.to_dataframe.return_value = df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_stmt
+    mock_fin.cashflow_statement.return_value = mock_stmt
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    filing = MagicMock(); filing.obj.return_value = mock_tenq; filing.filing_date = "2024-04-30"
+
+    gaap_tbl, _ = _build_is_table([filing], max_filings=1)
+    nonop_idx = gaap_tbl.concepts.index("Total Non-op Income/(Loss)")
+    assert gaap_tbl.values[nonop_idx][0] == pytest.approx(15.0)  # 115 - 100
