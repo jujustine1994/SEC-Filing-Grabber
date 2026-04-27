@@ -1258,3 +1258,70 @@ def test_debt_repayments_sums_lt_and_st():
     assert gaap_tbl.values[rep_idx][0] == pytest.approx(900.0), (  # 800 + 100
         f"Expected 900.0, got {gaap_tbl.values[rep_idx][0]}"
     )
+
+
+# ── Task 8: FY label fiscal year alignment ────────────────────────────────────
+
+def test_col_to_quarter_label_default_december_fy_unchanged():
+    """Default fy_end_month=12 must produce identical output to current behaviour."""
+    assert _col_to_quarter_label("2023-12-30 (Q1)") == "FY2023Q1"
+    assert _col_to_quarter_label("2023-09-30 (FY)") == "FY2023"
+
+
+def test_col_to_quarter_label_sep_fy_q1_increments_year():
+    """AAPL-style Sep FY: Q1 ends Dec 2023 → label FY2024Q1 (company's FY2024)."""
+    assert _col_to_quarter_label("2023-12-30 (Q1)", fy_end_month=9) == "FY2024Q1"
+
+
+def test_col_to_quarter_label_sep_fy_q2_same_year():
+    """AAPL Q2 ends Mar 2024 → label FY2024Q2 (same FY2024)."""
+    assert _col_to_quarter_label("2024-03-30 (Q2)", fy_end_month=9) == "FY2024Q2"
+
+
+def test_col_to_quarter_label_sep_fy_q3_same_year():
+    """AAPL Q3 ends Jun 2024 → label FY2024Q3 (same FY2024)."""
+    assert _col_to_quarter_label("2024-06-29 (Q3)", fy_end_month=9) == "FY2024Q3"
+
+
+def test_col_to_quarter_label_sep_fy_annual_unchanged():
+    """AAPL annual FY ends Sep 2024 → label FY2024 (unchanged, period is FY not Q)."""
+    assert _col_to_quarter_label("2024-09-28 (FY)", fy_end_month=9) == "FY2024"
+
+
+def test_col_to_quarter_label_jun_fy_q1_increments_year():
+    """MSFT-style Jun FY: Q1 ends Sep 2024 → label FY2025Q1."""
+    assert _col_to_quarter_label("2024-09-30 (Q1)", fy_end_month=6) == "FY2025Q1"
+
+
+def test_col_to_quarter_label_jun_fy_q2_increments_year():
+    """MSFT Q2 ends Dec 2024 → label FY2025Q2."""
+    assert _col_to_quarter_label("2024-12-31 (Q2)", fy_end_month=6) == "FY2025Q2"
+
+
+def test_col_to_quarter_label_jun_fy_q3_same_year():
+    """MSFT Q3 ends Mar 2025 → label FY2025Q3."""
+    assert _col_to_quarter_label("2025-03-31 (Q3)", fy_end_month=6) == "FY2025Q3"
+
+
+def test_detect_fy_end_month_returns_9_for_sep_end():
+    """_detect_fy_end_month should return 9 when the 10-K FY column ends in September."""
+    from fetcher_gaap import _detect_fy_end_month
+    df = pd.DataFrame({
+        "concept": ["us-gaap_RevenueFromContractWithCustomer"],
+        "label":   ["Revenue"],
+        "standard_concept": ["Revenue"],
+        "abstract": [False], "is_breakdown": [False], "level": [3],
+        "dimension_member_label": [None],
+        "2024-09-28 (FY)": [1000.0],
+    })
+    mock_stmt = MagicMock(); mock_stmt.to_dataframe.return_value = df
+    mock_fin = MagicMock(); mock_fin.income_statement.return_value = mock_stmt
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    filing = MagicMock(); filing.obj.return_value = mock_tenq
+    assert _detect_fy_end_month([filing]) == 9
+
+
+def test_detect_fy_end_month_defaults_to_12_on_failure():
+    """_detect_fy_end_month should return 12 when no filings given."""
+    from fetcher_gaap import _detect_fy_end_month
+    assert _detect_fy_end_month([]) == 12

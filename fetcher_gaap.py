@@ -230,19 +230,54 @@ _DEBT_REPAYMENTS_PATTERNS: list[str] = [
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 
-def _col_to_quarter_label(col_name: str) -> str:
+def _col_to_quarter_label(col_name: str, fy_end_month: int = 12) -> str:
     """Convert edgartools period column name to FY label.
 
-    Examples:
+    fy_end_month: company's fiscal year end month (1-12). Default 12 = calendar year.
+    For non-December FY companies, quarterly periods ending after fy_end_month belong
+    to the next fiscal year (e.g. AAPL Sep FY: Dec 2023 Q1 → FY2024Q1).
+    Annual (FY) labels are never adjusted.
+
+    Examples (default fy_end_month=12):
         "2023-03-31 (Q1)"  -> "FY2023Q1"
         "2024-12-31 (FY)"  -> "FY2024"
-        "2023-03-31"       -> "2023-03-31"
+    Examples (fy_end_month=9, AAPL):
+        "2023-12-30 (Q1)"  -> "FY2024Q1"
+        "2024-09-28 (FY)"  -> "FY2024"
     """
-    m = re.match(r"(\d{4})-\d{2}-\d{2}\s+\((\w+)\)", col_name.strip())
+    m = re.match(r"(\d{4})-(\d{2})-\d{2}\s+\((\w+)\)", col_name.strip())
     if m:
-        year, period = m.group(1), m.group(2)
-        return f"FY{year}" if period.upper() == "FY" else f"FY{year}{period}"
+        year, month, period = int(m.group(1)), int(m.group(2)), m.group(3)
+        if period.upper() == "FY":
+            return f"FY{year}"
+        if fy_end_month < 12 and month > fy_end_month:
+            year += 1
+        return f"FY{year}{period}"
     return col_name
+
+
+def _detect_fy_end_month(filings_k: list) -> int:
+    """Detect company's fiscal year end month from 10-K filings.
+
+    Looks for a column labeled '(FY)' in the IS statement of the first 3 10-K filings.
+    Returns the month number (1-12), defaulting to 12 (December) if not detected.
+    """
+    for filing in filings_k[:3]:
+        try:
+            tenq = filing.obj()
+            is_stmt = tenq.financials.income_statement()
+            if is_stmt is None:
+                continue
+            df = is_stmt.to_dataframe()
+            for col in df.columns:
+                if col in META_COLS:
+                    continue
+                mm = re.search(r"\d{4}-(\d{2})-\d{2}\s+\(FY\)", col)
+                if mm:
+                    return int(mm.group(1))
+        except Exception:
+            continue
+    return 12
 
 
 def _is_q_col(col_name: str) -> bool:
@@ -487,7 +522,8 @@ def _sum_matching_rows(
 
 
 def _build_template_table(filings, template: list[_T], sheet_name: str,
-                           stmt_method: str, max_filings: int) -> StatementTable:
+                           stmt_method: str, max_filings: int,
+                           fy_end_month: int = 12) -> StatementTable:
     """Generic fixed-template builder used by IS, BS, and CF."""
     periods: dict[str, tuple[str, dict[int, Any]]] = {}
     row_labels: dict[int, str] = {}   # first available original XBRL label per row
@@ -509,7 +545,7 @@ def _build_template_table(filings, template: list[_T], sheet_name: str,
         if q_col is None:
             continue
 
-        label = _col_to_quarter_label(q_col)
+        label = _col_to_quarter_label(q_col, fy_end_month)
         if label in periods:
             continue
 
@@ -560,7 +596,8 @@ def _build_template_table(filings, template: list[_T], sheet_name: str,
 # ── IS: template-based fetch ────────────────────────────────────────────────
 
 def _build_is_table(
-    filings, max_filings: int, is_overrides: dict | None = None
+    filings, max_filings: int, is_overrides: dict | None = None,
+    fy_end_month: int = 12,
 ) -> tuple[StatementTable, StatementTable]:
     """Build IS StatementTables from 10-Q filings using the fixed IS template.
 
@@ -596,7 +633,7 @@ def _build_is_table(
         if q_col is None:
             continue
 
-        label = _col_to_quarter_label(q_col)
+        label = _col_to_quarter_label(q_col, fy_end_month)
         if label in periods:
             continue
 
@@ -777,7 +814,8 @@ def _build_is_table(
 
 # ── BS: template-based fetch ────────────────────────────────────────────────
 
-def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None) -> tuple[StatementTable, StatementTable]:
+def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
+                    fy_end_month: int = 12) -> tuple[StatementTable, StatementTable]:
     """Build Data_BS StatementTable using the fixed BS template.
 
     Balance sheet columns in edgartools are instant (bare date, e.g. "2024-03-31")
@@ -820,7 +858,7 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None)
         if bs_col is None:
             continue
 
-        label = _col_to_quarter_label(is_q_col) if is_q_col else _col_to_quarter_label(bs_col)
+        label = _col_to_quarter_label(is_q_col, fy_end_month) if is_q_col else _col_to_quarter_label(bs_col, fy_end_month)
         if label in periods:
             continue
 
@@ -917,7 +955,8 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None)
 
 # ── CF: template-based fetch ────────────────────────────────────────────────
 
-def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None) -> tuple[StatementTable, StatementTable]:
+def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
+                    fy_end_month: int = 12) -> tuple[StatementTable, StatementTable]:
     """Build Data_CF StatementTable using the fixed CF template.
 
     Q1 and FY filings have standalone period columns (Q1/FY) and are used directly.
@@ -964,7 +1003,7 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
 
         q_col = _current_q_col(df)
         if q_col is not None:
-            label = _col_to_quarter_label(q_col)
+            label = _col_to_quarter_label(q_col, fy_end_month)
             if label in collected:
                 continue
             is_ytd = False
@@ -973,7 +1012,7 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
             ytd_col = _ytd_col(df)
             if ytd_col is None or is_q_col is None:
                 continue
-            label = _col_to_quarter_label(is_q_col)
+            label = _col_to_quarter_label(is_q_col, fy_end_month)
             if label in collected:
                 continue
             is_ytd = True
@@ -1236,7 +1275,8 @@ def _merge_financials(is_tbl: StatementTable,
 # ── BS/CF: dynamic row-union fetch (kept for reference / fallback) ──────────
 
 def _build_dynamic_table(filings, stmt_method: str, sheet_name: str,
-                          max_filings: int) -> StatementTable | None:
+                          max_filings: int,
+                          fy_end_month: int = 12) -> StatementTable | None:
     """Build BS or CF StatementTable using a dynamic row union across all filings."""
     concept_labels: dict[str, str] = {}
     periods: dict[str, tuple[str, dict[str, Any]]] = {}
@@ -1257,7 +1297,7 @@ def _build_dynamic_table(filings, stmt_method: str, sheet_name: str,
         if q_col is None:
             continue
 
-        label = _col_to_quarter_label(q_col)
+        label = _col_to_quarter_label(q_col, fy_end_month)
         if label in periods:
             continue
 
@@ -1296,7 +1336,7 @@ def _build_dynamic_table(filings, stmt_method: str, sheet_name: str,
 
 # ── Segment breakdown sheets ────────────────────────────────────────────────
 
-def _build_segment_tables(filings, max_filings: int) -> list[StatementTable]:
+def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> list[StatementTable]:
     """Build one StatementTable per IS concept that has segment/dimension rows."""
     seg_data: dict[str, dict] = {}
     periods_seen: set[str] = set()
@@ -1320,7 +1360,7 @@ def _build_segment_tables(filings, max_filings: int) -> list[StatementTable]:
         if q_col is None:
             continue
 
-        period_label = _col_to_quarter_label(q_col)
+        period_label = _col_to_quarter_label(q_col, fy_end_month)
         filing_date = str(filing.filing_date)
 
         dim_col = df.get("dimension_member_label")
@@ -1444,9 +1484,12 @@ def fetch_gaap_statements(ticker: str, identity: str,
     # Load existing overrides (empty on first fetch of new ticker)
     overrides = load_overrides(ticker)
 
-    is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}))
-    bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}))
-    cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}))
+    filings_k = list(company.get_filings(form="10-K", amendments=False))
+    fy_end_month = _detect_fy_end_month(filings_k) if filings_k else 12
+
+    is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
+    bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
+    cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
 
     # Diagnose key rows that are all-None in recent quarters
     missing_is = check_key_rows(is_tbl.concepts, is_tbl.values, "IS")
@@ -1483,9 +1526,9 @@ def fetch_gaap_statements(ticker: str, identity: str,
             print(f"[{ticker}] 自動修復：找到 {total} 項缺失指標修復方案，重新建表。", file=sys.stderr)
             # Reload and rebuild with new overrides applied
             overrides = load_overrides(ticker)
-            is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}))
-            bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}))
-            cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}))
+            is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
+            bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
+            cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
         else:
             # Log any rows that could not be diagnosed
             remaining = missing_is + missing_bs + missing_cf
@@ -1501,11 +1544,10 @@ def fetch_gaap_statements(ticker: str, identity: str,
         ng_q_tbl = _merge_financials(is_ng, bs_ng, cf_ng, sheet_name="Data_Financials_NG(Q)")
         tables.append(ng_q_tbl)
 
-    filings_k = list(company.get_filings(form="10-K", amendments=False))
     if filings_k:
-        is_ann, is_ann_ng = _build_is_table(filings_k, max_annual_filings, is_overrides=overrides.get("IS", {}))
-        bs_ann, bs_ann_ng = _build_bs_table(filings_k, max_annual_filings, bs_overrides=overrides.get("BS", {}))
-        cf_ann, cf_ann_ng = _build_cf_table(filings_k, max_annual_filings, cf_overrides=overrides.get("CF", {}))
+        is_ann, is_ann_ng = _build_is_table(filings_k, max_annual_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
+        bs_ann, bs_ann_ng = _build_bs_table(filings_k, max_annual_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
+        cf_ann, cf_ann_ng = _build_cf_table(filings_k, max_annual_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
         annual_tbl = _merge_financials(is_ann, bs_ann, cf_ann, sheet_name="Data_Financials(Y)")
         tables.append(annual_tbl)
 
@@ -1514,7 +1556,7 @@ def fetch_gaap_statements(ticker: str, identity: str,
             ng_y_tbl = _merge_financials(is_ann_ng, bs_ann_ng, cf_ann_ng, sheet_name="Data_Financials_NG(Y)")
             tables.append(ng_y_tbl)
 
-    tables.extend(_build_segment_tables(filings_q, max_filings))
+    tables.extend(_build_segment_tables(filings_q, max_filings, fy_end_month=fy_end_month))
 
     company_name = getattr(company, "name", ticker) or ticker
     tables.append(_build_meta_table(ticker, company_name, tables))
