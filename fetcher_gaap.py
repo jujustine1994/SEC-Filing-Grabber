@@ -210,6 +210,22 @@ _INV_PROCEEDS_PATTERNS: list[str] = [
     r"ProceedsFromSaleOfShortTermInvestments",
     r"ProceedsFromSaleMaturityAndCollectionOfShorttermInvestments",
 ]
+_DEBT_PROCEEDS_PATTERNS: list[str] = [
+    r"ProceedsFromIssuanceOfDebt$",
+    r"ProceedsFromIssuanceOfLongTermDebt",
+    r"ProceedsFromShortTermBorrowings",
+    r"ProceedsFromLinesOfCredit",
+    r"ProceedsFromIssuanceOfMediumTermNotes",
+    r"ProceedsFromIssuanceOfSeniorLongTermDebt",
+]
+_DEBT_REPAYMENTS_PATTERNS: list[str] = [
+    r"RepaymentsOfDebt$",
+    r"RepaymentsOfLongTermDebt",
+    r"RepaymentsOfShortTermDebt",
+    r"RepaymentsOfLinesOfCredit",
+    r"RepaymentsOfMediumTermNotes",
+    r"RepaymentsOfSeniorDebt",
+]
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
@@ -990,6 +1006,18 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None)
         if inv_proc_val is not None:
             row_vals[_CF_INV_PROCEEDS_IDX] = inv_proc_val
             consumed.update(inv_proc_indices)
+
+        # Post-processing (BEFORE overflow): Debt Proceeds — sum LT + ST + credit lines
+        debt_proc_val, debt_proc_indices = _sum_matching_rows(df, data_col, _DEBT_PROCEEDS_PATTERNS, consumed)
+        if debt_proc_val is not None:
+            row_vals[_CF_DEBT_PROCEEDS_IDX] = debt_proc_val
+            consumed.update(debt_proc_indices)
+
+        # Post-processing (BEFORE overflow): Debt Repayments — sum LT + ST + credit lines
+        debt_rep_val, debt_rep_indices = _sum_matching_rows(df, data_col, _DEBT_REPAYMENTS_PATTERNS, consumed)
+        if debt_rep_val is not None:
+            row_vals[_CF_DEBT_REPAYMENTS_IDX] = debt_rep_val
+            consumed.update(debt_rep_indices)
 
         # Collect raw overflow for all filings (incl. YTD); YTD subtraction applied after loop
         df_c = df[_consolidated_mask(df)]
