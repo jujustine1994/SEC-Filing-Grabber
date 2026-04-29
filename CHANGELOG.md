@@ -58,6 +58,98 @@
 
 ## 更新記錄
 
+### 2026-04-29（Session 16）
+
+**UI 日期區間 + 報表類型 + Sheet 預覽 + FY Month Fix**
+
+設計文件：`docs/superpowers/specs/2026-04-29-ui-date-range-design.md`
+
+**後端（`fetcher_gaap.py`）**
+
+- **`_filter_filings_by_year()`**（新 helper）：依起訖年份過濾 filing 列表，支援 `date` 物件與 ISO 字串兩種格式
+- **`fetch_gaap_statements()` 新增 5 個參數**：
+  - `start_year` / `end_year`：只抓指定年份區間的 filings（`None` = 全部，現有行為不變）
+  - `fetch_quarterly` / `fetch_annual`：控制是否抓 10-Q / 10-K（預設兩者皆抓）
+  - `excluded_sheets`：跳過指定 sheet 名稱，不寫入 Excel
+- **`preview_sheets(ticker, identity)`**（新公開函式）：只抓最新一份 10-Q，回傳預期 sheet 名稱清單（~5–15 秒），用於執行前快速預覽
+- **FY month fix**：當 `fetch_annual=False` 時，後端自動偷抓 1 份 10-K 僅用於偵測財年結束月份，不產生 `Data_Financials(Y)`；確保 AAPL（9 月）等非 12 月財年公司的季報欄位標籤正確
+
+**後端（`fetcher_nongaap.py`）**
+
+- **`_filter_nongaap_by_year()`**（新 helper）：依 label 字串中的年份（如 `FY2021Q2`）過濾
+- **`fetch_nongaap_statements()` 新增 `start_year` / `end_year` 參數**
+
+**UI（`main.py`）**
+
+- **Tab 1（單一公司）**：
+  - 「快速掃描 ▶」按鈕（Row 0）：在執行前偵測該 ticker 有哪些 `Data_Seg_*` sheets；固定 sheet（Financials/Meta）不可取消
+  - 「▶ 進階設定」收折區（預設隱藏）：展開後可個別勾選季報（10-Q）/ 年報（10-K）
+  - 日期區間 Spinbox（起 / 迄年份，留空 = 全部）
+- **Tab 2（批量更新）**：
+  - 「▶ 進階設定」收折區：同上，可選報表類型
+  - 日期區間 Spinbox
+
+**測試（`tests/`）**
+
+- `test_fetcher_gaap.py`：新增 14 個測試（filter、fetch_gaap 新參數、preview_sheets、FY probe）→ 共 **110 tests**
+- `test_fetcher_nongaap.py`：新增 4 個 filter 測試 → 共 **41 tests**
+- 全套 **151/151 PASSED**
+
+**Commits（2026-04-29）**
+
+```
+555193d  feat: move report type to inline adv settings; fix FY month probe for Q-only mode
+adf2336  fix: guard scan against running fetch; hide panel on empty sheet list
+5dd7cdd  feat: add quick scan button and sheet selection panel to Tab 1
+63cd654  fix: align Tab 2 row sticky to ew matching Tab 1 pattern
+bbb7d43  feat: add report type and date range to Tab 2 batch UI
+d15f1d9  feat: add report type (10-Q/10-K) and date range to Tab 1 UI
+ab9d697  feat: add start_year/end_year filter to fetch_nongaap_statements
+a9caeec  feat: add preview_sheets() for quick segment detection
+016845b  feat: add start_year/end_year/fetch_quarterly/fetch_annual/excluded_sheets to fetch_gaap_statements
+9260596  feat: add _filter_filings_by_year helper with year-range support
+```
+
+---
+
+### 2026-04-28（Session 15）
+
+**GAAP Fetcher 精度修復（Tasks 1–8）+ Batch Smoke Test**
+
+設計文件：`docs/superpowers/plans/2026-04-26-fetcher-gaap-fixes.md`
+
+- **Task 1：pre-XBRL early exit** — IS/BS/CF/Seg 四個 filing loop 在 `filing_date < 2008-01-01` 時 `break`，AMD 等老公司抓取速度大幅改善
+- **Task 2：Dividends Paid bug** — CF_TEMPLATE Dividends Paid 的 `std_concept` 從 `DistributionsToMinorityInterests`（錯誤）改為 `None`，fallback regex 正確命中
+- **Task 3：Net Income fallback 順序** — IS 先嘗試 `NetIncomeLossAttributableToParent`，再 `ProfitLoss`，避免少數股東損益被誤計入母公司 Net Income
+- **Task 4：Revenue fallback 擴展** — 新增 `Revenues`、`SalesRevenueNet`、`SalesRevenueGoodsNet`，涵蓋更多公司的 XBRL 命名
+- **Task 5：Total Non-op DERIVED guard** — 當 discontinued operations 行存在時跳過衍生計算，避免雙重計入
+- **Task 6：Investment Proceeds 多概念加總** — 新增 `_sum_matching_rows()` helper，將 `ProceedsFromSaleOfInvestments`、`ProceedsFromMaturitiesOfInvestments` 等多個概念加總，而非只取第一筆
+- **Task 7：Debt Proceeds/Repayments 多概念加總** — 同上，LT 債 + ST 債分別加總，不再只抓第一個命中的概念
+- **Task 8：FY Label 對齊公司財年** — 新增 `_detect_fy_end_month(filings_k)` 從 10-K 推算財年結束月份；`_col_to_quarter_label()` 根據 `fy_end_month` 調整 Q 序號，確保 AAPL（Sep）、MSFT（Jun）、NVDA/WMT（Jan）的季度標籤正確
+
+**`tests/test_fetcher_gaap.py`**：新增對應 Tasks 1–8 的 unit tests；**95/95 全數通過**
+
+---
+
+**Batch Live Smoke Test（新腳本）**
+
+- **`scripts/smoke_test_10.py`（新檔）**：
+  - 對 10 間公司（AAPL/MSFT/TSLA/AMD/NVDA/GOOGL/META/WMT/COHR/AMZN）呼叫真實 EDGAR API
+  - 自動檢查 7 個 key rows：Revenue / Gross Profit / Operating Income / Net Income / Operating Cash Flow / Capex / Free Cash Flow
+  - 輸出每間公司的 OK/NONE 狀態 + 末尾彙總表，列出有問題的 ticker
+  - Windows cp950 encoding 修復：`sys.stdout = io.TextIOWrapper(..., encoding="utf-8")`
+
+- **`scripts/README.md`（新檔）**：腳本索引，符合 CLAUDE.md 規則（新增腳本必須更新此表）
+
+**實機測試結果（2026-04-28）：9/10 OK**
+- AAPL/MSFT/TSLA/AMD/NVDA/GOOGL/META/WMT/AMZN：7 個 key rows 全部 ✅
+- COHR：Revenue=NONE、Operating Income=NONE — 已知限制（2022 三方合併導致非標準 XBRL）
+- FY label 驗證：AAPL FY2026Q1 ✅ / MSFT FY2026Q2 ✅ / NVDA FY2026Q3 ✅ / WMT FY2026Q3 ✅
+
+**所有 commits 已 push 至 GitHub remote**（`0508dc6`）
+
+---
+
 ### 2026-04-26（Session 14）
 
 **CF YTD Overflow 修復 + 測試套件（COHR/LITE/AAPL/NVDA/GOOGL）**
