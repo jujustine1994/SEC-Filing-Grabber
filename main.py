@@ -126,6 +126,12 @@ class SECFetcherApp:
         self._sheet_check_vars: dict[str, tk.BooleanVar] = {}
         self._sheet_panel_frame: tk.Frame | None = None
         self._scan_btn: ttk.Button | None = None
+        self._tab1_adv_collapsed: bool = True
+        self._tab1_adv_frame = None
+        self._tab1_adv_toggle_btn = None
+        self._tab2_adv_collapsed: bool = True
+        self._tab2_adv_frame = None
+        self._tab2_adv_toggle_btn = None
 
         self._build_ui()
         self._poll_queue()
@@ -210,17 +216,25 @@ class SECFetcherApp:
         ttk.Checkbutton(row_type, text="Non-GAAP（需設定 AI API）", variable=self.fetch_nongaap_var).pack(side="left")
         self.fetch_nongaap_var.trace_add("write", self._on_nongaap_toggle)
 
-        # Row 2: Report type checkboxes
-        row_rtype = ttk.Frame(tab)
-        row_rtype.grid(row=2, column=0, sticky="ew", pady=(2, 0))
+        # Row 2: 進階設定 toggle
+        adv_toggle_row1 = ttk.Frame(tab)
+        adv_toggle_row1.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        self._tab1_adv_toggle_btn = ttk.Button(adv_toggle_row1, text="▶ 進階設定",
+                                                command=self._toggle_tab1_adv, width=12)
+        self._tab1_adv_toggle_btn.pack(side="left")
+
+        # Row 3: 進階設定 content — report type (hidden by default)
+        self._tab1_adv_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=(8, 4))
+        self._tab1_adv_frame.grid(row=3, column=0, sticky="ew", pady=(0, 4))
         self.tab1_fetch_q_var = tk.BooleanVar(value=True)
         self.tab1_fetch_k_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(row_rtype, text="季報 (10-Q)", variable=self.tab1_fetch_q_var).pack(side="left", padx=(0, 16))
-        ttk.Checkbutton(row_rtype, text="年報 (10-K)", variable=self.tab1_fetch_k_var).pack(side="left")
+        ttk.Checkbutton(self._tab1_adv_frame, text="季報 (10-Q)", variable=self.tab1_fetch_q_var).pack(side="left", padx=(0, 16))
+        ttk.Checkbutton(self._tab1_adv_frame, text="年報 (10-K)", variable=self.tab1_fetch_k_var).pack(side="left")
+        self._tab1_adv_frame.grid_remove()
 
-        # Row 3: Date range
+        # Row 4: Date range
         row_date = ttk.Frame(tab)
-        row_date.grid(row=3, column=0, sticky="ew", pady=(2, 4))
+        row_date.grid(row=4, column=0, sticky="ew", pady=(2, 4))
         ttk.Label(row_date, text="日期區間：起").pack(side="left", padx=(0, 4))
         self.tab1_start_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date, from_=1993, to=2099, textvariable=self.tab1_start_year_var,
@@ -231,30 +245,30 @@ class SECFetcherApp:
                     width=6).pack(side="left")
         ttk.Label(row_date, text="年　（留空 = 全部）", foreground="#555555").pack(side="left", padx=(4, 0))
 
-        # Row 4: Sheet selection panel (hidden until scan completes)
+        # Row 5: Sheet selection panel (hidden until scan completes)
         self._sheet_panel_frame = ttk.LabelFrame(tab, text=" 可選 Sheet（掃描後顯示）", padding=6)
-        self._sheet_panel_frame.grid(row=4, column=0, sticky="ew", pady=(0, 4))
+        self._sheet_panel_frame.grid(row=5, column=0, sticky="ew", pady=(0, 4))
         self._sheet_panel_frame.grid_remove()
 
-        # Row 5: Non-GAAP warning (hidden by default)
+        # Row 6: Non-GAAP warning (hidden by default)
         self.nongaap_warn_label = ttk.Label(
             tab, text="⚠ Non-GAAP 需先在「進階設定」填入 AI API Key",
             foreground="orange", font=("", 10)
         )
-        self.nongaap_warn_label.grid(row=5, column=0, sticky="w", padx=2)
+        self.nongaap_warn_label.grid(row=6, column=0, sticky="w", padx=2)
         self.nongaap_warn_label.grid_remove()
 
-        # Row 3: Output settings toggle
+        # Row 7: Output settings toggle
         self._out_collapsed = False
         out_toggle_row = ttk.Frame(tab)
-        out_toggle_row.grid(row=6, column=0, sticky="ew", pady=(8, 0))
+        out_toggle_row.grid(row=7, column=0, sticky="ew", pady=(8, 0))
         self._out_toggle_btn = ttk.Button(out_toggle_row, text="▼ 輸出設定",
                                            command=self._toggle_out_settings, width=12)
         self._out_toggle_btn.pack(side="left")
 
-        # Row 4: Output settings content (collapsible)
+        # Row 8: Output settings content (collapsible)
         out_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=8)
-        out_frame.grid(row=7, column=0, sticky="ew", pady=(0, 4))
+        out_frame.grid(row=8, column=0, sticky="ew", pady=(0, 4))
         self._out_settings_frame = out_frame
 
         # Storage location row
@@ -296,7 +310,25 @@ class SECFetcherApp:
 
         # Row 5: Execute button
         self.btn_run_single = ttk.Button(tab, text="▶  執行", command=self._run_single, width=16)
-        self.btn_run_single.grid(row=8, column=0, pady=(8, 4))
+        self.btn_run_single.grid(row=9, column=0, pady=(8, 4))
+
+    def _toggle_tab1_adv(self):
+        self._tab1_adv_collapsed = not self._tab1_adv_collapsed
+        if self._tab1_adv_collapsed:
+            self._tab1_adv_frame.grid_remove()
+            self._tab1_adv_toggle_btn.config(text="▶ 進階設定")
+        else:
+            self._tab1_adv_frame.grid()
+            self._tab1_adv_toggle_btn.config(text="▼ 進階設定")
+
+    def _toggle_tab2_adv(self):
+        self._tab2_adv_collapsed = not self._tab2_adv_collapsed
+        if self._tab2_adv_collapsed:
+            self._tab2_adv_frame.grid_remove()
+            self._tab2_adv_toggle_btn.config(text="▶ 進階設定")
+        else:
+            self._tab2_adv_frame.grid()
+            self._tab2_adv_toggle_btn.config(text="▼ 進階設定")
 
     def _toggle_out_settings(self):
         """Collapse or expand the output-settings section, updating the toggle button arrow."""
@@ -366,17 +398,25 @@ class SECFetcherApp:
         self.batch_nongaap_warn.pack_forget()
         self.batch_nongaap_var.trace_add("write", self._on_batch_nongaap_toggle)
 
-        # Row 3: Report type
-        row_rtype2 = ttk.Frame(tab)
-        row_rtype2.grid(row=3, column=0, sticky="ew", pady=(4, 0))
+        # Row 3: 進階設定 toggle
+        adv_toggle_row2 = ttk.Frame(tab)
+        adv_toggle_row2.grid(row=3, column=0, sticky="ew", pady=(4, 0))
+        self._tab2_adv_toggle_btn = ttk.Button(adv_toggle_row2, text="▶ 進階設定",
+                                                command=self._toggle_tab2_adv, width=12)
+        self._tab2_adv_toggle_btn.pack(side="left")
+
+        # Row 4: 進階設定 content — report type (hidden by default)
+        self._tab2_adv_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=(8, 4))
+        self._tab2_adv_frame.grid(row=4, column=0, sticky="ew", pady=(0, 4))
         self.batch_fetch_q_var = tk.BooleanVar(value=True)
         self.batch_fetch_k_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(row_rtype2, text="季報 (10-Q)", variable=self.batch_fetch_q_var).pack(side="left", padx=(0, 16))
-        ttk.Checkbutton(row_rtype2, text="年報 (10-K)", variable=self.batch_fetch_k_var).pack(side="left")
+        ttk.Checkbutton(self._tab2_adv_frame, text="季報 (10-Q)", variable=self.batch_fetch_q_var).pack(side="left", padx=(0, 16))
+        ttk.Checkbutton(self._tab2_adv_frame, text="年報 (10-K)", variable=self.batch_fetch_k_var).pack(side="left")
+        self._tab2_adv_frame.grid_remove()
 
-        # Row 4: Date range
+        # Row 5: Date range
         row_date2 = ttk.Frame(tab)
-        row_date2.grid(row=4, column=0, sticky="ew", pady=(2, 0))
+        row_date2.grid(row=5, column=0, sticky="ew", pady=(2, 0))
         ttk.Label(row_date2, text="日期區間：起").pack(side="left", padx=(0, 4))
         self.batch_start_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date2, from_=1993, to=2099, textvariable=self.batch_start_year_var,
@@ -388,7 +428,7 @@ class SECFetcherApp:
         ttk.Label(row_date2, text="年　（留空 = 全部）", foreground="#555555").pack(side="left", padx=(4, 0))
 
         self.btn_run_batch = ttk.Button(tab, text="▶  開始批量更新", command=self._run_batch, width=20)
-        self.btn_run_batch.grid(row=5, column=0, pady=(8, 4))
+        self.btn_run_batch.grid(row=6, column=0, pady=(8, 4))
 
     # =========================================================
     # Placeholder helpers

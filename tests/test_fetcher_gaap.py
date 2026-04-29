@@ -1504,3 +1504,21 @@ def test_preview_sheets_returns_list_of_strings(mock_id, mock_co):
 
     assert isinstance(result, list)
     assert all(isinstance(s, str) for s in result)
+
+
+# ── FY month probe when fetch_annual=False ────────────────────────────────────
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+@patch("fetcher_gaap.load_overrides", return_value={})
+def test_fy_month_probed_when_quarterly_only(mock_ov, mock_id, mock_co):
+    """When fetch_annual=False, one 10-K filing is still fetched for FY month detection."""
+    q = _make_filing()
+    company = _make_mock_company_fgs(q_filings=[q], k_filings=[])
+    mock_co.return_value = company
+
+    fetch_gaap_statements("TEST", "Test test@test.com",
+                          fetch_quarterly=True, fetch_annual=False)
+
+    all_forms = [c.kwargs.get("form") for c in company.get_filings.call_args_list]
+    assert "10-K" in all_forms

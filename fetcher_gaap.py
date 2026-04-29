@@ -1531,7 +1531,13 @@ def fetch_gaap_statements(ticker: str, identity: str,
     filings_k = _filter_filings_by_year(filings_k, start_year, end_year)
 
     overrides = load_overrides(ticker)
-    fy_end_month = _detect_fy_end_month(filings_k) if filings_k else 12
+    if filings_k:
+        fy_end_month = _detect_fy_end_month(filings_k)
+    elif fetch_quarterly and filings_q:
+        _probe_k = list(company.get_filings(form="10-K", amendments=False))[:1]
+        fy_end_month = _detect_fy_end_month(_probe_k) if _probe_k else 12
+    else:
+        fy_end_month = 12
 
     tables: list[StatementTable] = []
 
