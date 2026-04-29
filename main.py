@@ -115,6 +115,17 @@ class SECFetcherApp:
         self.tab1_custom_var = None
         self.tab1_custom_entry = None
         self.tab1_preview_label = None
+        self.tab1_fetch_q_var: tk.BooleanVar | None = None
+        self.tab1_fetch_k_var: tk.BooleanVar | None = None
+        self.tab1_start_year_var: tk.StringVar | None = None
+        self.tab1_end_year_var: tk.StringVar | None = None
+        self.batch_fetch_q_var: tk.BooleanVar | None = None
+        self.batch_fetch_k_var: tk.BooleanVar | None = None
+        self.batch_start_year_var: tk.StringVar | None = None
+        self.batch_end_year_var: tk.StringVar | None = None
+        self._sheet_check_vars: dict[str, tk.BooleanVar] = {}
+        self._sheet_panel_frame: tk.Frame | None = None
+        self._scan_btn: ttk.Button | None = None
 
         self._build_ui()
         self._poll_queue()
@@ -197,25 +208,46 @@ class SECFetcherApp:
         ttk.Checkbutton(row_type, text="Non-GAAP（需設定 AI API）", variable=self.fetch_nongaap_var).pack(side="left")
         self.fetch_nongaap_var.trace_add("write", self._on_nongaap_toggle)
 
-        # Row 2: Non-GAAP warning (hidden by default)
+        # Row 2: Report type checkboxes
+        row_rtype = ttk.Frame(tab)
+        row_rtype.grid(row=2, column=0, sticky="ew", pady=(2, 0))
+        self.tab1_fetch_q_var = tk.BooleanVar(value=True)
+        self.tab1_fetch_k_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(row_rtype, text="季報 (10-Q)", variable=self.tab1_fetch_q_var).pack(side="left", padx=(0, 16))
+        ttk.Checkbutton(row_rtype, text="年報 (10-K)", variable=self.tab1_fetch_k_var).pack(side="left")
+
+        # Row 3: Date range
+        row_date = ttk.Frame(tab)
+        row_date.grid(row=3, column=0, sticky="ew", pady=(2, 4))
+        ttk.Label(row_date, text="日期區間：起").pack(side="left", padx=(0, 4))
+        self.tab1_start_year_var = tk.StringVar(value="")
+        ttk.Spinbox(row_date, from_=1993, to=2099, textvariable=self.tab1_start_year_var,
+                    width=6).pack(side="left")
+        ttk.Label(row_date, text="迄").pack(side="left", padx=(8, 4))
+        self.tab1_end_year_var = tk.StringVar(value="")
+        ttk.Spinbox(row_date, from_=1993, to=2099, textvariable=self.tab1_end_year_var,
+                    width=6).pack(side="left")
+        ttk.Label(row_date, text="年　（留空 = 全部）", foreground="#555555").pack(side="left", padx=(4, 0))
+
+        # Row 5: Non-GAAP warning (hidden by default)
         self.nongaap_warn_label = ttk.Label(
             tab, text="⚠ Non-GAAP 需先在「進階設定」填入 AI API Key",
             foreground="orange", font=("", 10)
         )
-        self.nongaap_warn_label.grid(row=2, column=0, sticky="w", padx=2)
+        self.nongaap_warn_label.grid(row=5, column=0, sticky="w", padx=2)
         self.nongaap_warn_label.grid_remove()
 
         # Row 3: Output settings toggle
         self._out_collapsed = False
         out_toggle_row = ttk.Frame(tab)
-        out_toggle_row.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        out_toggle_row.grid(row=6, column=0, sticky="ew", pady=(8, 0))
         self._out_toggle_btn = ttk.Button(out_toggle_row, text="▼ 輸出設定",
                                            command=self._toggle_out_settings, width=12)
         self._out_toggle_btn.pack(side="left")
 
         # Row 4: Output settings content (collapsible)
         out_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=8)
-        out_frame.grid(row=4, column=0, sticky="ew", pady=(0, 4))
+        out_frame.grid(row=7, column=0, sticky="ew", pady=(0, 4))
         self._out_settings_frame = out_frame
 
         # Storage location row
@@ -257,7 +289,7 @@ class SECFetcherApp:
 
         # Row 5: Execute button
         self.btn_run_single = ttk.Button(tab, text="▶  執行", command=self._run_single, width=16)
-        self.btn_run_single.grid(row=5, column=0, pady=(8, 4))
+        self.btn_run_single.grid(row=8, column=0, pady=(8, 4))
 
     def _toggle_out_settings(self):
         """Collapse or expand the output-settings section, updating the toggle button arrow."""
@@ -1139,7 +1171,22 @@ class SECFetcherApp:
             )
             return
         max_filings = self.cfg.get("max_filings", 80)
-        self._start_worker(lambda: self._worker_single(ticker, fetch_gaap, fetch_nongaap, max_filings))
+        fetch_q = self.tab1_fetch_q_var.get() if self.tab1_fetch_q_var else True
+        fetch_k = self.tab1_fetch_k_var.get() if self.tab1_fetch_k_var else True
+        if not fetch_q and not fetch_k:
+            messagebox.showerror("錯誤", "請至少勾選季報 (10-Q) 或年報 (10-K)")
+            return
+        try:
+            start_year = int(self.tab1_start_year_var.get()) if self.tab1_start_year_var and self.tab1_start_year_var.get().strip() else None
+            end_year   = int(self.tab1_end_year_var.get())   if self.tab1_end_year_var   and self.tab1_end_year_var.get().strip()   else None
+        except ValueError:
+            messagebox.showerror("錯誤", "日期區間請輸入有效年份（如 2018）")
+            return
+        self._start_worker(lambda: self._worker_single(
+            ticker, fetch_gaap, fetch_nongaap, max_filings,
+            fetch_q=fetch_q, fetch_k=fetch_k,
+            start_year=start_year, end_year=end_year,
+        ))
 
     def _run_batch(self):
         selected = [t for t, v in self.tab2_check_vars.items() if v.get()]
@@ -1167,7 +1214,10 @@ class SECFetcherApp:
         self.btn_run_batch.config(state="disabled")
         threading.Thread(target=target, daemon=True).start()
 
-    def _worker_single(self, ticker: str, fetch_gaap: bool, fetch_nongaap: bool, max_filings: int = 80):
+    def _worker_single(self, ticker: str, fetch_gaap: bool, fetch_nongaap: bool,
+                       max_filings: int = 80, fetch_q: bool = True, fetch_k: bool = True,
+                       start_year: int | None = None, end_year: int | None = None,
+                       excluded_sheets: set[str] | None = None):
         """Background thread: orchestrate GAAP and/or Non-GAAP fetch, then write to Excel."""
         try:
             identity = self.cfg.get("identity", "")
@@ -1190,6 +1240,9 @@ class SECFetcherApp:
                 gaap_tables = fetch_gaap_statements(
                     ticker, identity, max_filings=max_filings,
                     ai_config=self.cfg.get("ai", {}),
+                    start_year=start_year, end_year=end_year,
+                    fetch_quarterly=fetch_q, fetch_annual=fetch_k,
+                    excluded_sheets=excluded_sheets or set(),
                 )
                 tables.extend(gaap_tables)
                 self._log(f"[{ticker}] GAAP：取得 {len(gaap_tables)} 份財報")
@@ -1212,6 +1265,7 @@ class SECFetcherApp:
                     output_dir=output_dir,
                     progress_cb=_ng_progress,
                     max_filings=max_filings,
+                    start_year=start_year, end_year=end_year,
                 )
                 tables.extend(ng_tables)
                 self._log(f"[{ticker}] Non-GAAP：{len(ng_tables)} 張 sheet")
