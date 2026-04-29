@@ -25,6 +25,7 @@ from fetcher_gaap import (
     _prev_quarter_label,
     _is_nongaap_label,
     _collect_overflow,
+    _filter_filings_by_year,
 )
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -1325,3 +1326,57 @@ def test_detect_fy_end_month_defaults_to_12_on_failure():
     """_detect_fy_end_month should return 12 when no filings given."""
     from fetcher_gaap import _detect_fy_end_month
     assert _detect_fy_end_month([]) == 12
+
+
+# ── _filter_filings_by_year ───────────────────────────────────────────────────
+
+def _make_dated_filing(year: int, month: int = 1, day: int = 15):
+    """Mock filing with a date object as filing_date."""
+    from datetime import date
+    f = MagicMock()
+    f.filing_date = date(year, month, day)
+    return f
+
+
+def test_filter_no_bounds_returns_all():
+    filings = [_make_dated_filing(2020), _make_dated_filing(2022)]
+    assert _filter_filings_by_year(filings, None, None) == filings
+
+
+def test_filter_start_year_excludes_older():
+    f2019 = _make_dated_filing(2019)
+    f2021 = _make_dated_filing(2021)
+    result = _filter_filings_by_year([f2019, f2021], start_year=2020, end_year=None)
+    assert result == [f2021]
+
+
+def test_filter_end_year_excludes_newer():
+    f2021 = _make_dated_filing(2021)
+    f2023 = _make_dated_filing(2023)
+    result = _filter_filings_by_year([f2021, f2023], start_year=None, end_year=2022)
+    assert result == [f2021]
+
+
+def test_filter_both_bounds():
+    filings = [_make_dated_filing(y) for y in [2018, 2020, 2022, 2024]]
+    result = _filter_filings_by_year(filings, start_year=2019, end_year=2022)
+    assert [f.filing_date.year for f in result] == [2020, 2022]
+
+
+def test_filter_string_filing_date():
+    """Mock filings that return filing_date as a string (unit-test pattern)."""
+    f = MagicMock()
+    f.filing_date = "2021-06-15"
+    result = _filter_filings_by_year([f], start_year=2020, end_year=2022)
+    assert result == [f]
+
+
+def test_filter_string_filing_date_excluded():
+    f = MagicMock()
+    f.filing_date = "2019-03-01"
+    result = _filter_filings_by_year([f], start_year=2020, end_year=None)
+    assert result == []
+
+
+def test_filter_empty_list():
+    assert _filter_filings_by_year([], start_year=2020, end_year=2022) == []

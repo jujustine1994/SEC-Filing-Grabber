@@ -63,6 +63,33 @@ META_COLS: set[str] = {
 # break the loop immediately rather than continuing through decades of empty filings.
 _XBRL_CUTOFF: _date = _date(2008, 1, 1)
 
+
+def _filter_filings_by_year(
+    filings: list,
+    start_year: int | None,
+    end_year: int | None,
+) -> list:
+    """Filter filings list to only those within [start_year, end_year] (inclusive).
+
+    Handles both date objects and ISO date strings ('YYYY-MM-DD').
+    Returns filings unchanged when both bounds are None.
+    """
+    if start_year is None and end_year is None:
+        return filings
+    result = []
+    for f in filings:
+        fd = getattr(f, "filing_date", None)
+        if fd is None:
+            result.append(f)
+            continue
+        year = fd.year if isinstance(fd, _date) else int(str(fd)[:4])
+        if start_year is not None and year < start_year:
+            continue
+        if end_year is not None and year > end_year:
+            continue
+        result.append(f)
+    return result
+
 # Tuple: (label, std_concept, fallback_suffix, source, match, label_hint)
 #   label         — display name (Col A)
 #   std_concept   — primary: standard_concept == value
