@@ -1608,3 +1608,31 @@ def fetch_gaap_statements(ticker: str, identity: str,
     for tbl in tables:
         tbl.ticker = ticker
     return tables
+
+
+def preview_sheets(ticker: str, identity: str) -> list[str]:
+    """Quick scan: fetch only the latest 10-Q to detect segment sheet names.
+
+    Returns the predicted list of sheet names without performing a full fetch.
+    Takes ~5-15 seconds (one HTTP request for the latest filing).
+
+    Returns:
+        List of sheet name strings. Fixed sheets (Financials Q/Y, Meta) are
+        always included. Data_Seg_* sheets are detected from the latest 10-Q.
+    """
+    fixed = ["Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"]
+
+    set_identity(identity)
+    company = Company(ticker)
+    filings_q = list(company.get_filings(form="10-Q", amendments=False))
+    if not filings_q:
+        return fixed
+
+    try:
+        seg_tables = _build_segment_tables([filings_q[0]], max_filings=1)
+        seg_names = [t.sheet_name for t in seg_tables]
+    except Exception as exc:
+        print(f"[preview_sheets] Segment scan failed: {exc!r}", file=sys.stderr)
+        seg_names = []
+
+    return fixed + seg_names

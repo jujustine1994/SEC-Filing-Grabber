@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 from fetcher_gaap import (
     fetch_gaap_statements,
+    preview_sheets,
     StatementTable,
     _col_to_quarter_label,
     _current_q_col,
@@ -1461,3 +1462,45 @@ def test_fetch_gaap_excluded_sheets_removes_seg(mock_ov, mock_id, mock_co):
                                    excluded_sheets={"Data_Seg_Revenue"})
     sheet_names = [t.sheet_name for t in tables]
     assert "Data_Seg_Revenue" not in sheet_names
+
+
+# ── preview_sheets ────────────────────────────────────────────────────────────
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+def test_preview_sheets_fixed_always_present(mock_id, mock_co):
+    """Fixed sheets should always appear regardless of what the company has."""
+    q = _make_filing()
+    company = _make_mock_company_fgs(q_filings=[q])
+    mock_co.return_value = company
+
+    result = preview_sheets("AAPL", "Test test@test.com")
+
+    assert "Data_Financials(Q)" in result
+    assert "Data_Financials(Y)" in result
+    assert "Data_Meta" in result
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+def test_preview_sheets_no_q_filings(mock_id, mock_co):
+    """When no 10-Q filings exist, only fixed sheets are returned."""
+    company = _make_mock_company_fgs(q_filings=[])
+    mock_co.return_value = company
+
+    result = preview_sheets("NOFILINGS", "Test test@test.com")
+
+    assert result == ["Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"]
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+def test_preview_sheets_returns_list_of_strings(mock_id, mock_co):
+    """Return type should be list[str]."""
+    q = _make_filing()
+    mock_co.return_value = _make_mock_company_fgs(q_filings=[q])
+
+    result = preview_sheets("TEST", "Test test@test.com")
+
+    assert isinstance(result, list)
+    assert all(isinstance(s, str) for s in result)
