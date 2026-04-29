@@ -1257,6 +1257,9 @@ class SECFetcherApp:
         if not identity:
             messagebox.showerror("錯誤", "請先在進階設定填入 Identity")
             return
+        if self.is_running:
+            messagebox.showwarning("提示", "請等待目前的抓取完成後再掃描")
+            return
         if self._scan_btn:
             self._scan_btn.config(state="disabled", text="掃描中...")
         if self._sheet_panel_frame:
@@ -1280,6 +1283,9 @@ class SECFetcherApp:
     def _build_sheet_panel(self, sheet_names: list[str]):
         """Populate sheet selection panel with checkboxes. Fixed sheets are disabled."""
         if not self._sheet_panel_frame:
+            return
+        if not sheet_names:
+            self._sheet_panel_frame.grid_remove()
             return
         for w in self._sheet_panel_frame.winfo_children():
             w.destroy()
