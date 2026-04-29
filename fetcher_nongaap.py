@@ -407,6 +407,30 @@ def _extract_nongaap_metrics(eight_k, ai_config: dict) -> dict[str, Any]:
 
 # ── 8-K discovery ────────────────────────────────────────────────────────────
 
+def _filter_nongaap_by_year(
+    filings: list[tuple],
+    start_year: int | None,
+    end_year: int | None,
+) -> list[tuple]:
+    """Filter (label, filing, eight_k) tuples by year extracted from label (e.g. 'FY2021Q2' → 2021)."""
+    if start_year is None and end_year is None:
+        return filings
+    result = []
+    for item in filings:
+        label = item[0]
+        m = re.search(r'(\d{4})', label)
+        if m is None:
+            result.append(item)
+            continue
+        year = int(m.group(1))
+        if start_year is not None and year < start_year:
+            continue
+        if end_year is not None and year > end_year:
+            continue
+        result.append(item)
+    return result
+
+
 def _get_earnings_filings(company) -> list[tuple[str, Any, Any]]:
     """Return list of (quarter_label, filing, eight_k) for 8-K filings with Item 2.02.
 
@@ -452,6 +476,8 @@ def fetch_nongaap_statements(
     output_dir: Path,
     progress_cb=None,
     max_filings: int = 80,
+    start_year: int | None = None,
+    end_year: int | None = None,
 ) -> list[StatementTable]:
     """Fetch Non-GAAP statements from 8-K filings for a ticker.
 
@@ -472,6 +498,7 @@ def fetch_nongaap_statements(
 
     cache = _load_cache(cache_path, ticker)
     filings = _get_earnings_filings(company)[:max_filings]  # newest max_filings quarters only
+    filings = _filter_nongaap_by_year(filings, start_year, end_year)
 
     new_filings = [(lbl, f, ek) for lbl, f, ek in filings if lbl not in cache]
     total = len(new_filings)

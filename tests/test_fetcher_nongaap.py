@@ -1,7 +1,7 @@
 # tests/test_fetcher_nongaap.py
 import json
 from pathlib import Path
-from fetcher_nongaap import _load_cache, _save_cache, _period_to_quarter_label, _build_eps_recon_table, _build_nongaap_table, _normalize_nongaap_metrics
+from fetcher_nongaap import _load_cache, _save_cache, _period_to_quarter_label, _build_eps_recon_table, _build_nongaap_table, _normalize_nongaap_metrics, _filter_nongaap_by_year
 
 
 def test_period_to_quarter_label_q1():
@@ -260,3 +260,40 @@ def test_normalize_mixed_nvda_real_data():
     assert result["Non-GAAP Gross margin"] == 75.2      # current Q value
     assert result["Non-GAAP Net income"] == 22067000000.0
     assert result["Non-GAAP Revenue"] == 30040000000.0
+
+
+# ── _filter_nongaap_by_year ───────────────────────────────────────────────────
+
+def _make_ng_filing(label: str):
+    """Make a (label, filing, eight_k) tuple with a label like 'FY2021Q2'."""
+    from unittest.mock import MagicMock
+    filing = MagicMock()
+    eight_k = MagicMock()
+    return (label, filing, eight_k)
+
+
+def test_filter_nongaap_no_bounds():
+    filings = [_make_ng_filing("FY2020Q1"), _make_ng_filing("FY2022Q3")]
+    result = _filter_nongaap_by_year(filings, None, None)
+    assert len(result) == 2
+
+
+def test_filter_nongaap_start_year():
+    filings = [_make_ng_filing("FY2019Q4"), _make_ng_filing("FY2021Q1")]
+    result = _filter_nongaap_by_year(filings, start_year=2020, end_year=None)
+    assert len(result) == 1
+    assert result[0][0] == "FY2021Q1"
+
+
+def test_filter_nongaap_end_year():
+    filings = [_make_ng_filing("FY2020Q2"), _make_ng_filing("FY2023Q1")]
+    result = _filter_nongaap_by_year(filings, start_year=None, end_year=2021)
+    assert len(result) == 1
+    assert result[0][0] == "FY2020Q2"
+
+
+def test_filter_nongaap_both_bounds():
+    filings = [_make_ng_filing(f"FY{y}Q1") for y in [2018, 2020, 2022, 2024]]
+    result = _filter_nongaap_by_year(filings, start_year=2019, end_year=2022)
+    years = [int(lbl[2:6]) for lbl, _, _ in result]
+    assert years == [2020, 2022]
