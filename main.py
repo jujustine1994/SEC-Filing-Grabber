@@ -198,6 +198,8 @@ class SECFetcherApp:
         self.btn_confirm_company = None
         self.tab1_name_label = ttk.Label(row_ticker, text="", foreground="#555555")
         self.tab1_name_label.pack(side="left", padx=(10, 0))
+        self._scan_btn = ttk.Button(row_ticker, text="快速掃描 ▶", command=self._run_preview_scan, width=12)
+        self._scan_btn.pack(side="left", padx=(12, 0))
 
         # Row 1: Checkboxes
         row_type = ttk.Frame(tab)
@@ -228,6 +230,11 @@ class SECFetcherApp:
         ttk.Spinbox(row_date, from_=1993, to=2099, textvariable=self.tab1_end_year_var,
                     width=6).pack(side="left")
         ttk.Label(row_date, text="年　（留空 = 全部）", foreground="#555555").pack(side="left", padx=(4, 0))
+
+        # Row 4: Sheet selection panel (hidden until scan completes)
+        self._sheet_panel_frame = ttk.LabelFrame(tab, text=" 可選 Sheet（掃描後顯示）", padding=6)
+        self._sheet_panel_frame.grid(row=4, column=0, sticky="ew", pady=(0, 4))
+        self._sheet_panel_frame.grid_remove()
 
         # Row 5: Non-GAAP warning (hidden by default)
         self.nongaap_warn_label = ttk.Label(
@@ -1203,10 +1210,15 @@ class SECFetcherApp:
         except ValueError:
             messagebox.showerror("錯誤", "日期區間請輸入有效年份（如 2018）")
             return
+        excluded = {
+            name for name, var in self._sheet_check_vars.items()
+            if not var.get() and name not in self._FIXED_SHEETS
+        }
         self._start_worker(lambda: self._worker_single(
             ticker, fetch_gaap, fetch_nongaap, max_filings,
             fetch_q=fetch_q, fetch_k=fetch_k,
             start_year=start_year, end_year=end_year,
+            excluded_sheets=excluded,
         ))
 
     def _run_batch(self):
@@ -1234,6 +1246,56 @@ class SECFetcherApp:
             fetch_q=fetch_q, fetch_k=fetch_k,
             start_year=start_year, end_year=end_year,
         ))
+
+    def _run_preview_scan(self):
+        """Start background preview scan for the current ticker."""
+        ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
+        if not ticker:
+            messagebox.showerror("錯誤", "請先輸入 Ticker")
+            return
+        identity = self.cfg.get("identity", "")
+        if not identity:
+            messagebox.showerror("錯誤", "請先在進階設定填入 Identity")
+            return
+        if self._scan_btn:
+            self._scan_btn.config(state="disabled", text="掃描中...")
+        if self._sheet_panel_frame:
+            self._sheet_panel_frame.grid_remove()
+        self._sheet_check_vars = {}
+        threading.Thread(
+            target=lambda: self._preview_scan_worker(ticker, identity), daemon=True
+        ).start()
+
+    def _preview_scan_worker(self, ticker: str, identity: str):
+        """Background thread: call preview_sheets() and push result to queue."""
+        try:
+            from fetcher_gaap import preview_sheets
+            sheets = preview_sheets(ticker, identity)
+            self.msg_queue.put(("preview_scan_done", sheets))
+        except Exception as e:
+            self.msg_queue.put(("preview_scan_error", str(e)))
+
+    _FIXED_SHEETS = frozenset({"Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"})
+
+    def _build_sheet_panel(self, sheet_names: list[str]):
+        """Populate sheet selection panel with checkboxes. Fixed sheets are disabled."""
+        if not self._sheet_panel_frame:
+            return
+        for w in self._sheet_panel_frame.winfo_children():
+            w.destroy()
+        self._sheet_check_vars = {}
+
+        for name in sheet_names:
+            var = tk.BooleanVar(value=True)
+            self._sheet_check_vars[name] = var
+            is_fixed = name in self._FIXED_SHEETS
+            cb = ttk.Checkbutton(
+                self._sheet_panel_frame, text=name, variable=var,
+                state="disabled" if is_fixed else "normal",
+            )
+            cb.pack(anchor="w", padx=4)
+
+        self._sheet_panel_frame.grid()
 
     def _start_worker(self, target):
         """Clear log, disable run buttons, and start target as a daemon thread. Guards against double-runs."""
@@ -1487,6 +1549,16 @@ class SECFetcherApp:
                             self.settings_test_label.config(text="連線成功！", foreground="#1a7a34")
                         else:
                             self.settings_test_label.config(text=f"失敗：{str(err)[:60]}", foreground="red")
+
+                elif msg_type == "preview_scan_done":
+                    self._build_sheet_panel(data)
+                    if self._scan_btn:
+                        self._scan_btn.config(state="normal", text="快速掃描 ▶")
+
+                elif msg_type == "preview_scan_error":
+                    if self._scan_btn:
+                        self._scan_btn.config(state="normal", text="快速掃描 ▶")
+                    messagebox.showerror("掃描失敗", f"無法完成快速掃描：{data}")
 
         except queue.Empty:
             pass
