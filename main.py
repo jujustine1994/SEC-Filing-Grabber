@@ -361,7 +361,7 @@ class SECFetcherApp:
 
         # Row 3: Report type
         row_rtype2 = ttk.Frame(tab)
-        row_rtype2.grid(row=3, column=0, sticky="w", pady=(4, 0))
+        row_rtype2.grid(row=3, column=0, sticky="ew", pady=(4, 0))
         self.batch_fetch_q_var = tk.BooleanVar(value=True)
         self.batch_fetch_k_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(row_rtype2, text="季報 (10-Q)", variable=self.batch_fetch_q_var).pack(side="left", padx=(0, 16))
@@ -369,7 +369,7 @@ class SECFetcherApp:
 
         # Row 4: Date range
         row_date2 = ttk.Frame(tab)
-        row_date2.grid(row=4, column=0, sticky="w", pady=(2, 0))
+        row_date2.grid(row=4, column=0, sticky="ew", pady=(2, 0))
         ttk.Label(row_date2, text="日期區間：起").pack(side="left", padx=(0, 4))
         self.batch_start_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date2, from_=1993, to=2099, textvariable=self.batch_start_year_var,
