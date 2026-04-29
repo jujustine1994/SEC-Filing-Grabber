@@ -1481,8 +1481,13 @@ def _build_meta_table(ticker: str, company_name: str,
 def fetch_gaap_statements(ticker: str, identity: str,
                            max_filings: int = 80,
                            max_annual_filings: int = 20,
-                           ai_config: dict | None = None) -> list[StatementTable]:
-    """Fetch quarterly and annual GAAP statements for a ticker.
+                           ai_config: dict | None = None,
+                           start_year: int | None = None,
+                           end_year: int | None = None,
+                           fetch_quarterly: bool = True,
+                           fetch_annual: bool = True,
+                           excluded_sheets: set[str] | None = None) -> list[StatementTable]:
+    """Fetch quarterly and/or annual GAAP statements for a ticker.
 
     Args:
         ticker:              Stock ticker, e.g. "AAPL"
@@ -1490,100 +1495,112 @@ def fetch_gaap_statements(ticker: str, identity: str,
         max_filings:         Max 10-Q filings to process (default 80, ~20 years)
         max_annual_filings:  Max 10-K filings to process (default 20, ~20 years)
         ai_config:           AI config dict (provider/model/api_key) for E2 diagnosis
+        start_year:          Only include filings from this year onwards (None = no limit)
+        end_year:            Only include filings up to this year (None = no limit)
+        fetch_quarterly:     Whether to fetch 10-Q data (default True)
+        fetch_annual:        Whether to fetch 10-K data (default True)
+        excluded_sheets:     Set of sheet names to skip in the output
 
     Returns:
-        List of StatementTable: Data_Financials(Q), Data_Financials(Y), Data_Seg_*, Data_Meta
+        List of StatementTable
 
     Raises:
-        ValueError: No 10-Q filings found for ticker
+        ValueError: No filings found for the requested form type(s)
     """
     ai_config = ai_config or {}
+    excluded_sheets = excluded_sheets or set()
     set_identity(identity)
     company = Company(ticker)
 
-    filings_q = list(company.get_filings(form="10-Q", amendments=False))
-    if not filings_q:
+    filings_q = list(company.get_filings(form="10-Q", amendments=False)) if fetch_quarterly else []
+    filings_k = list(company.get_filings(form="10-K", amendments=False)) if fetch_annual else []
+
+    if fetch_quarterly and not filings_q:
         raise ValueError(
             f"No 10-Q filings found for ticker '{ticker}'. "
             "The ticker may be invalid or the company may not file 10-Qs."
         )
+    if not fetch_quarterly and not filings_k:
+        raise ValueError(
+            f"No 10-K filings found for ticker '{ticker}'. "
+            "The ticker may be invalid or the company may not file 10-Ks."
+        )
 
-    # Load existing overrides (empty on first fetch of new ticker)
+    # Apply year range filter
+    filings_q = _filter_filings_by_year(filings_q, start_year, end_year)
+    filings_k = _filter_filings_by_year(filings_k, start_year, end_year)
+
     overrides = load_overrides(ticker)
-
-    filings_k = list(company.get_filings(form="10-K", amendments=False))
     fy_end_month = _detect_fy_end_month(filings_k) if filings_k else 12
 
-    is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
-    bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
-    cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
+    tables: list[StatementTable] = []
 
-    # Diagnose key rows that are all-None in recent quarters
-    missing_is = check_key_rows(is_tbl.concepts, is_tbl.values, "IS")
-    missing_bs = check_key_rows(bs_tbl.concepts, bs_tbl.values, "BS")
-    missing_cf = check_key_rows(cf_tbl.concepts, cf_tbl.values, "CF")
+    if fetch_quarterly and filings_q:
+        is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
+        bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
+        cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
 
-    if missing_is or missing_bs or missing_cf:
-        # Fetch latest filing's DataFrames for diagnosis (one HTTP request)
-        try:
-            tenq_latest = filings_q[0].obj()
-            latest_is_df = tenq_latest.financials.income_statement().to_dataframe()
-            latest_bs_df = tenq_latest.financials.balance_sheet().to_dataframe()
-            latest_cf_df = tenq_latest.financials.cashflow_statement().to_dataframe()
-        except Exception as exc:
-            print(f"[{ticker}] 診斷：無法取得最新 filing DataFrame — {exc!r}", file=sys.stderr)
-            latest_is_df = latest_bs_df = latest_cf_df = None
+        # Diagnose key rows that are all-None in recent quarters
+        missing_is = check_key_rows(is_tbl.concepts, is_tbl.values, "IS")
+        missing_bs = check_key_rows(bs_tbl.concepts, bs_tbl.values, "BS")
+        missing_cf = check_key_rows(cf_tbl.concepts, cf_tbl.values, "CF")
 
-        new_overrides: dict[str, dict] = {}
-        if missing_is and latest_is_df is not None:
-            fixes = run_diagnosis(ticker, "IS", latest_is_df, missing_is, ai_config)
-            if fixes:
-                new_overrides["IS"] = fixes
-        if missing_bs and latest_bs_df is not None:
-            fixes = run_diagnosis(ticker, "BS", latest_bs_df, missing_bs, ai_config)
-            if fixes:
-                new_overrides["BS"] = fixes
-        if missing_cf and latest_cf_df is not None:
-            fixes = run_diagnosis(ticker, "CF", latest_cf_df, missing_cf, ai_config)
-            if fixes:
-                new_overrides["CF"] = fixes
+        if missing_is or missing_bs or missing_cf:
+            try:
+                tenq_latest = filings_q[0].obj()
+                latest_is_df = tenq_latest.financials.income_statement().to_dataframe()
+                latest_bs_df = tenq_latest.financials.balance_sheet().to_dataframe()
+                latest_cf_df = tenq_latest.financials.cashflow_statement().to_dataframe()
+            except Exception as exc:
+                print(f"[{ticker}] 診斷：無法取得最新 filing DataFrame — {exc!r}", file=sys.stderr)
+                latest_is_df = latest_bs_df = latest_cf_df = None
 
-        if new_overrides:
-            total = sum(len(v) for v in new_overrides.values())
-            print(f"[{ticker}] 自動修復：找到 {total} 項缺失指標修復方案，重新建表。", file=sys.stderr)
-            # Reload and rebuild with new overrides applied
-            overrides = load_overrides(ticker)
-            is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
-            bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
-            cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
-        else:
-            # Log any rows that could not be diagnosed
-            remaining = missing_is + missing_bs + missing_cf
-            if remaining:
-                no_key = "" if ai_config.get("api_key") else "（未設 AI API key，E2 診斷已跳過）"
-                print(f"[{ticker}] 警告：{remaining} 在 EDGAR 中無對應概念{no_key}。", file=sys.stderr)
+            new_overrides: dict[str, dict] = {}
+            if missing_is and latest_is_df is not None:
+                fixes = run_diagnosis(ticker, "IS", latest_is_df, missing_is, ai_config)
+                if fixes:
+                    new_overrides["IS"] = fixes
+            if missing_bs and latest_bs_df is not None:
+                fixes = run_diagnosis(ticker, "BS", latest_bs_df, missing_bs, ai_config)
+                if fixes:
+                    new_overrides["BS"] = fixes
+            if missing_cf and latest_cf_df is not None:
+                fixes = run_diagnosis(ticker, "CF", latest_cf_df, missing_cf, ai_config)
+                if fixes:
+                    new_overrides["CF"] = fixes
 
-    quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)")
-    tables: list[StatementTable] = [quarterly_tbl]
+            if new_overrides:
+                total_fixes = sum(len(v) for v in new_overrides.values())
+                print(f"[{ticker}] 自動修復：找到 {total_fixes} 項缺失指標修復方案，重新建表。", file=sys.stderr)
+                overrides = load_overrides(ticker)
+                is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
+                bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
+                cf_tbl, cf_ng = _build_cf_table(filings_q, max_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
+            else:
+                remaining = missing_is + missing_bs + missing_cf
+                if remaining:
+                    no_key = "" if ai_config.get("api_key") else "（未設 AI API key，E2 診斷已跳過）"
+                    print(f"[{ticker}] 警告：{remaining} 在 EDGAR 中無對應概念{no_key}。", file=sys.stderr)
 
-    # Append NG quarterly sheet when any section has Non-GAAP overflow rows
-    if any(tbl.concepts for tbl in [is_ng, bs_ng, cf_ng]):
-        ng_q_tbl = _merge_financials(is_ng, bs_ng, cf_ng, sheet_name="Data_Financials_NG(Q)")
-        tables.append(ng_q_tbl)
+        quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)")
+        tables.append(quarterly_tbl)
+        if any(tbl.concepts for tbl in [is_ng, bs_ng, cf_ng]):
+            ng_q_tbl = _merge_financials(is_ng, bs_ng, cf_ng, sheet_name="Data_Financials_NG(Q)")
+            tables.append(ng_q_tbl)
 
-    if filings_k:
+    if fetch_annual and filings_k:
         is_ann, is_ann_ng = _build_is_table(filings_k, max_annual_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
         bs_ann, bs_ann_ng = _build_bs_table(filings_k, max_annual_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
         cf_ann, cf_ann_ng = _build_cf_table(filings_k, max_annual_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
         annual_tbl = _merge_financials(is_ann, bs_ann, cf_ann, sheet_name="Data_Financials(Y)")
         tables.append(annual_tbl)
-
-        # Append NG annual sheet when any section has Non-GAAP overflow rows
         if any(tbl.concepts for tbl in [is_ann_ng, bs_ann_ng, cf_ann_ng]):
             ng_y_tbl = _merge_financials(is_ann_ng, bs_ann_ng, cf_ann_ng, sheet_name="Data_Financials_NG(Y)")
             tables.append(ng_y_tbl)
 
-    tables.extend(_build_segment_tables(filings_q, max_filings, fy_end_month=fy_end_month))
+    if fetch_quarterly and filings_q:
+        seg_tables = _build_segment_tables(filings_q, max_filings, fy_end_month=fy_end_month)
+        tables.extend(t for t in seg_tables if t.sheet_name not in excluded_sheets)
 
     company_name = getattr(company, "name", ticker) or ticker
     tables.append(_build_meta_table(ticker, company_name, tables))

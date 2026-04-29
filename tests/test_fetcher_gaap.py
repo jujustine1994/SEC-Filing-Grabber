@@ -1380,3 +1380,84 @@ def test_filter_string_filing_date_excluded():
 
 def test_filter_empty_list():
     assert _filter_filings_by_year([], start_year=2020, end_year=2022) == []
+
+
+# ── fetch_gaap_statements new params ─────────────────────────────────────────
+
+def _make_mock_company_fgs(q_filings=None, k_filings=None):
+    """Mock edgartools Company returning given filing lists (for fetch_gaap_statements tests)."""
+    company = MagicMock()
+    q_filings = q_filings or []
+    k_filings = k_filings or []
+
+    def get_filings(form, amendments=False):
+        if form == "10-Q":
+            return q_filings
+        if form == "10-K":
+            return k_filings
+        return []
+
+    company.get_filings.side_effect = get_filings
+    company.name = "Test Corp"
+    return company
+
+
+def _make_k_filing(period_col="2024-12-28", val=100.0, filing_date="2025-02-01"):
+    """Mock a 10-K filing (same structure as 10-Q mock)."""
+    return _make_filing(period_col=period_col, val=val, filing_date=filing_date)
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+@patch("fetcher_gaap.load_overrides", return_value={})
+def test_fetch_gaap_annual_only_no_q_table(mock_ov, mock_id, mock_co):
+    """fetch_quarterly=False should produce Data_Financials(Y) but NOT Data_Financials(Q)."""
+    k = _make_k_filing()
+    mock_co.return_value = _make_mock_company_fgs(q_filings=[], k_filings=[k])
+
+    tables = fetch_gaap_statements("TEST", "Test test@test.com",
+                                   fetch_quarterly=False, fetch_annual=True)
+    sheet_names = [t.sheet_name for t in tables]
+    assert "Data_Financials(Q)" not in sheet_names
+    assert "Data_Financials(Y)" in sheet_names
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+@patch("fetcher_gaap.load_overrides", return_value={})
+def test_fetch_gaap_quarterly_only_no_y_table(mock_ov, mock_id, mock_co):
+    """fetch_annual=False should produce Data_Financials(Q) but NOT Data_Financials(Y)."""
+    q = _make_filing()
+    mock_co.return_value = _make_mock_company_fgs(q_filings=[q], k_filings=[])
+
+    tables = fetch_gaap_statements("TEST", "Test test@test.com",
+                                   fetch_quarterly=True, fetch_annual=False)
+    sheet_names = [t.sheet_name for t in tables]
+    assert "Data_Financials(Q)" in sheet_names
+    assert "Data_Financials(Y)" not in sheet_names
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+@patch("fetcher_gaap.load_overrides", return_value={})
+def test_fetch_gaap_annual_only_raises_when_no_k(mock_ov, mock_id, mock_co):
+    """fetch_quarterly=False with no 10-K filings should raise ValueError."""
+    mock_co.return_value = _make_mock_company_fgs(q_filings=[], k_filings=[])
+    with pytest.raises(ValueError, match="10-K"):
+        fetch_gaap_statements("TEST", "Test test@test.com",
+                               fetch_quarterly=False, fetch_annual=True)
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+@patch("fetcher_gaap.load_overrides", return_value={})
+def test_fetch_gaap_excluded_sheets_removes_seg(mock_ov, mock_id, mock_co):
+    """excluded_sheets should skip matching sheet names in the result."""
+    q = _make_filing()
+    mock_co.return_value = _make_mock_company_fgs(q_filings=[q], k_filings=[])
+
+    tables = fetch_gaap_statements("TEST", "Test test@test.com",
+                                   fetch_quarterly=True, fetch_annual=False,
+                                   excluded_sheets={"Data_Seg_Revenue"})
+    sheet_names = [t.sheet_name for t in tables]
+    assert "Data_Seg_Revenue" not in sheet_names
