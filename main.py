@@ -359,8 +359,29 @@ class SECFetcherApp:
         self.batch_nongaap_warn.pack_forget()
         self.batch_nongaap_var.trace_add("write", self._on_batch_nongaap_toggle)
 
+        # Row 3: Report type
+        row_rtype2 = ttk.Frame(tab)
+        row_rtype2.grid(row=3, column=0, sticky="w", pady=(4, 0))
+        self.batch_fetch_q_var = tk.BooleanVar(value=True)
+        self.batch_fetch_k_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(row_rtype2, text="季報 (10-Q)", variable=self.batch_fetch_q_var).pack(side="left", padx=(0, 16))
+        ttk.Checkbutton(row_rtype2, text="年報 (10-K)", variable=self.batch_fetch_k_var).pack(side="left")
+
+        # Row 4: Date range
+        row_date2 = ttk.Frame(tab)
+        row_date2.grid(row=4, column=0, sticky="w", pady=(2, 0))
+        ttk.Label(row_date2, text="日期區間：起").pack(side="left", padx=(0, 4))
+        self.batch_start_year_var = tk.StringVar(value="")
+        ttk.Spinbox(row_date2, from_=1993, to=2099, textvariable=self.batch_start_year_var,
+                    width=6).pack(side="left")
+        ttk.Label(row_date2, text="迄").pack(side="left", padx=(8, 4))
+        self.batch_end_year_var = tk.StringVar(value="")
+        ttk.Spinbox(row_date2, from_=1993, to=2099, textvariable=self.batch_end_year_var,
+                    width=6).pack(side="left")
+        ttk.Label(row_date2, text="年　（留空 = 全部）", foreground="#555555").pack(side="left", padx=(4, 0))
+
         self.btn_run_batch = ttk.Button(tab, text="▶  開始批量更新", command=self._run_batch, width=20)
-        self.btn_run_batch.grid(row=3, column=0, pady=(8, 4))
+        self.btn_run_batch.grid(row=5, column=0, pady=(8, 4))
 
     # =========================================================
     # Placeholder helpers
@@ -1194,10 +1215,25 @@ class SECFetcherApp:
             messagebox.showerror("錯誤", "請至少勾選一間公司")
             return
         fetch_nongaap = self.batch_nongaap_var.get()
+        fetch_q = self.batch_fetch_q_var.get() if self.batch_fetch_q_var else True
+        fetch_k = self.batch_fetch_k_var.get() if self.batch_fetch_k_var else True
+        if not fetch_q and not fetch_k:
+            messagebox.showerror("錯誤", "請至少勾選季報 (10-Q) 或年報 (10-K)")
+            return
+        try:
+            start_year = int(self.batch_start_year_var.get()) if self.batch_start_year_var and self.batch_start_year_var.get().strip() else None
+            end_year   = int(self.batch_end_year_var.get())   if self.batch_end_year_var   and self.batch_end_year_var.get().strip()   else None
+        except ValueError:
+            messagebox.showerror("錯誤", "日期區間請輸入有效年份（如 2018）")
+            return
         if fetch_nongaap and not self.cfg["ai"].get("api_key"):
             messagebox.showerror("錯誤", "Non-GAAP 需先在「進階設定」填入 AI API Key")
             return
-        self._start_worker(lambda: self._worker_batch(selected, fetch_nongaap))
+        self._start_worker(lambda: self._worker_batch(
+            selected, fetch_nongaap,
+            fetch_q=fetch_q, fetch_k=fetch_k,
+            start_year=start_year, end_year=end_year,
+        ))
 
     def _start_worker(self, target):
         """Clear log, disable run buttons, and start target as a daemon thread. Guards against double-runs."""
@@ -1289,7 +1325,9 @@ class SECFetcherApp:
             self._log(f"[ERROR] {e}")
             self._done(False)
 
-    def _worker_batch(self, tickers: list[str], fetch_nongaap: bool = False):
+    def _worker_batch(self, tickers: list[str], fetch_nongaap: bool = False,
+                      fetch_q: bool = True, fetch_k: bool = True,
+                      start_year: int | None = None, end_year: int | None = None):
         """Background thread: fetch GAAP (and optionally Non-GAAP) for each ticker."""
         total = len(tickers)
         identity = self.cfg.get("identity", "")
@@ -1306,6 +1344,8 @@ class SECFetcherApp:
             try:
                 tables = fetch_gaap_statements(
                     ticker, identity, max_filings=max_filings, ai_config=ai_config,
+                    start_year=start_year, end_year=end_year,
+                    fetch_quarterly=fetch_q, fetch_annual=fetch_k,
                 )
 
                 if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
@@ -1325,6 +1365,7 @@ class SECFetcherApp:
                         output_dir=output_dir,
                         progress_cb=_ng_cb,
                         max_filings=max_filings,
+                        start_year=start_year, end_year=end_year,
                     )
                     tables.extend(ng_tables)
                     self._log(f"[{ticker}] Non-GAAP：{len(ng_tables)} 張 sheet")
