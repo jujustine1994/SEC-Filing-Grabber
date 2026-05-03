@@ -58,6 +58,24 @@
 
 ## 更新記錄
 
+### 2026-05-03（Session 17）
+
+**日期區間反轉驗證**
+
+- **`main.py`**：
+  - `_run_single()`：解析 `start_year` / `end_year` 後新增 guard，`start_year > end_year` 時彈錯誤訊息並中止，訊息帶實際數值（如「起始年份（2025）不可大於結束年份（2020）」）
+  - `_run_batch()`：同上
+
+**全套測試：236/236 PASSED**
+
+**Commits**
+
+```
+385a67c  fix: guard against start_year > end_year in Tab 1 and Tab 2
+```
+
+---
+
 ### 2026-04-29（Session 16）
 
 **UI 日期區間 + 報表類型 + Sheet 預覽 + FY Month Fix**
