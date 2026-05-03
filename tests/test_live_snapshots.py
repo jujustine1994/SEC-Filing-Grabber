@@ -1,6 +1,11 @@
 """
 Live snapshot tests — hit real EDGAR API, ~12 min total for 8 tickers.
 
+與 scripts/smoke_test_10.py 的差異：
+  smoke_test  → 人工快查，max_filings=80 完整抓取，terminal 彩色表格顯示最新季數值
+  本檔 (slow) → 自動化迴歸，max_filings=8 只抓最新 8 季，pytest PASS/FAIL
+  詳見 scripts/README.md「測試方案對比」
+
 Run:   pytest -m slow                                            # all live tests
        pytest -m slow -v
        pytest -m "slow and b1"                                   # B1 overflow tests only
