@@ -1250,6 +1250,9 @@ class SECFetcherApp:
         except ValueError:
             messagebox.showerror("錯誤", "日期區間請輸入有效年份（如 2018）")
             return
+        if start_year is not None and end_year is not None and start_year > end_year:
+            messagebox.showerror("錯誤", f"起始年份（{start_year}）不可大於結束年份（{end_year}）")
+            return
         excluded = {
             name for name, var in self._sheet_check_vars.items()
             if not var.get() and name not in self._FIXED_SHEETS
@@ -1277,6 +1280,9 @@ class SECFetcherApp:
             end_year   = int(self.batch_end_year_var.get())   if self.batch_end_year_var   and self.batch_end_year_var.get().strip()   else None
         except ValueError:
             messagebox.showerror("錯誤", "日期區間請輸入有效年份（如 2018）")
+            return
+        if start_year is not None and end_year is not None and start_year > end_year:
+            messagebox.showerror("錯誤", f"起始年份（{start_year}）不可大於結束年份（{end_year}）")
             return
         if fetch_nongaap and not self.cfg["ai"].get("api_key"):
             messagebox.showerror("錯誤", "Non-GAAP 需先在「進階設定」填入 AI API Key")
