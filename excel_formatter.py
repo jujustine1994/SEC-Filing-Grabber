@@ -288,7 +288,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
         is_missing = row_name in missing
         bg = _fill(QUALITY_MISS_BG) if is_missing else _fill(ROW_WHITE)
         status = "✗  缺失" if is_missing else "✓"
-        fg = QUALITY_MISS_FG if is_missing else "FF1A7A34"
+        fg = QUALITY_MISS_FG if is_missing else QUALITY_GREEN
 
         a = ws.cell(row=next_row, column=1, value=row_name)
         b = ws.cell(row=next_row, column=2, value=status)
