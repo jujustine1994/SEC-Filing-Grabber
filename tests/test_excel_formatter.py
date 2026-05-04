@@ -2,7 +2,7 @@
 import pytest
 from openpyxl import Workbook
 from fetcher_gaap import StatementTable
-from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE
+from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE, QUALITY_MISS_BG
 
 
 def _make_wb(sheet_name="Data_Financials(Q)"):
@@ -379,3 +379,59 @@ def test_index_header_merged_to_e():
     ws = _index_ws()
     merged = [str(r) for r in ws.merged_cells.ranges]
     assert any("E1" in r for r in merged), f"A1:E1 not merged, got: {merged}"
+
+
+# ── Index quality detail section ──────────────────────────────────────────
+
+def _find_detail_header_row(ws) -> int | None:
+    """Find the row containing the quality detail section header."""
+    for row in ws.iter_rows():
+        for cell in row:
+            if cell.value and "品質明細" in str(cell.value):
+                return cell.row
+    return None
+
+
+def test_index_detail_section_present():
+    tbl = _make_q_table()
+    ws = _index_ws([tbl])
+    assert _find_detail_header_row(ws) is not None, "品質明細 section header not found"
+
+
+def test_index_detail_section_absent_when_no_q_table():
+    ws = _index_ws([])
+    assert _find_detail_header_row(ws) is None
+
+
+def test_index_detail_all_ok_shows_check():
+    tbl = _make_q_table()
+    ws = _index_ws([tbl])
+    hdr_row = _find_detail_header_row(ws)
+    b_vals = [ws.cell(row=hdr_row + 1 + i, column=2).value for i in range(9)]
+    assert all(v == "✓" for v in b_vals), f"Expected all ✓, got: {b_vals}"
+
+
+def test_index_detail_missing_row_shows_cross():
+    tbl = _make_q_table(missing=["Operating Income", "Capex"])
+    ws = _index_ws([tbl])
+    hdr_row = _find_detail_header_row(ws)
+    rows = {
+        ws.cell(row=hdr_row + 1 + i, column=1).value:
+        ws.cell(row=hdr_row + 1 + i, column=2).value
+        for i in range(9)
+    }
+    assert "✗" in rows.get("Operating Income", ""), f"Operating Income: {rows.get('Operating Income')}"
+    assert "✗" in rows.get("Capex", ""), f"Capex: {rows.get('Capex')}"
+
+
+def test_index_detail_missing_row_highlighted():
+    tbl = _make_q_table(missing=["Capex"])
+    ws = _index_ws([tbl])
+    hdr_row = _find_detail_header_row(ws)
+    for i in range(9):
+        a_val = ws.cell(row=hdr_row + 1 + i, column=1).value
+        if a_val == "Capex":
+            fill_rgb = ws.cell(row=hdr_row + 1 + i, column=1).fill.fgColor.rgb
+            assert fill_rgb == QUALITY_MISS_BG, f"Expected orange bg, got: {fill_rgb}"
+            return
+    pytest.fail("Capex row not found in detail section")

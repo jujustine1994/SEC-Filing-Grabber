@@ -267,6 +267,37 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     ws.column_dimensions["D"].width = 12
     ws.column_dimensions["E"].width = 10
 
+    # ── 品質明細區塊 ───────────────────────────────────────────────────────
+    if quality is None:
+        return
+
+    score, total, missing = quality
+    next_row = 5 + len(data_sheets) + 2   # blank row gap
+
+    # Section header
+    hdr_cell = ws.cell(row=next_row, column=1, value="品質明細 — Data_Financials(Q)")
+    hdr_cell.fill = _fill(NAVY_DARK)
+    hdr_cell.font = Font(color="FFFFFFFF", bold=True, size=10)
+    ws.merge_cells(
+        start_row=next_row, start_column=1,
+        end_row=next_row, end_column=2
+    )
+    next_row += 1
+
+    for row_name in ALL_KEY_ROWS:
+        is_missing = row_name in missing
+        bg = _fill(QUALITY_MISS_BG) if is_missing else _fill(ROW_WHITE)
+        status = "✗  缺失" if is_missing else "✓"
+        fg = QUALITY_MISS_FG if is_missing else "FF1A7A34"
+
+        a = ws.cell(row=next_row, column=1, value=row_name)
+        b = ws.cell(row=next_row, column=2, value=status)
+        a.fill = bg
+        b.fill = bg
+        a.font = Font(color=fg, size=10)
+        b.font = Font(color=fg, size=10)
+        next_row += 1
+
 
 # ── Public API ────────────────────────────────────────────────────────────
 
