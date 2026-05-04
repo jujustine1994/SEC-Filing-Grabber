@@ -58,6 +58,38 @@
 
 ## 更新記錄
 
+### 2026-05-05（Session 18）
+
+**Index Sheet 品質檢測**
+
+設計文件：`docs/superpowers/specs/2026-05-03-index-quality-check-design.md`
+
+- **`excel_formatter.py`**：
+  - 新增 4 個顏色常數：`QUALITY_GREEN / ORANGE / MISS_BG / MISS_FG`
+  - 新增 `ALL_KEY_ROWS`（9 個 key rows：IS 4 + BS 3 + CF 2）
+  - 新增 `_compute_quality(tables)` helper：找 `Data_Financials(Q)`，呼叫 `check_key_rows` for IS/BS/CF，回傳 `(score, total, missing_set)` 或 `None`
+  - `_build_index_sheet()` 更新：
+    - Header 合併範圍 `A1:D1` → `A1:E1`（同 A2）
+    - Row 4 新增第 5 欄「完成度」
+    - 每個 sheet 列的 E 欄：`Data_Financials(Q)` 顯示 `"9/9 ✓"`（綠）或 `"N/9 ⚠"`（橘），其餘顯示「—」
+    - 表格下方加「品質明細」區塊：section header + 9 行逐一顯示 ✓ / ✗，缺失行底色淺橘
+- **`tests/test_excel_formatter.py`**：新增 14 個 tests（`_compute_quality` × 4、E 欄 × 5、明細區塊 × 5）
+
+**全套測試：250/250 PASSED**
+
+**Commits**
+
+```
+ecddafd  refactor: clean up unused unpacking and duplicate import
+f9aab47  refactor: use QUALITY_GREEN constant instead of hardcoded colour in detail loop
+da128bb  feat: add quality detail section to Index sheet
+b5714d0  feat: add quality score column E to Index sheet
+b82de46  refactor: move override_engine import to top-level; import ALL_KEY_ROWS in tests
+ee19aa1  feat: add _compute_quality helper for Index sheet quality check
+```
+
+---
+
 ### 2026-05-03（Session 17）
 
 **日期區間反轉驗證**
