@@ -10,7 +10,9 @@
 | config.py | load_config() / save_config() |
 | fetcher_gaap.py | edgartools XBRL 抓取 → StatementTable 列表 |
 | fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
-| excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx |
+| excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx，並呼叫 excel_formatter |
+| excel_formatter.py | 寫 Index sheet（品質明細）、設欄寬、凍結窗格 |
+| override_engine.py | 自動修復缺失 key rows（E1 fuzzy + E2 LLM） |
 | config.json | 使用者設定（gitignored） |
 | config.example.json | 範本（committed） |
 | company_cache.json | Ticker → 公司名快取（committed） |
@@ -49,6 +51,10 @@ fetcher_nongaap.py（勾選 Non-GAAP 時，完全獨立於 GAAP fetcher）
     ↓
 excel_writer.py
     → 全量改寫所有 Data_* sheets，不碰 My_* 等其他 sheets
+    → format_workbook() (excel_formatter.py)
+        ├─ _build_index_sheet()  → Index sheet（sheet 清單 + 完成度欄 + 品質明細區塊）
+        ├─ _apply_column_widths()
+        └─ _set_freeze_panes()
     → output/TICKER.xlsx（或 ticker_paths[ticker] 指定路徑）
 ```
 
@@ -210,7 +216,7 @@ save_overrides()       ← 診斷結果永久寫入，下次同 ticker 不重跑
 
 | 指令 | 時間 | 測試數 | 用途 |
 |------|------|--------|------|
-| `pytest` | ~6 秒 | 93 | Unit tests（每次改 code 後跑） |
+| `python -m pytest tests/ --ignore=tests/test_live_snapshots.py` | ~13 秒 | 250 | Unit tests（每次改 code 後跑） |
 | `pytest -m "slow and b1"` | ~12 分鐘 | 24 | B1 overflow live 驗證（8 tickers） |
 | `pytest -m "slow and cf_overflow"` | ~5 分鐘 | 15 | CF YTD overflow 驗收（COHR/LITE/AAPL/NVDA/GOOGL） |
 | `pytest -m slow` | ~25 分鐘 | 全部 slow | 完整 live 驗收 |
@@ -222,10 +228,15 @@ save_overrides()       ← 診斷結果永久寫入，下次同 ticker 不重跑
 
 ## 待辦功能
 
-### ✅ 已完成（本階段）
+### ✅ 已完成
+
 - **Non-GAAP 指標名稱正規化**（2026-04-26）：`_normalize_nongaap_metrics()` 剝除期間 token、去重比較期間、過濾展望指標
 - **金融股警告**（2026-04-26）：`_FINANCIAL_SECTOR_TICKERS` + fetch 後 log 警告
-- **Tab 2 Non-GAAP 批量支援**（2026-04-26）：Checkbutton + `_worker_batch(fetch_nongaap)` 
+- **Tab 2 Non-GAAP 批量支援**（2026-04-26）：Checkbutton + `_worker_batch(fetch_nongaap)`
+- **Session 15 修復（2026-04-26）**：pre-XBRL early exit、Dividends Paid bug、Net Income / Revenue fallback、Total Non-op guard、Investment Proceeds / Debt Proceeds / Debt Repayments 多概念加總、FY Label 對齊公司財年
+- **日期區間 / 報表類型 / 快速掃描 UI（Session 16，2026-04-29）**：Tab 1 / Tab 2 加入起始年、結束年、報表類型（Q/Y/Both）、快速掃描下拉選單，inline 進階設定
+- **start_year > end_year 驗證（Session 17，2026-05-03）**：Tab 1 + Tab 2 各加 guard，避免區間反轉
+- **Index Sheet 品質檢測（Session 18，2026-05-05）**：`_compute_quality()` + `ALL_KEY_ROWS`；Index 新增 E 欄完成度分數（`9/9 ✓` / `N/9 ⚠`）與表格下方品質明細區塊
 
 ## Known Issues（已知限制，暫不修）
 

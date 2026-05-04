@@ -25,9 +25,12 @@
 
 | Sheet | 說明 |
 |-------|------|
+| `Index` | 索引頁：所有 sheets 清單、時間範圍、完成度欄（9 個 key rows 的 ✓/✗ 明細） |
 | `Data_Financials(Q)` | IS + BS + CF 三表合一（季報，from 10-Q），固定行數萬能模板 |
 | `Data_Financials(Y)` | IS + BS + CF 三表合一（年報，from 10-K），固定行數萬能模板 |
+| `Data_Financials_NG(Q/Y)` | Non-GAAP overflow 行（含 "adjusted"/"non-gaap" 等 label 的 XBRL 行），有資料才產生 |
 | `Data_Seg_*` | 各收入/費用的地區/業務分類細項 |
+| `Data_NonGAAP` | AI 從 8-K press release 提取的 Non-GAAP 指標（勾選 Non-GAAP 時產生） |
 | `Data_Meta` | 申報資訊（Ticker、公司名、抓取日期、季度數） |
 
 **欄位說明（Data_Financials）：**
