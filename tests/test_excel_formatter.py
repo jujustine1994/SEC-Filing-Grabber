@@ -2,7 +2,7 @@
 import pytest
 from openpyxl import Workbook
 from fetcher_gaap import StatementTable
-from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, _compute_quality
+from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS
 
 
 def _make_wb(sheet_name="Data_Financials(Q)"):
@@ -292,13 +292,6 @@ def test_index_not_deleted_on_reformat():
 
 
 # ── _compute_quality ──────────────────────────────────────────────────────
-
-_ALL_KEY_ROWS = [
-    "Revenue", "Operating Income", "Net Income", "Diluted EPS",
-    "Total Assets", "Total Liabilities", "Total Equity — Parent",
-    "Operating Cash Flow", "Capex",
-]
-
 
 def _make_q_table(missing=None):
     """StatementTable with all 9 key rows; rows in `missing` have all-None values."""

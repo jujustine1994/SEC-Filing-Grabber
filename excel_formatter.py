@@ -14,6 +14,7 @@ from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from fetcher_gaap import StatementTable
 from datetime import date
+from override_engine import check_key_rows
 
 # ── Colours (ARGB) ────────────────────────────────────────────────────────
 NAVY_DARK = "FF1F3864"
@@ -170,7 +171,6 @@ def _compute_quality(tables: list) -> tuple[int, int, set] | None:
 
     Returns (score, total, missing_set) or None if no Q table found.
     """
-    from override_engine import check_key_rows
     q_tbl = next((t for t in tables if t.sheet_name == "Data_Financials(Q)"), None)
     if q_tbl is None:
         return None
