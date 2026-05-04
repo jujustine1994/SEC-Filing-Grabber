@@ -198,19 +198,21 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
 
     header_text = f"{ticker} — {company_name}" if company_name else ticker
 
+    quality = _compute_quality(tables)
+
     ws = wb.create_sheet("Index", 0)
 
     # Row 1: company header
     ws["A1"] = header_text
     ws["A1"].fill = _fill(NAVY_DARK)
     ws["A1"].font = Font(color="FFFFFFFF", bold=True, size=14)
-    ws.merge_cells("A1:D1")
+    ws.merge_cells("A1:E1")
 
     # Row 2: metadata
     ws["A2"] = f"抓取日期：{date.today()}　　資料來源：SEC EDGAR"
     ws["A2"].fill = _fill(NAVY_MID)
     ws["A2"].font = Font(color="FFAABBCC", size=9)
-    ws.merge_cells("A2:D2")
+    ws.merge_cells("A2:E2")
 
     # Row 3: blank
     ws.row_dimensions[3].height = 6
@@ -218,7 +220,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     # Row 4: column headers
     hdr_font = Font(bold=True, size=10)
     hdr_fill = _fill(BLUE_HDR)
-    for col, label in enumerate(["Sheet", "說明", "最早期間", "最新期間"], start=1):
+    for col, label in enumerate(["Sheet", "說明", "最早期間", "最新期間", "完成度"], start=1):
         cell = ws.cell(row=4, column=col, value=label)
         cell.font = hdr_font
         cell.fill = hdr_fill
@@ -243,11 +245,27 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
             if col == 1:
                 cell.font = name_font
 
+        # ── E 欄：完成度 ──
+        e_cell = ws.cell(row=row, column=5)
+        e_cell.fill = row_fill
+        if tbl.sheet_name == "Data_Financials(Q)" and quality is not None:
+            score, total, _ = quality
+            if score == total:
+                e_cell.value = f"{score}/{total} ✓"
+                e_cell.font = Font(color=QUALITY_GREEN, size=10)
+            else:
+                e_cell.value = f"{score}/{total} ⚠"
+                e_cell.font = Font(color=QUALITY_ORANGE, size=10)
+        else:
+            e_cell.value = "—"
+            e_cell.font = Font(color="FF999999", size=10)
+
     # Column widths
     ws.column_dimensions["A"].width = 22
     ws.column_dimensions["B"].width = 30
     ws.column_dimensions["C"].width = 12
     ws.column_dimensions["D"].width = 12
+    ws.column_dimensions["E"].width = 10
 
 
 # ── Public API ────────────────────────────────────────────────────────────

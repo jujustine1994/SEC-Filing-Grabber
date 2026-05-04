@@ -2,7 +2,7 @@
 import pytest
 from openpyxl import Workbook
 from fetcher_gaap import StatementTable
-from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS
+from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE
 
 
 def _make_wb(sheet_name="Data_Financials(Q)"):
@@ -335,3 +335,47 @@ def test_compute_quality_non_q_table_ignored():
     tbl.sheet_name = "Data_Financials(Y)"
     result = _compute_quality([tbl])
     assert result is None
+
+
+# ── Index quality column ──────────────────────────────────────────────────
+
+def _index_ws(tables=None):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data_Financials(Q)"
+    format_workbook(wb, tables or [])
+    return wb["Index"]
+
+
+def test_index_quality_header_exists():
+    ws = _index_ws()
+    assert ws.cell(row=4, column=5).value == "完成度"
+
+
+def test_index_quality_col_all_ok():
+    tbl = _make_q_table()
+    ws = _index_ws([tbl])
+    cell = ws.cell(row=5, column=5)
+    assert "9/9" in str(cell.value)
+    assert "✓" in str(cell.value)
+    assert cell.font.color.rgb == QUALITY_GREEN
+
+
+def test_index_quality_col_missing():
+    tbl = _make_q_table(missing=["Operating Income", "Capex"])
+    ws = _index_ws([tbl])
+    cell = ws.cell(row=5, column=5)
+    assert "7/9" in str(cell.value)
+    assert "⚠" in str(cell.value)
+    assert cell.font.color.rgb == QUALITY_ORANGE
+
+
+def test_index_quality_col_no_q_table():
+    ws = _index_ws([])
+    assert ws.cell(row=4, column=5).value == "完成度"
+
+
+def test_index_header_merged_to_e():
+    ws = _index_ws()
+    merged = [str(r) for r in ws.merged_cells.ranges]
+    assert any("E1" in r for r in merged), f"A1:E1 not merged, got: {merged}"
