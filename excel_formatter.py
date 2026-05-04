@@ -152,6 +152,37 @@ def _apply_number_formats(ws) -> None:
                 cell.number_format = fmt
 
 
+# ── Quality check colours ─────────────────────────────────────────────────
+QUALITY_GREEN   = "FF1A7A34"
+QUALITY_ORANGE  = "FFC25C00"
+QUALITY_MISS_BG = "FFFFF0E0"
+QUALITY_MISS_FG = "FFC00000"
+
+ALL_KEY_ROWS = [
+    "Revenue", "Operating Income", "Net Income", "Diluted EPS",
+    "Total Assets", "Total Liabilities", "Total Equity — Parent",
+    "Operating Cash Flow", "Capex",
+]
+
+
+def _compute_quality(tables: list) -> tuple[int, int, set] | None:
+    """Compute quality score for Data_Financials(Q).
+
+    Returns (score, total, missing_set) or None if no Q table found.
+    """
+    from override_engine import check_key_rows
+    q_tbl = next((t for t in tables if t.sheet_name == "Data_Financials(Q)"), None)
+    if q_tbl is None:
+        return None
+    missing = set(
+        check_key_rows(q_tbl.concepts, q_tbl.values, "IS") +
+        check_key_rows(q_tbl.concepts, q_tbl.values, "BS") +
+        check_key_rows(q_tbl.concepts, q_tbl.values, "CF")
+    )
+    total = len(ALL_KEY_ROWS)
+    return total - len(missing), total, missing
+
+
 # ── Index sheet ───────────────────────────────────────────────────────────
 
 def _build_index_sheet(wb: Workbook, tables: list) -> None:

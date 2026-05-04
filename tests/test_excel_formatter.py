@@ -1,7 +1,8 @@
 """Tests for excel_formatter.py."""
 import pytest
 from openpyxl import Workbook
-from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES
+from fetcher_gaap import StatementTable
+from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, _compute_quality
 
 
 def _make_wb(sheet_name="Data_Financials(Q)"):
@@ -288,3 +289,56 @@ def test_index_not_deleted_on_reformat():
         if name.startswith("Data_"):
             del wb[name]
     assert "Index" in wb.sheetnames
+
+
+# ── _compute_quality ──────────────────────────────────────────────────────
+
+_ALL_KEY_ROWS = [
+    "Revenue", "Operating Income", "Net Income", "Diluted EPS",
+    "Total Assets", "Total Liabilities", "Total Equity — Parent",
+    "Operating Cash Flow", "Capex",
+]
+
+
+def _make_q_table(missing=None):
+    """StatementTable with all 9 key rows; rows in `missing` have all-None values."""
+    missing = set(missing or [])
+    values = [
+        [None, None, None, None] if c in missing else [100.0, 200.0, 300.0, 400.0]
+        for c in _ALL_KEY_ROWS
+    ]
+    return StatementTable(
+        sheet_name="Data_Financials(Q)",
+        quarter_labels=["FY2025Q1", "FY2025Q2", "FY2025Q3", "FY2025Q4"],
+        filing_dates=["2025-02-01", "2025-05-01", "2025-08-01", "2025-11-01"],
+        concepts=_ALL_KEY_ROWS[:],
+        values=values,
+        ticker="TEST",
+    )
+
+
+def test_compute_quality_all_ok():
+    tbl = _make_q_table()
+    score, total, missing = _compute_quality([tbl])
+    assert total == 9
+    assert score == 9
+    assert missing == set()
+
+
+def test_compute_quality_two_missing():
+    tbl = _make_q_table(missing=["Operating Income", "Capex"])
+    score, total, missing = _compute_quality([tbl])
+    assert score == 7
+    assert missing == {"Operating Income", "Capex"}
+
+
+def test_compute_quality_no_q_table():
+    result = _compute_quality([])
+    assert result is None
+
+
+def test_compute_quality_non_q_table_ignored():
+    tbl = _make_q_table()
+    tbl.sheet_name = "Data_Financials(Y)"
+    result = _compute_quality([tbl])
+    assert result is None
