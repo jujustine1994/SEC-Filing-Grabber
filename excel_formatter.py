@@ -271,7 +271,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     if quality is None:
         return
 
-    score, total, missing = quality
+    _, _, missing = quality
     next_row = 5 + len(data_sheets) + 2   # blank row gap
 
     # Section header

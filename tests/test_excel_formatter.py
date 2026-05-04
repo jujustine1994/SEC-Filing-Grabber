@@ -226,8 +226,6 @@ def test_seg_sheet_financial_converted():
 
 # ── Index sheet ────────────────────────────────────────────────────────────
 
-from fetcher_gaap import StatementTable
-
 def _make_tables(sheet_name="Data_Financials(Q)", ticker="AAPL",
                  qs=None, dates=None):
     qs    = qs    or ["FY2020Q1", "FY2024Q4"]
