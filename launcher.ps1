@@ -5,6 +5,21 @@ $host.UI.RawUI.WindowTitle = "SEC Financial Fetcher"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
+# 攔截所有未預期例外，防止視窗直接閃退
+trap {
+    Write-Host ""
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
+    Write-Host "[CRASH] 意外錯誤，程式無法繼續執行" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "  錯誤訊息：$($_.Exception.Message)" -ForegroundColor Yellow
+    Write-Host "  發生位置：$($_.InvocationInfo.ScriptLineNumber) 行" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "  請截圖此畫面並回報給開發者。" -ForegroundColor White
+    Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
+    Read-Host "按 Enter 關閉"
+    exit 1
+}
+
 Clear-Host
 Write-Host "[INFO] Starting SEC Financial Fetcher..." -ForegroundColor Green
 Write-Host ""
