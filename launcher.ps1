@@ -19,7 +19,7 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
     if ($ans -eq "" -or $ans -ieq "Y") {
         if (Get-Command winget -ErrorAction SilentlyContinue) {
             Write-Host "[INFO] 透過 winget 安裝 Python，請稍候..." -ForegroundColor Gray
-            winget install --id Python.Python.3 -e --silent --accept-source-agreements --accept-package-agreements
+            winget install --id Python.Python.3 -e --silent --accept-source-agreements --accept-package-agreements --override "/quiet PrependPath=1 Include_pip=1"
         } else {
             Write-Host "[ERROR] 找不到 winget，請手動至 https://www.python.org/ 下載安裝後重新執行。" -ForegroundColor Red
             Read-Host "按 Enter 關閉"; exit 1
