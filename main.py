@@ -13,6 +13,7 @@ import os
 import queue
 import re
 import threading
+import time
 import tkinter as tk
 import urllib.request
 from datetime import date
@@ -27,6 +28,71 @@ SCRIPT_DIR = Path(__file__).parent
 CACHE_PATH = SCRIPT_DIR / "company_cache.json"
 
 _FINANCIAL_SECTOR_TICKERS = frozenset({"GS", "JPM", "BAC", "C", "WFC", "MS", "BLK", "BX", "KKR"})
+
+
+# ---- 執行紀錄（log）基礎設施 ----
+# 規則見 windows-tool.md「執行紀錄」。核心限制：每次開檔→寫→關檔，不持有 handle（地雷十），
+# 不寫 BOM，logs/ 一律在專案根目錄（launcher.ps1 旁），不可寫死 ".."（會污染專案外）。
+
+def _find_project_root() -> str:
+    """往上找 launcher.ps1 所在目錄＝專案根目錄。
+
+    不可寫死 os.path.join(SCRIPT_DIR, "..", "logs")：主程式在根目錄的專案會算到專案外層
+    （Documents\\Code\\logs），污染其他專案。用這個函式，主程式在根目錄或 src/ 都對，
+    日後把 .py 搬進 src/ 也不會壞。
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    d = here
+    while True:
+        if os.path.exists(os.path.join(d, "launcher.ps1")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:      # 找到磁碟根目錄仍沒找到，退回自己所在目錄，至少不寫到專案外
+            return here
+        d = parent
+
+
+LOG_DIR = os.path.join(_find_project_root(), "logs")
+LOG_FILE = os.path.join(LOG_DIR, "app.log")
+
+
+def _write_log(msg: str, level: str = "INFO"):
+    """寫一行到 logs/app.log。每次開檔→寫→關檔，不持有 handle（地雷十）。"""
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{time.strftime('%H:%M:%S')}] [{level:<5}] {msg}\n")
+    except OSError:
+        pass   # log 掛掉不能拖垮主程式；也涵蓋兩個實例同時跑撞在一起
+
+
+def _write_log_header(msg: str):
+    """任務起始行，唯一有完整日期的行。"""
+    try:
+        os.makedirs(LOG_DIR, exist_ok=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"=== {time.strftime('%Y-%m-%d %H:%M:%S')} {msg} ===\n")
+    except OSError:
+        pass
+
+
+def _exc_status(e: BaseException) -> str:
+    """從例外物件安全萃取 HTTP status code，絕不觸碰訊息全文（避免挾帶 URL/response/key）。
+
+    回傳如 ' | HTTP 503'，取不到則回空字串。三家 LLM SDK 與 requests/urllib 的 status
+    分別掛在 status_code / code / status / response.status_code 上，逐一探測且只收 int。
+    """
+    for attr in ("status_code", "code", "status"):
+        v = getattr(e, attr, None)
+        if isinstance(v, int):
+            return f" | HTTP {v}"
+    resp = getattr(e, "response", None)
+    if resp is not None:
+        for attr in ("status_code", "status", "code"):
+            v = getattr(resp, attr, None)
+            if isinstance(v, int):
+                return f" | HTTP {v}"
+    return ""
 
 
 def _migrate_config_if_needed():
@@ -1376,6 +1442,13 @@ class SECFetcherApp:
                 self._done(False)
                 return
 
+            # ---- 任務起始行：只記 ticker + 設定，不記 payload / key ----
+            srcs = [s for s, on in (("GAAP", fetch_gaap), ("NonGAAP", fetch_nongaap)) if on]
+            kinds = [k for k, on in (("10-Q", fetch_q), ("10-K", fetch_k)) if on]
+            scope = f"{start_year or ''}-{end_year or ''}" if (start_year or end_year) else f"max{max_filings}筆"
+            task_start = time.time()
+            _write_log_header(f"抓取 {ticker} | {'+'.join(srcs) or '無'} | {'/'.join(kinds) or '無'} | {scope}")
+
             tables = []
             output_path = self._build_output_path(ticker)
             output_dir  = output_path.parent
@@ -1432,11 +1505,20 @@ class SECFetcherApp:
             write_statements(tables, output_path, template_path=tpl)
             self._log(f"[{ticker}] 完成 → {output_path.name}")
             self._set_progress(total_steps, total_steps, "完成！")
+            # ---- 任務結果行：成功 + 耗時 ----
+            _elapsed = int(time.time() - task_start)
+            _write_log(f"{ticker} 成功，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "OK")
             self.msg_queue.put(("last_output_folder", output_path.parent))
             self._done(True)
 
         except Exception as e:
-            self._log(f"[ERROR] {e}")
+            # ---- 錯誤行：只記 type + status，禁止 {e} 全文（會挾帶 URL/response/key）----
+            self._log(f"[{ticker}] 抓取失敗 -> {type(e).__name__}{_exc_status(e)}", "ERROR", to_file=True)
+            try:
+                _elapsed = int(time.time() - task_start)
+                _write_log(f"{ticker} 失敗，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "FAIL")
+            except NameError:
+                pass  # 例外發生在 task_start 賦值前（identity 檢查等）
             self._done(False)
 
     def _worker_batch(self, tickers: list[str], fetch_nongaap: bool = False,
@@ -1452,9 +1534,16 @@ class SECFetcherApp:
         max_filings = self.cfg.get("max_filings", 80)
         ai_config   = self.cfg.get("ai", {})
 
+        srcs = "GAAP+NonGAAP" if fetch_nongaap else "GAAP"
+        kinds = [k for k, on in (("10-Q", fetch_q), ("10-K", fetch_k)) if on]
+        scope = f"{start_year or ''}-{end_year or ''}" if (start_year or end_year) else f"max{max_filings}筆"
+
         for i, ticker in enumerate(tickers, 1):
             self._set_progress(i - 1, total, f"處理中：{ticker} ({i}/{total})")
             self._log(f"\n[{ticker}] 開始...")
+            # ---- 任務起始行：只記 ticker + 設定 ----
+            task_start = time.time()
+            _write_log_header(f"批量抓取 {ticker} ({i}/{total}) | {srcs} | {'/'.join(kinds) or '無'} | {scope}")
             try:
                 tables = fetch_gaap_statements(
                     ticker, identity, max_filings=max_filings, ai_config=ai_config,
@@ -1488,8 +1577,14 @@ class SECFetcherApp:
                 tpl = self.cfg.get("template_path", "") or None
                 write_statements(tables, output_path, template_path=tpl)
                 self._log(f"[{ticker}] 完成（{len(tables)} 份財報）")
+                # ---- 任務結果行：成功 + 耗時 ----
+                _elapsed = int(time.time() - task_start)
+                _write_log(f"{ticker} 成功，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "OK")
             except Exception as e:
-                self._log(f"[{ticker}] 錯誤：{e}")
+                # ---- 錯誤行：只記 type + status，禁止 {e} 全文 ----
+                self._log(f"[{ticker}] 抓取失敗 -> {type(e).__name__}{_exc_status(e)}", "ERROR", to_file=True)
+                _elapsed = int(time.time() - task_start)
+                _write_log(f"{ticker} 失敗，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "FAIL")
 
         self._set_progress(total, total, f"完成：共處理 {total} 間公司")
         self.msg_queue.put(("last_output_folder", self._build_output_path(tickers[-1]).parent))
@@ -1499,8 +1594,15 @@ class SECFetcherApp:
     # Thread-safe queue helpers
     # =========================================================
 
-    def _log(self, msg: str):
-        """Queue a log line to be appended by _poll_queue in the main thread."""
+    def _log(self, msg: str, level: str = "INFO", to_file: bool = False):
+        """Queue a log line for the UI; optionally also append it to logs/app.log.
+
+        預設 to_file=False（fail-closed）：畫面上的進度／成功訊息只推 UI，不落檔。
+        真正該落檔的只有任務起始、錯誤、結果三種，由呼叫端明確傳 to_file=True，
+        或直接呼叫 _write_log_header / _write_log。這樣可避免任何進度訊息意外寫上磁碟。
+        """
+        if to_file:
+            _write_log(msg, level)
         self.msg_queue.put(("log", msg))
 
     def _init_log(self, msg: str):
