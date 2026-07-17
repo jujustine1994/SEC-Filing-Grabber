@@ -15,6 +15,7 @@ from typing import Any
 
 from edgar import Company, set_identity
 
+from errsafe import _exc_status
 from fetcher_gaap import StatementTable
 
 CACHE_FILENAME = "nongaap_cache.json"
@@ -357,7 +358,13 @@ def _call_ai(text: str, ai_config: dict) -> dict[str, Any]:
         return _normalize_nongaap_metrics(result)
 
     except Exception as exc:
-        print(f"[fetcher_nongaap] AI call failed: {exc!r}", file=sys.stderr)
+        # 只印類型 + status code。不可用 {exc!r} / {exc}：三家 LLM SDK 的例外訊息
+        # 天生挾帶 URL（google-generativeai 走 REST 時帶 ?key=），而 launcher.ps1
+        # 刻意留著主控台視窗，等於把金鑰印在畫面上。
+        print(
+            f"[fetcher_nongaap] AI call failed: {type(exc).__name__}{_exc_status(exc)}",
+            file=sys.stderr,
+        )
         return {}
 
 
@@ -401,7 +408,13 @@ def _extract_nongaap_metrics(eight_k, ai_config: dict) -> dict[str, Any]:
         return _call_ai(text, ai_config)
 
     except Exception as exc:
-        print(f"[fetcher_nongaap] metrics extraction failed: {exc!r}", file=sys.stderr)
+        # 在 AI 呼叫鏈上（下方 _call_ai）。目前 _call_ai 自己吞例外不會冒上來，
+        # 但仍只印類型 + status：哪天內層改成 re-raise，這裡就會變成金鑰洩漏點。
+        print(
+            f"[fetcher_nongaap] metrics extraction failed: "
+            f"{type(exc).__name__}{_exc_status(exc)}",
+            file=sys.stderr,
+        )
         return {}
 
 
@@ -518,7 +531,12 @@ def fetch_nongaap_statements(
             # Save after each quarter (crash-safe incremental)
             _save_cache(cache_path, ticker, cache)
         except Exception as exc:
-            print(f"[fetcher_nongaap] {quarter_label} failed: {exc!r}", file=sys.stderr)
+            # 同上：這層包住 _extract_nongaap_metrics -> _call_ai，屬 AI 呼叫鏈。
+            print(
+                f"[fetcher_nongaap] {quarter_label} failed: "
+                f"{type(exc).__name__}{_exc_status(exc)}",
+                file=sys.stderr,
+            )
 
     tables: list[StatementTable] = []
     eps_tbl = _build_eps_recon_table(ticker, cache)

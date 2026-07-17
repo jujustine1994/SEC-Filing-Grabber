@@ -21,6 +21,7 @@ from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
 from config import load_config, save_config, CONFIG_PATH
+from errsafe import _exc_status
 from excel_writer import write_statements
 from fetcher_gaap import fetch_gaap_statements
 
@@ -76,23 +77,10 @@ def _write_log_header(msg: str):
         pass
 
 
-def _exc_status(e: BaseException) -> str:
-    """從例外物件安全萃取 HTTP status code，絕不觸碰訊息全文（避免挾帶 URL/response/key）。
-
-    回傳如 ' | HTTP 503'，取不到則回空字串。三家 LLM SDK 與 requests/urllib 的 status
-    分別掛在 status_code / code / status / response.status_code 上，逐一探測且只收 int。
-    """
-    for attr in ("status_code", "code", "status"):
-        v = getattr(e, attr, None)
-        if isinstance(v, int):
-            return f" | HTTP {v}"
-    resp = getattr(e, "response", None)
-    if resp is not None:
-        for attr in ("status_code", "status", "code"):
-            v = getattr(resp, attr, None)
-            if isinstance(v, int):
-                return f" | HTTP {v}"
-    return ""
+# _exc_status 已移至 errsafe.py（從這裡 import）。原因：main 會 import fetcher_*，
+# fetcher_* 無法反向 import main，函式只住在這裡的話 fetcher 側拿不到、只能自己
+# 複製一份，必然漂移——而且已經發生過：fetcher_nongaap 一度直接 print {exc!r}，
+# 把 google-generativeai URL 上的 ?key= 印上主控台。
 
 
 def _migrate_config_if_needed():
