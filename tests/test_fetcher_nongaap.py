@@ -445,3 +445,74 @@ def test_find_missing_quarters_handles_empty_and_single():
 
 def test_find_missing_quarters_ignores_unparseable_labels():
     assert _find_missing_quarters(["FY2024Q3", "GARBAGE", "FY2024Q1"]) == ["FY2024Q2"]
+
+
+from fetcher_nongaap import _recover_missing_quarters
+
+
+class FakeEightK:
+    def __init__(self, has_earnings):
+        self.has_earnings = has_earnings
+
+
+class RecoverableFiling:
+    """FakeFiling variant whose obj() returns a parsed 8-K instead of raising."""
+    def __init__(self, items, period_of_report, has_earnings, accession="ACC"):
+        self.items = items
+        self.period_of_report = period_of_report
+        self.accession_no = accession
+        self.filing_date = period_of_report
+        self._has_earnings = has_earnings
+        self.obj_calls = 0
+
+    def obj(self):
+        self.obj_calls += 1
+        return FakeEightK(self._has_earnings)
+
+
+def test_recover_missing_quarters_finds_mislabelled_earnings():
+    target = RecoverableFiling("8.01,9.01", "2024-06-30", has_earnings=True)
+    company = FakeCompany([
+        RecoverableFiling("2.02", "2024-09-30", has_earnings=True),
+        target,
+        RecoverableFiling("2.02", "2024-03-31", has_earnings=True),
+    ])
+    result = _recover_missing_quarters(company, ["FY2024Q2"])
+    assert [label for label, _ in result] == ["FY2024Q2"]
+    assert result[0][1] is target
+
+
+def test_recover_missing_quarters_only_downloads_gap_candidates():
+    """Filings outside the gap, or already tagged 2.02, must not be downloaded."""
+    in_gap     = RecoverableFiling("5.07",  "2024-06-30", has_earnings=True)
+    tagged     = RecoverableFiling("2.02",  "2024-06-30", has_earnings=True)
+    other_qtr  = RecoverableFiling("8.01",  "2024-09-30", has_earnings=True)
+    _recover_missing_quarters(FakeCompany([other_qtr, tagged, in_gap]), ["FY2024Q2"])
+    assert in_gap.obj_calls == 1
+    assert tagged.obj_calls == 0
+    assert other_qtr.obj_calls == 0
+
+
+def test_recover_missing_quarters_ignores_non_earnings():
+    company = FakeCompany([RecoverableFiling("5.07", "2024-06-30", has_earnings=False)])
+    assert _recover_missing_quarters(company, ["FY2024Q2"]) == []
+
+
+def test_recover_missing_quarters_empty_gap_list_downloads_nothing():
+    f = RecoverableFiling("5.07", "2024-06-30", has_earnings=True)
+    assert _recover_missing_quarters(FakeCompany([f]), []) == []
+    assert f.obj_calls == 0
+
+
+def test_recover_missing_quarters_survives_download_failure():
+    """A filing that fails to parse must not abort recovery of the others."""
+    class ExplodingFiling(RecoverableFiling):
+        def obj(self):
+            self.obj_calls += 1
+            raise ValueError("parse failed")
+
+    good = RecoverableFiling("5.07", "2024-06-30", has_earnings=True)
+    bad  = ExplodingFiling("8.01", "2024-06-30", has_earnings=True, accession="BAD")
+    result = _recover_missing_quarters(FakeCompany([bad, good]), ["FY2024Q2"])
+    assert [label for label, _ in result] == ["FY2024Q2"]
+    assert result[0][1] is good

@@ -516,6 +516,43 @@ def _find_missing_quarters(labels: list[str]) -> list[str]:
     ]
 
 
+def _recover_missing_quarters(company, missing: list[str]) -> list[tuple[str, Any]]:
+    """Deep-scan only the quarters the listing filter came up short on.
+
+    Downloads a filing only when its period falls in a missing quarter and it was
+    not already tagged Item 2.02 — typically a handful of filings, versus the
+    hundreds a full historical scan would fetch.
+    """
+    if not missing:
+        return []
+
+    wanted = set(missing)
+    found: dict[str, Any] = {}
+    for filing in company.get_filings(form="8-K", amendments=False):
+        items = str(getattr(filing, "items", "") or "")
+        if "2.02" in items:
+            continue
+        period = str(getattr(filing, "period_of_report", "") or "").replace("-", "")
+        if len(period) < 8:
+            continue
+        label = _period_to_quarter_label(period)
+        if label not in wanted or label in found:
+            continue
+        try:
+            eight_k = filing.obj()
+        except Exception as exc:
+            print(
+                f"[fetcher_nongaap] gap scan {label} -> "
+                f"{type(exc).__name__}{_exc_status(exc)}",
+                file=sys.stderr,
+            )
+            continue
+        if getattr(eight_k, "has_earnings", False):
+            found[label] = filing
+
+    return [(label, found[label]) for label in sorted(found, key=_quarter_ordinal)]
+
+
 def _get_earnings_filings(company) -> list[tuple[str, Any, Any]]:
     """Return list of (quarter_label, filing, eight_k) for 8-K filings with Item 2.02.
 
