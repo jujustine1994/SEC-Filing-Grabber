@@ -58,6 +58,23 @@
 
 ## 更新記錄
 
+### 2026-07-31
+
+**8-K 掃描效率優化**
+
+設計文件：`docs/superpowers/specs/2026-07-31-8k-scan-optimization-design.md`
+
+- **`fetcher_nongaap.py`**：
+  - 新增 `_list_earnings_filings()`：改在 SEC 申報清單階段以 `items`（Item 2.02）與 `period_of_report` 完成篩選、去重、年份過濾與 `max_filings` 切割，全程不下載檔案
+  - 新增 `_quarter_ordinal()` / `_ordinal_to_quarter()` / `_find_missing_quarters()`：偵測季度序列缺口
+  - 新增 `_recover_missing_quarters()`：僅對缺季區間回退逐筆 `obj()` 深掃，用 `has_earnings` 找回未標 2.02 的財報；補不到的季度寫 stderr
+  - 移除 `_get_earnings_filings()`（對全部歷史 8-K 逐筆下載）
+  - `fetch_nongaap_statements()`：`obj()` 移進迴圈，只對未快取的季度下載；年份過濾改在 `max_filings` 之前套用
+- **實測**：AAPL 全部 8-K 235 份、含 2.02 者 94 份；抓 4 季的下載次數由 235 降至 4
+- **已知邊界**：SEC 自 2004-08-23 才啟用 2.02 編號，更早的財報 8-K（Item 12/5）不會被抓到
+- **實機驗收（Task 5，`nongaap_cache.json` 未命中、逐季即時 AI 呼叫）**：CRM 76.5 秒（`~/.edgar` 已預熱）、PANW 71.3 秒（`~/.edgar` 4 份中 3 份已預熱）、ARLO 76.0 秒（兩層快取皆全冷），皆為 `max_filings=4`（4 季 = 4 次即時 AI 呼叫）。此結果超出設計文件原估的 60 秒目標，原因是 AI 呼叫本身耗時已主導總時間、非下載次數；但相較優化前單一 ticker 需 5–10 分鐘，仍是數量級改善
+- **`tests/test_fetcher_nongaap.py`**：新增 22 個測試（清單篩選 8、缺季偵測 7、缺口補掃 5、下載時機 2）+ 2 個 `slow` 連網驗收（`tests/test_live_snapshots.py`）；單元測試總數由 250 增至 274
+
 ### 2026-06-10
 - 修正：`winget install Python` 加入 `--override "/quiet PrependPath=1 Include_pip=1"`，確保靜默安裝後 Python 自動加進 PATH
 - 修正：`launcher.ps1` 加入全域 `trap`，攔截未處理例外，防止執行失敗時視窗直接閃退

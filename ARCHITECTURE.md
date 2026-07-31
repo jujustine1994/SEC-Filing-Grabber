@@ -41,7 +41,9 @@ fetcher_gaap.py
     └─ _build_meta_table()              → Data_Meta
 
 fetcher_nongaap.py（勾選 Non-GAAP 時，完全獨立於 GAAP fetcher）
-    ├─ _get_earnings_filings()    → 8-K Item 2.02 清單
+    ├─ _list_earnings_filings()   → 在 SEC 申報清單階段以 items（2.02）+ period_of_report 篩選、去重、套年份與 max_filings，零下載
+    ├─ _find_missing_quarters()   → 偵測季度序列缺口
+    ├─ _recover_missing_quarters()→ 只對缺季區間逐筆 obj() 深掃，用 has_earnings 找回未標 2.02 的財報
     ├─ _extract_eps_recon()       → edgartools eps_reconciliation
     ├─ _extract_nongaap_metrics() → AI 解析 EX-99.1 press release
     │       └─ _normalize_nongaap_metrics() → 剝除期間 token、去重比較期間、過濾展望指標
