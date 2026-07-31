@@ -297,3 +297,116 @@ def test_filter_nongaap_both_bounds():
     result = _filter_nongaap_by_year(filings, start_year=2019, end_year=2022)
     years = [int(lbl[2:6]) for lbl, _, _ in result]
     assert years == [2020, 2022]
+
+
+import pytest
+from fetcher_nongaap import _list_earnings_filings
+
+
+class FakeFiling:
+    """Stand-in for edgartools EntityFiling — only the listing-level attributes."""
+    def __init__(self, items, period_of_report, accession="0000000000-00-000000"):
+        self.items = items
+        self.period_of_report = period_of_report
+        self.accession_no = accession
+        self.filing_date = period_of_report
+        self.obj_called = False
+
+    def obj(self):
+        self.obj_called = True
+        raise AssertionError("obj() must not be called during listing-stage filtering")
+
+
+class FakeCompany:
+    """Stand-in for edgartools Company. Filings are newest-first, as EDGAR returns them."""
+    def __init__(self, filings):
+        self._filings = filings
+
+    def get_filings(self, **kwargs):
+        return self._filings
+
+
+def test_list_earnings_filings_keeps_only_item_202():
+    company = FakeCompany([
+        FakeFiling("2.02,9.01", "2024-09-30"),
+        FakeFiling("5.07",      "2024-08-15"),
+        FakeFiling("8.01,9.01", "2024-07-01"),
+        FakeFiling("2.02",      "2024-06-30"),
+    ])
+    result = _list_earnings_filings(company)
+    assert [label for label, _ in result] == ["FY2024Q3", "FY2024Q2"]
+
+
+def test_list_earnings_filings_never_downloads():
+    """Listing-stage filtering must not call obj() — that is the whole point."""
+    filings = [
+        FakeFiling("2.02,9.01", "2024-09-30"),
+        FakeFiling("5.07",      "2024-08-15"),
+    ]
+    _list_earnings_filings(FakeCompany(filings))
+    assert all(f.obj_called is False for f in filings)
+
+
+def test_list_earnings_filings_tolerates_missing_items():
+    """items may be None or empty on some filings — must not raise."""
+    company = FakeCompany([
+        FakeFiling(None, "2024-09-30"),
+        FakeFiling("",   "2024-06-30"),
+        FakeFiling("2.02", "2024-03-31"),
+    ])
+    result = _list_earnings_filings(company)
+    assert [label for label, _ in result] == ["FY2024Q1"]
+
+
+def test_list_earnings_filings_skips_malformed_period():
+    company = FakeCompany([
+        FakeFiling("2.02", None),
+        FakeFiling("2.02", ""),
+        FakeFiling("2.02", "2024-03-31"),
+    ])
+    result = _list_earnings_filings(company)
+    assert [label for label, _ in result] == ["FY2024Q1"]
+
+
+def test_list_earnings_filings_dedupes_keeping_oldest():
+    """Same quarter filed twice (e.g. 8-K then corrected 8-K): keep the oldest filing."""
+    oldest = FakeFiling("2.02", "2024-09-30", accession="OLDEST")
+    newer  = FakeFiling("2.02", "2024-09-30", accession="NEWER")
+    company = FakeCompany([newer, oldest])   # newest-first, as EDGAR returns
+    result = _list_earnings_filings(company)
+    assert len(result) == 1
+    assert result[0][1].accession_no == "OLDEST"
+
+
+def test_list_earnings_filings_applies_year_range():
+    company = FakeCompany([
+        FakeFiling("2.02", "2024-03-31"),
+        FakeFiling("2.02", "2023-03-31"),
+        FakeFiling("2.02", "2022-03-31"),
+        FakeFiling("2.02", "2021-03-31"),
+    ])
+    result = _list_earnings_filings(company, start_year=2022, end_year=2023)
+    assert [label for label, _ in result] == ["FY2023Q1", "FY2022Q1"]
+
+
+def test_list_earnings_filings_max_filings_keeps_newest():
+    company = FakeCompany([
+        FakeFiling("2.02", "2024-12-31"),
+        FakeFiling("2.02", "2024-09-30"),
+        FakeFiling("2.02", "2024-06-30"),
+        FakeFiling("2.02", "2024-03-31"),
+    ])
+    result = _list_earnings_filings(company, max_filings=2)
+    assert [label for label, _ in result] == ["FY2024Q4", "FY2024Q3"]
+
+
+def test_list_earnings_filings_year_filter_runs_before_max_filings():
+    """Year range narrows the pool first; max_filings then trims the narrowed pool."""
+    company = FakeCompany([
+        FakeFiling("2.02", "2024-12-31"),
+        FakeFiling("2.02", "2024-09-30"),
+        FakeFiling("2.02", "2023-12-31"),
+        FakeFiling("2.02", "2023-09-30"),
+    ])
+    result = _list_earnings_filings(company, end_year=2023, max_filings=1)
+    assert [label for label, _ in result] == ["FY2023Q4"]

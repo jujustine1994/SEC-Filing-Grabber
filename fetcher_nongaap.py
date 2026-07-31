@@ -444,6 +444,47 @@ def _filter_nongaap_by_year(
     return result
 
 
+def _list_earnings_filings(
+    company,
+    start_year: int | None = None,
+    end_year: int | None = None,
+    max_filings: int = 80,
+) -> list[tuple[str, Any]]:
+    """Return [(quarter_label, filing)] for earnings 8-Ks, newest first.
+
+    Filters entirely on listing metadata (``items`` and ``period_of_report``),
+    which EDGAR supplies with the filing index — no document is downloaded here.
+    Callers download only the filings they actually need.
+
+    Item 2.02 is "Results of Operations and Financial Condition", i.e. the
+    earnings release. SEC adopted that numbering on 2004-08-23; earlier filings
+    used Item 12 or Item 5 and are not matched. See the design doc for why that
+    is acceptable (max_filings defaults to 80 quarters ≈ 20 years).
+    """
+    candidates: list[tuple[str, Any]] = []
+    for filing in company.get_filings(form="8-K", amendments=False):
+        items = str(getattr(filing, "items", "") or "")
+        if "2.02" not in items:
+            continue
+        period = str(getattr(filing, "period_of_report", "") or "").replace("-", "")
+        if len(period) < 8:
+            continue
+        candidates.append((_period_to_quarter_label(period), filing))
+
+    # Dedupe by quarter, keeping the oldest filing for each — matches prior behaviour
+    # where a corrected re-filing does not displace the original release.
+    seen: set[str] = set()
+    deduped: list[tuple[str, Any]] = []
+    for label, filing in reversed(candidates):      # oldest → newest
+        if label not in seen:
+            seen.add(label)
+            deduped.append((label, filing))
+    deduped.reverse()                               # back to newest → oldest
+
+    deduped = _filter_nongaap_by_year(deduped, start_year, end_year)
+    return deduped[:max_filings]
+
+
 def _get_earnings_filings(company) -> list[tuple[str, Any, Any]]:
     """Return list of (quarter_label, filing, eight_k) for 8-K filings with Item 2.02.
 
