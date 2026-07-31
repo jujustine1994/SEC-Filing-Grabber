@@ -58,6 +58,22 @@
 
 ## 更新記錄
 
+### 2026-08-01
+
+**GUI 實機驗收（ARLO）與既有缺陷紀錄**
+
+分支 `feat/8k-scan-optimization` 已以 `--no-ff` 合併回 master。
+
+- **驗收結果**：從 `啟動器.bat` 實跑 ARLO（年份 2025–2026，GAAP + Non-GAAP），一分鐘內完成。GAAP 取得 8 份財報，`Index` 品質欄 **9/9 ✓**；Non-GAAP 6 季中僅 2 季需重新呼叫 AI，其餘 4 季由 `nongaap_cache.json` 命中——快取行為正確
+- **`Data_Financials(Q)` 120 行中 31 行全空屬正常**：3 行為 IS/BS/CF 分隔標題，其餘為 ARLO 實際沒有的項目（無有息負債、不配息、無少數股權）
+- **`Data_NonGAAP` 目前不可用**（既有缺陷，非本次改動引入，已列入 TODO 第 2 項）：
+  - 數值被誤除以 1,000,000——`excel_formatter.py:49` 的 ÷1M 豁免關鍵字只有 `EPS` / `Per Share` / `per share`，AI 回的中文指標名（「Non-GAAP 每股盈餘」「Non-GAAP 毛利率」）比對不到。實例：毛利率 37.5 → `3.75e-05`、EPS 0.10 → `1e-07`
+  - 指標名稱帶期間 token 未被剝除——`_normalize_nongaap_metrics()` 只處理 `Q4 FY26` / `FY2026` 等英文格式，中文的「2024年第四季」「2024全年度」不認得，導致同一指標每季各自成行，整張表對角線散開
+  - 根因同一個：AI prompt 以中文撰寫，AI 回中文指標名，但下游正規化與格式化規則皆只認英文
+- **重複抓取同一 ticker 的檔案行為**（已列入 TODO 第 8 項）：`write_statements()` 開啟既有檔後刪除所有 `Data_*` sheet 重寫，`My_*` 等自訂 sheet 保留，無備份無版本號。年份範圍變窄時舊季度直接消失；檔案被 Excel 開啟時在最後一步才拋 `PermissionError`
+
+---
+
 ### 2026-07-31
 
 **8-K 掃描效率優化**
