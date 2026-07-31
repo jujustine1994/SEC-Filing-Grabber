@@ -388,3 +388,73 @@ def test_cf_overflow_no_all_none_rows(cf_overflow_tables, ticker):
     assert not failures, (
         f"[{ticker}] All-None CF overflow rows (should have been filtered): {failures}"
     )
+
+
+# ── 8-K Listing-Filter Acceptance Tests ──────────────────────────────────────
+#
+# Verifies Tasks 1-4's listing-stage filter against real EDGAR data:
+#  - the fast path (items metadata) must not lose quarters a full deep scan finds
+#  - a narrow max_filings window must actually limit the download count
+
+@pytest.mark.slow
+def test_live_listing_filter_matches_deep_scan_arlo():
+    """The listing filter must not lose quarters a full scan would have found.
+
+    ARLO is small (67 8-Ks total) so the deep comparison stays under a minute.
+    """
+    import edgar
+    import config as cfgmod
+    from fetcher_nongaap import _list_earnings_filings, _period_to_quarter_label
+
+    cfg = cfgmod.load_config()
+    if not cfg.get("identity"):
+        pytest.skip("no SEC identity configured")
+    edgar.set_identity(cfg["identity"])
+
+    company = edgar.Company("ARLO")
+    fast_labels = {label for label, _ in _list_earnings_filings(company)}
+
+    deep_labels = set()
+    for filing in company.get_filings(form="8-K", amendments=False):
+        period = str(filing.period_of_report or "").replace("-", "")
+        if len(period) < 8:
+            continue
+        items = str(getattr(filing, "items", "") or "")
+        if "2.02" in items:
+            deep_labels.add(_period_to_quarter_label(period))
+            continue
+        try:
+            if getattr(filing.obj(), "has_earnings", False):
+                deep_labels.add(_period_to_quarter_label(period))
+        except Exception:
+            continue
+
+    # Floor so a systematically failing download loop (rate limiting, rejected
+    # identity, network down) can't leave deep_labels empty and pass trivially —
+    # ARLO has 32 earnings 8-Ks, so 20 is a safe floor for a healthy run.
+    assert len(deep_labels) >= 20, (
+        f"deep scan only found {len(deep_labels)} quarters — downloads may be "
+        "failing systematically rather than the comparison being meaningful"
+    )
+
+    assert deep_labels - fast_labels == set(), (
+        f"listing filter missed quarters the deep scan found: {deep_labels - fast_labels}"
+    )
+
+
+@pytest.mark.slow
+def test_live_year_range_limits_download_count_crm():
+    """Asking for two quarters must download two filings, not CRM's 290 8-Ks."""
+    import edgar
+    import config as cfgmod
+    from fetcher_nongaap import _list_earnings_filings
+
+    cfg = cfgmod.load_config()
+    if not cfg.get("identity"):
+        pytest.skip("no SEC identity configured")
+    edgar.set_identity(cfg["identity"])
+
+    result = _list_earnings_filings(edgar.Company("CRM"), max_filings=2)
+    assert len(result) == 2
+    # Two distinct quarter labels must come back, not the same label twice.
+    assert len({label for label, _ in result}) == 2

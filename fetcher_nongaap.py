@@ -425,7 +425,7 @@ def _filter_nongaap_by_year(
     start_year: int | None,
     end_year: int | None,
 ) -> list[tuple]:
-    """Filter (label, filing, eight_k) tuples by year extracted from label (e.g. 'FY2021Q2' → 2021)."""
+    """Filter (label, filing) tuples by year extracted from label (e.g. 'FY2021Q2' → 2021)."""
     if start_year is None and end_year is None:
         return filings
     result = []
@@ -444,40 +444,132 @@ def _filter_nongaap_by_year(
     return result
 
 
-def _get_earnings_filings(company) -> list[tuple[str, Any, Any]]:
-    """Return list of (quarter_label, filing, eight_k) for 8-K filings with Item 2.02.
+def _list_earnings_filings(
+    company,
+    start_year: int | None = None,
+    end_year: int | None = None,
+    max_filings: int = 80,
+) -> list[tuple[str, Any]]:
+    """Return [(quarter_label, filing)] for earnings 8-Ks, newest first.
 
-    Sorted oldest → newest. Deduplicated by quarter_label (keeps oldest filing per quarter).
-    eight_k is the already-parsed filing object — callers should use it directly to avoid
-    a redundant filing.obj() call.
+    Filters entirely on listing metadata (``items`` and ``period_of_report``),
+    which EDGAR supplies with the filing index — no document is downloaded here.
+    Callers download only the filings they actually need.
+
+    Item 2.02 is "Results of Operations and Financial Condition", i.e. the
+    earnings release. SEC adopted that numbering on 2004-08-23; earlier filings
+    used Item 12 or Item 5 and are not matched. See the design doc for why that
+    is acceptable (max_filings defaults to 80 quarters ≈ 20 years).
     """
-    # edgartools returns newest-first; we reverse to get oldest-first for deduplication
-    results = []
+    candidates: list[tuple[str, Any]] = []
     for filing in company.get_filings(form="8-K", amendments=False):
-        try:
-            eight_k = filing.obj()
-            items = getattr(eight_k, "items", []) or []
-            has_202 = any("2.02" in str(item) for item in items)
-            if not has_202:
-                if not getattr(eight_k, "has_earnings", False):
-                    continue
-            period = str(filing.period_of_report or "").replace("-", "")
-            if len(period) < 8:
-                continue
-            label = _period_to_quarter_label(period)
-            results.append((label, filing, eight_k))
-        except Exception as exc:
-            print(f"[fetcher_nongaap] 8-K scan warning: {exc!r}", file=sys.stderr)
+        items = str(getattr(filing, "items", "") or "")
+        if "2.02" not in items:
             continue
+        period = str(getattr(filing, "period_of_report", "") or "").replace("-", "")
+        if len(period) < 8:
+            continue
+        try:
+            label = _period_to_quarter_label(period)
+        except Exception as exc:
+            print(
+                f"[fetcher_nongaap] listing skip {period}: "
+                f"{type(exc).__name__}{_exc_status(exc)}",
+                file=sys.stderr,
+            )
+            continue
+        candidates.append((label, filing))
 
-    # Sort oldest first, deduplicate by quarter_label (keep first = oldest filing for that period)
+    # Dedupe by quarter, keeping the oldest filing for each — matches prior behaviour
+    # where a corrected re-filing does not displace the original release.
     seen: set[str] = set()
-    deduped = []
-    for label, filing, eight_k in reversed(results):
+    deduped: list[tuple[str, Any]] = []
+    for label, filing in reversed(candidates):      # oldest → newest
         if label not in seen:
             seen.add(label)
-            deduped.append((label, filing, eight_k))
-    return list(reversed(deduped))
+            deduped.append((label, filing))
+    deduped.reverse()                               # back to newest → oldest
+
+    deduped = _filter_nongaap_by_year(deduped, start_year, end_year)
+    return deduped[:max_filings]
+
+
+def _quarter_ordinal(label: str) -> int | None:
+    """Convert 'FY2024Q3' to a sortable integer (2024*4 + 2). None if unparseable."""
+    m = re.fullmatch(r"FY(\d{4})Q([1-4])", label.strip())
+    if m is None:
+        return None
+    return int(m.group(1)) * 4 + (int(m.group(2)) - 1)
+
+
+def _ordinal_to_quarter(ordinal: int) -> str:
+    """Inverse of _quarter_ordinal."""
+    return f"FY{ordinal // 4}Q{ordinal % 4 + 1}"
+
+
+def _find_missing_quarters(labels: list[str]) -> list[str]:
+    """Return quarter labels absent between the oldest and newest supplied label.
+
+    A gap means the listing-stage filter missed an earnings release — usually an
+    8-K that omitted Item 2.02. Nothing outside the supplied span counts as a gap:
+    a company simply has no filings before its IPO or after its latest report.
+    """
+    ordinals = sorted(o for o in (_quarter_ordinal(x) for x in labels) if o is not None)
+    if len(ordinals) < 2:
+        return []
+    present = set(ordinals)
+    return [
+        _ordinal_to_quarter(o)
+        for o in range(ordinals[0], ordinals[-1] + 1)
+        if o not in present
+    ]
+
+
+def _recover_missing_quarters(company, missing: list[str]) -> list[tuple[str, Any]]:
+    """Deep-scan only the quarters the listing filter came up short on.
+
+    Downloads a filing only when its period falls in a missing quarter and it was
+    not already tagged Item 2.02 — typically a handful of filings, versus the
+    hundreds a full historical scan would fetch.
+    """
+    if not missing:
+        return []
+
+    wanted = set(missing)
+    found: dict[str, Any] = {}
+    for filing in company.get_filings(form="8-K", amendments=False):
+        items = str(getattr(filing, "items", "") or "")
+        if "2.02" in items:
+            continue
+        period = str(getattr(filing, "period_of_report", "") or "").replace("-", "")
+        if len(period) < 8:
+            continue
+        try:
+            label = _period_to_quarter_label(period)
+        except Exception as exc:
+            print(
+                f"[fetcher_nongaap] gap scan skip {period}: "
+                f"{type(exc).__name__}{_exc_status(exc)}",
+                file=sys.stderr,
+            )
+            continue
+        if _quarter_ordinal(label) is None:
+            continue
+        if label not in wanted or label in found:
+            continue
+        try:
+            eight_k = filing.obj()
+        except Exception as exc:
+            print(
+                f"[fetcher_nongaap] gap scan {label} -> "
+                f"{type(exc).__name__}{_exc_status(exc)}",
+                file=sys.stderr,
+            )
+            continue
+        if getattr(eight_k, "has_earnings", False):
+            found[label] = filing
+
+    return [(label, found[label]) for label in sorted(found, key=_quarter_ordinal)]
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -500,7 +592,8 @@ def fetch_nongaap_statements(
         ai_config:   {"provider": ..., "model": ..., "api_key": ...}
         output_dir:  Directory where nongaap_cache.json will be stored
         progress_cb: Optional callable(current, total, label) for progress updates
-        max_filings: Max number of earnings quarters to process (newest first, default 80)
+        max_filings: Max number of earnings quarters to process (newest first, default 80).
+                     Applied after the year range narrows the pool.
 
     Returns:
         List of StatementTable: [Data_EPS_Recon, Data_NonGAAP] (omits None tables)
@@ -510,17 +603,35 @@ def fetch_nongaap_statements(
     cache_path = Path(output_dir) / CACHE_FILENAME
 
     cache = _load_cache(cache_path, ticker)
-    filings = _get_earnings_filings(company)[:max_filings]  # newest max_filings quarters only
-    filings = _filter_nongaap_by_year(filings, start_year, end_year)
+    filings = _list_earnings_filings(company, start_year, end_year, max_filings)
 
-    new_filings = [(lbl, f, ek) for lbl, f, ek in filings if lbl not in cache]
+    # A hole in the quarter sequence means the listing filter missed a release —
+    # scan just that range rather than every 8-K the company ever filed.
+    missing = _find_missing_quarters([label for label, _ in filings])
+    if missing:
+        recovered = _recover_missing_quarters(company, missing)
+        if recovered:
+            filings = sorted(
+                filings + recovered,
+                key=lambda item: _quarter_ordinal(item[0]) or 0,
+                reverse=True,
+            )
+        still_missing = sorted(set(missing) - {label for label, _ in recovered})
+        if still_missing:
+            print(
+                f"[fetcher_nongaap] {ticker} 無此季財報 8-K: {', '.join(still_missing)}",
+                file=sys.stderr,
+            )
+
+    new_filings = [(lbl, f) for lbl, f in filings if lbl not in cache]
     total = len(new_filings)
 
-    for i, (quarter_label, filing, eight_k) in enumerate(new_filings, 1):
+    for i, (quarter_label, filing) in enumerate(new_filings, 1):
         if progress_cb:
             progress_cb(i, total, f"Non-GAAP {ticker} {quarter_label} ({i}/{total})")
 
         try:
+            eight_k = filing.obj()      # the only download in this loop
             eps_recon = _extract_eps_recon(eight_k)
             metrics   = _extract_nongaap_metrics(eight_k, ai_config)
             cache[quarter_label] = {
@@ -531,7 +642,7 @@ def fetch_nongaap_statements(
             # Save after each quarter (crash-safe incremental)
             _save_cache(cache_path, ticker, cache)
         except Exception as exc:
-            # 同上：這層包住 _extract_nongaap_metrics -> _call_ai，屬 AI 呼叫鏈。
+            # 這層同時包住 filing.obj() 下載與 _extract_nongaap_metrics -> _call_ai 的 AI 呼叫鏈。
             print(
                 f"[fetcher_nongaap] {quarter_label} failed: "
                 f"{type(exc).__name__}{_exc_status(exc)}",

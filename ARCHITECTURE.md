@@ -41,7 +41,11 @@ fetcher_gaap.py
     └─ _build_meta_table()              → Data_Meta
 
 fetcher_nongaap.py（勾選 Non-GAAP 時，完全獨立於 GAAP fetcher）
-    ├─ _get_earnings_filings()    → 8-K Item 2.02 清單
+    ├─ _list_earnings_filings()   → 在 SEC 申報清單階段以 items（2.02）+ period_of_report 篩選、去重、套年份與 max_filings，零下載
+    ├─ _find_missing_quarters()   → 偵測季度序列缺口
+    ├─ _recover_missing_quarters()→ 只對缺季區間逐筆 obj() 深掃，用 has_earnings 找回未標 2.02 的財報
+    ├─（以上皆不下載；filing.obj() 移進 fetch_nongaap_statements() 的逐季迴圈，
+    │   只對 nongaap_cache.json 尚未收錄的季度下載，且包在 try 內——下載失敗只損失該季）
     ├─ _extract_eps_recon()       → edgartools eps_reconciliation
     ├─ _extract_nongaap_metrics() → AI 解析 EX-99.1 press release
     │       └─ _normalize_nongaap_metrics() → 剝除期間 token、去重比較期間、過濾展望指標
@@ -115,6 +119,8 @@ EPS 調和表（GAAP EPS → 調整項 → Non-GAAP EPS）。B 欄為空（無 X
 ### Data_NonGAAP
 
 AI 從 8-K press release 提取的所有 Non-GAAP / Adjusted / Excluding 指標。跨季取聯集，缺的季填 None。
+
+> ⚠️ **欄位標籤已知不準（2026-07-31 查證，未修，見 TODO 第 2 項）**：季度標籤由 `_period_to_quarter_label()` 依 8-K 的 `period_of_report` 推算，但該欄在 Item 2.02 財報 8-K 上存的是**發布日**而非財期結束日，故標籤普遍比數字實際所屬財季**晚約一季**（INTC `20260723` 標成 `FY2026Q3`，實報 FY2026 Q2）。同一根因下，同一日曆季內發布兩份財報 8-K 時（如 WDC 2025-01-10 與 2025-01-29）兩者標籤相同，去重「留最舊」會丟掉較新那份。此為長期行為，`Data_Financials` 走 XBRL 不受影響。
 
 ## StatementTable（fetcher_gaap.py 的輸出合約）
 

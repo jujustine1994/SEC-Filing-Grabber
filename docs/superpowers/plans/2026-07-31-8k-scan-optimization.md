@@ -15,8 +15,8 @@
 - 季度標籤格式為 `FY2024Q1`，一律用既有的 `_period_to_quarter_label()` 產生，不另寫轉換邏輯
 - 例外處理只印 `type(exc).__name__` 與 `_exc_status(exc)`，**禁止** `f"{exc}"` 或 `{exc!r}`（LLM/HTTP SDK 的例外訊息挾帶 URL 與金鑰）
 - 不修改 `fetcher_gaap.py`、`main.py`、`excel_writer.py`、`excel_formatter.py`
-- 新測試放在既有的 `tests/test_fetcher_nongaap.py`，不新建測試檔
-- 連網測試一律加 `@pytest.mark.slow`
+- 不新建測試檔。**單元測試**放 `tests/test_fetcher_nongaap.py`；**連網測試**放 `tests/test_live_snapshots.py`
+- 連網測試一律加 `@pytest.mark.slow`。本專案的預設指令 `pytest tests/ --ignore=tests/test_live_snapshots.py` 是靠**排除整個檔案**跳過連網測試，不是靠 `-m "not slow"`——連網測試放錯檔案會讓每次單元測試都連 SEC
 - 測試指令為 `python -m pytest`（此機器 `pytest` 不在 PATH）
 
 ---
@@ -41,7 +41,8 @@ x.obj()              # ← 只有這個會下載
 | 檔案 | 動作 | 責任 |
 |---|---|---|
 | `fetcher_nongaap.py` | 修改 | 移除 `_get_earnings_filings()`；新增 `_list_earnings_filings()`（清單階段篩選）、`_find_missing_quarters()`（缺季偵測）、`_recover_missing_quarters()`（缺口補掃）；改寫 `fetch_nongaap_statements()` 的下載時機 |
-| `tests/test_fetcher_nongaap.py` | 修改 | 新增假申報物件與 10 個測試 |
+| `tests/test_fetcher_nongaap.py` | 修改 | 新增假申報物件與 22 個單元測試 |
+| `tests/test_live_snapshots.py` | 修改 | 新增 2 個 `slow` 連網驗收測試 |
 
 不新建檔案。`fetcher_nongaap.py` 目前 500 餘行、職責單一（8-K → Non-GAAP），不需要拆分。
 
@@ -651,7 +652,7 @@ git commit -m "perf: 8-K 改為清單階段篩選，只下載需要的季度並�
 ### Task 5: 連網驗收
 
 **Files:**
-- Test: `tests/test_fetcher_nongaap.py`
+- Test: `tests/test_live_snapshots.py`（連網測試放這裡，不放 `test_fetcher_nongaap.py`——預設測試指令靠排除本檔案來跳過連網測試）
 
 **Interfaces:**
 - Consumes: Task 1–4 的全部函式
@@ -718,7 +719,7 @@ def test_live_year_range_limits_download_count_crm():
 
 - [ ] **Step 2: 執行連網測試**
 
-Run: `python -m pytest tests/test_fetcher_nongaap.py -m slow -k "live_listing or live_year_range" -v`
+Run: `python -m pytest tests/test_live_snapshots.py -m slow -k "live_listing or live_year_range" -v`
 Expected: 2 passed。若 `test_live_listing_filter_matches_deep_scan_arlo` 失敗，代表 ARLO 有未標 2.02 的財報且缺季偵測沒補到——回報實際缺的季度，不要放寬斷言。
 
 - [ ] **Step 3: 實跑三家計時**
@@ -744,7 +745,7 @@ Expected: 每家 60 秒內完成（含 4 次 AI 呼叫），並產生 `Data_NonG
 - [ ] **Step 4: Commit**
 
 ```bash
-git add tests/test_fetcher_nongaap.py
+git add tests/test_live_snapshots.py
 git commit -m "test: 新增 8-K 清單篩選與下載量的連網驗收測試"
 ```
 

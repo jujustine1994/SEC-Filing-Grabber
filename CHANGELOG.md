@@ -58,6 +58,33 @@
 
 ## 更新記錄
 
+### 2026-07-31
+
+**8-K 掃描效率優化**
+
+設計文件：`docs/superpowers/specs/2026-07-31-8k-scan-optimization-design.md`
+
+- **`fetcher_nongaap.py`**：
+  - 新增 `_list_earnings_filings()`：改在 SEC 申報清單階段以 `items`（Item 2.02）與 `period_of_report` 完成篩選、去重、年份過濾與 `max_filings` 切割，全程不下載檔案
+  - 新增 `_quarter_ordinal()` / `_ordinal_to_quarter()` / `_find_missing_quarters()`：偵測季度序列缺口
+  - 新增 `_recover_missing_quarters()`：僅對缺季區間回退逐筆 `obj()` 深掃，用 `has_earnings` 找回未標 2.02 的財報；補不到的季度寫 stderr
+  - 移除 `_get_earnings_filings()`（對全部歷史 8-K 逐筆下載）
+  - `fetch_nongaap_statements()`：`obj()` 移進迴圈，只對未快取的季度下載；年份過濾改在 `max_filings` 之前套用
+- **實測**：AAPL 全部 8-K 235 份、含 2.02 者 94 份；抓 4 季的下載次數由 235 降至 4
+- **已知邊界**：SEC 自 2004-08-23 才啟用 2.02 編號，更早的財報 8-K（Item 12/5）不會被抓到
+- **實機驗收（Task 5，`nongaap_cache.json` 未命中、逐季即時 AI 呼叫）**：CRM 76.5 秒（`~/.edgar` 已預熱）、PANW 71.3 秒（`~/.edgar` 4 份中 3 份已預熱）、ARLO 76.0 秒（兩層快取皆全冷），皆為 `max_filings=4`（4 季 = 4 次即時 AI 呼叫）。此結果超出設計文件原估的 60 秒目標，原因是 AI 呼叫本身耗時已主導總時間、非下載次數；但相較優化前單一 ticker 需 5–10 分鐘，仍是數量級改善
+- **健壯性修正（最終審查後追加）**：`_recover_missing_quarters()` 原本未保護 `_period_to_quarter_label()` 呼叫，一份 `period_of_report` 為 8 字元以上非數字的申報即拋 `ValueError`，往上穿出 `fetch_nongaap_statements()` 只在 GUI 層被接住 → **整趟輸出失敗、連同一輪已抓好的 GAAP 三表一併拿不到 Excel**。缺季回補掃的正是「未標 2.02」這批 metadata 最雜亂的申報，暴露程度高於清單路徑。已補上與 `_list_earnings_filings()` 同款的 guard（例外只記 `type(exc).__name__` + `_exc_status(exc)`），畸形申報改為跳過
+- **`tests/test_fetcher_nongaap.py`**：新增 26 個單元測試（清單篩選 8、缺季偵測 7、缺口補掃 5、下載時機 2、review 修正回合追加 2：`test_fetch_nongaap_recovers_gap_quarter_in_newest_first_order`、`test_list_earnings_filings_skips_non_numeric_period`、最終審查追加 2：缺季回補的畸形 `period_of_report` 防護），單元測試總數由 250 增至 276（`pytest tests/ --ignore=tests/test_live_snapshots.py`）
+- 另在 `tests/test_live_snapshots.py` 新增 2 個 `slow` 連網驗收測試，不含在上述 250/276 計數內，預設指令不會執行。`test_live_listing_filter_matches_deep_scan_arlo` 另加 `len(deep_labels) >= 20` 下限斷言——該測試迴圈內有 `except Exception: continue`，若下載全面失敗（限速、identity 被拒）`deep_labels` 會是空集合而讓斷言假性通過，而它是全分支唯一守住「快速路徑不漏季」這個核心主張的測試
+
+**本次順帶查出的既有缺陷（未修，已寫入 TODO 第 2 項）**
+
+最終審查實查 EDGAR 後確認：Item 2.02 8-K 的 `period_of_report` 存的是**發布日**而非財期結束日，故 `Data_NonGAAP` 每一欄的季度標籤都比數字實際所屬財季晚約一季（INTC `20260723`→`FY2026Q3` 實報 FY2026 Q2；COST `20260528`→`FY2026Q2` 實報 FY2026 Q3）。同一根因另會漏抓：WDC 於 2025 日曆 Q1 發過兩份 Item 2.02 8-K（`20250110`、`20250129`），同標 `FY2025Q1`，去重「留最舊」把 1/29 那份丟掉。兩者皆長期存在、非本次引入（舊 `_get_earnings_filings()` 讀同一欄位）。
+
+**已知殘留（parked）**
+
+`_recover_missing_quarters()` 內針對 `_quarter_ordinal()` 回傳 `None` 的排序 guard，經複審實測為不可達路徑——既有的 `label not in wanted` 檢查已先濾掉畸形標籤，把程式碼退回修正前跑同一測試同樣通過。guard 本身無害，但對應測試是空測試，下次動到該檔時一併清除。
+
 ### 2026-06-10
 - 修正：`winget install Python` 加入 `--override "/quiet PrependPath=1 Include_pip=1"`，確保靜默安裝後 Python 自動加進 PATH
 - 修正：`launcher.ps1` 加入全域 `trap`，攔截未處理例外，防止執行失敗時視窗直接閃退
