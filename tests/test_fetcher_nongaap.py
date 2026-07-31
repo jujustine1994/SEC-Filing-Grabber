@@ -516,3 +516,44 @@ def test_recover_missing_quarters_survives_download_failure():
     result = _recover_missing_quarters(FakeCompany([bad, good]), ["FY2024Q2"])
     assert [label for label, _ in result] == ["FY2024Q2"]
     assert result[0][1] is good
+
+
+def test_fetch_nongaap_downloads_only_uncached_quarters(tmp_path, monkeypatch):
+    """The whole point: one obj() call per quarter actually needed, and none for
+    quarters already in the cache."""
+    import fetcher_nongaap as fn
+
+    q3 = RecoverableFiling("2.02", "2024-09-30", has_earnings=True)
+    q2 = RecoverableFiling("2.02", "2024-06-30", has_earnings=True)
+    q1 = RecoverableFiling("2.02", "2024-03-31", has_earnings=True)
+    company = FakeCompany([q3, q2, q1])
+
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: {"Non-GAAP EPS": 1.0})
+
+    # FY2024Q1 is already cached — it must not be downloaded again
+    fn._save_cache(tmp_path / fn.CACHE_FILENAME, "TEST",
+                   {"FY2024Q1": {"filing_date": "2024-04-30", "eps_recon": {}, "metrics": {}}})
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
+
+    assert q3.obj_calls == 1
+    assert q2.obj_calls == 1
+    assert q1.obj_calls == 0
+
+
+def test_fetch_nongaap_writes_metrics_to_cache(tmp_path, monkeypatch):
+    import fetcher_nongaap as fn
+
+    company = FakeCompany([RecoverableFiling("2.02", "2024-09-30", has_earnings=True)])
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: {"Non-GAAP EPS": 2.5})
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
+
+    cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
+    assert cached["FY2024Q3"]["metrics"]["Non-GAAP EPS"] == 2.5

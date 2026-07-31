@@ -553,42 +553,6 @@ def _recover_missing_quarters(company, missing: list[str]) -> list[tuple[str, An
     return [(label, found[label]) for label in sorted(found, key=_quarter_ordinal)]
 
 
-def _get_earnings_filings(company) -> list[tuple[str, Any, Any]]:
-    """Return list of (quarter_label, filing, eight_k) for 8-K filings with Item 2.02.
-
-    Sorted oldest → newest. Deduplicated by quarter_label (keeps oldest filing per quarter).
-    eight_k is the already-parsed filing object — callers should use it directly to avoid
-    a redundant filing.obj() call.
-    """
-    # edgartools returns newest-first; we reverse to get oldest-first for deduplication
-    results = []
-    for filing in company.get_filings(form="8-K", amendments=False):
-        try:
-            eight_k = filing.obj()
-            items = getattr(eight_k, "items", []) or []
-            has_202 = any("2.02" in str(item) for item in items)
-            if not has_202:
-                if not getattr(eight_k, "has_earnings", False):
-                    continue
-            period = str(filing.period_of_report or "").replace("-", "")
-            if len(period) < 8:
-                continue
-            label = _period_to_quarter_label(period)
-            results.append((label, filing, eight_k))
-        except Exception as exc:
-            print(f"[fetcher_nongaap] 8-K scan warning: {exc!r}", file=sys.stderr)
-            continue
-
-    # Sort oldest first, deduplicate by quarter_label (keep first = oldest filing for that period)
-    seen: set[str] = set()
-    deduped = []
-    for label, filing, eight_k in reversed(results):
-        if label not in seen:
-            seen.add(label)
-            deduped.append((label, filing, eight_k))
-    return list(reversed(deduped))
-
-
 # ── Public API ───────────────────────────────────────────────────────────────
 
 def fetch_nongaap_statements(
@@ -609,7 +573,8 @@ def fetch_nongaap_statements(
         ai_config:   {"provider": ..., "model": ..., "api_key": ...}
         output_dir:  Directory where nongaap_cache.json will be stored
         progress_cb: Optional callable(current, total, label) for progress updates
-        max_filings: Max number of earnings quarters to process (newest first, default 80)
+        max_filings: Max number of earnings quarters to process (newest first, default 80).
+                     Applied after the year range narrows the pool.
 
     Returns:
         List of StatementTable: [Data_EPS_Recon, Data_NonGAAP] (omits None tables)
@@ -619,17 +584,35 @@ def fetch_nongaap_statements(
     cache_path = Path(output_dir) / CACHE_FILENAME
 
     cache = _load_cache(cache_path, ticker)
-    filings = _get_earnings_filings(company)[:max_filings]  # newest max_filings quarters only
-    filings = _filter_nongaap_by_year(filings, start_year, end_year)
+    filings = _list_earnings_filings(company, start_year, end_year, max_filings)
 
-    new_filings = [(lbl, f, ek) for lbl, f, ek in filings if lbl not in cache]
+    # A hole in the quarter sequence means the listing filter missed a release —
+    # scan just that range rather than every 8-K the company ever filed.
+    missing = _find_missing_quarters([label for label, _ in filings])
+    if missing:
+        recovered = _recover_missing_quarters(company, missing)
+        if recovered:
+            filings = sorted(
+                filings + recovered,
+                key=lambda item: _quarter_ordinal(item[0]) or 0,
+                reverse=True,
+            )
+        still_missing = sorted(set(missing) - {label for label, _ in recovered})
+        if still_missing:
+            print(
+                f"[fetcher_nongaap] {ticker} 無此季財報 8-K: {', '.join(still_missing)}",
+                file=sys.stderr,
+            )
+
+    new_filings = [(lbl, f) for lbl, f in filings if lbl not in cache]
     total = len(new_filings)
 
-    for i, (quarter_label, filing, eight_k) in enumerate(new_filings, 1):
+    for i, (quarter_label, filing) in enumerate(new_filings, 1):
         if progress_cb:
             progress_cb(i, total, f"Non-GAAP {ticker} {quarter_label} ({i}/{total})")
 
         try:
+            eight_k = filing.obj()      # the only download in this loop
             eps_recon = _extract_eps_recon(eight_k)
             metrics   = _extract_nongaap_metrics(eight_k, ai_config)
             cache[quarter_label] = {
