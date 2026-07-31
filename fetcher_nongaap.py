@@ -544,7 +544,17 @@ def _recover_missing_quarters(company, missing: list[str]) -> list[tuple[str, An
         period = str(getattr(filing, "period_of_report", "") or "").replace("-", "")
         if len(period) < 8:
             continue
-        label = _period_to_quarter_label(period)
+        try:
+            label = _period_to_quarter_label(period)
+        except Exception as exc:
+            print(
+                f"[fetcher_nongaap] gap scan skip {period}: "
+                f"{type(exc).__name__}{_exc_status(exc)}",
+                file=sys.stderr,
+            )
+            continue
+        if _quarter_ordinal(label) is None:
+            continue
         if label not in wanted or label in found:
             continue
         try:

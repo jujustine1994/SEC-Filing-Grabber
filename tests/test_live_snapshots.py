@@ -429,6 +429,14 @@ def test_live_listing_filter_matches_deep_scan_arlo():
         except Exception:
             continue
 
+    # Floor so a systematically failing download loop (rate limiting, rejected
+    # identity, network down) can't leave deep_labels empty and pass trivially —
+    # ARLO has 32 earnings 8-Ks, so 20 is a safe floor for a healthy run.
+    assert len(deep_labels) >= 20, (
+        f"deep scan only found {len(deep_labels)} quarters — downloads may be "
+        "failing systematically rather than the comparison being meaningful"
+    )
+
     assert deep_labels - fast_labels == set(), (
         f"listing filter missed quarters the deep scan found: {deep_labels - fast_labels}"
     )
@@ -448,5 +456,5 @@ def test_live_year_range_limits_download_count_crm():
 
     result = _list_earnings_filings(edgar.Company("CRM"), max_filings=2)
     assert len(result) == 2
-    # CRM's fiscal year ends in January, so Q labels must not all be Q4
+    # Two distinct quarter labels must come back, not the same label twice.
     assert len({label for label, _ in result}) == 2

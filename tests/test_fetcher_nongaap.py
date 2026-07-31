@@ -299,7 +299,6 @@ def test_filter_nongaap_both_bounds():
     assert years == [2020, 2022]
 
 
-import pytest
 from fetcher_nongaap import _list_earnings_filings
 
 
@@ -525,6 +524,28 @@ def test_recover_missing_quarters_survives_download_failure():
 
     good = RecoverableFiling("5.07", "2024-06-30", has_earnings=True)
     bad  = ExplodingFiling("8.01", "2024-06-30", has_earnings=True, accession="BAD")
+    result = _recover_missing_quarters(FakeCompany([bad, good]), ["FY2024Q2"])
+    assert [label for label, _ in result] == ["FY2024Q2"]
+    assert result[0][1] is good
+
+
+def test_recover_missing_quarters_skips_non_numeric_period():
+    """A gap-candidate filing with a non-numeric period_of_report (e.g. 'UNKNOWN0')
+    must be skipped, not abort recovery of the other gap-quarter candidates —
+    _period_to_quarter_label raises ValueError on non-numeric month digits."""
+    bad  = RecoverableFiling("8.01", "UNKNOWN0", has_earnings=True, accession="BAD")
+    good = RecoverableFiling("8.01,9.01", "2024-06-30", has_earnings=True)
+    result = _recover_missing_quarters(FakeCompany([bad, good]), ["FY2024Q2"])
+    assert [label for label, _ in result] == ["FY2024Q2"]
+    assert result[0][1] is good
+
+
+def test_recover_missing_quarters_skips_unparseable_ordinal():
+    """A period like 'ABCD0331' survives _period_to_quarter_label without raising
+    (the year slice is never int()-ed) but produces a label whose ordinal is None —
+    must be skipped rather than crash the sort with a TypeError."""
+    bad  = RecoverableFiling("8.01", "ABCD0331", has_earnings=True, accession="BAD")
+    good = RecoverableFiling("8.01,9.01", "2024-06-30", has_earnings=True)
     result = _recover_missing_quarters(FakeCompany([bad, good]), ["FY2024Q2"])
     assert [label for label, _ in result] == ["FY2024Q2"]
     assert result[0][1] is good
