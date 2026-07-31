@@ -73,7 +73,8 @@
 - **實測**：AAPL 全部 8-K 235 份、含 2.02 者 94 份；抓 4 季的下載次數由 235 降至 4
 - **已知邊界**：SEC 自 2004-08-23 才啟用 2.02 編號，更早的財報 8-K（Item 12/5）不會被抓到
 - **實機驗收（Task 5，`nongaap_cache.json` 未命中、逐季即時 AI 呼叫）**：CRM 76.5 秒（`~/.edgar` 已預熱）、PANW 71.3 秒（`~/.edgar` 4 份中 3 份已預熱）、ARLO 76.0 秒（兩層快取皆全冷），皆為 `max_filings=4`（4 季 = 4 次即時 AI 呼叫）。此結果超出設計文件原估的 60 秒目標，原因是 AI 呼叫本身耗時已主導總時間、非下載次數；但相較優化前單一 ticker 需 5–10 分鐘，仍是數量級改善
-- **`tests/test_fetcher_nongaap.py`**：新增 22 個測試（清單篩選 8、缺季偵測 7、缺口補掃 5、下載時機 2）+ 2 個 `slow` 連網驗收（`tests/test_live_snapshots.py`）；單元測試總數由 250 增至 274
+- **`tests/test_fetcher_nongaap.py`**：新增 24 個單元測試（清單篩選 8、缺季偵測 7、缺口補掃 5、下載時機 2、review 修正回合追加 2：`test_fetch_nongaap_recovers_gap_quarter_in_newest_first_order`、`test_list_earnings_filings_skips_non_numeric_period`），單元測試總數由 250 增至 274（`pytest tests/ --ignore=tests/test_live_snapshots.py`）
+- 另在 `tests/test_live_snapshots.py` 新增 2 個 `slow` 連網驗收測試，不含在上述 250/274 計數內，預設指令不會執行
 
 ### 2026-06-10
 - 修正：`winget install Python` 加入 `--override "/quiet PrependPath=1 Include_pip=1"`，確保靜默安裝後 Python 自動加進 PATH
