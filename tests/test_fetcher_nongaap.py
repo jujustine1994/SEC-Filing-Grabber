@@ -410,3 +410,38 @@ def test_list_earnings_filings_year_filter_runs_before_max_filings():
     ])
     result = _list_earnings_filings(company, end_year=2023, max_filings=1)
     assert [label for label, _ in result] == ["FY2023Q4"]
+
+
+from fetcher_nongaap import _find_missing_quarters
+
+
+def test_find_missing_quarters_none_missing():
+    assert _find_missing_quarters(["FY2024Q3", "FY2024Q2", "FY2024Q1"]) == []
+
+
+def test_find_missing_quarters_single_gap():
+    assert _find_missing_quarters(["FY2024Q3", "FY2024Q1"]) == ["FY2024Q2"]
+
+
+def test_find_missing_quarters_spans_year_boundary():
+    assert _find_missing_quarters(["FY2025Q1", "FY2024Q3"]) == ["FY2024Q4"]
+
+
+def test_find_missing_quarters_ignores_outside_range():
+    """Gaps only exist between the oldest and newest label — never before or after."""
+    assert _find_missing_quarters(["FY2024Q2", "FY2024Q3"]) == []
+
+
+def test_find_missing_quarters_multiple_gaps():
+    assert _find_missing_quarters(["FY2024Q4", "FY2024Q2", "FY2023Q4"]) == [
+        "FY2024Q1", "FY2024Q3",
+    ]
+
+
+def test_find_missing_quarters_handles_empty_and_single():
+    assert _find_missing_quarters([]) == []
+    assert _find_missing_quarters(["FY2024Q1"]) == []
+
+
+def test_find_missing_quarters_ignores_unparseable_labels():
+    assert _find_missing_quarters(["FY2024Q3", "GARBAGE", "FY2024Q1"]) == ["FY2024Q2"]

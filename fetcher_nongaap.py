@@ -485,6 +485,37 @@ def _list_earnings_filings(
     return deduped[:max_filings]
 
 
+def _quarter_ordinal(label: str) -> int | None:
+    """Convert 'FY2024Q3' to a sortable integer (2024*4 + 2). None if unparseable."""
+    m = re.fullmatch(r"FY(\d{4})Q([1-4])", label.strip())
+    if m is None:
+        return None
+    return int(m.group(1)) * 4 + (int(m.group(2)) - 1)
+
+
+def _ordinal_to_quarter(ordinal: int) -> str:
+    """Inverse of _quarter_ordinal."""
+    return f"FY{ordinal // 4}Q{ordinal % 4 + 1}"
+
+
+def _find_missing_quarters(labels: list[str]) -> list[str]:
+    """Return quarter labels absent between the oldest and newest supplied label.
+
+    A gap means the listing-stage filter missed an earnings release — usually an
+    8-K that omitted Item 2.02. Nothing outside the supplied span counts as a gap:
+    a company simply has no filings before its IPO or after its latest report.
+    """
+    ordinals = sorted(o for o in (_quarter_ordinal(x) for x in labels) if o is not None)
+    if len(ordinals) < 2:
+        return []
+    present = set(ordinals)
+    return [
+        _ordinal_to_quarter(o)
+        for o in range(ordinals[0], ordinals[-1] + 1)
+        if o not in present
+    ]
+
+
 def _get_earnings_filings(company) -> list[tuple[str, Any, Any]]:
     """Return list of (quarter_label, filing, eight_k) for 8-K filings with Item 2.02.
 
