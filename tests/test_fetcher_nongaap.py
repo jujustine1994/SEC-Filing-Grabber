@@ -400,6 +400,18 @@ def test_list_earnings_filings_max_filings_keeps_newest():
     assert [label for label, _ in result] == ["FY2024Q4", "FY2024Q3"]
 
 
+def test_list_earnings_filings_skips_non_numeric_period():
+    """A period_of_report that is long enough but non-numeric (e.g. 'UNKNOWN0') must be
+    skipped, not abort the whole listing — _period_to_quarter_label raises ValueError
+    on non-numeric month digits."""
+    company = FakeCompany([
+        FakeFiling("2.02", "UNKNOWN0"),
+        FakeFiling("2.02", "2024-03-31"),
+    ])
+    result = _list_earnings_filings(company)
+    assert [label for label, _ in result] == ["FY2024Q1"]
+
+
 def test_list_earnings_filings_year_filter_runs_before_max_filings():
     """Year range narrows the pool first; max_filings then trims the narrowed pool."""
     company = FakeCompany([
@@ -557,3 +569,41 @@ def test_fetch_nongaap_writes_metrics_to_cache(tmp_path, monkeypatch):
 
     cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
     assert cached["FY2024Q3"]["metrics"]["Non-GAAP EPS"] == 2.5
+
+
+def test_fetch_nongaap_recovers_gap_quarter_in_newest_first_order(tmp_path, monkeypatch):
+    """Wiring test for the gap-recovery block in fetch_nongaap_statements: a quarter
+    whose 8-K omits Item 2.02 (so _list_earnings_filings misses it) must still be
+    found via _recover_missing_quarters, merged back into the run, downloaded, and
+    cached — and the merge must preserve newest-first processing order. Without
+    reverse=True on the merge sort, this would process oldest-first instead."""
+    import fetcher_nongaap as fn
+
+    q3 = RecoverableFiling("2.02", "2024-09-30", has_earnings=True)
+    q2 = RecoverableFiling("5.07", "2024-06-30", has_earnings=True)  # not tagged 2.02 -> gap
+    q1 = RecoverableFiling("2.02", "2024-03-31", has_earnings=True)
+    company = FakeCompany([q3, q2, q1])
+
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: {"Non-GAAP EPS": 1.0})
+
+    seen_labels = []
+    fn.fetch_nongaap_statements(
+        "TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path,
+        progress_cb=lambda i, total, label: seen_labels.append(label),
+    )
+
+    # The gap quarter was found by recovery (1 obj() call to check has_earnings)
+    # and then downloaded again in the main loop to extract data (1 more call).
+    assert q2.obj_calls == 2
+    cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
+    assert "FY2024Q2" in cached
+
+    # Processing order stays newest-first with the recovered quarter slotted in
+    # at its correct position, not appended at the end or reversed.
+    assert len(seen_labels) == 3
+    assert "FY2024Q3" in seen_labels[0]
+    assert "FY2024Q2" in seen_labels[1]
+    assert "FY2024Q1" in seen_labels[2]

@@ -425,7 +425,7 @@ def _filter_nongaap_by_year(
     start_year: int | None,
     end_year: int | None,
 ) -> list[tuple]:
-    """Filter (label, filing, eight_k) tuples by year extracted from label (e.g. 'FY2021Q2' → 2021)."""
+    """Filter (label, filing) tuples by year extracted from label (e.g. 'FY2021Q2' → 2021)."""
     if start_year is None and end_year is None:
         return filings
     result = []
@@ -469,7 +469,16 @@ def _list_earnings_filings(
         period = str(getattr(filing, "period_of_report", "") or "").replace("-", "")
         if len(period) < 8:
             continue
-        candidates.append((_period_to_quarter_label(period), filing))
+        try:
+            label = _period_to_quarter_label(period)
+        except Exception as exc:
+            print(
+                f"[fetcher_nongaap] listing skip {period}: "
+                f"{type(exc).__name__}{_exc_status(exc)}",
+                file=sys.stderr,
+            )
+            continue
+        candidates.append((label, filing))
 
     # Dedupe by quarter, keeping the oldest filing for each — matches prior behaviour
     # where a corrected re-filing does not displace the original release.
@@ -623,7 +632,7 @@ def fetch_nongaap_statements(
             # Save after each quarter (crash-safe incremental)
             _save_cache(cache_path, ticker, cache)
         except Exception as exc:
-            # 同上：這層包住 _extract_nongaap_metrics -> _call_ai，屬 AI 呼叫鏈。
+            # 這層同時包住 filing.obj() 下載與 _extract_nongaap_metrics -> _call_ai 的 AI 呼叫鏈。
             print(
                 f"[fetcher_nongaap] {quarter_label} failed: "
                 f"{type(exc).__name__}{_exc_status(exc)}",
