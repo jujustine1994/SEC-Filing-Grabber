@@ -875,3 +875,149 @@ def test_prompt_restricts_to_current_period():
     low = _NONGAAP_PROMPT.lower()
     assert "full-year" in low or "full year" in low
     assert "year-to-date" in low
+
+
+# ── AI 呼叫失敗不可污染快取（2026-08-01 實跑 PANW 撞 HTTP 429 後補）────────
+#
+# 原行為：_call_ai 失敗回 {} → _extract_nongaap_metrics 回 {} → 該季照樣寫進
+# 快取（metrics 為空）→ 下次執行 `lbl not in cache` 命中 → **永遠不會再抓**。
+# 一次暫時性的 429 或斷線，就讓那季資料無聲永久消失。
+#
+# 修法：失敗回 None（與「AI 有回應但沒找到指標」的 {} 區分開），
+# 失敗的季度不寫快取，下次執行自動重試。
+
+def test_call_ai_returns_none_on_failure(monkeypatch):
+    """AI 呼叫拋例外時要回 None，不可回 {}——{} 代表「真的沒有指標」。"""
+    import fetcher_nongaap as fn
+    monkeypatch.setattr(fn, "_NONGAAP_PROMPT", "{press_release_text}")
+    result = fn._call_ai("text", {"provider": "nonexistent-provider"})
+    assert result is None
+
+def test_extract_nongaap_metrics_propagates_none(monkeypatch):
+    """_extract_nongaap_metrics 不可把 _call_ai 的 None 吃掉變成 {}。"""
+    import fetcher_nongaap as fn
+    monkeypatch.setattr(fn, "_call_ai", lambda text, cfg: None)
+
+    class FakePR:
+        def markdown(self): return "some press release text"
+    class FakeEightK:
+        press_releases = [FakePR()]
+
+    assert fn._extract_nongaap_metrics(FakeEightK(), {}) is None
+
+def test_failed_quarter_not_written_to_cache(tmp_path, monkeypatch):
+    """AI 失敗的季度不可進快取，否則下次執行會跳過它。"""
+    import fetcher_nongaap as fn
+
+    company = FakeCompany([RecoverableFiling("2.02", "2024-09-30", has_earnings=True)])
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: None)
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
+
+    cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
+    assert "FY2024Q3" not in cached
+
+def test_failed_quarter_retried_on_next_run(tmp_path, monkeypatch):
+    """第一趟失敗、第二趟成功——第二趟必須真的重抓，而不是讀到空快取。"""
+    import fetcher_nongaap as fn
+
+    company = FakeCompany([RecoverableFiling("2.02", "2024-09-30", has_earnings=True)])
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: None)
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
+
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics",
+                        lambda ek, cfg: {"Non-GAAP Gross Margin": 45.5})
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
+
+    cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
+    assert cached["FY2024Q3"]["metrics"]["Non-GAAP Gross Margin"] == 45.5
+
+def test_genuinely_empty_quarter_is_cached(tmp_path, monkeypatch):
+    """AI 成功回應但新聞稿真的沒有 Non-GAAP 指標（{}）時，仍要寫快取，
+    否則每次執行都會為了同一份沒有指標的 8-K 重複呼叫 AI。"""
+    import fetcher_nongaap as fn
+
+    company = FakeCompany([RecoverableFiling("2.02", "2024-09-30", has_earnings=True)])
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: {})
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
+
+    cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
+    assert "FY2024Q3" in cached
+    assert cached["FY2024Q3"]["metrics"] == {}
+
+def test_build_nongaap_table_tolerates_none_metrics():
+    """防禦：舊快取若存過 None，組表不可炸。"""
+    cache = {"FY2025Q1": {"filing_date": "", "metrics": None}}
+    assert _build_nongaap_table("TEST", cache) is None
+
+
+# ── CRM 實跑暴露的規則表缺口（2026-08-01）────────────────────────────────────
+
+def test_normalize_drops_english_guidance_in_middle():
+    """'Non-GAAP Diluted Net Income Per Share Guidance (Low)' —— guidance 在中間。
+    英文原本只用 startswith，這類整批漏掉，直接混進時間序列。"""
+    raw = {"Non-GAAP Diluted Net Income Per Share Guidance (Low)": 3.11}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_drops_english_guidance_suffix():
+    raw = {"Non-GAAP Operating Margin Guidance": 34.3}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_drops_english_high_low_bounds():
+    raw = {"Free Cash Flow Growth Guidance (High)": 10.0}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_keeps_non_guidance_english_metric():
+    """防過度過濾：一般英文指標不可被誤殺。"""
+    raw = {"Non-GAAP Operating Margin": 34.8}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Operating Margin": 34.8}
+
+def test_canonicalize_constant_currency():
+    """CRM 的「恆定匯率」與「固定匯率」是同一件事（constant currency）。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    a = _canonicalize_metric_name("Non-GAAP 恆定匯率 Revenue 成長率")
+    b = _canonicalize_metric_name("固定匯率 Revenue 成長率")
+    assert a == b
+
+def test_canonicalize_growth_rate():
+    from fetcher_nongaap import _canonicalize_metric_name
+    assert "Growth" in _canonicalize_metric_name("Free Cash Flow 年增率")
+
+def test_canonicalize_crpo():
+    """當期剩餘履約義務 = cRPO，SaaS 業最重要的領先指標之一。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    out = _canonicalize_metric_name("Non-GAAP 恆定匯率當期剩餘履約義務成長率")
+    assert "cRPO" in out
+    assert "履約" not in out
+
+def test_canonicalize_leaves_no_chinese_for_crm_names():
+    """CRM 實跑出現過的中文名，全部不得殘留中文字。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    names = [
+        "Non-GAAP 恆定匯率 Revenue 成長率",
+        "Non-GAAP 恆定匯率當期剩餘履約義務成長率",
+        "Non-GAAP 恆定匯率 Subscription 與支援 Revenue 成長率",
+        "Free Cash Flow 年增率",
+        "固定匯率 Revenue 成長率",
+        "固定匯率 Subscription 與支援 Revenue 成長率",
+        "固定匯率當期未履約合約總額成長率",
+    ]
+    for n in names:
+        out = _canonicalize_metric_name(n)
+        assert not any("一" <= ch <= "鿿" for ch in out), f"{n} -> {out}"
+
+def test_growth_rate_is_percent_in_excel():
+    """成長率是百分比，不可除以 1M。"""
+    from excel_formatter import _is_percent_concept
+    assert _is_percent_concept("Non-GAAP Constant Currency Revenue Growth")

@@ -80,6 +80,15 @@
   - 刪快取重抓（新英文 prompt）→ 快取 100% 英文、無 guidance 列、無期間 token；兩條路徑數值完全一致
   - 對 8-K 原文（`2026-05-07` 申報）逐項核對全中：非 GAAP 毛利率 50.1%、EPS $0.28、Adjusted EBITDA $30.4M／margin 20.2%、訂閱與服務毛利率 85.4%、FCF $25.4M／margin 16.9%
   - Excel 實檔驗證：毛利率顯示 `50.1%`（修前 `3.75e-05`）、EPS `0.28`（修前 `1e-07`）、Adjusted EBITDA `30.4`（正確 ÷1M）
+**同日追加：跨公司驗證（CRM／PANW）與快取污染修復**
+
+拿 CRM、PANW 的實際輸出回頭驗規則表，又抓到兩個獨立缺陷：
+
+- **AI 呼叫失敗會污染快取（嚴重，資料永久遺失）**：`_call_ai()` 失敗時回 `{}`，與「AI 有回應但新聞稿真的沒有 Non-GAAP 指標」無法區分，該季照樣寫進 `nongaap_cache.json`；下次執行 `lbl not in cache` 命中，**那季永遠不會再被抓，且全程無聲**。實跑 PANW 時撞到 Gemini `HTTP 429`，6 季有 2 季就這樣被寫成空白。已改為失敗回 `None`、不寫快取、下次執行自動重試，並在 stderr 明示；「真的沒有指標」仍照常寫快取以免重複付費呼叫 AI。補 6 條測試（含「第一趟失敗、第二趟成功要真的重抓」）
+- **英文 guidance 詞在名稱中間時漏掉**：英文原本只用 `startswith`，CRM 的 `Non-GAAP Diluted Net Income Per Share Guidance (Low)` 抓不到，預測數字直接混進時間序列。已加 `GUIDANCE_SUBSTRINGS_EN`（`guidance` / `forecast` / `(low)` / `(high)`）
+- **規則表擴充**：CRM 的 SaaS 用語（`恆定匯率`／`固定匯率` → Constant Currency、`當期剩餘履約義務` → cRPO、`成長率` → Growth、`年增率` → YoY Growth、`與支援` → and Support），並把「恆定匯率」與「固定匯率」兩種說法併成同一列。`PERCENT_KEYWORDS` 的 `growth %` 放寬為 `growth`
+- 測試 327 → **342**
+
 - **本次自行決定、可調整處**（都寫在程式碼註解裡）：
   - 百分比存**原始數字** 37.5 而非 Excel 比例 0.375 → `excel_formatter.PERCENT_AS_EXCEL_RATIO = False`
   - `服務毛利率` 與 `訂閱與服務毛利率` 視為同一列 → `metric_rules.METRIC_ALIASES` 刪一行即可分開

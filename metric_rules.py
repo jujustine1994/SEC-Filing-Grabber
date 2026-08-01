@@ -63,7 +63,13 @@ ZH_ANNUAL_PATTERNS = [
 
 GUIDANCE_PREFIXES_EN = ("expected", "outlook", "guidance", "anticipated", "projected")
 
-GUIDANCE_SUBSTRINGS_EN = ("outlook",)
+# 英文也需要「包含」比對，不能只靠 startswith：CRM 實跑出現
+# "Non-GAAP Diluted Net Income Per Share Guidance (Low)"，guidance 在名稱中間，
+# startswith 抓不到，整批預測數字就這樣混進時間序列。
+GUIDANCE_SUBSTRINGS_EN = (
+    "outlook", "guidance", "forecast",
+    "(low)", "(high)",
+)
 
 GUIDANCE_SUBSTRINGS_ZH = (
     "預期", "預測", "預估", "預計",
@@ -109,6 +115,18 @@ ZH_TERMS = {
     "自由現金流": "Free Cash Flow",
     "營運現金流": "Operating Cash Flow",
     "現金流":     "Cash Flow",
+
+    # 成長率／匯率（CRM 這類 SaaS 常用）
+    "恆定匯率":   "Constant Currency",
+    "固定匯率":   "Constant Currency",
+    "當期剩餘履約義務":   "cRPO",
+    "當期未履約合約總額": "cRPO",
+    "剩餘履約義務":       "RPO",
+    "年增率":     "YoY Growth",
+    "成長率":     "Growth",
+    "增長率":     "Growth",
+    "與支援":     "and Support",
+    "支援":       "Support",
 
     # 其他
     "調整後":     "Adjusted",
@@ -156,6 +174,15 @@ METRIC_ALIASES = {
     "free cash flow":        "Free Cash Flow",
     "free cash flow margin": "Free Cash Flow Margin",
 
+    # 恆定匯率成長率——CRM 有的季寫「Non-GAAP 恆定匯率…」、有的季寫「固定匯率…」，
+    # 是同一列，統一掛 Non-GAAP 前綴
+    "constant currency revenue growth":
+        "Non-GAAP Constant Currency Revenue Growth",
+    "constant currency subscription and support revenue growth":
+        "Non-GAAP Constant Currency Subscription and Support Revenue Growth",
+    "constant currency crpo growth":
+        "Non-GAAP Constant Currency cRPO Growth",
+
     # 損益
     "non-gaap revenue":          "Non-GAAP Revenue",
     "non-gaap operating income": "Non-GAAP Operating Income",
@@ -183,7 +210,7 @@ EPS_KEYWORDS = (
 )
 
 PERCENT_KEYWORDS = (
-    "margin", "rate", "ratio", "yield", "growth %", "percentage",
+    "margin", "rate", "ratio", "yield", "growth", "percentage",
     "率",           # 毛利率／利潤率／稅率
 )
 

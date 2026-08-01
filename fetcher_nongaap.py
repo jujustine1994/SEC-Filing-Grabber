@@ -392,8 +392,13 @@ Press release:
 """
 
 
-def _call_ai(text: str, ai_config: dict) -> dict[str, Any]:
-    """Call configured AI provider with press release text. Returns parsed JSON dict."""
+def _call_ai(text: str, ai_config: dict) -> dict[str, Any] | None:
+    """Call configured AI provider with press release text.
+
+    回傳 dict = 呼叫成功（空 dict 代表新聞稿真的沒有 Non-GAAP 指標）。
+    回傳 None = 呼叫失敗（例外、429、provider 設錯）。呼叫端必須據此**不寫快取**，
+    否則一次暫時性失敗會把該季永久標記為「已抓過但沒有資料」。
+    """
     provider = ai_config.get("provider", "google")
     model    = ai_config.get("model", "")
     api_key  = ai_config.get("api_key", "")
@@ -421,7 +426,7 @@ def _call_ai(text: str, ai_config: dict) -> dict[str, Any]:
             )
             raw = response.content[0].text
         else:
-            return {}
+            return None      # provider 設錯：不是「沒有指標」，不可寫快取
 
         # Strip markdown code fences if present
         raw = raw.strip()
@@ -449,13 +454,14 @@ def _call_ai(text: str, ai_config: dict) -> dict[str, Any]:
             f"[fetcher_nongaap] AI call failed: {type(exc).__name__}{_exc_status(exc)}",
             file=sys.stderr,
         )
-        return {}
+        return None
 
 
-def _extract_nongaap_metrics(eight_k, ai_config: dict) -> dict[str, Any]:
+def _extract_nongaap_metrics(eight_k, ai_config: dict) -> dict[str, Any] | None:
     """Get press release text and call AI to extract Non-GAAP metrics.
 
-    Returns dict of {metric_name: value}. Returns {} on any failure.
+    回傳 dict = 成功（{} 代表新聞稿真的沒有 Non-GAAP 指標，可以寫快取）。
+    回傳 None = 失敗（AI 呼叫掛掉、下載出錯），呼叫端必須跳過寫快取以便下次重試。
     """
     try:
         press_releases = getattr(eight_k, "press_releases", None)
@@ -499,7 +505,7 @@ def _extract_nongaap_metrics(eight_k, ai_config: dict) -> dict[str, Any]:
             f"{type(exc).__name__}{_exc_status(exc)}",
             file=sys.stderr,
         )
-        return {}
+        return None
 
 
 # ── 8-K discovery ────────────────────────────────────────────────────────────
@@ -718,6 +724,15 @@ def fetch_nongaap_statements(
             eight_k = filing.obj()      # the only download in this loop
             eps_recon = _extract_eps_recon(eight_k)
             metrics   = _extract_nongaap_metrics(eight_k, ai_config)
+            if metrics is None:
+                # AI 呼叫失敗（例如 HTTP 429）。**不寫快取**——寫了的話下次執行
+                # `lbl not in cache` 會命中，這一季就永遠不會再被抓。
+                print(
+                    f"[fetcher_nongaap] {ticker} {quarter_label} AI 擷取失敗，"
+                    f"未寫入快取，下次執行會重試",
+                    file=sys.stderr,
+                )
+                continue
             cache[quarter_label] = {
                 "filing_date": str(filing.filing_date),
                 "eps_recon":   eps_recon,
