@@ -161,22 +161,26 @@ def test_normalize_strips_quarterly_suffix():
     assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Gross margin": 75.2}
 
 def test_normalize_strips_fy_suffix():
+    """期間 token 剝掉，但年度值改帶 (FY) 標記另成一列（2026-08-01 起，見
+    metric_rules.FY_ONLY_HANDLING）——年度數字不可佔用季欄位的原名。"""
     raw = {"Non-GAAP Net income (FY26)": 4000000000.0}
-    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Net income": 4000000000.0}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Net income (FY)": 4000000000.0}
 
-def test_normalize_quarterly_wins_over_fy():
-    """When Q and FY versions of same metric exist, quarterly value is kept."""
+def test_normalize_quarterly_keeps_its_own_column():
+    """當季與年度並存時，季欄位必須是當季的數字；年度值另成 (FY) 列並存。
+    （2026-08-01 前的行為是年度值直接被丟棄。）"""
     raw = {
         "Non-GAAP EPS (Q4 FY26)": 1.62,
         "Non-GAAP EPS (FY26)": 6.01,
     }
     result = _normalize_nongaap_metrics(raw)
-    assert result == {"Non-GAAP EPS": 1.62}
+    assert result["Non-GAAP EPS"] == 1.62
+    assert result["Non-GAAP EPS (FY)"] == 6.01
 
-def test_normalize_fy_fills_gap_when_no_quarterly():
-    """FY value is kept when no quarterly version of the metric exists."""
+def test_normalize_fy_kept_but_labelled_when_no_quarterly():
+    """只有年度值時仍保留（不刪資料），但要標記成 (FY)，不可冒充當季值。"""
     raw = {"Non-GAAP Annual Tax Rate (FY26)": 17.0}
-    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Annual Tax Rate": 17.0}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Annual Tax Rate (FY)": 17.0}
 
 def test_normalize_drops_expected_prefix():
     raw = {"Expected Non-GAAP Gross margin (Q1 FY27)": 75.0}
@@ -201,8 +205,8 @@ def test_normalize_keeps_clean_names_unchanged():
 
 def test_normalize_fy2digit_and_4digit():
     """Both FY26 (2-digit) and FY2026 (4-digit) suffixes are stripped."""
-    assert _normalize_nongaap_metrics({"Non-GAAP EPS (FY26)": 1.0}) == {"Non-GAAP EPS": 1.0}
-    assert _normalize_nongaap_metrics({"Non-GAAP EPS (FY2026)": 1.0}) == {"Non-GAAP EPS": 1.0}
+    assert _normalize_nongaap_metrics({"Non-GAAP EPS (FY26)": 1.0}) == {"Non-GAAP EPS (FY)": 1.0}
+    assert _normalize_nongaap_metrics({"Non-GAAP EPS (FY2026)": 1.0}) == {"Non-GAAP EPS (FY)": 1.0}
 
 def test_normalize_period_in_middle():
     """Period token embedded in name: 'Non-GAAP Q4 FY26 Gross margin' → 'Non-GAAP Gross margin'."""
@@ -252,11 +256,14 @@ def test_normalize_mixed_nvda_real_data():
         "Outlook Non-GAAP Operating expenses": 7500000000.0,    # guidance — drop
     }
     result = _normalize_nongaap_metrics(raw)
-    assert set(result.keys()) == {
+    # 當季列：三個。年度值不再被丟棄，改成 (FY) 列另放（2026-08-01 起）
+    assert {k for k in result if not k.endswith("(FY)")} == {
         "Non-GAAP Gross margin",
         "Non-GAAP Net income",
         "Non-GAAP Revenue",
     }
+    assert result["Non-GAAP Gross margin (FY)"] == 74.8
+    assert result["Non-GAAP Net income (FY)"] == 76019000000.0
     assert result["Non-GAAP Gross margin"] == 75.2      # current Q value
     assert result["Non-GAAP Net income"] == 22067000000.0
     assert result["Non-GAAP Revenue"] == 30040000000.0
@@ -666,9 +673,11 @@ def test_normalize_zh_annual_goes_to_fy_bucket():
     """'2024全年度 X' 必須歸 FY 桶——否則年度值會蓋掉當季值。"""
     raw = {
         "2024年第四季 Non-GAAP 毛利率": 37.5,   # 當季
-        "2024全年度 Non-GAAP 毛利率": 37.6,     # 年度，只能補洞
+        "2024全年度 Non-GAAP 毛利率": 37.6,     # 年度，另成 (FY) 列
     }
-    assert list(_normalize_nongaap_metrics(raw).values()) == [37.5]
+    result = _normalize_nongaap_metrics(raw)
+    assert result["Non-GAAP 毛利率"] == 37.5
+    assert result["Non-GAAP 毛利率 (FY)"] == 37.6
 
 def test_normalize_zh_annual_with_nian_goes_to_fy_bucket():
     """'2025年全年度 X' — 帶「年」的年度變體（ARLO FY2026Q1 樣式）。"""
@@ -676,7 +685,9 @@ def test_normalize_zh_annual_with_nian_goes_to_fy_bucket():
         "2025年第四季度 Non-GAAP 毛利率": 47.8,
         "2025年全年度 Non-GAAP 毛利率": 45.1,
     }
-    assert list(_normalize_nongaap_metrics(raw).values()) == [47.8]
+    result = _normalize_nongaap_metrics(raw)
+    assert result["Non-GAAP 毛利率"] == 47.8
+    assert result["Non-GAAP 毛利率 (FY)"] == 45.1
 
 def test_normalize_zh_comparison_quarters_deduplicated():
     """同一指標的當季 + 上季 + 去年同季，只留第一個（新聞稿當季在前）。"""
@@ -803,9 +814,11 @@ def _load_arlo_fixture():
         return json.load(f)
 
 def test_arlo_golden_metric_count_collapses():
-    """修前 6 季共 59 個原始名稱、幾乎每個各自成列；修後應收斂到 10 列以內。"""
+    """修前 6 季共 59 個原始名稱、幾乎每個各自成列；修後當季列應收斂到 10 列以內。
+    (FY) 列不算在內——那是新聞稿裡確實存在的年度數字，只是被標記出來另放。"""
     tbl = _build_nongaap_table("ARLO", _load_arlo_fixture())
-    assert len(tbl.concepts) <= 10
+    quarterly = [c for c in tbl.concepts if not c.endswith("(FY)")]
+    assert len(quarterly) <= 10
 
 def test_arlo_golden_core_metrics_are_dense():
     """毛利率是 ARLO 每季都報的指標，6 季必須都有值。"""
@@ -1021,3 +1034,181 @@ def test_growth_rate_is_percent_in_excel():
     """成長率是百分比，不可除以 1M。"""
     from excel_formatter import _is_percent_concept
     assert _is_percent_concept("Non-GAAP Constant Currency Revenue Growth")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# A：年度值不再填進季欄位，改為另成一列加 (FY) 標記（2026-08-01）
+#
+# 工具的目標是「照實把 8-K 的數字落地」，不做判斷。把全年數字填進季欄位是替
+# 資料下判斷（而且無聲）；整個丟掉是刪資料。標記出來另成一列才是照實落地。
+# 開關：metric_rules.FY_ONLY_HANDLING = "label" | "fill" | "drop"
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_fy_only_metric_gets_fy_suffix():
+    """只有年度值、沒有當季值時，不可佔用季欄位的原名。"""
+    raw = {"Non-GAAP Annual Tax Rate (FY26)": 17.0}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP Annual Tax Rate (FY)": 17.0}
+
+def test_fy_and_quarterly_coexist_as_separate_rows():
+    """當季與年度同時存在時兩列都留，不可互相蓋掉，也不可合併。"""
+    raw = {
+        "Non-GAAP EPS (Q4 FY26)": 1.62,
+        "Non-GAAP EPS (FY26)": 6.01,
+    }
+    result = _normalize_nongaap_metrics(raw)
+    assert result["Non-GAAP EPS"] == 1.62
+    assert result["Non-GAAP EPS (FY)"] == 6.01
+
+def test_zh_annual_gets_fy_suffix():
+    raw = {"2024全年度 Non-GAAP 毛利率": 37.6}
+    assert _normalize_nongaap_metrics(raw) == {"Non-GAAP 毛利率 (FY)": 37.6}
+
+def test_quarterly_value_never_replaced_by_annual():
+    """最重要的一條：當季有值時，該格必須是當季的數字。"""
+    raw = {
+        "2024年第四季 Non-GAAP 毛利率": 37.5,
+        "2024全年度 Non-GAAP 毛利率": 37.6,
+    }
+    assert _normalize_nongaap_metrics(raw)["Non-GAAP 毛利率"] == 37.5
+
+def test_canonicalize_preserves_fy_suffix():
+    """(FY) 標記不可被中英對照層吃掉，也不可害對照表比對不到。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    assert _canonicalize_metric_name("Non-GAAP 毛利率 (FY)") == "Non-GAAP Gross Margin (FY)"
+
+def test_fy_row_does_not_merge_with_quarterly_row():
+    """(FY) 列與當季列在組表時必須是兩列。"""
+    cache = {
+        "FY2025Q1": {"filing_date": "", "metrics": {
+            "Non-GAAP Gross Margin": 37.5,
+            "Non-GAAP Gross Margin (FY)": 37.6,
+        }},
+    }
+    tbl = _build_nongaap_table("TEST", cache)
+    assert len(tbl.concepts) == 2
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# C：服務毛利率 與 訂閱與服務毛利率 不再合併（2026-08-01）
+#
+# 查 ARLO 原文：FY2025Q1 報的是 "non-GAAP service gross margin 81.7%"（配
+# Service revenue $64.1M），FY2025Q2 起改成 "subscriptions and services gross
+# margin 83.1%"（配 Subscriptions and services revenue $68.8M）。公司自己改了
+# 名稱與營收基礎，認定兩者是同一條線屬於判斷，工具不做。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_service_and_subscription_margins_stay_separate():
+    from fetcher_nongaap import _canonicalize_metric_name
+    a = _canonicalize_metric_name("Non-GAAP Service Gross Margin")
+    b = _canonicalize_metric_name("Non-GAAP Subscriptions and Services Gross Margin")
+    assert a != b
+
+def test_english_subscription_variants_still_merge():
+    """公司同一個說法的單複數／連接詞差異仍要併——那是寫法不是定義。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    a = _canonicalize_metric_name("Non-GAAP Subscriptions and Services Gross Margin")
+    b = _canonicalize_metric_name("Non-GAAP Subscription and Services Gross Margin")
+    assert a == b
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# D：AI 呼叫退避重試 + 跑完統計未取得季數（2026-08-01）
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_call_ai_retries_then_succeeds(monkeypatch):
+    """暫時性失敗（429 尖峰）要能靠重試救回來。"""
+    import fetcher_nongaap as fn
+    calls = []
+    def flaky(prompt, cfg):
+        calls.append(1)
+        if len(calls) < 3:
+            raise RuntimeError("boom")
+        return '{"Non-GAAP Gross Margin": 45.5}'
+    monkeypatch.setattr(fn, "_ai_request", flaky)
+    monkeypatch.setattr(fn.time, "sleep", lambda s: None)
+
+    assert fn._call_ai("text", {"provider": "google"}) == {"Non-GAAP Gross Margin": 45.5}
+    assert len(calls) == 3
+
+def test_call_ai_gives_up_after_max_attempts(monkeypatch):
+    import fetcher_nongaap as fn
+    calls = []
+    def always_fail(prompt, cfg):
+        calls.append(1)
+        raise RuntimeError("boom")
+    monkeypatch.setattr(fn, "_ai_request", always_fail)
+    monkeypatch.setattr(fn.time, "sleep", lambda s: None)
+
+    assert fn._call_ai("text", {"provider": "google"}) is None
+    assert len(calls) == fn.AI_MAX_ATTEMPTS
+
+def test_call_ai_does_not_retry_on_success(monkeypatch):
+    """成功就不要多打——AI 呼叫是要付費的。"""
+    import fetcher_nongaap as fn
+    calls = []
+    def ok(prompt, cfg):
+        calls.append(1)
+        return "{}"
+    monkeypatch.setattr(fn, "_ai_request", ok)
+    monkeypatch.setattr(fn.time, "sleep", lambda s: None)
+
+    assert fn._call_ai("text", {"provider": "google"}) == {}
+    assert len(calls) == 1
+
+def test_retry_backoff_is_applied(monkeypatch):
+    """重試之間要真的等，否則對每分鐘限流沒有意義。"""
+    import fetcher_nongaap as fn
+    slept = []
+    monkeypatch.setattr(fn, "_ai_request",
+                        lambda p, c: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(fn.time, "sleep", lambda s: slept.append(s))
+
+    fn._call_ai("text", {"provider": "google"})
+    assert len(slept) == fn.AI_MAX_ATTEMPTS - 1
+    assert all(s > 0 for s in slept)
+
+def test_failed_quarters_summarised_at_end(tmp_path, monkeypatch, capsys):
+    """跑完要明確說「N 季沒拿到」，不能只有中途一行 stderr 捲過去。"""
+    import fetcher_nongaap as fn
+
+    company = FakeCompany([
+        RecoverableFiling("2.02", "2024-09-30", has_earnings=True),
+        RecoverableFiling("2.02", "2024-06-30", has_earnings=True),
+    ])
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: None)
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
+
+    err = capsys.readouterr().err
+    assert "2" in err and "FY2024Q3" in err and "FY2024Q2" in err
+
+def test_summary_reaches_progress_callback(tmp_path, monkeypatch):
+    """GUI 只看得到 progress_cb，stderr 使用者看不到。"""
+    import fetcher_nongaap as fn
+
+    company = FakeCompany([RecoverableFiling("2.02", "2024-09-30", has_earnings=True)])
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: None)
+
+    msgs = []
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path,
+                                progress_cb=lambda i, t, m: msgs.append(m))
+    assert any("重跑" in m or "未取得" in m for m in msgs)
+
+def test_no_summary_when_everything_succeeds(tmp_path, monkeypatch, capsys):
+    """全部成功時不可印雜訊。"""
+    import fetcher_nongaap as fn
+
+    company = FakeCompany([RecoverableFiling("2.02", "2024-09-30", has_earnings=True)])
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: {"Non-GAAP Revenue": 1.0})
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
+    assert "未取得" not in capsys.readouterr().err

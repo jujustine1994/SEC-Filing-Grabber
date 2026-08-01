@@ -43,7 +43,21 @@ ZH_QUARTER_PATTERNS = [
     r"第\s*[一二三四1-4]\s*季\s*度?",
 ]
 
-# 年度樣式（歸年度桶——只補洞，不可蓋掉當季值）
+# ── 年度值怎麼處理（2026-08-01 決定）─────────────────────────────────────
+#
+# 工具的目標是「照實把 8-K 的數字落地」，不替資料做判斷。年度值有三種處理法：
+#
+#   "label"（預設）— 另成一列，名稱加 " (FY)"。不佔用季欄位的原名，也不刪資料。
+#   "fill"         — 舊行為：當季缺值時把年度數字填進該季欄位（**會無聲混入不同期間**）
+#   "drop"         — 直接丟棄年度值（只報年度的指標會整條消失）
+#
+# 選 "label" 的理由：填進去等於替你認定「這季就是這個數字」，而那是判斷；
+# 丟掉則是刪掉 8-K 裡確實存在的資料。標記出來兩者都避免。
+# 新 prompt 已要求 AI「只取當期」，所以這條主要在處理舊快取與 AI 不聽話的情況。
+FY_ONLY_HANDLING = "label"
+FY_ROW_SUFFIX    = " (FY)"
+
+# 年度樣式（歸年度桶）
 #   2024全年度 / 2025年全年度 / 2024年度 / 2026財年
 ZH_ANNUAL_PATTERNS = [
     r"\d{4}\s*年?\s*全\s*年\s*度?",
@@ -160,11 +174,18 @@ METRIC_ALIASES = {
     # 毛利率
     "non-gaap gross margin": "Non-GAAP Gross Margin",
 
-    # 訂閱與服務毛利率——「服務毛利率」視為同一列（見檔頭決策 2）
-    "non-gaap services gross margin":                  "Non-GAAP Subscription and Services Gross Margin",
-    "non-gaap service gross margin":                   "Non-GAAP Subscription and Services Gross Margin",
-    "non-gaap subscription and services gross margin": "Non-GAAP Subscription and Services Gross Margin",
+    # 訂閱與服務毛利率——單複數／連接詞差異併起來（那是寫法不是定義）
+    "non-gaap subscription and services gross margin":  "Non-GAAP Subscription and Services Gross Margin",
     "non-gaap subscriptions and services gross margin": "Non-GAAP Subscription and Services Gross Margin",
+    "non-gaap subscriptions and service gross margin":  "Non-GAAP Subscription and Services Gross Margin",
+
+    # 「服務毛利率」**刻意不併進上面那條**。查 ARLO 原文：FY2025Q1 報的是
+    # "non-GAAP service gross margin 81.7%"（配 Service revenue $64.1M），
+    # FY2025Q2 起改成 "subscriptions and services gross margin 83.1%"（配
+    # Subscriptions and services revenue $68.8M）——公司自己改了名稱與營收基礎。
+    # 認定改名前後是同一條線屬於判斷，工具不做，兩列並陳讓使用者自己看。
+    "non-gaap services gross margin": "Non-GAAP Service Gross Margin",
+    "non-gaap service gross margin":  "Non-GAAP Service Gross Margin",
 
     # EBITDA
     "adjusted ebitda":        "Adjusted EBITDA",

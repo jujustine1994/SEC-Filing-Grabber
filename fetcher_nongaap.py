@@ -9,6 +9,7 @@ Flow:
 import json
 import re
 import sys
+import time
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -294,7 +295,14 @@ def _canonicalize_metric_name(name: str) -> str:
             out = out.replace(zh, f" {en} ")
     out = re.sub(r"\s+", " ", out).strip()
 
-    return metric_rules.METRIC_ALIASES.get(out.casefold(), out)
+    # (FY) 標記先摘下來再查對照表，否則年度列永遠對不到表、跨季合併不起來
+    suffix = metric_rules.FY_ROW_SUFFIX
+    is_fy = out.endswith(suffix.strip()) or out.endswith(suffix)
+    if is_fy:
+        out = out[: out.rfind("(")].strip()
+
+    out = metric_rules.METRIC_ALIASES.get(out.casefold(), out)
+    return f"{out}{suffix}" if is_fy else out
 
 
 def _metric_merge_key(name: str) -> str:
@@ -347,11 +355,19 @@ def _normalize_nongaap_metrics(raw: dict[str, Any]) -> dict[str, Any]:
             if clean not in quarterly:
                 quarterly[clean] = val
 
-    # Quarterly (incl. no-token) wins; FY fills gaps only
+    # 年度值的處理見 metric_rules.FY_ONLY_HANDLING（預設 "label"：另成一列不佔季欄位）
     result = dict(quarterly)
+    mode = metric_rules.FY_ONLY_HANDLING
     for clean, val in fy_only.items():
-        if clean not in result:
-            result[clean] = val
+        if mode == "drop":
+            continue
+        if mode == "fill":
+            if clean not in result:
+                result[clean] = val
+            continue
+        labelled = f"{clean}{metric_rules.FY_ROW_SUFFIX}"
+        if labelled not in result:
+            result[labelled] = val
     return result
 
 
@@ -392,6 +408,48 @@ Press release:
 """
 
 
+# ── AI 呼叫重試（2026-08-01 加）───────────────────────────────────────────
+#
+# 實跑撞到 Gemini 的 HTTP 429。兩種 429 要分開看：
+#   每分鐘限流 → 等一下重試就會過，退避有效
+#   每日配額用盡 → 重試一定失敗，只是白等
+# 所以次數壓低、退避拉開，寧可少試也不要讓批次更新卡住。跑完會統計未取得的季數，
+# 使用者換一把 key 或隔天再跑一次即可（失敗的季不寫快取，重跑會自動補）。
+AI_MAX_ATTEMPTS         = 3          # 含第一次，總共打幾次
+AI_RETRY_BACKOFF_SECONDS = (5, 15)   # 第 1、2 次重試前各等幾秒
+
+
+def _ai_request(prompt: str, ai_config: dict) -> str | None:
+    """實際打 AI provider，回傳原始文字。provider 設錯回 None，其餘失敗直接拋。
+
+    抽成獨立函式是為了讓重試邏輯與測試有一個乾淨的接縫——測試不必碰三家 SDK。
+    """
+    provider = ai_config.get("provider", "google")
+    model    = ai_config.get("model", "")
+    api_key  = ai_config.get("api_key", "")
+
+    if provider == "google":
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        return genai.GenerativeModel(model).generate_content(prompt).text
+    if provider == "openai":
+        from openai import OpenAI
+        response = OpenAI(api_key=api_key).chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1024,
+        )
+        return response.choices[0].message.content
+    if provider == "anthropic":
+        import anthropic
+        response = anthropic.Anthropic(api_key=api_key).messages.create(
+            model=model, max_tokens=1024,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.content[0].text
+    return None      # provider 設錯：不是「沒有指標」，不可寫快取
+
+
 def _call_ai(text: str, ai_config: dict) -> dict[str, Any] | None:
     """Call configured AI provider with press release text.
 
@@ -399,62 +457,44 @@ def _call_ai(text: str, ai_config: dict) -> dict[str, Any] | None:
     回傳 None = 呼叫失敗（例外、429、provider 設錯）。呼叫端必須據此**不寫快取**，
     否則一次暫時性失敗會把該季永久標記為「已抓過但沒有資料」。
     """
-    provider = ai_config.get("provider", "google")
-    model    = ai_config.get("model", "")
-    api_key  = ai_config.get("api_key", "")
-    prompt   = _NONGAAP_PROMPT.format(press_release_text=text[:12000])  # token guard
+    prompt = _NONGAAP_PROMPT.format(press_release_text=text[:12000])  # token guard
 
-    try:
-        if provider == "google":
-            import google.generativeai as genai
-            genai.configure(api_key=api_key)
-            response = genai.GenerativeModel(model).generate_content(prompt)
-            raw = response.text
-        elif provider == "openai":
-            from openai import OpenAI
-            response = OpenAI(api_key=api_key).chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1024,
+    for attempt in range(1, AI_MAX_ATTEMPTS + 1):
+        try:
+            raw = _ai_request(prompt, ai_config)
+            if raw is None:
+                return None      # provider 設錯，重試也沒用
+
+            # Strip markdown code fences if present            raw = raw.strip()
+            if raw.startswith("```"):
+                raw = "\n".join(raw.split("\n")[1:])
+            if raw.endswith("```"):
+                raw = raw.rsplit("```", 1)[0]
+
+            parsed = json.loads(raw.strip())
+            result = {}
+            for k, v in parsed.items():
+                if v is None:
+                    continue
+                try:
+                    result[k] = float(v)
+                except (ValueError, TypeError):
+                    pass
+            return _normalize_nongaap_metrics(result)
+
+        except Exception as exc:
+            # 只印類型 + status code。不可用 {exc!r} / {exc}：三家 LLM SDK 的例外訊息
+            # 天生挾帶 URL（google-generativeai 走 REST 時帶 ?key=），而 launcher.ps1
+            # 刻意留著主控台視窗，等於把金鑰印在畫面上。
+            print(
+                f"[fetcher_nongaap] AI call failed: {type(exc).__name__}"
+                f"{_exc_status(exc)} | 嘗試 {attempt}/{AI_MAX_ATTEMPTS}",
+                file=sys.stderr,
             )
-            raw = response.choices[0].message.content
-        elif provider == "anthropic":
-            import anthropic
-            response = anthropic.Anthropic(api_key=api_key).messages.create(
-                model=model, max_tokens=1024,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            raw = response.content[0].text
-        else:
-            return None      # provider 設錯：不是「沒有指標」，不可寫快取
+            if attempt < AI_MAX_ATTEMPTS:
+                time.sleep(AI_RETRY_BACKOFF_SECONDS[attempt - 1])
 
-        # Strip markdown code fences if present
-        raw = raw.strip()
-        if raw.startswith("```"):
-            raw = "\n".join(raw.split("\n")[1:])
-        if raw.endswith("```"):
-            raw = raw.rsplit("```", 1)[0]
-
-        parsed = json.loads(raw.strip())
-        result = {}
-        for k, v in parsed.items():
-            if v is None:
-                continue
-            try:
-                result[k] = float(v)
-            except (ValueError, TypeError):
-                pass
-        return _normalize_nongaap_metrics(result)
-
-    except Exception as exc:
-        # 只印類型 + status code。不可用 {exc!r} / {exc}：三家 LLM SDK 的例外訊息
-        # 天生挾帶 URL（google-generativeai 走 REST 時帶 ?key=），而 launcher.ps1
-        # 刻意留著主控台視窗，等於把金鑰印在畫面上。
-        print(
-            f"[fetcher_nongaap] AI call failed: {type(exc).__name__}{_exc_status(exc)}",
-            file=sys.stderr,
-        )
-        return None
+    return None
 
 
 def _extract_nongaap_metrics(eight_k, ai_config: dict) -> dict[str, Any] | None:
@@ -715,6 +755,7 @@ def fetch_nongaap_statements(
 
     new_filings = [(lbl, f) for lbl, f in filings if lbl not in cache]
     total = len(new_filings)
+    failed_quarters: list[str] = []
 
     for i, (quarter_label, filing) in enumerate(new_filings, 1):
         if progress_cb:
@@ -727,11 +768,7 @@ def fetch_nongaap_statements(
             if metrics is None:
                 # AI 呼叫失敗（例如 HTTP 429）。**不寫快取**——寫了的話下次執行
                 # `lbl not in cache` 會命中，這一季就永遠不會再被抓。
-                print(
-                    f"[fetcher_nongaap] {ticker} {quarter_label} AI 擷取失敗，"
-                    f"未寫入快取，下次執行會重試",
-                    file=sys.stderr,
-                )
+                failed_quarters.append(quarter_label)
                 continue
             cache[quarter_label] = {
                 "filing_date": str(filing.filing_date),
@@ -747,6 +784,18 @@ def fetch_nongaap_statements(
                 f"{type(exc).__name__}{_exc_status(exc)}",
                 file=sys.stderr,
             )
+
+    # 未取得的季度要講清楚。這些季**沒有寫進快取**，直接重跑就會補抓；
+    # 若是 AI 配額用盡（HTTP 429），換一把 key 或隔天再跑即可。
+    # 同時推給 progress_cb——GUI 使用者看不到 stderr。
+    if failed_quarters:
+        summary = (
+            f"{ticker}：{len(failed_quarters)} 季未取得 Non-GAAP "
+            f"（{', '.join(failed_quarters)}），未寫入快取，重跑即會補抓"
+        )
+        print(f"[fetcher_nongaap] {summary}", file=sys.stderr)
+        if progress_cb:
+            progress_cb(total, total, summary)
 
     tables: list[StatementTable] = []
     eps_tbl = _build_eps_recon_table(ticker, cache)

@@ -89,6 +89,15 @@
 - **規則表擴充**：CRM 的 SaaS 用語（`恆定匯率`／`固定匯率` → Constant Currency、`當期剩餘履約義務` → cRPO、`成長率` → Growth、`年增率` → YoY Growth、`與支援` → and Support），並把「恆定匯率」與「固定匯率」兩種說法併成同一列。`PERCENT_KEYWORDS` 的 `growth %` 放寬為 `growth`
 - 測試 327 → **342**
 
+**同日追加（二）：依「工具只負責照實落地 8-K 數字，不做判斷」的原則調整四項**
+
+- **年度值不再填進季欄位**（`metric_rules.FY_ONLY_HANDLING = "label"`）：舊行為是當季缺值時把全年數字填進該季欄位且無標記——那是替資料下判斷。新行為是另成一列、名稱加 ` (FY)`。第三種選項 `"drop"`（直接丟）也保留，但預設不用，因為丟掉等於刪掉 8-K 裡確實存在的資料
+- **百分比改存 Excel 原生比例**（`PERCENT_AS_EXCEL_RATIO = True`）：37.5 存為 0.375、格式 `0.0%`、顯示 37.5%。在 Excel 拉公式與畫圖直接可用
+- **`服務毛利率` 與 `訂閱與服務毛利率` 不再合併**：查 ARLO 原文確認公司在 2025 年改過名——`FY2025Q1` 報 "non-GAAP service gross margin 81.7%"（配 Service revenue $64.1M），`FY2025Q2` 起改成 "subscriptions and services gross margin 83.1%"（配 Subscriptions and services revenue $68.8M），名稱與營收基礎同時變動。認定改名前後是同一條線屬於判斷，改為兩列並陳。單複數／連接詞差異仍合併（那是寫法不是定義）
+- **AI 呼叫加退避重試 + 跑完統計**：`_ai_request()` 抽出成獨立接縫，`_call_ai()` 包重試（`AI_MAX_ATTEMPTS = 3`、退避 5s／15s）。次數壓低是因為 Gemini 的每日配額型 429 重試必敗、只是白等；每分鐘限流型則有效。跑完會列出未取得的季度並推給 `progress_cb`（GUI 使用者看不到 stderr）
+- **查證紀錄（回答「為何會漏資料」）**：ARLO `FY2025Q1` 缺 Adjusted EBITDA，翻原文確認**數字在 8-K 裡**（`Adjusted EBITDA $9,765 / margin 8.0%`），是 AI 沒抓到——那一季 ARLO 只把它放在後段調節表，沒寫進前面的重點條列。屬 AI 抽取召回率問題，歸 TODO 第 3 項處理；補洞邏輯救不了（只會拿年度值去蓋）。GAAP 走 XBRL，完全不受影響
+- 測試 342 → **358**
+
 - **本次自行決定、可調整處**（都寫在程式碼註解裡）：
   - 百分比存**原始數字** 37.5 而非 Excel 比例 0.375 → `excel_formatter.PERCENT_AS_EXCEL_RATIO = False`
   - `服務毛利率` 與 `訂閱與服務毛利率` 視為同一列 → `metric_rules.METRIC_ALIASES` 刪一行即可分開

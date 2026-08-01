@@ -486,20 +486,22 @@ def _cell(name, col="C"):
 
 # ── 百分比：不除以 1M，套百分比格式 ──────────────────────────────────────────
 
-def test_nongaap_percent_value_not_divided():
-    """毛利率 47.8 必須維持 47.8，不可變成 4.78e-05。"""
-    assert _cell("Non-GAAP Gross Margin").value == pytest.approx(47.8)
+def test_nongaap_percent_stored_as_excel_ratio():
+    """毛利率 47.8 → 0.478（Excel 原生百分比，搭配 0.0% 格式顯示成 47.8%）。
+    絕不可變成 4.78e-05——那是被誤當金額除以 1M 的舊 bug。
+    要改回存原始數字 47.8，把 excel_formatter.PERCENT_AS_EXCEL_RATIO 設 False。"""
+    assert _cell("Non-GAAP Gross Margin").value == pytest.approx(0.478)
 
 def test_nongaap_percent_number_format():
     assert _cell("Non-GAAP Gross Margin").number_format == FMT_PERCENT
 
 def test_nongaap_zh_percent_value_not_divided():
-    """中文指標名（舊快取殘留）同樣要豁免。"""
-    assert _cell("Non-GAAP 毛利率").value == pytest.approx(47.8)
+    """中文指標名（舊快取殘留）同樣要走百分比分支，不可被當金額除以 1M。"""
+    assert _cell("Non-GAAP 毛利率").value == pytest.approx(0.478)
 
 def test_nongaap_margin_keyword_percent():
     """Adjusted EBITDA Margin 是百分比，不是金額。"""
-    assert _cell("Adjusted EBITDA Margin").value == pytest.approx(16.5)
+    assert _cell("Adjusted EBITDA Margin").value == pytest.approx(0.165)
 
 def test_nongaap_tax_rate_is_percent():
     """Rate 結尾也是百分比。"""
@@ -579,13 +581,22 @@ def test_corporate_row_still_divided():
     assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(8.0)
 
 def test_real_tax_rate_still_percent():
-    """真的以 Rate 結尾的才算百分比。"""
+    """真的以 Rate 結尾的才算百分比（17.0 → 0.17）。"""
     wb = _make_wb_with_concept("Non-GAAP Effective Tax Rate", 17.0)
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(17.0)
+    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(0.17)
 
 def test_steps_not_eps():
     """'eps' 不可命中 'Steps' 之類的字（同一個裸子字串問題）。"""
     wb = _make_wb_with_concept("Restructuring Steps Charge", 3000000.0)
     format_workbook(wb, [])
     assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(3.0)
+
+
+def test_percent_format_matches_storage_mode():
+    """存法與格式必須一致——存 0.478 卻套 '#,##0.0"%"' 會顯示成 0.5%。"""
+    from excel_formatter import PERCENT_AS_EXCEL_RATIO
+    if PERCENT_AS_EXCEL_RATIO:
+        assert FMT_PERCENT == "0.0%"
+    else:
+        assert "%" in FMT_PERCENT and FMT_PERCENT != "0.0%"
