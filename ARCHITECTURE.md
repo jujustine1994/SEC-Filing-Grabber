@@ -11,7 +11,8 @@
 | fetcher_gaap.py | edgartools XBRL 抓取 → StatementTable 列表 |
 | fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
 | excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx，並呼叫 excel_formatter |
-| excel_formatter.py | 寫 Index sheet（品質明細）、設欄寬、凍結窗格 |
+| excel_formatter.py | 寫 Index sheet（品質明細）、設欄寬、凍結窗格、數值分類（÷1M／百分比／每股） |
+| metric_rules.py | **Non-GAAP 指標名稱規則表（唯一可調整處）**：期間 token、guidance 詞、中英對照、Excel 數值分類關鍵字 |
 | override_engine.py | 自動修復缺失 key rows（E1 fuzzy + E2 LLM） |
 | config.json | 使用者設定（gitignored） |
 | config.example.json | 範本（committed） |
@@ -120,7 +121,13 @@ EPS 調和表（GAAP EPS → 調整項 → Non-GAAP EPS）。B 欄為空（無 X
 
 AI 從 8-K press release 提取的所有 Non-GAAP / Adjusted / Excluding 指標。跨季取聯集，缺的季填 None。
 
-> ⚠️ **欄位標籤已知不準（2026-07-31 查證，未修，見 TODO 第 2 項）**：季度標籤由 `_period_to_quarter_label()` 依 8-K 的 `period_of_report` 推算，但該欄在 Item 2.02 財報 8-K 上存的是**發布日**而非財期結束日，故標籤普遍比數字實際所屬財季**晚約一季**（INTC `20260723` 標成 `FY2026Q3`，實報 FY2026 Q2）。同一根因下，同一日曆季內發布兩份財報 8-K 時（如 WDC 2025-01-10 與 2025-01-29）兩者標籤相同，去重「留最舊」會丟掉較新那份。此為長期行為，`Data_Financials` 走 XBRL 不受影響。
+**名稱正規化與合併（2026-08-01 起）**：規則表在 `metric_rules.py`，作用在**讀取快取**階段而非寫入階段，因此改規則表後重跑即生效，不必刪 `nongaap_cache.json` 重呼叫 AI。流程為
+`_normalize_nongaap_metrics()`（剝期間 token、丟 guidance、當季優先於年度）
+→ `_canonicalize_metric_name()`（中文詞彙換英文、同義名合併）
+→ `_metric_merge_key()`（忽略大小寫與標點的跨季合併鍵）。
+Excel 數值分類（每股 → 百分比 → 股數 → 金額）同樣讀 `metric_rules.py` 的關鍵字表；ASCII 關鍵字一律以詞界比對（`Operations` 含 `ratio`、`Corporate` 含 `rate`）。
+
+> ⚠️ **欄位標籤已知不準（2026-07-31 查證，未修，見 TODO 第 3 項）**：季度標籤由 `_period_to_quarter_label()` 依 8-K 的 `period_of_report` 推算，但該欄在 Item 2.02 財報 8-K 上存的是**發布日**而非財期結束日，故標籤普遍比數字實際所屬財季**晚約一季**（INTC `20260723` 標成 `FY2026Q3`，實報 FY2026 Q2）。同一根因下，同一日曆季內發布兩份財報 8-K 時（如 WDC 2025-01-10 與 2025-01-29）兩者標籤相同，去重「留最舊」會丟掉較新那份。此為長期行為，`Data_Financials` 走 XBRL 不受影響。
 
 ## StatementTable（fetcher_gaap.py 的輸出合約）
 

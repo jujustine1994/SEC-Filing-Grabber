@@ -9,12 +9,14 @@ Called by excel_writer.write_statements() before wb.save(). Modifies cell values
 """
 
 from __future__ import annotations
+import re
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from fetcher_gaap import StatementTable
 from datetime import date
 from override_engine import check_key_rows
+import metric_rules
 
 # ── Colours (ARGB) ────────────────────────────────────────────────────────
 NAVY_DARK = "FF1F3864"
@@ -45,8 +47,40 @@ SHEET_DESCRIPTIONS = {
 }
 
 
-def _is_eps_concept(c: str) -> bool:
-    return any(k in (c or "") for k in ("EPS", "Per Share", "per share"))
+# ── 數值分類 ──────────────────────────────────────────────────────────────
+#
+# 關鍵字表在 metric_rules.py（唯一可調整處）。判斷順序：每股 → 百分比 → 股數 → 金額，
+# 先命中先套用。順序有意義：「Non-GAAP 每股盈餘」同時含「每股」與（若加了寬鬆詞）
+# 可能的百分比詞，每股必須優先。
+#
+# 決策（2026-08-01）：百分比值**維持原始數字**（37.5），不轉成 Excel 百分比小數
+# （0.375）。理由：Data_NonGAAP 是餵下游 skill 的資料落地層，數字與 8-K 原文字面
+# 一致最好對帳，而且這張表的 bug 本來就是「值被亂改」造成的，少一次改寫少一分風險。
+# 要改成 Excel 原生百分比，把下面這個開關改 True——同時 FMT_PERCENT 會改用 "0.0%"。
+PERCENT_AS_EXCEL_RATIO = False
+
+
+def _keyword_matcher(keywords: tuple[str, ...]):
+    """把關鍵字表編成一條 regex。
+
+    ASCII 關鍵字要求詞界，中日韓字元用裸比對（中文沒有詞界的概念）。
+    詞界是必要的，不是潔癖：'Operations' 含 'ratio'、'Corporate' 含 'rate'、
+    'Steps' 含 'eps'，裸子字串比對會讓 XBRL overflow 的金額行不再除以 1M。
+    """
+    parts = []
+    for kw in keywords:
+        esc = re.escape(kw.casefold())
+        if re.search(r"[a-z0-9]", kw.casefold()):
+            parts.append(rf"(?<![a-z0-9]){esc}(?![a-z0-9])")
+        else:
+            parts.append(esc)
+    pattern = re.compile("|".join(parts))
+    return lambda c: bool(pattern.search((c or "").casefold()))
+
+
+_is_eps_concept    = _keyword_matcher(metric_rules.EPS_KEYWORDS)
+_is_percent_concept = _keyword_matcher(metric_rules.PERCENT_KEYWORDS)
+_is_shares_concept = _keyword_matcher(metric_rules.SHARES_KEYWORDS)
 
 
 def _sheet_description(name: str) -> str:
@@ -81,6 +115,7 @@ def _set_freeze_panes(ws) -> None:
 FMT_FINANCIAL = "#,##0.0_ ;[Red](#,##0.0)"
 FMT_EPS       = "#,##0.00_ ;[Red](#,##0.00)"
 FMT_SHARES    = "#,##0"
+FMT_PERCENT   = "0.0%" if PERCENT_AS_EXCEL_RATIO else '#,##0.0"%"'
 
 
 def _apply_row_styles(ws) -> None:
@@ -133,13 +168,14 @@ def _apply_number_formats(ws) -> None:
         if concept in SECTION_HEADERS or concept == "":
             continue
 
-        is_eps    = _is_eps_concept(concept)
-        is_shares = "Shares" in concept
-
-        if is_eps:
+        # 順序即優先級：每股 → 百分比 → 股數 → 金額（見 metric_rules.py 第 5 節）
+        if _is_eps_concept(concept):
             fmt = FMT_EPS
             divisor = 1
-        elif is_shares:
+        elif _is_percent_concept(concept):
+            fmt = FMT_PERCENT
+            divisor = 100 if PERCENT_AS_EXCEL_RATIO else 1
+        elif _is_shares_concept(concept):
             fmt = FMT_SHARES
             divisor = 1_000_000
         else:

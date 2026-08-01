@@ -15,6 +15,7 @@ from typing import Any
 
 from edgar import Company, set_identity
 
+import metric_rules
 from errsafe import _exc_status
 from fetcher_gaap import StatementTable
 
@@ -144,21 +145,43 @@ def _build_nongaap_table(ticker: str, cache: dict) -> StatementTable | None:
     sorted_qs = sorted(cache.keys())
     filing_dates = [cache[q].get("filing_date", "") for q in sorted_qs]
 
-    # Union of all metric names
-    all_metrics: list[str] = []
-    seen: set[str] = set()
+    # 正規化與中英對照都在「讀取」時做，不是寫入快取時做。理由有二：
+    #   1. 既有 nongaap_cache.json 存的是舊規則的產物（中文、帶期間 token），
+    #      在這裡重跑一次就能救回來，不必刪快取重呼叫 AI。
+    #   2. 改 metric_rules.py 的規則表後重跑即生效，不必重抓。
+    # _normalize_nongaap_metrics 具冪等性，對已經乾淨的名稱再跑一次不會變樣。
+    per_quarter: dict[str, dict[str, Any]] = {}
     for q in sorted_qs:
-        for key in cache[q].get("metrics", {}):
-            if key not in seen:
-                all_metrics.append(key)
-                seen.add(key)
+        normalized = _normalize_nongaap_metrics(cache[q].get("metrics", {}) or {})
+        per_quarter[q] = {
+            _canonicalize_metric_name(name): val for name, val in normalized.items()
+        }
+
+    # 跨季合併：同一指標的不同寫法（中／英、大小寫漂移）併成一列，首見的顯示名勝出
+    display_by_key: dict[str, str] = {}
+    all_metrics: list[str] = []
+    for q in sorted_qs:
+        for name in per_quarter[q]:
+            key = _metric_merge_key(name)
+            if key not in display_by_key:
+                display_by_key[key] = name
+                all_metrics.append(name)
 
     if not all_metrics:
         return None
 
     values: list[list[Any]] = []
     for metric in all_metrics:
-        values.append([cache[q].get("metrics", {}).get(metric) for q in sorted_qs])
+        key = _metric_merge_key(metric)
+        row: list[Any] = []
+        for q in sorted_qs:
+            hit = None
+            for name, val in per_quarter[q].items():
+                if _metric_merge_key(name) == key:
+                    hit = val
+                    break
+            row.append(hit)
+        values.append(row)
 
     return StatementTable(
         sheet_name="Data_NonGAAP",
@@ -235,15 +258,51 @@ _QTR_TOKEN_RE    = re.compile(r"\bQ[1-4]\s+FY\d{2,4}\b", re.IGNORECASE)
 _TRAILING_LABEL_RE = re.compile(
     r"\s*\(\s*(?:Table|Summary|Chart|Note|Detail|Details)\s*\)\s*$", re.IGNORECASE
 )
-_GUIDANCE_PREFIXES = ("expected", "outlook", "guidance", "anticipated", "projected")
+_GUIDANCE_PREFIXES = metric_rules.GUIDANCE_PREFIXES_EN
+
+# 中文樣式（規則表在 metric_rules.py，這裡只負責編譯）。
+# 年度必須先於季度比對：「2025年全年度」若先跑季度樣式不會誤中，但把年度放前面
+# 語意更清楚，也避免日後有人加了寬鬆的季度樣式而互相吃到。
+_ZH_ANNUAL_RE  = re.compile("|".join(metric_rules.ZH_ANNUAL_PATTERNS))
+_ZH_QUARTER_RE = re.compile("|".join(metric_rules.ZH_QUARTER_PATTERNS))
 
 
 def _clean_metric_name(name: str) -> str:
-    """Strip period tokens and trailing noise labels, normalise whitespace."""
+    """Strip period tokens (EN + ZH) and trailing noise labels, normalise whitespace."""
     clean = _PERIOD_TOKEN_RE.sub("", name)
+    clean = _ZH_ANNUAL_RE.sub("", clean)
+    clean = _ZH_QUARTER_RE.sub("", clean)
     clean = _TRAILING_LABEL_RE.sub("", clean)
     clean = re.sub(r"\(\s*\)", "", clean)   # remove empty parens left by period removal
     return re.sub(r"\s+", " ", clean).strip()
+
+
+# ── 中英對照 ────────────────────────────────────────────────────────────────
+#
+# 跑在 _clean_metric_name 之後、表格組裝的時候（不是寫入快取的時候）。
+# 這個順序是刻意的：規則表改了不必重抓 8-K，重跑就套用新對照。
+# 詞彙表長詞優先，確保「訂閱與服務毛利率」整段命中而不是被拆成「服務」+「毛利率」。
+
+_ZH_TERMS_SORTED = sorted(metric_rules.ZH_TERMS.items(), key=lambda kv: -len(kv[0]))
+
+
+def _canonicalize_metric_name(name: str) -> str:
+    """中文詞彙替換 + 同義名合併。未收錄的名稱原樣回傳（不可吞資料）。"""
+    out = name
+    for zh, en in _ZH_TERMS_SORTED:
+        if zh in out:
+            out = out.replace(zh, f" {en} ")
+    out = re.sub(r"\s+", " ", out).strip()
+
+    return metric_rules.METRIC_ALIASES.get(out.casefold(), out)
+
+
+def _metric_merge_key(name: str) -> str:
+    """跨季合併用的比對鍵：忽略大小寫、空白與標點。
+
+    對照表收錄不到的名稱也能靠這個把大小寫漂移的變體併起來。
+    """
+    return re.sub(r"[^0-9a-z一-鿿]+", "", name.casefold())
 
 
 def _normalize_nongaap_metrics(raw: dict[str, Any]) -> dict[str, Any]:
@@ -262,12 +321,20 @@ def _normalize_nongaap_metrics(raw: dict[str, Any]) -> dict[str, Any]:
         # Drop guidance / outlook / forward-looking entries
         if any(name_lower.startswith(p) for p in _GUIDANCE_PREFIXES):
             continue
-        if "outlook" in name_lower:
+        if any(s in name_lower for s in metric_rules.GUIDANCE_SUBSTRINGS_EN):
+            continue
+        # 中文 guidance 詞常出現在名稱中間（「2026財年預期 Non-GAAP 營業利潤率上限」），
+        # 所以用「包含」比對而非 startswith。
+        if any(s in name for s in metric_rules.GUIDANCE_SUBSTRINGS_ZH):
             continue
 
-        has_qtr  = bool(_QTR_TOKEN_RE.search(name))
-        has_period = bool(_PERIOD_TOKEN_RE.search(name))
-        is_fy_only = has_period and not has_qtr  # FY token present but no Q# token
+        has_qtr  = bool(_QTR_TOKEN_RE.search(name)) or bool(_ZH_QUARTER_RE.search(name))
+        has_period = (
+            bool(_PERIOD_TOKEN_RE.search(name))
+            or bool(_ZH_ANNUAL_RE.search(name))
+            or has_qtr
+        )
+        is_fy_only = has_period and not has_qtr  # 年度 token 有、季度 token 無
 
         clean = _clean_metric_name(name)
         if not clean:
@@ -290,20 +357,37 @@ def _normalize_nongaap_metrics(raw: dict[str, Any]) -> dict[str, Any]:
 
 # ── AI extraction ────────────────────────────────────────────────────────────
 
+# prompt 一律用英文寫、且明確要求英文指標名（2026-08-01 改）。
+#
+# 原本 prompt 是中文，AI 就回中文指標名——而且不穩定，同一個 ticker 內都會混
+# （CRM FY2026Q2 回中文、FY2026Q1 回英文）。下游的期間剝除、guidance 過濾、
+# Excel ÷1M 豁免三條規則當時全部只認英文，整張 Data_NonGAAP 因此不可用。
+#
+# 這裡是第一道防線（減少中文輸入）；第二道是 metric_rules.py 的中英對照層
+# （AI 不聽話回中文時接住）。兩道都要，因為 prompt 遵從度不是保證。
 _NONGAAP_PROMPT = """\
-你是財務分析師。以下是一份公司季度財報新聞稿（Markdown 格式）。
-請提取所有 Non-GAAP 財務指標，回傳 JSON 格式：
+You are a financial analyst. Below is a company quarterly earnings press release
+(Markdown format). Extract all Non-GAAP financial metrics and return JSON:
 
-{{"指標名稱": 數值（純數字，不含貨幣符號或逗號）}}
+{{"Metric Name": value}}
 
-規則：
-- 只取 Non-GAAP / Adjusted / Excluding 相關指標
-- 金額若以百萬為單位則乘以 1000000，以十億為單位則乘以 1000000000
-- 百分比直接回傳數字（如 17.6%→17.6）
-- 若找不到任何 Non-GAAP 指標，回傳空 JSON {{}}
-- 只回傳 JSON，不要說明文字
+Rules:
+- Metric names MUST be in English. Never use Chinese or any other language.
+- Use standard US financial terminology: "Non-GAAP Gross Margin",
+  "Non-GAAP Diluted EPS", "Adjusted EBITDA", "Adjusted EBITDA Margin",
+  "Free Cash Flow", "Non-GAAP Operating Income", "Non-GAAP Revenue".
+- Only include Non-GAAP / Adjusted / Excluding metrics.
+- Values must be plain numbers — no currency symbols, no commas.
+- Convert amounts to absolute units: millions x 1000000, billions x 1000000000.
+- Percentages as the bare number (17.6% -> 17.6).
+- Do NOT include guidance, outlook, or forward-looking figures for future periods.
+- Extract figures for the CURRENT reported quarter only. Do NOT include full-year,
+  full year, year-to-date, LTM / trailing-twelve-month, or prior-period comparison
+  figures, even when the release presents them alongside the quarterly numbers.
+- If no Non-GAAP metrics are found, return empty JSON {{}}.
+- Return JSON only, no explanation.
 
-新聞稿內容：
+Press release:
 {press_release_text}
 """
 

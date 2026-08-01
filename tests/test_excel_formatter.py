@@ -2,7 +2,7 @@
 import pytest
 from openpyxl import Workbook
 from fetcher_gaap import StatementTable
-from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE, QUALITY_MISS_BG
+from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, FMT_PERCENT, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE, QUALITY_MISS_BG
 
 
 def _make_wb(sheet_name="Data_Financials(Q)"):
@@ -433,3 +433,159 @@ def test_index_detail_missing_row_highlighted():
             assert fill_rgb == QUALITY_MISS_BG, f"Expected orange bg, got: {fill_rgb}"
             return
     pytest.fail("Capex row not found in detail section")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Data_NonGAAP 數值分類（2026-08-01 新增，TODO 第 2 項）
+#
+# 這張 sheet 的值是 AI 直接從 8-K 新聞稿抓的原始數字：
+#   金額 = 絕對數（30400000）、百分比 = 原始小數（20.2）、每股 = 原始小數（0.28）
+# 修前只有 EPS / Per Share / per share 三個英文關鍵字能豁免 ÷1M，
+# 導致毛利率 37.5 → 3.75e-05、EPS 0.10 → 1e-07。
+# 分類關鍵字表在 metric_rules.py。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _make_nongaap_wb():
+    """Data_NonGAAP 沒有 B 欄 label，結構與 Data_Financials 不同。"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data_NonGAAP"
+    ws["A1"] = "ARLO"
+    ws["C1"] = "FY2026Q1"
+    ws["D1"] = "FY2026Q2"
+    ws["C2"] = "2026-02-01"
+    ws["D2"] = "2026-05-01"
+    rows = [
+        ("Non-GAAP Gross Margin",        47.8,       50.1),
+        ("Non-GAAP 毛利率",              47.8,       50.1),   # 舊快取殘留的中文名
+        ("Non-GAAP Diluted EPS",         0.22,       0.28),
+        ("Non-GAAP 每股盈餘",            0.22,       0.28),
+        ("Adjusted EBITDA",              23300000.0, 30400000.0),
+        ("Adjusted EBITDA Margin",       16.5,       20.2),
+        ("Free Cash Flow",               66900000.0, 25400000.0),
+        ("自由現金流",                    66900000.0, 25400000.0),
+        ("Non-GAAP Effective Tax Rate",  17.0,       17.5),
+    ]
+    for i, (name, v1, v2) in enumerate(rows, start=3):
+        ws.cell(row=i, column=1, value=name)
+        ws.cell(row=i, column=3, value=v1)
+        ws.cell(row=i, column=4, value=v2)
+    return wb
+
+
+def _cell(name, col="C"):
+    """跑完 format_workbook 後，取指定指標那一列的儲存格。"""
+    wb = _make_nongaap_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_NonGAAP"]
+    for row_idx in range(3, ws.max_row + 1):
+        if str(ws.cell(row=row_idx, column=1).value or "").strip() == name:
+            return ws[f"{col}{row_idx}"]
+    raise AssertionError(f"找不到指標列：{name}")
+
+
+# ── 百分比：不除以 1M，套百分比格式 ──────────────────────────────────────────
+
+def test_nongaap_percent_value_not_divided():
+    """毛利率 47.8 必須維持 47.8，不可變成 4.78e-05。"""
+    assert _cell("Non-GAAP Gross Margin").value == pytest.approx(47.8)
+
+def test_nongaap_percent_number_format():
+    assert _cell("Non-GAAP Gross Margin").number_format == FMT_PERCENT
+
+def test_nongaap_zh_percent_value_not_divided():
+    """中文指標名（舊快取殘留）同樣要豁免。"""
+    assert _cell("Non-GAAP 毛利率").value == pytest.approx(47.8)
+
+def test_nongaap_margin_keyword_percent():
+    """Adjusted EBITDA Margin 是百分比，不是金額。"""
+    assert _cell("Adjusted EBITDA Margin").value == pytest.approx(16.5)
+
+def test_nongaap_tax_rate_is_percent():
+    """Rate 結尾也是百分比。"""
+    assert _cell("Non-GAAP Effective Tax Rate").number_format == FMT_PERCENT
+
+
+# ── 每股：不除以 1M，兩位小數 ────────────────────────────────────────────────
+
+def test_nongaap_eps_value_not_divided():
+    assert _cell("Non-GAAP Diluted EPS").value == pytest.approx(0.22)
+
+def test_nongaap_zh_eps_value_not_divided():
+    """「每股」中文關鍵字要認得——修前 0.10 被除成 1e-07。"""
+    assert _cell("Non-GAAP 每股盈餘").value == pytest.approx(0.22)
+
+def test_nongaap_eps_number_format():
+    assert _cell("Non-GAAP Diluted EPS").number_format == FMT_EPS
+
+
+# ── 金額：仍要除以 1M（防過度豁免）───────────────────────────────────────────
+
+def test_nongaap_amount_still_divided():
+    """Adjusted EBITDA 23.3M → 23.3。加了百分比／中文關鍵字後最容易誤傷這類。"""
+    assert _cell("Adjusted EBITDA").value == pytest.approx(23.3)
+
+def test_nongaap_amount_number_format():
+    assert _cell("Adjusted EBITDA").number_format == FMT_FINANCIAL
+
+def test_nongaap_zh_amount_still_divided():
+    """中文金額名也要照除——「自由現金流」不含率／每股字樣。"""
+    assert _cell("自由現金流").value == pytest.approx(66.9)
+
+def test_nongaap_fcf_divided():
+    assert _cell("Free Cash Flow", col="D").value == pytest.approx(25.4)
+
+
+# ── GAAP 三表不可被影響 ──────────────────────────────────────────────────────
+
+def test_gaap_revenue_still_divided_after_nongaap_rules():
+    """新分類規則不得動到 Data_Financials 的行為。"""
+    wb = _make_wb()
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C4"].value == pytest.approx(117154.0)
+
+def test_gaap_basic_shares_still_shares_format():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C7"].number_format == FMT_SHARES
+
+
+# ── 百分比關鍵字不可用裸子字串比對（實查 fetcher_gaap 模板後補的迴歸測試）────
+#
+# "Operations" 含 "ratio"、"Corporate" 含 "rate"。若關鍵字用裸 `in` 比對，
+# XBRL overflow 行（label 常含 Operations）會被誤判成百分比而**不再除以 1M**，
+# 三表金額直接錯 6 個數量級。ASCII 關鍵字一律要求詞界。
+
+def _make_wb_with_concept(name, value):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data_Financials(Q)"
+    ws["A1"] = "AAPL"
+    ws["C1"] = "FY2023Q1"
+    ws["A3"] = name
+    ws["C3"] = value
+    return wb
+
+def test_operations_row_still_divided():
+    """'Income from Discontinued Operations' 含 'ratio'，但它是金額。"""
+    wb = _make_wb_with_concept("Income from Discontinued Operations", 5000000.0)
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(5.0)
+
+def test_corporate_row_still_divided():
+    """'Corporate Expense' 含 'rate'，但它是金額。"""
+    wb = _make_wb_with_concept("Corporate Expense", 8000000.0)
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(8.0)
+
+def test_real_tax_rate_still_percent():
+    """真的以 Rate 結尾的才算百分比。"""
+    wb = _make_wb_with_concept("Non-GAAP Effective Tax Rate", 17.0)
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(17.0)
+
+def test_steps_not_eps():
+    """'eps' 不可命中 'Steps' 之類的字（同一個裸子字串問題）。"""
+    wb = _make_wb_with_concept("Restructuring Steps Charge", 3000000.0)
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(3.0)

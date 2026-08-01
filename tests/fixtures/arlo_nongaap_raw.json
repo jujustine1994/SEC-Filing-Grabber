@@ -1,0 +1,97 @@
+{
+  "FY2026Q2": {
+    "filing_date": "2026-05-07",
+    "eps_recon": {},
+    "metrics": {
+      "Non-GAAP 訂閱與服務毛利率": 85.4,
+      "Non-GAAP 毛利率": 50.1,
+      "調整後 EBITDA": 30400000.0,
+      "調整後 EBITDA 利潤率": 20.2,
+      "Non-GAAP 每股盈餘": 0.28,
+      "自由現金流": 25400000.0,
+      "自由現金流利潤率": 16.9
+    }
+  },
+  "FY2026Q1": {
+    "filing_date": "2026-02-26",
+    "eps_recon": {},
+    "metrics": {
+      "2025年第四季度 Non-GAAP 訂閱與服務毛利率": 84.0,
+      "2025年第四季度 Non-GAAP 毛利率": 47.8,
+      "2025年第四季度 Adjusted EBITDA": 23300000.0,
+      "2025年第四季度 Adjusted EBITDA 利潤率": 16.5,
+      "2025年第四季度 Non-GAAP 稀釋每股收益": 0.22,
+      "2025年第三季度 Non-GAAP 毛利率": 41.4,
+      "2025年第三季度 Non-GAAP 稀釋每股收益": 0.16,
+      "2024年第四季度 Non-GAAP 毛利率": 37.5,
+      "2024年第四季度 Non-GAAP 稀釋每股收益": 0.1,
+      "2025年全年度 Non-GAAP 訂閱與服務毛利率": 84.3,
+      "2025年全年度 Non-GAAP 毛利率": 45.1,
+      "2025年全年度 Adjusted EBITDA": 74700000.0,
+      "2025年全年度 Adjusted EBITDA 利潤率": 14.1,
+      "2025年全年度 Non-GAAP 稀釋每股收益": 0.7,
+      "2025年全年度自由現金流": 66900000.0,
+      "2025年全年度自由現金流利潤率": 12.6,
+      "2024年全年度 Non-GAAP 毛利率": 37.6,
+      "2024年全年度 Non-GAAP 稀釋每股收益": 0.4,
+      "2026年第一季度 Non-GAAP 稀釋每股收益指引下限": 0.17,
+      "2026年第一季度 Non-GAAP 稀釋每股收益指引上限": 0.23
+    }
+  },
+  "FY2025Q4": {
+    "filing_date": "2025-11-06",
+    "eps_recon": {},
+    "metrics": {
+      "Non-GAAP 訂閱與服務毛利率": 85.1,
+      "Non-GAAP 毛利率": 41.4,
+      "Adjusted EBITDA": 17100000.0,
+      "Adjusted EBITDA Margin": 12.2,
+      "Non-GAAP 每股盈餘": 0.16
+    }
+  },
+  "FY2025Q3": {
+    "filing_date": "2025-08-07",
+    "eps_recon": {},
+    "metrics": {
+      "Non-GAAP Subscriptions and Services Gross Margin": 84.9,
+      "Non-GAAP Gross Margin": 45.8,
+      "Adjusted EBITDA": 18000000.0,
+      "Adjusted EBITDA Margin": 13.9,
+      "Non-GAAP Net Income Per Share": 0.17
+    }
+  },
+  "FY2025Q2": {
+    "filing_date": "2025-05-08",
+    "eps_recon": {},
+    "metrics": {
+      "Non-GAAP 訂閱與服務毛利率": 83.1,
+      "Non-GAAP 毛利率": 45.5,
+      "調整後 EBITDA": 16400000.0,
+      "調整後 EBITDA 利潤率": 13.8,
+      "Non-GAAP 每股盈餘": 0.15,
+      "自由現金流": 28100000.0,
+      "自由現金流利潤率": 23.6
+    }
+  },
+  "FY2025Q1": {
+    "filing_date": "2025-02-27",
+    "eps_recon": {},
+    "metrics": {
+      "2024年第四季 Non-GAAP 服務毛利率": 81.7,
+      "2024年第四季 Non-GAAP 毛利率": 37.5,
+      "2024全年度 Non-GAAP 服務毛利率": 78.1,
+      "2024全年度 Non-GAAP 毛利率": 37.6,
+      "2024全年度 Non-GAAP 營業利潤": 37900000.0,
+      "2024年第三季 Non-GAAP 毛利率": 36.0,
+      "2023年第四季 Non-GAAP 毛利率": 35.8,
+      "2023全年度 Non-GAAP 毛利率": 35.0,
+      "2024年第四季 Non-GAAP 每股盈餘": 0.1,
+      "2024年第三季 Non-GAAP 每股盈餘": 0.11,
+      "2023年第四季 Non-GAAP 每股盈餘": 0.11,
+      "2024全年度 Non-GAAP 每股盈餘": 0.4,
+      "2023全年度 Non-GAAP 每股盈餘": 0.28,
+      "2025年第一季預測 Non-GAAP 每股盈餘（低標）": 0.09,
+      "2025年第一季預測 Non-GAAP 每股盈餘（高標）": 0.15
+    }
+  }
+}

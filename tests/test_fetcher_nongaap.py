@@ -628,3 +628,250 @@ def test_fetch_nongaap_recovers_gap_quarter_in_newest_first_order(tmp_path, monk
     assert "FY2024Q3" in seen_labels[0]
     assert "FY2024Q2" in seen_labels[1]
     assert "FY2024Q1" in seen_labels[2]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 中文指標名稱處理（2026-08-01 新增，TODO 第 2 項）
+#
+# 背景：AI prompt 原為中文，回傳的指標名時中時英（同一 ticker 內都會混），
+# 而下游三條規則（期間剝除、guidance 過濾、Excel ÷1M 豁免）全部只認英文。
+# 規則表集中於 metric_rules.py，測試對著那張表寫。
+# ═════════════════════════════════════════════════════════════════════════════
+
+# ── L1: 中文期間 token 剝除 ────────────────────────────────────────────────
+
+def test_normalize_strips_zh_quarter_prefix():
+    """'2024年第四季 X' → 'X'（ARLO FY2025Q1 實際輸出樣式）。"""
+    raw = {"2024年第四季 Non-GAAP 毛利率": 37.5}
+    result = _normalize_nongaap_metrics(raw)
+    assert list(result.values()) == [37.5]
+    assert "2024" not in list(result)[0]
+
+def test_normalize_strips_zh_quarter_prefix_with_du():
+    """'2025年第四季度 X' — 帶「度」字的變體（ARLO FY2026Q1 樣式）。"""
+    raw = {"2025年第四季度 Non-GAAP 毛利率": 47.8}
+    assert "2025" not in list(_normalize_nongaap_metrics(raw))[0]
+
+def test_normalize_strips_zh_fiscal_quarter():
+    """'2026財年第三季度 X' — PANW 樣式。"""
+    raw = {"2026財年第三季度 Non-GAAP 營業利潤": 814000000.0}
+    assert "2026" not in list(_normalize_nongaap_metrics(raw))[0]
+
+def test_normalize_strips_zh_bare_quarter():
+    """'第一季 X' — 無年份的裸季度（CRM 樣式）。"""
+    raw = {"第一季 Non-GAAP 攤薄每股盈餘": 3.88}
+    assert "第一季" not in list(_normalize_nongaap_metrics(raw))[0]
+
+def test_normalize_zh_annual_goes_to_fy_bucket():
+    """'2024全年度 X' 必須歸 FY 桶——否則年度值會蓋掉當季值。"""
+    raw = {
+        "2024年第四季 Non-GAAP 毛利率": 37.5,   # 當季
+        "2024全年度 Non-GAAP 毛利率": 37.6,     # 年度，只能補洞
+    }
+    assert list(_normalize_nongaap_metrics(raw).values()) == [37.5]
+
+def test_normalize_zh_annual_with_nian_goes_to_fy_bucket():
+    """'2025年全年度 X' — 帶「年」的年度變體（ARLO FY2026Q1 樣式）。"""
+    raw = {
+        "2025年第四季度 Non-GAAP 毛利率": 47.8,
+        "2025年全年度 Non-GAAP 毛利率": 45.1,
+    }
+    assert list(_normalize_nongaap_metrics(raw).values()) == [47.8]
+
+def test_normalize_zh_comparison_quarters_deduplicated():
+    """同一指標的當季 + 上季 + 去年同季，只留第一個（新聞稿當季在前）。"""
+    raw = {
+        "2024年第四季 Non-GAAP 毛利率": 37.5,
+        "2024年第三季 Non-GAAP 毛利率": 36.0,
+        "2023年第四季 Non-GAAP 毛利率": 35.8,
+    }
+    assert list(_normalize_nongaap_metrics(raw).values()) == [37.5]
+
+# ── L1: 中文 guidance 過濾 ─────────────────────────────────────────────────
+
+def test_normalize_drops_zh_guidance_yuce():
+    """'2025年第一季預測 X（低標）' — 預測 = guidance，丟。"""
+    raw = {"2025年第一季預測 Non-GAAP 每股盈餘（低標）": 0.09}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_drops_zh_guidance_zhiyin():
+    """'... 指引下限' — 指引 = guidance，且詞在名稱中間，不是開頭。"""
+    raw = {"2026年第一季度 Non-GAAP 稀釋每股收益指引下限": 0.17}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_drops_zh_guidance_in_middle():
+    """中文 guidance 詞出現在中間也要丟（英文版用 startswith 會漏）。"""
+    raw = {"2026財年預期 Non-GAAP 營業利潤率上限": 29.0}
+    assert _normalize_nongaap_metrics(raw) == {}
+
+def test_normalize_keeps_zh_metric_without_guidance_word():
+    """不含 guidance 詞的中文指標必須留下——防過度過濾。"""
+    raw = {"Non-GAAP 毛利率": 50.1}
+    assert len(_normalize_nongaap_metrics(raw)) == 1
+
+# ── L2: 中英對照 ───────────────────────────────────────────────────────────
+
+def test_canonicalize_zh_gross_margin():
+    from fetcher_nongaap import _canonicalize_metric_name
+    assert _canonicalize_metric_name("Non-GAAP 毛利率") == "Non-GAAP Gross Margin"
+
+def test_canonicalize_zh_free_cash_flow():
+    from fetcher_nongaap import _canonicalize_metric_name
+    assert _canonicalize_metric_name("自由現金流") == "Free Cash Flow"
+
+def test_canonicalize_composes_terms():
+    """詞彙替換要能組合：自由現金流 + 利潤率 → Free Cash Flow Margin。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    assert _canonicalize_metric_name("自由現金流利潤率") == "Free Cash Flow Margin"
+
+def test_canonicalize_longest_term_wins():
+    """訂閱與服務毛利率 要整段命中，不可被拆成錯誤組合。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    assert _canonicalize_metric_name("Non-GAAP 訂閱與服務毛利率") == \
+        "Non-GAAP Subscription and Services Gross Margin"
+
+def test_canonicalize_zh_adjusted_ebitda():
+    from fetcher_nongaap import _canonicalize_metric_name
+    assert _canonicalize_metric_name("調整後 EBITDA 利潤率") == "Adjusted EBITDA Margin"
+
+def test_canonicalize_english_alias_merges():
+    """AI 的英文用詞本身也不一致：Net Income Per Share 與 稀釋每股收益 是同一列。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    a = _canonicalize_metric_name("Non-GAAP Net Income Per Share")
+    b = _canonicalize_metric_name("Non-GAAP 稀釋每股收益")
+    assert a == b
+
+def test_canonicalize_unknown_name_passes_through():
+    """對照表不可能窮舉——沒收錄的名稱要原樣留下，不可吞掉資料。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    assert _canonicalize_metric_name("Non-GAAP 某個沒收錄的指標") == \
+        "Non-GAAP 某個沒收錄的指標"
+
+def test_canonicalize_pure_english_unchanged():
+    """純英文且已是標準名的，不可被改寫（避免動到既有 NVDA 行為）。"""
+    from fetcher_nongaap import _canonicalize_metric_name
+    assert _canonicalize_metric_name("Non-GAAP Revenue") == "Non-GAAP Revenue"
+
+# ── L3: 表格組裝——對角線散開的直接斷言 ────────────────────────────────────
+
+def test_build_nongaap_table_merges_zh_and_en_same_metric():
+    """同一指標 Q1 回中文、Q2 回英文，必須合成一列兩格有值，不可散成兩列。"""
+    cache = {
+        "FY2025Q1": {"filing_date": "2025-02-01", "metrics": {"Non-GAAP 毛利率": 37.5}},
+        "FY2025Q2": {"filing_date": "2025-05-01", "metrics": {"Non-GAAP Gross Margin": 41.4}},
+    }
+    tbl = _build_nongaap_table("ARLO", cache)
+    assert len(tbl.concepts) == 1
+    assert tbl.values[0] == [37.5, 41.4]
+
+def test_build_nongaap_table_merges_case_variants():
+    """AI 的英文大小寫也會漂移：Gross margin / Gross Margin 是同一列。"""
+    cache = {
+        "FY2025Q1": {"filing_date": "", "metrics": {"Non-GAAP Gross margin": 37.5}},
+        "FY2025Q2": {"filing_date": "", "metrics": {"Non-GAAP Gross Margin": 41.4}},
+    }
+    tbl = _build_nongaap_table("ARLO", cache)
+    assert len(tbl.concepts) == 1
+
+def test_build_nongaap_table_renormalizes_legacy_cache():
+    """舊快取存的是「未剝期間」的中文名（正規化以前只在寫入時做）。
+    讀取時要再跑一次正規化，否則既有 nongaap_cache.json 全部要重抓。"""
+    cache = {
+        "FY2025Q1": {"filing_date": "", "metrics": {"2024年第四季 Non-GAAP 毛利率": 37.5}},
+        "FY2025Q2": {"filing_date": "", "metrics": {"Non-GAAP 毛利率": 41.4}},
+    }
+    tbl = _build_nongaap_table("ARLO", cache)
+    assert len(tbl.concepts) == 1
+    assert tbl.values[0] == [37.5, 41.4]
+
+def test_build_nongaap_table_drops_guidance_from_legacy_cache():
+    """舊快取裡的中文 guidance 列，讀取時要被濾掉。"""
+    cache = {
+        "FY2025Q1": {"filing_date": "", "metrics": {
+            "Non-GAAP 毛利率": 37.5,
+            "2025年第一季預測 Non-GAAP 每股盈餘（低標）": 0.09,
+        }},
+    }
+    tbl = _build_nongaap_table("ARLO", cache)
+    assert len(tbl.concepts) == 1
+
+# ── L5: ARLO 真實快取 golden test（不連網、不呼叫 AI）───────────────────────
+
+def _load_arlo_fixture():
+    p = Path(__file__).parent / "fixtures" / "arlo_nongaap_raw.json"
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+def test_arlo_golden_metric_count_collapses():
+    """修前 6 季共 59 個原始名稱、幾乎每個各自成列；修後應收斂到 10 列以內。"""
+    tbl = _build_nongaap_table("ARLO", _load_arlo_fixture())
+    assert len(tbl.concepts) <= 10
+
+def test_arlo_golden_core_metrics_are_dense():
+    """毛利率是 ARLO 每季都報的指標，6 季必須都有值。"""
+    tbl = _build_nongaap_table("ARLO", _load_arlo_fixture())
+    by_name = dict(zip(tbl.concepts, tbl.values))
+    gm = by_name["Non-GAAP Gross Margin"]
+    assert sum(v is not None for v in gm) == 6
+
+def test_arlo_golden_eps_dense():
+    tbl = _build_nongaap_table("ARLO", _load_arlo_fixture())
+    by_name = dict(zip(tbl.concepts, tbl.values))
+    eps = by_name["Non-GAAP Diluted EPS"]
+    assert sum(v is not None for v in eps) == 6
+
+def test_arlo_golden_no_guidance_rows():
+    """預測／指引列全部不得出現。"""
+    tbl = _build_nongaap_table("ARLO", _load_arlo_fixture())
+    joined = " ".join(tbl.concepts)
+    for word in ("預測", "指引", "低標", "高標", "Guidance", "Outlook"):
+        assert word not in joined
+
+def test_arlo_golden_no_period_tokens_left():
+    """任何指標名都不得殘留年份或季度字樣。"""
+    tbl = _build_nongaap_table("ARLO", _load_arlo_fixture())
+    joined = " ".join(tbl.concepts)
+    for token in ("2023", "2024", "2025", "2026", "第一季", "第三季", "第四季", "全年度"):
+        assert token not in joined
+
+def test_arlo_golden_values_in_plausible_range():
+    """毛利率落在 30–60、EPS 落在 0–1——防止數值被錯位或縮放。"""
+    tbl = _build_nongaap_table("ARLO", _load_arlo_fixture())
+    by_name = dict(zip(tbl.concepts, tbl.values))
+    for v in by_name["Non-GAAP Gross Margin"]:
+        assert v is None or 30.0 <= v <= 60.0
+    for v in by_name["Non-GAAP Diluted EPS"]:
+        assert v is None or 0.0 <= v <= 1.0
+
+def test_arlo_golden_q2fy2026_matches_press_release():
+    """FY2026Q2 欄位對 8-K 原文：毛利率 50.1、EPS 0.28、Adjusted EBITDA 30.4M。"""
+    tbl = _build_nongaap_table("ARLO", _load_arlo_fixture())
+    col = tbl.quarter_labels.index("FY2026Q2")
+    by_name = dict(zip(tbl.concepts, tbl.values))
+    assert by_name["Non-GAAP Gross Margin"][col] == 50.1
+    assert by_name["Non-GAAP Diluted EPS"][col] == 0.28
+    assert by_name["Adjusted EBITDA"][col] == 30400000.0
+
+
+# ── prompt 要求英文指標名（方案 c 的第一道防線）────────────────────────────
+
+def test_prompt_requires_english_metric_names():
+    """AI 回中回英是隨機的，prompt 必須明確要求英文，減少下游要接的中文。
+    對照層仍然保留當第二道防線（AI 不聽話時接住）。"""
+    from fetcher_nongaap import _NONGAAP_PROMPT
+    assert "English" in _NONGAAP_PROMPT
+
+def test_prompt_still_has_text_placeholder():
+    """改 prompt 不可弄丟 format 佔位符，否則 _call_ai 會拋 KeyError。"""
+    from fetcher_nongaap import _NONGAAP_PROMPT
+    assert "{press_release_text}" in _NONGAAP_PROMPT
+    _NONGAAP_PROMPT.format(press_release_text="x")   # 不可拋例外
+
+
+def test_prompt_restricts_to_current_period():
+    """實跑 ARLO 發現 Free Cash Flow 列混進全年度數字（FY2025Q1 的 48.6M 配 9.5%
+    margin 是年度值，單季應該是 ~37%）。prompt 必須明確限定只取當期。"""
+    from fetcher_nongaap import _NONGAAP_PROMPT
+    low = _NONGAAP_PROMPT.lower()
+    assert "full-year" in low or "full year" in low
+    assert "year-to-date" in low

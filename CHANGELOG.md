@@ -58,6 +58,35 @@
 
 ## 更新記錄
 
+### 2026-08-01（下午）
+
+**`Data_NonGAAP` 資料品質修復（TODO 第 2 項）——整張 sheet 由不可用變為可用**
+
+採方案 (c)：prompt 改英文 **＋** 保留中英對照層。實查 `nongaap_cache.json` 後才確定不能只做其中一半——**AI 回中文還是英文是隨機的，同一個 ticker 內都會混**（CRM `FY2026Q2` 回中文、`FY2026Q1` 回英文），所以只改 prompt 沒有防線，只補中文規則則因為混語仍然合併不起來。
+
+- **新增 `metric_rules.py`（唯一可調整處）**：期間 token 樣式（中英）、guidance 詞表（中英）、中文→英文詞彙表、同義名合併表、Excel 數值分類關鍵字，全部集中於此。規則作用在**讀取快取**階段而非寫入階段，因此改表後重跑即生效，**不需要重抓 8-K、不需要刪快取**
+- **`fetcher_nongaap.py`**：
+  - `_clean_metric_name()` 加剝中文期間 token（`2024年第四季` / `2025年第四季度` / `2026財年第三季度` / `第一季` / `2024全年度` / `2025年全年度`）
+  - guidance 過濾中文用「包含」比對而非 `startswith`——中文的 guidance 詞常在名稱中間（`2026財年預期 Non-GAAP 營業利潤率上限`），沿用英文的 `startswith` 會整批漏掉
+  - 新增 `_canonicalize_metric_name()`（詞彙替換可組合：`自由現金流`+`利潤率` → `Free Cash Flow Margin`，長詞優先）與 `_metric_merge_key()`（忽略大小寫與標點）
+  - `_build_nongaap_table()` 改為讀取時重跑正規化＋對照＋跨季合併，既有中文快取因此自動救回
+  - prompt 改英文並明確要求英文指標名、排除 guidance、**只取當期**（見下方 FCF）
+- **`excel_formatter.py`**：新增 `FMT_PERCENT` 與百分比類別（÷1M 豁免）。分類順序為每股 → 百分比 → 股數 → 金額，關鍵字表讀 `metric_rules.py`
+- **實作中查出並修掉的第三個缺陷**：關鍵字若用裸子字串比對，`Operations` 含 `ratio`、`Corporate` 含 `rate`、`Steps` 含 `eps`——XBRL overflow 行的 label 常含 `Operations`，會被誤判成百分比而**不再除以 1M**，三表金額直接錯 6 個數量級。ASCII 關鍵字改為一律要求詞界，並補 4 條迴歸測試釘住
+- **實跑中查出並修掉的第四個缺陷**：`Free Cash Flow` 列混進全年度／TTM 數字（ARLO `FY2025Q1` 的 48.6M 配 9.5% margin 是年度值，單季應約 37%）。prompt 補「只取當期」約束後，該列只剩真正的單季值——**密度由 40/48 降為 32/42，但稀疏且正確優於密實且錯誤**
+- **測試**：新增 51 個單元測試，總數 **276 → 327**（`pytest tests/ --ignore=tests/test_live_snapshots.py`），既有 276 條零轉紅。含 `tests/fixtures/arlo_nongaap_raw.json` golden test——直接用修復前 AI 真實吐出的髒中文快取當輸入（含 guidance、LTM、混語），不連網不呼叫 AI
+- **實機驗收（ARLO 2025–2026，6 季）**：
+  - 舊中文快取路徑（不呼叫 AI）→ 8 列全部合併成功，`Non-GAAP Gross Margin` 與 `Non-GAAP Diluted EPS` 皆 6/6 密實
+  - 刪快取重抓（新英文 prompt）→ 快取 100% 英文、無 guidance 列、無期間 token；兩條路徑數值完全一致
+  - 對 8-K 原文（`2026-05-07` 申報）逐項核對全中：非 GAAP 毛利率 50.1%、EPS $0.28、Adjusted EBITDA $30.4M／margin 20.2%、訂閱與服務毛利率 85.4%、FCF $25.4M／margin 16.9%
+  - Excel 實檔驗證：毛利率顯示 `50.1%`（修前 `3.75e-05`）、EPS `0.28`（修前 `1e-07`）、Adjusted EBITDA `30.4`（正確 ÷1M）
+- **本次自行決定、可調整處**（都寫在程式碼註解裡）：
+  - 百分比存**原始數字** 37.5 而非 Excel 比例 0.375 → `excel_formatter.PERCENT_AS_EXCEL_RATIO = False`
+  - `服務毛利率` 與 `訂閱與服務毛利率` 視為同一列 → `metric_rules.METRIC_ALIASES` 刪一行即可分開
+  - 對照表未收錄的名稱**原樣通過**，不丟棄
+
+---
+
 ### 2026-08-01
 
 **GUI 實機驗收（ARLO）與既有缺陷紀錄**
