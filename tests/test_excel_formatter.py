@@ -2,7 +2,7 @@
 import pytest
 from openpyxl import Workbook
 from fetcher_gaap import StatementTable
-from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, FMT_PERCENT, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE, QUALITY_MISS_BG
+from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, FMT_PERCENT, FMT_MULTIPLE, FMT_DAYS, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE, QUALITY_MISS_BG
 
 
 def _make_wb(sheet_name="Data_Financials(Q)"):
@@ -600,3 +600,66 @@ def test_percent_format_matches_storage_mode():
         assert FMT_PERCENT == "0.0%"
     else:
         assert "%" in FMT_PERCENT and FMT_PERCENT != "0.0%"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Data_Ratios 的單位後綴（2026-08-02）
+#
+# 比率列名帶 (%) / (x) / (days) / ($) 後綴，格式必須照後綴走、且一律不 ÷1M。
+# 沒有這條規則的話：「流動比率 (x)」含「率」會被當百分比 ÷100、
+# 「DSO (days)」不含任何關鍵字會被當金額 ÷1,000,000。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _ratio_wb(name, value):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data_Ratios"
+    ws["A1"] = "TEST"
+    ws["C1"] = "FY2025Q1"
+    ws["A3"] = name
+    ws["B3"] = "some / formula"
+    ws["C3"] = value
+    return wb
+
+def _ratio_cell(name, value):
+    wb = _ratio_wb(name, value)
+    format_workbook(wb, [])
+    return wb["Data_Ratios"]["C3"]
+
+
+def test_ratio_percent_suffix_uses_percent_format():
+    cell = _ratio_cell("毛利率 (%)", 38.0)
+    assert cell.number_format == FMT_PERCENT
+    assert cell.value == pytest.approx(0.38)      # 38.0 → 0.38，顯示 38.0%
+
+def test_ratio_multiple_suffix_not_divided():
+    """「(x)」是倍數。1.2 就是 1.2 倍，不可 ÷100 也不可 ÷1M。"""
+    cell = _ratio_cell("FCF/淨利 (x)", 1.2)
+    assert cell.value == pytest.approx(1.2)
+    assert cell.number_format == FMT_MULTIPLE
+
+def test_current_ratio_not_treated_as_percent():
+    """「流動比率 (x)」含「率」字，但後綴說了是倍數——後綴優先。"""
+    cell = _ratio_cell("流動比率 (x)", 2.5)
+    assert cell.value == pytest.approx(2.5)
+
+def test_ratio_days_suffix_not_divided():
+    cell = _ratio_cell("DSO (days)", 45.6)
+    assert cell.value == pytest.approx(45.6)
+    assert cell.number_format == FMT_DAYS
+
+def test_ratio_dollar_suffix_uses_two_decimals():
+    cell = _ratio_cell("BVPS ($)", 4.0)
+    assert cell.value == pytest.approx(4.0)
+    assert cell.number_format == FMT_EPS
+
+def test_ratio_none_cells_untouched():
+    wb = _ratio_wb("毛利率 (%)", None)
+    format_workbook(wb, [])
+    assert wb["Data_Ratios"]["C3"].value is None
+
+def test_suffix_rule_does_not_leak_into_financials_sheet():
+    """Data_Financials 沒有後綴，行為不可改變。"""
+    wb = _make_wb()
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C4"].value == pytest.approx(117154.0)

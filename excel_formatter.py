@@ -43,6 +43,7 @@ SHEET_DESCRIPTIONS = {
     "Data_Financials(Y)": "年報三表合一（IS + BS + CF，from 10-K）",
     "Data_EPS_Recon":     "Non-GAAP EPS 調節表（from 8-K）",
     "Data_NonGAAP":       "Non-GAAP 指標（AI 提取）",
+    "Data_Ratios":        "常見財務比率（自 Data_Financials(Q) 計算，B 欄為算法）",
     "Data_Meta":          "申報資訊（Ticker、公司名、抓取日期）",
 }
 
@@ -116,6 +117,26 @@ FMT_FINANCIAL = "#,##0.0_ ;[Red](#,##0.0)"
 FMT_EPS       = "#,##0.00_ ;[Red](#,##0.00)"
 FMT_SHARES    = "#,##0"
 FMT_PERCENT   = "0.0%" if PERCENT_AS_EXCEL_RATIO else '#,##0.0"%"'
+FMT_MULTIPLE  = '#,##0.00"x"'
+FMT_DAYS      = '#,##0.0"d"'
+
+# Data_Ratios 的列名一定帶單位後綴，格式照後綴走、且一律不 ÷1,000,000。
+# 後綴判斷必須**優先於**關鍵字判斷：「流動比率 (x)」含「率」會被關鍵字當成
+# 百分比而 ÷100，「DSO (days)」不含任何關鍵字會被當金額 ÷1,000,000。
+_UNIT_SUFFIX_FORMATS = {
+    "(%)":     (FMT_PERCENT,  100 if PERCENT_AS_EXCEL_RATIO else 1),
+    "(x)":     (FMT_MULTIPLE, 1),
+    "(days)":  (FMT_DAYS,     1),
+    "($)":     (FMT_EPS,      1),
+}
+
+
+def _unit_suffix_rule(concept: str) -> tuple[str, int] | None:
+    """列名帶單位後綴時回 (格式, 除數)，否則回 None 交給關鍵字判斷。"""
+    for suffix, rule in _UNIT_SUFFIX_FORMATS.items():
+        if concept.endswith(suffix):
+            return rule
+    return None
 
 
 def _apply_row_styles(ws) -> None:
@@ -168,8 +189,12 @@ def _apply_number_formats(ws) -> None:
         if concept in SECTION_HEADERS or concept == "":
             continue
 
+        # 單位後綴優先於一切關鍵字判斷（Data_Ratios 用）
+        suffix_rule = _unit_suffix_rule(concept)
+        if suffix_rule is not None:
+            fmt, divisor = suffix_rule
         # 順序即優先級：每股 → 百分比 → 股數 → 金額（見 metric_rules.py 第 5 節）
-        if _is_eps_concept(concept):
+        elif _is_eps_concept(concept):
             fmt = FMT_EPS
             divisor = 1
         elif _is_percent_concept(concept):

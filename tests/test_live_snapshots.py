@@ -40,7 +40,7 @@ CF_OVERFLOW_TICKERS = ["COHR", "LITE", "AAPL", "NVDA", "GOOGL"]
 
 # Template row counts per section (must stay in sync with IS/BS/CF_TEMPLATE in fetcher_gaap.py)
 _IS_TEMPLATE_ROWS = 22
-_BS_TEMPLATE_ROWS = 41
+_BS_TEMPLATE_ROWS = 42   # 2026-08-01 新增 Shares Outstanding
 _CF_TEMPLATE_ROWS = 26
 
 

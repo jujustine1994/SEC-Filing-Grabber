@@ -23,6 +23,7 @@ from tkinter import messagebox, scrolledtext, ttk
 from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
 from excel_writer import write_statements, check_output_writable
+from ratios import build_ratio_table
 from fetcher_gaap import fetch_gaap_statements
 
 SCRIPT_DIR = Path(__file__).parent
@@ -118,6 +119,21 @@ def show_cth_banner():
 
 
 # ---- App ----
+
+
+def _append_ratio_table(tables: list) -> None:
+    """把 Data_Ratios 加進輸出清單（就地修改）。
+
+    來源固定是 Data_Financials(Q)——比率要看季度趨勢，年報只有 4 個點。
+    沒抓 GAAP（只勾 Non-GAAP）時沒有來源表，安靜跳過。
+    """
+    q_tbl = next((t for t in tables if t.sheet_name == "Data_Financials(Q)"), None)
+    if q_tbl is None:
+        return
+    ratio_tbl = build_ratio_table(q_tbl)
+    if ratio_tbl is not None:
+        tables.append(ratio_tbl)
+
 
 class SECFetcherApp:
     """Two-tab SEC financial fetcher UI.
@@ -1495,6 +1511,8 @@ class SECFetcherApp:
                 self._done(False)
                 return
 
+            _append_ratio_table(tables)
+
             self._log(f"[{ticker}] 寫入 Excel...")
             self._set_progress(step, total_steps, "寫入 Excel...")
             tpl = self.cfg.get("template_path", "") or None
@@ -1569,6 +1587,7 @@ class SECFetcherApp:
                     tables.extend(ng_tables)
                     self._log(f"[{ticker}] Non-GAAP：{len(ng_tables)} 張 sheet")
 
+                _append_ratio_table(tables)
                 output_path = self._build_output_path(ticker)
                 lock_msg = check_output_writable(output_path)
                 if lock_msg:

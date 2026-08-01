@@ -169,6 +169,9 @@ BS_TEMPLATE: list[_T] = [
     ("Noncontrolling Interests",       "MinorityInterestBalance",                 "MinorityInterest",                                          "BS", "first", None),
     ("Total Equity incl. NCI",         "AllEquityBalanceIncludingMinorityInterest","StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", "BS", "first", None),
     ("Total Liabilities & Equity",     "LiabilitiesAndEquity",                    "LiabilitiesAndStockholdersEquity",                          "BS", "first", None),
+    # 期末在外流通股數（時點值）。與 IS 的 Basic/Diluted Shares 不同——那兩個是
+    # 算 EPS 用的**加權平均**，在有買回或增發的季度會與期末股數差很多。
+    ("Shares Outstanding",             "CommonSharesOutstanding",                 "CommonStockSharesOutstanding|EntityCommonStockSharesOutstanding", "BS", "last", None),
 ]
 
 CF_TEMPLATE: list[_T] = [

@@ -1522,3 +1522,37 @@ def test_fy_month_probed_when_quarterly_only(mock_ov, mock_id, mock_co):
 
     all_forms = [c.kwargs.get("form") for c in company.get_filings.call_args_list]
     assert "10-K" in all_forms
+
+
+# ── 期末流通股數（2026-08-01 新增）──────────────────────────────────────────
+#
+# IS 模板原有的 Basic/Diluted Shares 是**加權平均**股數（算 EPS 用）。
+# 分析要看的「現在在外流通幾股」是期末時點值，兩者在有買回或增發的季度差很多。
+# XBRL 概念：us-gaap:CommonStockSharesOutstanding（時點值，屬 BS）。
+
+def test_bs_template_has_shares_outstanding():
+    from fetcher_gaap import BS_TEMPLATE
+    names = [row[0] for row in BS_TEMPLATE]
+    assert "Shares Outstanding" in names
+
+
+def test_shares_outstanding_maps_to_point_in_time_concept():
+    from fetcher_gaap import BS_TEMPLATE
+    row = next(r for r in BS_TEMPLATE if r[0] == "Shares Outstanding")
+    _std, _concept, fallback, source = row[0], row[1], row[2], row[3]
+    assert "CommonStockSharesOutstanding" in fallback
+    assert source == "BS"
+
+
+def test_shares_outstanding_is_not_weighted_average():
+    """不可誤用加權平均的概念——那是 IS 的 Basic/Diluted Shares。"""
+    from fetcher_gaap import BS_TEMPLATE
+    row = next(r for r in BS_TEMPLATE if r[0] == "Shares Outstanding")
+    assert "WeightedAverage" not in (row[2] or "")
+
+
+def test_shares_outstanding_sits_in_equity_section():
+    """位置要在權益段，不可跑到資產或負債段。"""
+    from fetcher_gaap import BS_TEMPLATE
+    names = [r[0] for r in BS_TEMPLATE]
+    assert names.index("Total Liabilities") < names.index("Shares Outstanding")
