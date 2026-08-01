@@ -1212,3 +1212,108 @@ def test_no_summary_when_everything_succeeds(tmp_path, monkeypatch, capsys):
 
     fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
     assert "未取得" not in capsys.readouterr().err
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# max_filings 在缺季回補後要重新裁切（TODO 第 4 項，2026-08-01）
+#
+# 原行為：_list_earnings_filings() 先套 max_filings 切片，_recover_missing_quarters()
+# 補回缺季後**不再裁切**，所以要 4 季、保留區間有 2 個缺口時實際會下載 6 份，
+# 每多一份就多一次 AI 呼叫（也就是多一次配額與費用）。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_recovered_quarters_respect_max_filings(tmp_path, monkeypatch):
+    """回補後總數不可超過 max_filings。"""
+    import fetcher_nongaap as fn
+
+    # 6 份財報，其中兩份沒標 2.02（清單階段會漏，靠回補找回）
+    filings = [
+        RecoverableFiling("2.02", "2024-12-31", has_earnings=True),
+        RecoverableFiling("5.07", "2024-09-30", has_earnings=True),   # 缺口
+        RecoverableFiling("2.02", "2024-06-30", has_earnings=True),
+        RecoverableFiling("5.07", "2024-03-31", has_earnings=True),   # 缺口
+        RecoverableFiling("2.02", "2023-12-31", has_earnings=True),
+        RecoverableFiling("2.02", "2023-09-30", has_earnings=True),
+    ]
+    company = FakeCompany(filings)
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: {"Non-GAAP Revenue": 1.0})
+
+    seen = []
+    fn.fetch_nongaap_statements(
+        "TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path,
+        progress_cb=lambda i, t, label: seen.append(label),
+        max_filings=4,
+    )
+
+    cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
+    assert len(cached) <= 4
+
+
+def test_recovered_quarters_keep_the_newest(tmp_path, monkeypatch):
+    """裁切要留最新的——分析看的是近幾季，不是十年前那幾季。"""
+    import fetcher_nongaap as fn
+
+    filings = [
+        RecoverableFiling("2.02", "2024-12-31", has_earnings=True),
+        RecoverableFiling("5.07", "2024-09-30", has_earnings=True),
+        RecoverableFiling("2.02", "2024-06-30", has_earnings=True),
+        RecoverableFiling("2.02", "2024-03-31", has_earnings=True),
+        RecoverableFiling("2.02", "2023-12-31", has_earnings=True),
+    ]
+    company = FakeCompany(filings)
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: {"Non-GAAP Revenue": 1.0})
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path,
+                                max_filings=3)
+
+    cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
+    assert set(cached) == {"FY2024Q4", "FY2024Q3", "FY2024Q2"}
+
+
+def test_recovery_still_fills_gap_within_limit(tmp_path, monkeypatch):
+    """裁切不可把回補功能整個廢掉——額度內的缺季仍要補回來。"""
+    import fetcher_nongaap as fn
+
+    filings = [
+        RecoverableFiling("2.02", "2024-12-31", has_earnings=True),
+        RecoverableFiling("5.07", "2024-09-30", has_earnings=True),   # 缺口，要補回
+        RecoverableFiling("2.02", "2024-06-30", has_earnings=True),
+    ]
+    company = FakeCompany(filings)
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: {"Non-GAAP Revenue": 1.0})
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path,
+                                max_filings=8)
+
+    cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
+    assert "FY2024Q3" in cached
+
+
+def test_cached_quarters_do_not_consume_the_limit(tmp_path, monkeypatch):
+    """max_filings 限的是「這一趟要處理幾季」。已在快取裡的季不該擠掉新的季，
+    否則第二次執行會什麼都抓不到。"""
+    import fetcher_nongaap as fn
+
+    filings = [
+        RecoverableFiling("2.02", "2024-12-31", has_earnings=True),
+        RecoverableFiling("2.02", "2024-09-30", has_earnings=True),
+    ]
+    company = FakeCompany(filings)
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", lambda ek, cfg: {"Non-GAAP Revenue": 1.0})
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path,
+                                max_filings=2)
+    cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
+    assert set(cached) == {"FY2024Q4", "FY2024Q3"}

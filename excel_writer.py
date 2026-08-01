@@ -16,6 +16,8 @@ Layout per sheet:
     Row 3+: A=concept, B=original_item, C..=values
 """
 
+import os
+import sys
 from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -25,6 +27,52 @@ from excel_formatter import format_workbook
 
 # Data columns start at column C (index 3)
 _DATA_START_COL = 3
+
+# ── 覆蓋防護（TODO 第 8 項，2026-08-01）────────────────────────────────────
+#
+# 覆蓋既有檔前先留一份備份。整批替換 Data_* 沒有版本控制，第二次抓的年份範圍
+# 較窄時舊季度會直接消失（GAAP 沒有快取，重抓要再等一分鐘）。
+# 只保留一份滾動備份，不堆檔案。不想要就設 False。
+KEEP_BACKUP   = True
+BACKUP_SUFFIX = ".bak.xlsx"
+
+
+def check_output_writable(output_path: str | Path) -> str | None:
+    """檢查輸出檔現在能不能寫。可寫回 None，否則回中文錯誤訊息。
+
+    要在**抓取開始前**呼叫。原本的失敗點在 `wb.save()`——那是所有下載與 AI
+    呼叫都跑完的最後一步，檔案被 Excel 開著時使用者白等一分多鐘才看到錯誤。
+    """
+    path = Path(output_path)
+    if not path.exists():
+        return None      # 檔案不存在，write_statements 會自己建（含父資料夾）
+
+    try:
+        handle = open(path, "r+b")
+    except PermissionError:
+        return (f"輸出檔無法寫入（可能正被 Excel 開啟）：{path.name}\n"
+                f"請先關閉該檔案再重試。")
+    except OSError as exc:
+        return f"輸出檔無法寫入：{path.name}（{type(exc).__name__}）"
+
+    try:
+        # Excel 開檔時多半在 open() 就擋下來了，但不同版本行為不一，
+        # 再用非阻塞鎖確認一次。
+        if os.name == "nt":
+            try:
+                import msvcrt
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            except OSError:
+                return (f"輸出檔正被其他程式鎖定（可能是 Excel）：{path.name}\n"
+                        f"請先關閉該檔案再重試。")
+    finally:
+        handle.close()
+    return None
+
+
+def _backup_path(output_path: Path) -> Path:
+    return output_path.with_name(output_path.stem + BACKUP_SUFFIX)
 
 
 def write_statements(tables: list[StatementTable], output_path: str | Path,
@@ -81,10 +129,31 @@ def write_statements(tables: list[StatementTable], output_path: str | Path,
             _write_sheet(ws, tbl)
         format_workbook(wb, tables)
 
+    # 先寫暫存檔再置換：save() 中途失敗（磁碟滿、被鎖）時原檔完好，
+    # 不會留下一個寫到一半、開不起來的 xlsx。
+    tmp_path = output_path.with_name(output_path.name + ".tmp")
     try:
-        wb.save(output_path)
+        try:
+            wb.save(tmp_path)
+        finally:
+            wb.close()
+
+        if KEEP_BACKUP and output_path.exists():
+            import shutil
+            try:
+                shutil.copy2(output_path, _backup_path(output_path))
+            except OSError as exc:
+                # 備份失敗不該擋住主要輸出，但要讓使用者知道這次沒有後路
+                print(f"[excel_writer] 備份失敗（{type(exc).__name__}），"
+                      f"仍會寫入 {output_path.name}", file=sys.stderr)
+
+        os.replace(tmp_path, output_path)
     finally:
-        wb.close()
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 def _copy_cell_format(src, dst) -> None:

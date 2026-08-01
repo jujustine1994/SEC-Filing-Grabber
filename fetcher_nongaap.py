@@ -746,6 +746,11 @@ def fetch_nongaap_statements(
                 key=lambda item: _quarter_ordinal(item[0]) or 0,
                 reverse=True,
             )
+            # 回補後重新裁切（TODO 第 4 項）。_list_earnings_filings() 已經套過
+            # 一次 max_filings，但回補是在切片之後才把缺季加回來，不重切的話
+            # 「要 4 季、保留區間有 2 個缺口」會實際處理 6 季——每多一季就多一次
+            # AI 呼叫，直接吃配額。裁切保留最新的。
+            filings = filings[:max_filings]
         still_missing = sorted(set(missing) - {label for label, _ in recovered})
         if still_missing:
             print(

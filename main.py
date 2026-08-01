@@ -22,7 +22,7 @@ from tkinter import messagebox, scrolledtext, ttk
 
 from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
-from excel_writer import write_statements
+from excel_writer import write_statements, check_output_writable
 from fetcher_gaap import fetch_gaap_statements
 
 SCRIPT_DIR = Path(__file__).parent
@@ -1442,6 +1442,14 @@ class SECFetcherApp:
             output_dir  = output_path.parent
             output_dir.mkdir(parents=True, exist_ok=True)
 
+            # 抓之前先確認寫得進去。原本的失敗點在最後一步的 wb.save()，
+            # 檔案被 Excel 開著時使用者要白等一分多鐘才看到 PermissionError。
+            lock_msg = check_output_writable(output_path)
+            if lock_msg:
+                self._log(f"[{ticker}] ✗ {lock_msg}")
+                _write_log(f"{ticker} 輸出檔無法寫入，未開始抓取", "ERROR")
+                return
+
             total_steps = sum([fetch_gaap, fetch_nongaap]) + 1  # +1 for write
             step = 0
 
@@ -1562,6 +1570,12 @@ class SECFetcherApp:
                     self._log(f"[{ticker}] Non-GAAP：{len(ng_tables)} 張 sheet")
 
                 output_path = self._build_output_path(ticker)
+                lock_msg = check_output_writable(output_path)
+                if lock_msg:
+                    # 批次模式不中斷整批，只跳過這一家
+                    self._log(f"[{ticker}] ✗ {lock_msg}")
+                    _write_log(f"{ticker} 輸出檔無法寫入，已跳過", "ERROR")
+                    continue
                 tpl = self.cfg.get("template_path", "") or None
                 write_statements(tables, output_path, template_path=tpl)
                 self._log(f"[{ticker}] 完成（{len(tables)} 份財報）")
