@@ -24,6 +24,7 @@ from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
 from excel_writer import write_statements, check_output_writable
 from ratios import build_ratio_table
+from segments import build_segments_long
 from fetcher_gaap import fetch_gaap_statements
 
 SCRIPT_DIR = Path(__file__).parent
@@ -122,11 +123,15 @@ def show_cth_banner():
 
 
 def _append_ratio_table(tables: list) -> None:
-    """把 Data_Ratios 加進輸出清單（就地修改）。
+    """把 Data_Segments（長格式）與 Data_Ratios 加進輸出清單（就地修改）。
 
     來源固定是 Data_Financials(Q)——比率要看季度趨勢，年報只有 4 個點。
     沒抓 GAAP（只勾 Non-GAAP）時沒有來源表，安靜跳過。
     """
+    seg_long = build_segments_long(tables)
+    if seg_long is not None:
+        tables.append(seg_long)
+
     q_tbl = next((t for t in tables if t.sheet_name == "Data_Financials(Q)"), None)
     if q_tbl is None:
         return

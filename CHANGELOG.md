@@ -58,6 +58,27 @@
 
 ## 更新記錄
 
+### 2026-08-02
+
+**`Data_NonGAAP` 固定模板、`Data_Ratios` 比率表、`Data_Segments` 長格式**
+
+- **`scripts/survey_nongaap_metrics.py`**：調查 32 家（大中小型跨產業）8-K 新聞稿實際使用的 Non-GAAP 指標，純文字比對不呼叫 AI。結果決定了 Core 收哪些行：Net Income 79%、Diluted EPS 79%、FCF 76%、Operating Income 66%、Effective Tax Rate 62%、Gross Margin 59%、**Net Margin 0%**（沒有任何一家會寫，只能推導）。完全不報 Non-GAAP：AAPL / AMZN / COST
+- **`nongaap_layout.py`（新）**：`Data_NonGAAP` 改為「固定模板 + overflow」，沿用 `Data_Financials` 已驗證的模式。15 行 Core（永遠存在，沒資料就空白）+ GAAP 對照行 + GAAP→Non-GAAP 調節表 + overflow 區 + 年度 (FY) 區。SaaS 專屬指標（ARR/RPO/Billings/NRR）刻意不進 Core——收了等於開產業別模板
+  - **GAAP 對照行從同一份新聞稿抓，不從 `Data_Financials` 拉**：Non-GAAP 的季度標籤系統性晚一季，跨表拉會變成錯開一季的無聲比較。8-K 調節表本來就同時列 GAAP 與 Non-GAAP
+  - **調節表的「其他」用殘差倒算**：`Non-GAAP 淨利 − GAAP 淨利 − 具名項目合計`。表因此會自己對帳——AI 漏抓某個調整項時殘差會變大，一眼看得出來
+  - 具名調整項取實測覆蓋率 ≥59% 的七項：SBC 90%、重組資遣 79%、減損 69%、訴訟和解 66%、無形資產攤銷 66%、併購相關 62%、調整項稅務影響 59%
+  - prompt 同步要求 AI 抓 GAAP 對照值與調節項目（帶號，加到 GAAP 淨利以得到 Non-GAAP 淨利）
+- **`ratios.py`（新）**：`Data_Ratios` 37 個比率。寫算好的**值**不寫 Excel 公式（公式結果要 Excel 開過才寫進檔案，openpyxl 直接讀會拿到 None），B 欄寫算法文字，列名帶單位後綴 `(%)` / `(x)` / `(days)` / `($)`——後綴優先於關鍵字判斷，否則「流動比率 (x)」含「率」會被 ÷100、「DSO (days)」會被當金額 ÷1,000,000
+  - **實跑抓到的嚴重 bug**：季度序列有缺口時（ARLO 實際是 FY2024Q1/Q2/Q3 → FY2025Q1，缺 Q4），YoY/QoQ/TTM 用「往前數 N 格」會取到錯誤基期。營收 `[100,200,300,400,260]` 的 FY2025Q2，正確 YoY 對 FY2024Q2 = +30%，位置法對到 FY2024Q1 = **+160%**，而且看起來完全正常。已改為依季度標籤對齊（`_lag_index`），基期不存在就留空
+  - ROE = TTM 淨利 ÷ 期初期末平均權益；成長率基期 ≤ 0 時回 None
+- **`segments.py`（新）**：`Data_Segments` 長格式，把所有 `Data_Seg_*` 併成固定名稱固定欄位的一張表，欄位取各軸季度聯集並依標籤對位。寬格式原樣保留，兩者同源
+- **`fetcher_gaap.py`**：BS 模板新增 `Shares Outstanding`（41 → 42 行）
+- 測試 423 → **464**
+
+**待解**：期末流通股數實測 ARLO/AAPL/NVDA/MSFT/COHR 五家皆未在資產負債表 tag `CommonStockSharesOutstanding`，需改走封面頁 `dei:EntityCommonStockSharesOutstanding`（TODO 第 3 項）。GAAP 對照行與調節項目在既有快取上是空的——那些快取用舊 prompt 抓的，重抓後才會填上。
+
+---
+
 ### 2026-08-01（下午）
 
 **`Data_NonGAAP` 資料品質修復（TODO 第 2 項）——整張 sheet 由不可用變為可用**

@@ -17,6 +17,7 @@ from typing import Any
 from edgar import Company, set_identity
 
 import metric_rules
+import nongaap_layout
 from errsafe import _exc_status
 from fetcher_gaap import StatementTable
 
@@ -158,41 +159,24 @@ def _build_nongaap_table(ticker: str, cache: dict) -> StatementTable | None:
             _canonicalize_metric_name(name): val for name, val in normalized.items()
         }
 
-    # 跨季合併：同一指標的不同寫法（中／英、大小寫漂移）併成一列，首見的顯示名勝出
+    # 跨季合併：同一指標的不同寫法（中／英、大小寫漂移）併成同一個顯示名，
+    # 首見的勝出。合併在這裡做完，版面模組拿到的就是已對齊的名稱。
     display_by_key: dict[str, str] = {}
-    all_metrics: list[str] = []
     for q in sorted_qs:
         for name in per_quarter[q]:
-            key = _metric_merge_key(name)
-            if key not in display_by_key:
-                display_by_key[key] = name
-                all_metrics.append(name)
+            display_by_key.setdefault(_metric_merge_key(name), name)
 
-    if not all_metrics:
-        return None
+    aligned: dict[str, dict[str, Any]] = {}
+    for q in sorted_qs:
+        aligned[q] = {
+            display_by_key[_metric_merge_key(name)]: val
+            for name, val in per_quarter[q].items()
+        }
 
-    values: list[list[Any]] = []
-    for metric in all_metrics:
-        key = _metric_merge_key(metric)
-        row: list[Any] = []
-        for q in sorted_qs:
-            hit = None
-            for name, val in per_quarter[q].items():
-                if _metric_merge_key(name) == key:
-                    hit = val
-                    break
-            row.append(hit)
-        values.append(row)
-
-    return StatementTable(
-        sheet_name="Data_NonGAAP",
-        quarter_labels=sorted_qs,
-        filing_dates=filing_dates,
-        concepts=all_metrics,
-        values=values,
-        ticker=ticker,
-        labels=[""] * len(all_metrics),
-    )
+    # 版面（core / 調節 / overflow / 年度分區）交給 nongaap_layout。
+    # 即使一格資料都沒有也要回一張骨架表——讀不到 sheet 與讀到空 sheet 是兩種
+    # 訊號，前者無法區分「這家沒報 Non-GAAP」與「抓取失敗」。
+    return nongaap_layout.build_nongaap_table(ticker, aligned, sorted_qs, filing_dates)
 
 
 # ── Extraction functions ─────────────────────────────────────────────────────
@@ -392,7 +376,18 @@ Rules:
 - Use standard US financial terminology: "Non-GAAP Gross Margin",
   "Non-GAAP Diluted EPS", "Adjusted EBITDA", "Adjusted EBITDA Margin",
   "Free Cash Flow", "Non-GAAP Operating Income", "Non-GAAP Revenue".
-- Only include Non-GAAP / Adjusted / Excluding metrics.
+- Include Non-GAAP / Adjusted / Excluding metrics.
+- ALSO include the GAAP counterparts the release states alongside them, named with
+  a "GAAP " prefix: "GAAP Revenue", "GAAP Gross Margin", "GAAP Operating Income",
+  "GAAP Operating Margin", "GAAP Net Income", "GAAP Diluted EPS".
+  Only if the release actually states them — never compute or infer them.
+- ALSO include the individual reconciling items that bridge GAAP net income to
+  Non-GAAP net income, using exactly these names when they apply:
+  "Stock-Based Compensation", "Amortization of Intangibles",
+  "Restructuring Charges", "Impairment Charges", "Litigation and Settlement",
+  "Acquisition-Related Costs", "Tax Effect of Adjustments".
+  Give each as the SIGNED amount ADDED to GAAP net income to reach Non-GAAP net
+  income (so the tax effect is normally negative).
 - Values must be plain numbers — no currency symbols, no commas.
 - Convert amounts to absolute units: millions x 1000000, billions x 1000000000.
 - Percentages as the bare number (17.6% -> 17.6).

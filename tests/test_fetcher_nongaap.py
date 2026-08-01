@@ -1,4 +1,11 @@
 # tests/test_fetcher_nongaap.py
+
+
+def _ng_row(tbl, name):
+    """取 Data_NonGAAP 某一列的值（模板化後不能再用 values[0]）。"""
+    assert name in tbl.concepts, f"缺列 {name}"
+    return tbl.values[tbl.concepts.index(name)]
+
 import json
 from pathlib import Path
 from fetcher_nongaap import _load_cache, _save_cache, _period_to_quarter_label, _build_eps_recon_table, _build_nongaap_table, _normalize_nongaap_metrics, _filter_nongaap_by_year
@@ -772,8 +779,7 @@ def test_build_nongaap_table_merges_zh_and_en_same_metric():
         "FY2025Q2": {"filing_date": "2025-05-01", "metrics": {"Non-GAAP Gross Margin": 41.4}},
     }
     tbl = _build_nongaap_table("ARLO", cache)
-    assert len(tbl.concepts) == 1
-    assert tbl.values[0] == [37.5, 41.4]
+    assert _ng_row(tbl, "Non-GAAP Gross Margin") == [37.5, 41.4]
 
 def test_build_nongaap_table_merges_case_variants():
     """AI 的英文大小寫也會漂移：Gross margin / Gross Margin 是同一列。"""
@@ -782,7 +788,8 @@ def test_build_nongaap_table_merges_case_variants():
         "FY2025Q2": {"filing_date": "", "metrics": {"Non-GAAP Gross Margin": 41.4}},
     }
     tbl = _build_nongaap_table("ARLO", cache)
-    assert len(tbl.concepts) == 1
+    assert _ng_row(tbl, "Non-GAAP Gross Margin") == [37.5, 41.4]
+    assert tbl.concepts.count("Non-GAAP Gross Margin") == 1
 
 def test_build_nongaap_table_renormalizes_legacy_cache():
     """舊快取存的是「未剝期間」的中文名（正規化以前只在寫入時做）。
@@ -792,8 +799,7 @@ def test_build_nongaap_table_renormalizes_legacy_cache():
         "FY2025Q2": {"filing_date": "", "metrics": {"Non-GAAP 毛利率": 41.4}},
     }
     tbl = _build_nongaap_table("ARLO", cache)
-    assert len(tbl.concepts) == 1
-    assert tbl.values[0] == [37.5, 41.4]
+    assert _ng_row(tbl, "Non-GAAP Gross Margin") == [37.5, 41.4]
 
 def test_build_nongaap_table_drops_guidance_from_legacy_cache():
     """舊快取裡的中文 guidance 列，讀取時要被濾掉。"""
@@ -804,7 +810,7 @@ def test_build_nongaap_table_drops_guidance_from_legacy_cache():
         }},
     }
     tbl = _build_nongaap_table("ARLO", cache)
-    assert len(tbl.concepts) == 1
+    assert not any("預測" in c or "低標" in c for c in tbl.concepts)
 
 # ── L5: ARLO 真實快取 golden test（不連網、不呼叫 AI）───────────────────────
 
@@ -817,8 +823,14 @@ def test_arlo_golden_metric_count_collapses():
     """修前 6 季共 59 個原始名稱、幾乎每個各自成列；修後當季列應收斂到 10 列以內。
     (FY) 列不算在內——那是新聞稿裡確實存在的年度數字，只是被標記出來另放。"""
     tbl = _build_nongaap_table("ARLO", _load_arlo_fixture())
-    quarterly = [c for c in tbl.concepts if not c.endswith("(FY)")]
-    assert len(quarterly) <= 10
+    # core 與調節列固定存在，這裡看的是 overflow 區有沒有收斂：
+    # 修前 6 季共 59 個原始名稱，幾乎每個各自成列。
+    from nongaap_layout import SECTION_OTHER, SECTION_ANNUAL
+    if SECTION_OTHER in tbl.concepts:
+        start = tbl.concepts.index(SECTION_OTHER)
+        end = (tbl.concepts.index(SECTION_ANNUAL)
+               if SECTION_ANNUAL in tbl.concepts else len(tbl.concepts))
+        assert len(tbl.concepts[start + 1:end]) <= 10
 
 def test_arlo_golden_core_metrics_are_dense():
     """毛利率是 ARLO 每季都報的指標，6 季必須都有值。"""
@@ -972,7 +984,10 @@ def test_genuinely_empty_quarter_is_cached(tmp_path, monkeypatch):
 def test_build_nongaap_table_tolerates_none_metrics():
     """防禦：舊快取若存過 None，組表不可炸。"""
     cache = {"FY2025Q1": {"filing_date": "", "metrics": None}}
-    assert _build_nongaap_table("TEST", cache) is None
+    tbl = _build_nongaap_table("TEST", cache)
+    # 沒有指標時仍回骨架表——讀不到 sheet 與讀到空 sheet 是兩種不同的訊號
+    assert tbl is not None
+    assert all(v is None for row in tbl.values for v in row)
 
 
 # ── CRM 實跑暴露的規則表缺口（2026-08-01）────────────────────────────────────
@@ -1085,7 +1100,8 @@ def test_fy_row_does_not_merge_with_quarterly_row():
         }},
     }
     tbl = _build_nongaap_table("TEST", cache)
-    assert len(tbl.concepts) == 2
+    assert _ng_row(tbl, "Non-GAAP Gross Margin") == [37.5]
+    assert _ng_row(tbl, "Non-GAAP Gross Margin (FY)") == [37.6]
 
 
 # ═════════════════════════════════════════════════════════════════════════════

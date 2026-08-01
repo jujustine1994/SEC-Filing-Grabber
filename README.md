@@ -31,6 +31,8 @@
 | `Data_Financials_NG(Q/Y)` | Non-GAAP overflow 行（含 "adjusted"/"non-gaap" 等 label 的 XBRL 行），有資料才產生 |
 | `Data_Seg_*` | 各收入/費用的地區/業務分類細項 |
 | `Data_NonGAAP` | AI 從 8-K press release 提取的 Non-GAAP 指標（勾選 Non-GAAP 時產生） |
+| `Data_Segments` | 各分類軸合併的長格式表（一張表涵蓋所有軸，給程式讀；寬格式見 `Data_Seg_*`） |
+| `Data_Ratios` | 常見財務比率（37 項，自 `Data_Financials(Q)` 計算，B 欄寫算法） |
 | `Data_Meta` | 申報資訊（Ticker、公司名、抓取日期、季度數） |
 
 **欄位說明（Data_Financials）：**
@@ -50,7 +52,7 @@
 | 報表 | 行數 | 說明 |
 |------|------|------|
 | Income Statement | 22 | 含 D&A/SBC/Minority Interest/Total Non-op |
-| Balance Sheet | 41 | Assets 14 行、Liabilities 17 行、Equity 10 行 |
+| Balance Sheet | 42 | Assets 14 行、Liabilities 17 行、Equity 11 行（含期末流通股數） |
 | Cash Flow | 25 + 1 | Operating/Investing/Financing + FCF 衍生 |
 
 沒有資料的項目顯示空白（None），不影響其他行。
