@@ -47,6 +47,10 @@ class StatementTable:
     values:         list[list[Any]]
     ticker:         str = ""
     labels:         list[str] = field(default_factory=list)   # B-col: original XBRL labels
+    # 各期真正的期末結算日（YYYY-MM-DD）。美股多為 52/53 週制，期末日不是月底
+    # （ARLO FY2026Q1 結束在 03-29 不是 03-31），從財季標籤反推只能得到月份。
+    # 來源是 XBRL 欄名 "2026-03-29 (Q1)"。沒帶到的表留空，下游自行退回反推。
+    period_ends:    list[str] = field(default_factory=list)
 
 
 # ── Constants ─────────────────────────────────────────────────────────────
@@ -284,6 +288,15 @@ def _col_to_quarter_label(col_name: str, fy_end_month: int = 12) -> str:
             year += 1
         return f"FY{year}{period}"
     return col_name
+
+
+def _col_to_period_end(col_name: str) -> str:
+    """edgartools 欄名 → 期末日。`"2026-03-29 (Q1)"` → `"2026-03-29"`。
+
+    抓不到回空字串——下游會退回從財季標籤反推的年月。
+    """
+    m = re.match(r"(\d{4}-\d{2}-\d{2})\s+\(\w+\)", (col_name or "").strip())
+    return m.group(1) if m else ""
 
 
 def _detect_fy_end_month(filings_k: list) -> int:
@@ -637,6 +650,7 @@ def _build_is_table(
                  Empty table when no Non-GAAP rows are found.
     """
     is_overrides = is_overrides or {}
+    period_end_map: dict[str, str] = {}
     periods: dict[str, tuple[str, dict[int, Any]]] = {}
     row_labels: dict[int, str] = {}
     # Overflow dicts accumulate across all filings; key = XBRL concept name
@@ -666,6 +680,9 @@ def _build_is_table(
         label = _col_to_quarter_label(q_col, fy_end_month)
         if label in periods:
             continue
+        # 真正的期末結算日（52/53 週制不是月底）。從財季標籤反推只能得到月份，
+        # Data_Std 需要精確日期，所以趁還看得到欄名先存下來。
+        period_end_map[label] = _col_to_period_end(q_col)
 
         # Fetch CF statement for D&A / SBC rows
         cf_df: pd.DataFrame | None = None
@@ -808,9 +825,12 @@ def _build_is_table(
         labels_g.append(key)
         values_g.append(row)
 
+    period_ends = [period_end_map.get(lbl, "") for lbl in sorted_labels]
+
     gaap_tbl = StatementTable(
         sheet_name="Data_IS",
         quarter_labels=sorted_labels,
+        period_ends=period_ends,
         filing_dates=filing_dates,
         concepts=concepts_g,
         labels=labels_g,
@@ -833,6 +853,7 @@ def _build_is_table(
     ng_tbl = StatementTable(
         sheet_name="Data_IS_NG",
         quarter_labels=sorted_labels,
+        period_ends=period_ends,
         filing_dates=filing_dates,
         concepts=concepts_n,
         labels=labels_n,
@@ -1259,6 +1280,14 @@ def _merge_financials(is_tbl: StatementTable,
             date_map[lbl] = dt
     filing_dates = [date_map.get(q, "") for q in all_qs]
 
+    # 期末日同樣三表取聯集（IS 優先）。缺的留空，Data_Std 會退回反推年月。
+    end_map: dict[str, str] = {}
+    for tbl in [cf_tbl, bs_tbl, is_tbl]:
+        for lbl, end in zip(tbl.quarter_labels, tbl.period_ends or []):
+            if end:
+                end_map[lbl] = end
+    period_ends = [end_map.get(q, "") for q in all_qs]
+
     concepts:    list[str]        = []
     labels_col:  list[str]        = []
     values:      list[list[Any]]  = []
@@ -1296,6 +1325,7 @@ def _merge_financials(is_tbl: StatementTable,
         sheet_name=sheet_name,
         quarter_labels=all_qs,
         filing_dates=filing_dates,
+        period_ends=period_ends,
         concepts=concepts,
         values=values,
         labels=labels_col,

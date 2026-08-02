@@ -72,6 +72,7 @@ SHEET_NAME     = "Data_Std"
 # 表頭列的機器鍵
 ROW_CALENDAR   = "META.CALENDAR_QUARTER"
 ROW_PERIOD_END = "META.PERIOD_END"
+ROW_FISCAL_QUARTER = "META.FISCAL_QUARTER"
 ROW_SCHEMA     = "META.SCHEMA"
 
 # 來源表的 section 標題（`_merge_financials` 產生的）
@@ -103,13 +104,25 @@ def _fiscal_period_end(label: str, fy_end_month: int) -> tuple[int, int] | None:
     return year, month
 
 
-def _calendar_quarter(label: str, fy_end_month: int) -> str:
-    """財季標籤 → 日曆季標籤（`2026Q1`）。年度標籤或無法解析回空字串。"""
+def _calendar_quarter(label: str, fy_end_month: int, period_end: str = "") -> str:
+    """財季標籤 → 日曆季標籤（`2026Q1`）。年度標籤或無法解析回空字串。
+
+    有真實期末日就直接用它換算（最準）；沒有才靠結算月反推。
+    """
+    if period_end and re.match(r"\d{4}-\d{2}", period_end):
+        year, month = int(period_end[:4]), int(period_end[5:7])
+        return f"{year}Q{(month - 1) // 3 + 1}"
     parsed = _fiscal_period_end(label, fy_end_month)
     if parsed is None:
         return ""
     year, month = parsed
     return f"{year}Q{(month - 1) // 3 + 1}"
+
+
+def _fiscal_quarter(label: str) -> str:
+    """`FY2026Q1` → `2026Q1`（去掉 FY 前綴，方便模板直接比對）。"""
+    m = _QUARTER_RE.match((label or "").strip())
+    return f"{m.group(1)}Q{m.group(2)}" if m else ""
 
 
 def _period_end(label: str, fy_end_month: int) -> str:
@@ -166,25 +179,26 @@ STD_ROWS = _build_std_rows()
 # 任何人插入或搬動一列，`test_row_numbers_are_frozen` 會立刻紅，提醒使用者的
 # 跨檔公式需要同步更新。挑代表性的鍵即可，不必全列。
 FROZEN_ROW_NUMBERS = {
-    ROW_CALENDAR:            3,
-    ROW_PERIOD_END:          4,
-    ROW_SCHEMA:              5,
-    "IS.REVENUE":            7,
-    "IS.GROSS_PROFIT":       9,
-    "IS.OPERATING_INCOME":  15,
-    "IS.NET_INCOME":        22,
-    "IS.DILUTED_EPS":       26,
-    "BS.CASH":              30,
-    "BS.TOTAL_ASSETS":      43,
-    "BS.TOTAL_LIABILITIES": 60,
-    "BS.SHARES_OUTSTANDING": 71,
-    "CF.NET_INCOME":        73,
-    "CF.OPERATING_CASH_FLOW": 82,
-    "CF.CAPEX":             83,
-    "CF.FREE_CASH_FLOW":    98,
-    "RATIO.營收 YoY":       100,
-    "RATIO.毛利率":         108,
-    "RATIO.ROE":            133,
+    ROW_FISCAL_QUARTER:      3,
+    ROW_CALENDAR:            4,
+    ROW_PERIOD_END:          5,
+    ROW_SCHEMA:              6,
+    "IS.REVENUE":            8,
+    "IS.GROSS_PROFIT":       10,
+    "IS.OPERATING_INCOME":  16,
+    "IS.NET_INCOME":        23,
+    "IS.DILUTED_EPS":       27,
+    "BS.CASH":              31,
+    "BS.TOTAL_ASSETS":      44,
+    "BS.TOTAL_LIABILITIES": 61,
+    "BS.SHARES_OUTSTANDING": 72,
+    "CF.NET_INCOME":        74,
+    "CF.OPERATING_CASH_FLOW": 83,
+    "CF.CAPEX":             84,
+    "CF.FREE_CASH_FLOW":    99,
+    "RATIO.營收 YoY":       101,
+    "RATIO.毛利率":         109,
+    "RATIO.ROE":            134,
 }
 
 
@@ -249,8 +263,16 @@ def build_std_table(
         values.append(row)
 
     # 表頭三列
-    add("日曆季", ROW_CALENDAR, [_calendar_quarter(q, fy_end_month) for q in labels_q])
-    add("期末年月", ROW_PERIOD_END, [_period_end(q, fy_end_month) for q in labels_q])
+    # 期末日：優先用 XBRL 帶來的真實日期（52/53 週制不是月底），
+    # 沒有才退回從財季標籤反推的年月。逐欄各自判斷。
+    ends_raw = list(q_table.period_ends or [])
+    ends = [(ends_raw[i] if i < len(ends_raw) else "") or "" for i in range(n)]
+
+    add("財季", ROW_FISCAL_QUARTER, [_fiscal_quarter(q) for q in labels_q])
+    add("日曆季", ROW_CALENDAR,
+        [_calendar_quarter(q, fy_end_month, ends[i]) for i, q in enumerate(labels_q)])
+    add("期末結算日", ROW_PERIOD_END,
+        [ends[i] or _period_end(q, fy_end_month) for i, q in enumerate(labels_q)])
     add("資料版本", ROW_SCHEMA, [SCHEMA_VERSION] * n)
 
     for section, display, key in STD_ROWS:

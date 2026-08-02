@@ -4,6 +4,7 @@ from fetcher_gaap import StatementTable
 from std_sheet import (
     build_std_table, STD_ROWS, FROZEN_ROW_NUMBERS,
     _calendar_quarter, ROW_CALENDAR, ROW_PERIOD_END, ROW_SCHEMA, SCHEMA_VERSION,
+    ROW_FISCAL_QUARTER,
 )
 
 
@@ -190,3 +191,61 @@ def test_works_without_ratio_table():
 
 def test_returns_none_without_source():
     assert build_std_table(None, None) is None
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 真正的期末結算日（2026-08-02）
+#
+# 期末年月原本是從財季標籤反推的（FY2026Q1 + 結算月 12 → 2026-03），只到月。
+# 但美股多半用 52/53 週制，ARLO 的 FY2026Q1 實際結束在 2026-03-29 而不是 03-31。
+# 真正的日期在 XBRL 欄名裡（"2026-03-29 (Q1)"），要一路帶到 Data_Std。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _merged_with_ends(quarters, period_ends):
+    tbl = _merged(quarters, {})
+    tbl.period_ends = list(period_ends)
+    return tbl
+
+
+def test_period_end_uses_real_date_when_available():
+    """有真實期末日就用真實的，不用反推的年月。"""
+    src = _merged_with_ends(["FY2026Q1"], ["2026-03-29"])
+    tbl = build_std_table(src, None, fy_end_month=12)
+    assert _row_by_key(tbl, ROW_PERIOD_END) == ["2026-03-29"]
+
+
+def test_period_end_falls_back_to_derived_month():
+    """沒有真實期末日時退回反推的年月，不可整列留空。"""
+    src = _merged(["FY2026Q1"], {})
+    tbl = build_std_table(src, None, fy_end_month=12)
+    assert _row_by_key(tbl, ROW_PERIOD_END) == ["2026-03"]
+
+
+def test_period_end_falls_back_per_column():
+    """部分季有真實日期、部分沒有時，逐欄各自處理。"""
+    src = _merged_with_ends(["FY2026Q1", "FY2026Q2"], ["2026-03-29", ""])
+    tbl = build_std_table(src, None, fy_end_month=12)
+    assert _row_by_key(tbl, ROW_PERIOD_END) == ["2026-03-29", "2026-06"]
+
+
+def test_calendar_quarter_uses_real_date_when_available():
+    """有真實期末日時，日曆季直接從日期算，不必靠結算月反推。"""
+    src = _merged_with_ends(["FY2026Q1"], ["2025-12-28"])
+    tbl = build_std_table(src, None, fy_end_month=9)
+    assert _row_by_key(tbl, ROW_CALENDAR) == ["2025Q4"]
+
+
+def test_fiscal_quarter_row_is_bare_label():
+    """財季另給一列不含 FY 前綴的寫法（2026Q1），方便模板直接比對。
+    第 1 列維持 FY2026Q1 與其他 sheet 一致。"""
+    src = _merged(["FY2026Q1"], {})
+    tbl = build_std_table(src, None, fy_end_month=12)
+    assert _row_by_key(tbl, ROW_FISCAL_QUARTER) == ["2026Q1"]
+
+
+def test_fiscal_and_calendar_differ_for_offset_fye():
+    """AAPL：財季 2025Q1，日曆季 2024Q4——兩列必須不同才有意義。"""
+    src = _merged(["FY2025Q1"], {})
+    tbl = build_std_table(src, None, fy_end_month=9)
+    assert _row_by_key(tbl, ROW_FISCAL_QUARTER) == ["2025Q1"]
+    assert _row_by_key(tbl, ROW_CALENDAR) == ["2024Q4"]
