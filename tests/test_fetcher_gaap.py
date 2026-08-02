@@ -1556,3 +1556,118 @@ def test_shares_outstanding_sits_in_equity_section():
     from fetcher_gaap import BS_TEMPLATE
     names = [r[0] for r in BS_TEMPLATE]
     assert names.index("Total Liabilities") < names.index("Shares Outstanding")
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 期末流通股數改走封面頁 dei fact（2026-08-02）
+#
+# 實測 ARLO/AAPL/NVDA/MSFT/COHR 五家都沒有在資產負債表 tag
+# us-gaap:CommonStockSharesOutstanding，股數只寫在 CommonStockValue 的 label
+# 文字裡。真正拿得到的是封面頁的 dei:EntityCommonStockSharesOutstanding，
+# 走 Company.get_facts()，ARLO 有 32 筆、AAPL 70 筆，2009 年起逐季都有。
+#
+# ⚠ 這個 fact 的日期是**封面頁「最近可行日期」**，比財季結束晚幾週
+#    （ARLO FY2025Q1 財季結束 2025-03-30，股數是 2025-05-02 的 103,400,957）。
+#    它是能拿到的最接近的時點股數，但不是財季結束當天的數字。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_shares_label_for_quarter():
+    from fetcher_gaap import _shares_label
+    assert _shares_label(2025, "Q1") == "FY2025Q1"
+
+
+def test_shares_label_for_annual():
+    """10-K 的 fiscal_period 是 FY，對到年報表的標籤。"""
+    from fetcher_gaap import _shares_label
+    assert _shares_label(2025, "FY") == "FY2025"
+
+
+def test_shares_label_rejects_garbage():
+    from fetcher_gaap import _shares_label
+    assert _shares_label(2025, "") is None
+    assert _shares_label(None, "Q1") is None
+
+
+def test_shares_map_from_records():
+    from fetcher_gaap import _shares_map_from_records
+    recs = [
+        {"fiscal_year": 2025, "fiscal_period": "Q1", "numeric_value": 103400957.0},
+        {"fiscal_year": 2025, "fiscal_period": "Q2", "numeric_value": 104370654.0},
+        {"fiscal_year": 2025, "fiscal_period": "FY", "numeric_value": 106855416.0},
+    ]
+    m = _shares_map_from_records(recs)
+    assert m["FY2025Q1"] == 103400957.0
+    assert m["FY2025"] == 106855416.0
+
+
+def test_shares_map_keeps_latest_when_duplicated():
+    """同一季重複申報（10-Q/A）時取最後一筆——後送的才是更正後的。"""
+    from fetcher_gaap import _shares_map_from_records
+    recs = [
+        {"fiscal_year": 2025, "fiscal_period": "Q1", "numeric_value": 100.0},
+        {"fiscal_year": 2025, "fiscal_period": "Q1", "numeric_value": 111.0},
+    ]
+    assert _shares_map_from_records(recs)["FY2025Q1"] == 111.0
+
+
+def test_shares_map_skips_unusable_records():
+    from fetcher_gaap import _shares_map_from_records
+    recs = [
+        {"fiscal_year": 2025, "fiscal_period": "Q1", "numeric_value": None},
+        {"fiscal_year": None, "fiscal_period": "Q2", "numeric_value": 5.0},
+        {"fiscal_year": 2025, "fiscal_period": "Q3", "numeric_value": 7.0},
+    ]
+    assert _shares_map_from_records(recs) == {"FY2025Q3": 7.0}
+
+
+def test_apply_shares_fills_the_template_row():
+    from fetcher_gaap import _apply_shares_outstanding, StatementTable
+    tbl = StatementTable(
+        sheet_name="Data_Financials(Q)",
+        quarter_labels=["FY2025Q1", "FY2025Q2"],
+        filing_dates=["", ""],
+        concepts=["Revenue", "Shares Outstanding"],
+        values=[[10.0, 20.0], [None, None]],
+        ticker="ARLO", labels=["", ""],
+    )
+    _apply_shares_outstanding([tbl], {"FY2025Q1": 103.0, "FY2025Q2": 104.0})
+    assert tbl.values[1] == [103.0, 104.0]
+
+
+def test_apply_shares_leaves_other_rows_alone():
+    from fetcher_gaap import _apply_shares_outstanding, StatementTable
+    tbl = StatementTable(
+        sheet_name="Data_Financials(Q)",
+        quarter_labels=["FY2025Q1"],
+        filing_dates=[""],
+        concepts=["Revenue", "Shares Outstanding"],
+        values=[[10.0], [None]],
+        ticker="ARLO", labels=["", ""],
+    )
+    _apply_shares_outstanding([tbl], {"FY2025Q1": 103.0})
+    assert tbl.values[0] == [10.0]
+
+
+def test_apply_shares_leaves_missing_quarters_blank():
+    from fetcher_gaap import _apply_shares_outstanding, StatementTable
+    tbl = StatementTable(
+        sheet_name="Data_Financials(Q)",
+        quarter_labels=["FY2025Q1", "FY2025Q2"],
+        filing_dates=["", ""],
+        concepts=["Shares Outstanding"],
+        values=[[None, None]],
+        ticker="ARLO", labels=[""],
+    )
+    _apply_shares_outstanding([tbl], {"FY2025Q1": 103.0})
+    assert tbl.values[0] == [103.0, None]
+
+
+def test_apply_shares_no_row_is_a_noop():
+    """沒有那一列的表（Data_Seg_* 等）不可炸。"""
+    from fetcher_gaap import _apply_shares_outstanding, StatementTable
+    tbl = StatementTable(
+        sheet_name="Data_Seg_X", quarter_labels=["FY2025Q1"], filing_dates=[""],
+        concepts=["Americas"], values=[[1.0]], ticker="ARLO", labels=[""],
+    )
+    _apply_shares_outstanding([tbl], {"FY2025Q1": 103.0})
+    assert tbl.values[0] == [1.0]

@@ -1482,6 +1482,88 @@ def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> 
 
 # ── Meta sheet ─────────────────────────────────────────────────────────────
 
+# ── 期末流通股數（走封面頁 dei fact，不在三表裡）──────────────────────────
+#
+# 實測 ARLO / AAPL / NVDA / MSFT / COHR 五家都**沒有**在資產負債表 tag
+# `us-gaap:CommonStockSharesOutstanding`——股數只寫在 `CommonStockValue` 的
+# label 文字裡（"shares issued and outstanding: 108,745,373 at March 29, 2026"）。
+#
+# 真正拿得到的是封面頁的 `dei:EntityCommonStockSharesOutstanding`，走
+# `Company.get_facts()`，ARLO 有 32 筆、AAPL 70 筆，2009 年起逐季都有。
+#
+# ⚠ 這個 fact 的日期是封面頁的「最近可行日期」，比財季結束**晚幾週**
+#   （ARLO FY2025Q1 財季結束 2025-03-30，股數是 2025-05-02 的 103,400,957）。
+#   它是公開資料裡最接近的時點股數，但不是財季結束當天的數字。用它算 BVPS
+#   等於「期末權益 ÷ 幾週後的股數」，量級無虞但不是同一天。
+
+_SHARES_CONCEPT = "dei:EntityCommonStockSharesOutstanding"
+
+
+def _shares_label(fiscal_year, fiscal_period) -> str | None:
+    """fact 的 (fiscal_year, fiscal_period) → 本專案的期間標籤。無法對映回 None。"""
+    if fiscal_year is None or not fiscal_period:
+        return None
+    period = str(fiscal_period).strip().upper()
+    try:
+        year = int(fiscal_year)
+    except (TypeError, ValueError):
+        return None
+    if period == "FY":
+        return f"FY{year}"
+    if re.fullmatch(r"Q[1-4]", period):
+        return f"FY{year}{period}"
+    return None
+
+
+def _shares_map_from_records(records) -> dict[str, float]:
+    """fact 記錄 → {期間標籤: 股數}。重複申報取最後一筆（更正後的）。"""
+    out: dict[str, float] = {}
+    for rec in records or []:
+        label = _shares_label(rec.get("fiscal_year"), rec.get("fiscal_period"))
+        if label is None:
+            continue
+        value = rec.get("numeric_value")
+        if value is None:
+            continue
+        try:
+            out[label] = float(value)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _fetch_shares_outstanding(company) -> dict[str, float]:
+    """抓封面頁流通股數的完整歷史序列。任何失敗回空 dict（該列留白即可）。"""
+    try:
+        facts = company.get_facts()
+        df = facts.query().by_concept(_SHARES_CONCEPT).to_dataframe()
+        if df is None or df.empty:
+            return {}
+        cols = [c for c in ("fiscal_year", "fiscal_period", "numeric_value")
+                if c in df.columns]
+        if len(cols) < 3:
+            return {}
+        return _shares_map_from_records(df[cols].to_dict("records"))
+    except Exception as exc:
+        print(f"[fetcher_gaap] 流通股數取得失敗: {type(exc).__name__}", file=sys.stderr)
+        return {}
+
+
+def _apply_shares_outstanding(tables: list[StatementTable],
+                              shares_map: dict[str, float]) -> None:
+    """把股數填進各表的 `Shares Outstanding` 列（就地修改）。
+
+    沒有那一列的表直接跳過；對映不到的季度留 None，不用鄰近季度頂替。
+    """
+    if not shares_map:
+        return
+    for tbl in tables:
+        if "Shares Outstanding" not in tbl.concepts:
+            continue
+        idx = tbl.concepts.index("Shares Outstanding")
+        tbl.values[idx] = [shares_map.get(lbl) for lbl in tbl.quarter_labels]
+
+
 def _build_meta_table(ticker: str, company_name: str,
                        tables: list[StatementTable],
                        fy_end_month: int = 12) -> StatementTable:
@@ -1647,6 +1729,9 @@ def fetch_gaap_statements(ticker: str, identity: str,
         tables.extend(t for t in seg_tables if t.sheet_name not in excluded_sheets)
 
     company_name = getattr(company, "name", ticker) or ticker
+    # 期末流通股數不在三表裡，走封面頁 dei fact 另外補（見 _fetch_shares_outstanding）
+    _apply_shares_outstanding(tables, _fetch_shares_outstanding(company))
+
     tables.append(_build_meta_table(ticker, company_name, tables, fy_end_month))
 
     for tbl in tables:

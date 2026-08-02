@@ -58,6 +58,47 @@
 
 ## 更新記錄
 
+### 2026-08-02（晚間）
+
+**新聞稿截斷 12,000 字元——Non-GAAP 調節表抓不到的真正原因**
+
+實跑 ARLO 重抓後發現 GAAP 對照行有值、但調節表七項全空。查證後確認是 `_call_ai()` 的 `text[:12000]` 造成的：
+
+- ARLO 新聞稿全長 **53,569 字元，prompt 只送前 12,000（22%）**
+- 「Stock-based compensation」出現在 18,605 / 33,759 / 38,440 / 40,558，「Amortization」在 40,848——**全部在截斷之後，AI 根本沒看到調節表**
+- 重點條列都在文件最前面（所以毛利率、EPS 一直抓得到），但調節表一律在文件尾端
+
+`PROMPT_TEXT_LIMIT` 由 12,000 提高到 200,000（約 50K token，Gemini Flash context 為 100 萬 token）。這是舊 prompt 時代留下的保守值，不是有意的設計。
+
+**ARLO 重抓前後對照**（密度 38/210 → **64/175**）：
+
+| 列 | 修前 | 修後 |
+|---|---|---|
+| GAAP Gross Margin | 0/6 | **5/5** |
+| GAAP Net Income | 1/6 | **5/5** |
+| 股權獎酬 SBC | 0/6 | **5/5** |
+| Free Cash Flow | 2/6 | **5/5** |
+
+殘差驗證有效：最新一季 GAAP 淨利 14.88M + SBC 19.73M = 34.61M，Non-GAAP 淨利 30.96M，殘差 **−3.65M**（未具名的稅務影響等）——調節橋沒對平時會自己顯示出來。
+
+**期末流通股數改走封面頁 dei fact**
+
+原方案（BS 模板對映 `us-gaap:CommonStockSharesOutstanding`）實測 ARLO/AAPL/NVDA/MSFT/COHR 五家全部沒有 tag，股數只寫在 `CommonStockValue` 的 label 文字裡。改走 `Company.get_facts()` 的 `dei:EntityCommonStockSharesOutstanding`：
+
+- 歷史序列完整（ARLO 32 筆、AAPL 70 筆，2009 年起逐季）
+- fact 的 `fiscal_year` + `fiscal_period` 直接對得上本專案的 `FY{year}Q{n}` 標籤
+- ⚠ 該 fact 的日期是封面頁「最近可行日期」，比財季結束**晚幾週**（ARLO FY2025Q1 財季結束 2025-03-30，股數是 2025-05-02 的 103,400,957）。這是公開資料裡最接近的時點股數，但不是財季結束當天
+- 實跑驗證：ARLO 103.4M → 108.6M；AAPL 14.94B → 14.59B（回購使股數逐季下降，`流通股數 YoY` −1.66%）。`BVPS` 一併有值
+
+**`Data_Std` 財季改用 FY/FQ 標記**
+
+第 3 列由 `2026Q1` 改為 `FY2026FQ1`，與第 4 列的日曆季 `2026Q1` 在視覺上分得開。這兩列最容易被搞混，非 12 月結算的公司同一欄可能是 `FY2026FQ1` 但日曆 `2025Q4`，看錯就是整整一季的誤差。
+
+- 另驗證 AAPL 37 個比率只有 1 個全空（利息保障倍數，該公司未 tag 利息費用），TTM 類的 ROE／ROA 都算得出來
+- 測試 492 → **505**
+
+---
+
 ### 2026-08-02（下午）
 
 **`Data_Std`：跨公司固定版面表**

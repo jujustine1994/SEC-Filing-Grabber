@@ -49,11 +49,12 @@ Data_Std 的三個保證
 
 所以 `Data_Std` 同時給兩種標籤，由模板自己選要用哪個對齊：
 
-    第 1 列  財季標籤    FY2025Q3   FY2025Q4   FY2026Q1     ← 比較同一家的營運週期
-    第 2 列  申報日      2025-11-06 2026-02-26 2026-05-07
-    第 3 列  日曆季      2025Q3     2025Q4     2026Q1       ← 跨公司對齊用這列
-    第 4 列  期末年月    2025-09    2025-12    2026-03
-    第 5 列  資料版本    STD_V1     ...
+    第 1 列  財季標籤    FY2025Q3    FY2025Q4    FY2026Q1     ← 各 sheet 共用的原始標籤
+    第 2 列  申報日      2025-11-06  2026-02-26  2026-05-07
+    第 3 列  財季        FY2025FQ3   FY2025FQ4   FY2026FQ1    ← 財年基準（FY/FQ）
+    第 4 列  日曆季      2025Q3      2025Q4      2026Q1       ← 日曆年基準
+    第 5 列  期末結算日  2025-09-28  2025-12-31  2026-03-29   ← XBRL 真實日期
+    第 6 列  資料版本    STD_V1
 
 跨公司比較用第 3 列（`HLOOKUP("2026Q1", ...)`）；同一家看營運週期用第 1 列。
 """
@@ -120,9 +121,14 @@ def _calendar_quarter(label: str, fy_end_month: int, period_end: str = "") -> st
 
 
 def _fiscal_quarter(label: str) -> str:
-    """`FY2026Q1` → `2026Q1`（去掉 FY 前綴，方便模板直接比對）。"""
+    """`FY2026Q1` → `FY2026FQ1`。
+
+    財季用 `FQ` 標記、財年用 `FY`，與第 4 列的日曆季（`2026Q1`）在視覺上就分得開。
+    這兩列最容易被搞混——非 12 月結算的公司同一欄可能是 FY2026FQ1 但日曆 2025Q4，
+    看錯就是整整一季的誤差，所以刻意讓兩種寫法長得不一樣。
+    """
     m = _QUARTER_RE.match((label or "").strip())
-    return f"{m.group(1)}Q{m.group(2)}" if m else ""
+    return f"FY{m.group(1)}FQ{m.group(2)}" if m else ""
 
 
 def _period_end(label: str, fy_end_month: int) -> str:

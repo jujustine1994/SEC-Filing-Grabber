@@ -235,17 +235,17 @@ def test_calendar_quarter_uses_real_date_when_available():
     assert _row_by_key(tbl, ROW_CALENDAR) == ["2025Q4"]
 
 
-def test_fiscal_quarter_row_is_bare_label():
-    """財季另給一列不含 FY 前綴的寫法（2026Q1），方便模板直接比對。
+def test_fiscal_quarter_row_uses_fy_fq_notation():
+    """財季用 FY/FQ 標記（FY2026FQ1），與日曆季（2026Q1）視覺上分得開。
     第 1 列維持 FY2026Q1 與其他 sheet 一致。"""
     src = _merged(["FY2026Q1"], {})
     tbl = build_std_table(src, None, fy_end_month=12)
-    assert _row_by_key(tbl, ROW_FISCAL_QUARTER) == ["2026Q1"]
+    assert _row_by_key(tbl, ROW_FISCAL_QUARTER) == ["FY2026FQ1"]
 
 
 def test_fiscal_and_calendar_differ_for_offset_fye():
     """AAPL：財季 2025Q1，日曆季 2024Q4——兩列必須不同才有意義。"""
     src = _merged(["FY2025Q1"], {})
     tbl = build_std_table(src, None, fy_end_month=9)
-    assert _row_by_key(tbl, ROW_FISCAL_QUARTER) == ["2025Q1"]
+    assert _row_by_key(tbl, ROW_FISCAL_QUARTER) == ["FY2025FQ1"]
     assert _row_by_key(tbl, ROW_CALENDAR) == ["2024Q4"]

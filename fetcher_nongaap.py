@@ -413,6 +413,18 @@ Press release:
 AI_MAX_ATTEMPTS         = 3          # 含第一次，總共打幾次
 AI_RETRY_BACKOFF_SECONDS = (5, 15)   # 第 1、2 次重試前各等幾秒
 
+# 送進 prompt 的新聞稿長度上限。
+#
+# 原本是 12,000，是舊 prompt 時代留下的保守值。2026-08-02 實跑 ARLO 才發現這是
+# 調節表抓不到的**真正原因**：ARLO 新聞稿全長 53,569 字元，「Stock-based
+# compensation」出現在 18,605 / 33,759 / 38,440 / 40,558、「Amortization」在
+# 40,848——全部在截斷之後，AI 根本沒看到。重點條列都在文件最前面（所以毛利率、
+# EPS 一直抓得到），但**調節表一律在文件尾端**。
+#
+# 200K 字元約 50K token，Gemini Flash 的 context 是 100 萬 token，綽綽有餘；
+# 上限仍保留，避免異常長的文件把單次呼叫撐爆。
+PROMPT_TEXT_LIMIT = 200_000
+
 
 def _ai_request(prompt: str, ai_config: dict) -> str | None:
     """實際打 AI provider，回傳原始文字。provider 設錯回 None，其餘失敗直接拋。
@@ -452,7 +464,7 @@ def _call_ai(text: str, ai_config: dict) -> dict[str, Any] | None:
     回傳 None = 呼叫失敗（例外、429、provider 設錯）。呼叫端必須據此**不寫快取**，
     否則一次暫時性失敗會把該季永久標記為「已抓過但沒有資料」。
     """
-    prompt = _NONGAAP_PROMPT.format(press_release_text=text[:12000])  # token guard
+    prompt = _NONGAAP_PROMPT.format(press_release_text=text[:PROMPT_TEXT_LIMIT])
 
     for attempt in range(1, AI_MAX_ATTEMPTS + 1):
         try:

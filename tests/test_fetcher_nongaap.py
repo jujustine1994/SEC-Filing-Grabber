@@ -1333,3 +1333,45 @@ def test_cached_quarters_do_not_consume_the_limit(tmp_path, monkeypatch):
                                 max_filings=2)
     cached = fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST")
     assert set(cached) == {"FY2024Q4", "FY2024Q3"}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 新聞稿截斷（2026-08-02 實跑 ARLO 抓到，調節表全空的真正原因）
+#
+# prompt 原本只送新聞稿前 12,000 字元。ARLO 的新聞稿全長 53,569 字元，
+# 「Stock-based compensation」出現在 18,605 / 33,759 / 38,440 / 40,558，
+# 「Amortization」在 40,848——**全部在截斷之後，AI 根本沒看到調節表**。
+# 重點條列在最前面（所以毛利率、EPS 抓得到），調節表一律在文件尾端。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_prompt_text_limit_covers_a_typical_press_release():
+    """ARLO 53.6K、多數新聞稿在 30~80K 字元之間，上限要蓋得住。"""
+    from fetcher_nongaap import PROMPT_TEXT_LIMIT
+    assert PROMPT_TEXT_LIMIT >= 60_000
+
+
+def test_full_text_reaches_the_model(monkeypatch):
+    """截斷點之後的內容必須真的送進 prompt——這是調節表能不能被抓到的關鍵。"""
+    import fetcher_nongaap as fn
+    seen = {}
+    def capture(prompt, cfg):
+        seen["prompt"] = prompt
+        return "{}"
+    monkeypatch.setattr(fn, "_ai_request", capture)
+    monkeypatch.setattr(fn.time, "sleep", lambda s: None)
+
+    text = ("x" * 40_000) + "Stock-based compensation 12345"
+    fn._call_ai(text, {"provider": "google"})
+    assert "Stock-based compensation 12345" in seen["prompt"]
+
+
+def test_oversized_text_is_still_bounded(monkeypatch):
+    """仍要有上限——不可把超長文件整份送出去。"""
+    import fetcher_nongaap as fn
+    seen = {}
+    monkeypatch.setattr(fn, "_ai_request",
+                        lambda p, c: (seen.__setitem__("prompt", p), "{}")[1])
+    monkeypatch.setattr(fn.time, "sleep", lambda s: None)
+
+    fn._call_ai("y" * (fn.PROMPT_TEXT_LIMIT + 50_000), {"provider": "google"})
+    assert len(seen["prompt"]) < fn.PROMPT_TEXT_LIMIT + 5_000
