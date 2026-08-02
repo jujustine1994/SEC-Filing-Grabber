@@ -32,7 +32,7 @@ import nongaap_layout as _ng_layout
 
 # 分隔標題列：值全空、整列上色。Data_NonGAAP 的四個分區也算在內，
 # 否則它們會被當成一般指標列去套 ÷1M。
-SECTION_HEADERS = {"Income Statement", "Balance Sheet", "Cash Flow"} | set(_ng_layout.ALL_SECTIONS)
+SECTION_HEADERS = {"Income Statement", "Balance Sheet", "Cash Flow"} | set(_ng_layout.ALL_SECTIONS) | {"Ratios"}
 
 SUBTOTAL_CONCEPTS = {
     "Gross Profit", "Total Operating Expense", "Operating Income",
@@ -47,6 +47,7 @@ SHEET_DESCRIPTIONS = {
     "Data_Financials(Y)": "年報三表合一（IS + BS + CF，from 10-K）",
     "Data_EPS_Recon":     "Non-GAAP EPS 調節表（from 8-K）",
     "Data_NonGAAP":       "Non-GAAP 指標（AI 提取）",
+    "Data_Std":           "跨公司標準表（列位固定、含日曆季標籤與機器鍵，給通用模板參照）",
     "Data_Segments":      "營收/費用分類細項（長格式，各軸合併於一張；寬格式見 Data_Seg_*）",
     "Data_Ratios":        "常見財務比率（自 Data_Financials(Q) 計算，B 欄為算法）",
     "Data_Meta":          "申報資訊（Ticker、公司名、抓取日期）",

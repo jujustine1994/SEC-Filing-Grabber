@@ -1453,7 +1453,8 @@ def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> 
 # ── Meta sheet ─────────────────────────────────────────────────────────────
 
 def _build_meta_table(ticker: str, company_name: str,
-                       tables: list[StatementTable]) -> StatementTable:
+                       tables: list[StatementTable],
+                       fy_end_month: int = 12) -> StatementTable:
     """Build Data_Meta sheet with filing summary info."""
     n_quarters = 0
     quarter_labels: list[str] = []
@@ -1469,12 +1470,16 @@ def _build_meta_table(ticker: str, company_name: str,
         sheet_name="Data_Meta",
         quarter_labels=quarter_labels,
         filing_dates=filing_dates,
-        concepts=["Ticker", "Company Name", "Fetched Date", "Quarters Available"],
+        # Fiscal Year End Month 是 Data_Std 換算日曆季的依據——沒有它就無法把
+        # 不同結算月公司的 FY 標籤對齊到同一個日曆季。
+        concepts=["Ticker", "Company Name", "Fetched Date", "Quarters Available",
+                  "Fiscal Year End Month"],
         values=[
             [ticker]            * n_quarters,
             [company_name]      * n_quarters,
             [str(date.today())] * n_quarters,
             [str(n_quarters)]   * n_quarters,
+            [str(fy_end_month)] * n_quarters,
         ],
     )
 
@@ -1612,7 +1617,7 @@ def fetch_gaap_statements(ticker: str, identity: str,
         tables.extend(t for t in seg_tables if t.sheet_name not in excluded_sheets)
 
     company_name = getattr(company, "name", ticker) or ticker
-    tables.append(_build_meta_table(ticker, company_name, tables))
+    tables.append(_build_meta_table(ticker, company_name, tables, fy_end_month))
 
     for tbl in tables:
         tbl.ticker = ticker

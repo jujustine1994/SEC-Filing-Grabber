@@ -58,6 +58,22 @@
 
 ## 更新記錄
 
+### 2026-08-02（下午）
+
+**`Data_Std`：跨公司固定版面表**
+
+使用者回報「每間公司的 sheet 數量名稱都不同，很難用公式對照不同公司」。實測 `output/` 既有 11 個檔案後確認**三個軸同時在變**：sheet 數 10～30 張、`Cash` 落在第 28～56 列（overflow 行插在 section 之間把後面整段推移）、季度欄 4～50。唯一能跨公司直接參照的只有 `C4`。`VLOOKUP` 也不安全——`Net Income` 在 IS 與 CF 各出現一次。
+
+- **`std_sheet.py`（新）**：`Data_Std` 三個保證——固定 sheet 名稱、固定列位（overflow 一律不進來）、固定機器鍵（B 欄 `IS.REVENUE` / `BS.CASH` / `CF.NET_INCOME` / `RATIO.毛利率`）。136 列，內容為 IS 22 + BS 42 + CF 26 + 比率 37 + 表頭 3
+- **`FROZEN_ROW_NUMBERS` 列號凍結測試**：列號寫死在測試裡，任何人插入一列都會立刻紅。沒有這條，「固定列位」幾個月後會悄悄失效，而使用者的跨檔公式會靜默抓錯
+- **兩種期間標籤**：查證後發現現行 `FY2026Q1` 是**公司財季不是日曆季**——`_col_to_quarter_label()` 對非 12 月結算的公司會把年份往後推。ARLO 的 FY2025Q1 是 2025 年 3 月、AAPL 的是 2024 年 12 月、NVDA 的是 2024 年 4 月，模板照財季標籤對齊會靜默比錯期間。`Data_Std` 因此加了第 3 列「日曆季」與第 4 列「期末年月」，跨公司對齊用第 3 列
+- **`fetcher_gaap.py`**：`Data_Meta` 新增 `Fiscal Year End Month`（日曆季換算的依據）
+- **實機驗收**：ARLO（12 月結算）與 AAPL（9 月結算）各跑一次，兩家的 `Data_Std` 都是 136 列、`IS.REVENUE` 都在第 7 列、`BS.CASH` 第 30 列、`CF.FREE_CASH_FLOW` 第 98 列、`RATIO.毛利率` 第 108 列。AAPL 的 `FY2025Q1` 正確標成日曆 `2024Q4`
+- README 補「用 `Data_Std` 寫跨公司模板」章節，含 `INDEX`+`MATCH` 範例與財季/日曆季的陷阱說明
+- 測試 464 → **486**
+
+---
+
 ### 2026-08-02
 
 **`Data_NonGAAP` 固定模板、`Data_Ratios` 比率表、`Data_Segments` 長格式**

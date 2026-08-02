@@ -12,6 +12,7 @@
 | fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
 | excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx，並呼叫 excel_formatter |
 | excel_formatter.py | 寫 Index sheet（品質明細）、設欄寬、凍結窗格、數值分類（÷1M／百分比／每股） |
+| std_sheet.py | `Data_Std`：跨公司固定版面表（固定列位 + 機器鍵 + 日曆季標籤） |
 | ratios.py | `Data_Ratios`：37 個常見比率，值 + B 欄算法文字 + 列名單位後綴 |
 | nongaap_layout.py | `Data_NonGAAP` 固定模板版面（Core／調節／overflow／年度分區） |
 | segments.py | `Data_Segments`：把 `Data_Seg_*` 寬表彙成單一長格式表 |
