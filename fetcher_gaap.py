@@ -112,6 +112,7 @@ IS_TEMPLATE: list[_T] = [
     ("D&A (CF memo)",              "DepreciationExpense",            "DepreciationDepletionAndAmortization",                   "CF", "first", None),
     ("Other Operating Expense",    "OtherOperatingExpenses",         "OtherOperatingExpense",                                  "IS", "first", None),
     ("Total Operating Expense",    "TotalOperatingExpenses",         "OperatingExpenses",                                      "IS", "first", None),
+    ("Total Costs and Expenses",   None,                             "^us-gaap_CostsAndExpenses$",                             "IS", "first", None),
     ("Operating Income",           "OperatingIncomeLoss",            "OperatingIncomeLoss",                                    "IS", "first", None),
     ("Interest Expense",           "InterestExpense",                "InterestExpense",                                        "IS", "first", None),
     ("Interest Income",            "InterestIncome",                 "InterestIncome",                                         "IS", "first", None),
@@ -121,6 +122,9 @@ IS_TEMPLATE: list[_T] = [
     ("Income Tax",                 "IncomeTaxes",                    "IncomeTaxExpense",                                       "IS", "first", None),
     ("Net Income",                 "NetIncome",                      "NetIncomeLoss|NetIncomeLossAttributableToParent",         "IS", "first", None),
     ("Minority Interest",          None,                             "NetIncomeLossAttributableToNoncontrollingInterest",       "IS", "first", None),
+    # 含少數股權的淨利。有 NCI 結構的公司會把「合併淨利」與「歸屬母公司淨利」分開報，
+    # 上面的 Net Income 只認 NetIncomeLoss（歸屬母公司），這一列補的是合併數。
+    ("Net Income incl. NCI",       None,                             "^us-gaap_ProfitLoss$",                                   "IS", "first", None),
     ("SBC",                        "StockBasedCompensationExpense",  "ShareBasedCompensation",                                 "CF", "first", None),
     ("Basic EPS",                  None,                             "EarningsPerShareBasic",                                  "IS", "first", None),
     ("Diluted EPS",                None,                             "EarningsPerShareDiluted",                                "IS", "first", None),
@@ -186,6 +190,9 @@ CF_TEMPLATE: list[_T] = [
     ("Amortization of Intangibles","AmortizationOfIntangibles",          "AmortizationOfIntangibleAssets",                        "CF", "first", None),
     ("Change in Receivables",      "ChangeInReceivables",                "IncreaseDecreaseInAccountsReceivable",                  "CF", "first", "receivable"),
     ("Change in Inventories",      None,                                 "IncreaseDecreaseInInventories",                         "CF", "first", "inventories"),
+    ("Change in Accounts Payable",     None,  "IncreaseDecreaseInAccountsPayable",                          "CF", "first", None),
+    ("Change in Prepaid & Other Assets", None, "IncreaseDecreaseInPrepaidDeferredExpenseAndOtherAssets",     "CF", "first", None),
+    ("Change in Other Operating Assets", None, "IncreaseDecreaseInOtherOperatingAssets",                     "CF", "first", None),
     ("Change in Deferred Revenue", "ChangeInDeferredRevenue",            "IncreaseDecreaseInDeferredRevenue",                     "CF", "first", None),
     ("Other Working Capital",      "ChangeInOtherWorkingCapital",        "IncreaseDecreaseInOtherOperatingLiabilities",           "CF", "first", None),
     ("Other Non-cash Items",       "OtherNonCashItemsCF",                "OtherNoncashIncomeExpense",                             "CF", "first", None),
@@ -1257,10 +1264,73 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
 
 # ── Three-statement merge ───────────────────────────────────────────────────
 
+_STD_QUARTER_RE = re.compile(r"FY(\d{4})Q([1-4])$")
+
+
+# ── 期間換算 ────────────────────────────────────────────────────────────────
+
+def _fiscal_period_end(label: str, fy_end_month: int) -> tuple[int, int] | None:
+    """財季標籤 → (西元年, 月)，指該財季**結束**的年月。無法解析回 None。
+
+    財年 Y 結束於西元 Y 年的 fy_end_month 月（SEC 慣例）。第 q 財季結束於
+    財年結束前 (4-q) 季，也就是 fy_end_month - 3*(4-q) 個月。
+    """
+    m = _STD_QUARTER_RE.match((label or "").strip())
+    if m is None:
+        return None
+    year, q = int(m.group(1)), int(m.group(2))
+    month = fy_end_month - 3 * (4 - q)
+    while month <= 0:
+        month += 12
+        year -= 1
+    return year, month
+
+
+def _calendar_quarter(label: str, fy_end_month: int, period_end: str = "") -> str:
+    """財季標籤 → 日曆季標籤（`2026Q1`）。年度標籤或無法解析回空字串。
+
+    有真實期末日就直接用它換算（最準）；沒有才靠結算月反推。
+    """
+    if period_end and re.match(r"\d{4}-\d{2}", period_end):
+        year, month = int(period_end[:4]), int(period_end[5:7])
+        return f"{year}Q{(month - 1) // 3 + 1}"
+    parsed = _fiscal_period_end(label, fy_end_month)
+    if parsed is None:
+        return ""
+    year, month = parsed
+    return f"{year}Q{(month - 1) // 3 + 1}"
+
+
+def _fiscal_quarter(label: str) -> str:
+    """`FY2026Q1` → `FY2026FQ1`。
+
+    財季用 `FQ` 標記、財年用 `FY`，與第 4 列的日曆季（`2026Q1`）在視覺上就分得開。
+    這兩列最容易被搞混——非 12 月結算的公司同一欄可能是 FY2026FQ1 但日曆 2025Q4，
+    看錯就是整整一季的誤差，所以刻意讓兩種寫法長得不一樣。
+    """
+    m = _STD_QUARTER_RE.match((label or "").strip())
+    return f"FY{m.group(1)}FQ{m.group(2)}" if m else ""
+
+
+def _period_end(label: str, fy_end_month: int) -> str:
+    """財季標籤 → 期末年月（`2026-03`）。無法解析回空字串。"""
+    parsed = _fiscal_period_end(label, fy_end_month)
+    if parsed is None:
+        return ""
+    year, month = parsed
+    return f"{year}-{month:02d}"
+
+
+# overflow 區的分隔標題。放公司特有、不在固定模板裡的 XBRL 科目——
+# 實測每家中位數 IS 4 / BS 2 / CF 10 個，合計約 16 列。
+OVERFLOW_SECTION = "Other (as reported)"
+
+
 def _merge_financials(is_tbl: StatementTable,
                        bs_tbl: StatementTable,
                        cf_tbl: StatementTable,
-                       sheet_name: str = "Data_Financials(Q)") -> StatementTable:
+                       sheet_name: str = "Data_Financials(Q)",
+                       fy_end_month: int = 12) -> StatementTable:
     """Merge IS + BS + CF into a single StatementTable.
 
     Quarter union is taken across all three statements; missing values are None.
@@ -1302,24 +1372,59 @@ def _merge_financials(is_tbl: StatementTable,
         labels_col.append("")
         values.append([None] * len(all_qs))
 
-    def _add_rows(tbl: StatementTable) -> None:
+    # overflow（公司特有、不在模板裡的 XBRL 科目）全部集中到 sheet 最底部。
+    #
+    # 原本 overflow 接在每個 section 的模板列之後，IS 多幾行 overflow，BS 整段
+    # 就往下推——實測 11 個輸出檔裡 `Cash` 落在第 28~56 列之間，跨檔案公式因此
+    # 完全寫不出來。移到底部後模板列號跨公司固定。
+    overflow: list[tuple[str, str, list[Any]]] = []
+
+    def _add_rows(tbl: StatementTable, template_names: set[str]) -> None:
         q_idx = {q: j for j, q in enumerate(tbl.quarter_labels)}
         for i, concept in enumerate(tbl.concepts):
-            concepts.append(concept)
-            labels_col.append(tbl.labels[i] if tbl.labels else "")
+            label = tbl.labels[i] if tbl.labels else ""
             row = [_to_python_val(tbl.values[i][q_idx[q]])
                    if q in q_idx else None
                    for q in all_qs]
-            values.append(row)
+            if concept in template_names:
+                concepts.append(concept)
+                labels_col.append(label)
+                values.append(row)
+            else:
+                overflow.append((concept, label, row))
+
+    # 期間標籤三列放最上面。財季用 FY/FQ、日曆季用純數字，兩者視覺上分得開——
+    # 非 12 月結算的公司同一欄可能是 FY2026FQ1 但日曆 2025Q4，看錯就是整整一季。
+    def _add_label_row(name: str, vals: list[Any]) -> None:
+        concepts.append(name)
+        labels_col.append("")
+        values.append(vals)
+
+    _add_label_row("財季 Fiscal Quarter", [_fiscal_quarter(q) for q in all_qs])
+    _add_label_row("日曆季 Calendar Quarter",
+                   [_calendar_quarter(q, fy_end_month, period_ends[i] if i < len(period_ends) else "")
+                    for i, q in enumerate(all_qs)])
+    _add_label_row("期末結算日 Period End",
+                   [(period_ends[i] if i < len(period_ends) and period_ends[i]
+                     else _period_end(q, fy_end_month)) for i, q in enumerate(all_qs)])
+    _add_blank()
 
     _add_header("Income Statement")
-    _add_rows(is_tbl)
+    _add_rows(is_tbl, {r[0] for r in IS_TEMPLATE})
     _add_blank()
     _add_header("Balance Sheet")
-    _add_rows(bs_tbl)
+    _add_rows(bs_tbl, {r[0] for r in BS_TEMPLATE})
     _add_blank()
     _add_header("Cash Flow")
-    _add_rows(cf_tbl)
+    _add_rows(cf_tbl, {r[0] for r in CF_TEMPLATE})
+
+    if overflow:
+        _add_blank()
+        _add_header(OVERFLOW_SECTION)
+        for concept, label, row in overflow:
+            concepts.append(concept)
+            labels_col.append(label)
+            values.append(row)
 
     return StatementTable(
         sheet_name=sheet_name,
@@ -1708,20 +1813,20 @@ def fetch_gaap_statements(ticker: str, identity: str,
                     no_key = "" if ai_config.get("api_key") else "（未設 AI API key，E2 診斷已跳過）"
                     print(f"[{ticker}] 警告：{remaining} 在 EDGAR 中無對應概念{no_key}。", file=sys.stderr)
 
-        quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)")
+        quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)", fy_end_month=fy_end_month)
         tables.append(quarterly_tbl)
         if any(tbl.concepts for tbl in [is_ng, bs_ng, cf_ng]):
-            ng_q_tbl = _merge_financials(is_ng, bs_ng, cf_ng, sheet_name="Data_Financials_NG(Q)")
+            ng_q_tbl = _merge_financials(is_ng, bs_ng, cf_ng, sheet_name="Data_Financials_NG(Q)", fy_end_month=fy_end_month)
             tables.append(ng_q_tbl)
 
     if fetch_annual and filings_k:
         is_ann, is_ann_ng = _build_is_table(filings_k, max_annual_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
         bs_ann, bs_ann_ng = _build_bs_table(filings_k, max_annual_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
         cf_ann, cf_ann_ng = _build_cf_table(filings_k, max_annual_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
-        annual_tbl = _merge_financials(is_ann, bs_ann, cf_ann, sheet_name="Data_Financials(Y)")
+        annual_tbl = _merge_financials(is_ann, bs_ann, cf_ann, sheet_name="Data_Financials(Y)", fy_end_month=fy_end_month)
         tables.append(annual_tbl)
         if any(tbl.concepts for tbl in [is_ann_ng, bs_ann_ng, cf_ann_ng]):
-            ng_y_tbl = _merge_financials(is_ann_ng, bs_ann_ng, cf_ann_ng, sheet_name="Data_Financials_NG(Y)")
+            ng_y_tbl = _merge_financials(is_ann_ng, bs_ann_ng, cf_ann_ng, sheet_name="Data_Financials_NG(Y)", fy_end_month=fy_end_month)
             tables.append(ng_y_tbl)
 
     if fetch_quarterly and filings_q:

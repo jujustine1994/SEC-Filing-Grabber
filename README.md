@@ -25,16 +25,13 @@
 
 | Sheet | 說明 |
 |-------|------|
-| `Index` | 索引頁：所有 sheets 清單、時間範圍、完成度欄（9 個 key rows 的 ✓/✗ 明細） |
-| `Data_Financials(Q)` | IS + BS + CF 三表合一（季報，from 10-Q），固定行數萬能模板 |
-| `Data_Financials(Y)` | IS + BS + CF 三表合一（年報，from 10-K），固定行數萬能模板 |
-| `Data_Financials_NG(Q/Y)` | Non-GAAP overflow 行（含 "adjusted"/"non-gaap" 等 label 的 XBRL 行），有資料才產生 |
-| `Data_Seg_*` | 各收入/費用的地區/業務分類細項 |
-| `Data_NonGAAP` | AI 從 8-K press release 提取的 Non-GAAP 指標（勾選 Non-GAAP 時產生） |
-| `Data_Std` | **跨公司標準表**：列位完全固定、含日曆季標籤與機器鍵，寫通用模板參照這張 |
-| `Data_Segments` | 各分類軸合併的長格式表（一張表涵蓋所有軸，給程式讀；寬格式見 `Data_Seg_*`） |
-| `Data_Ratios` | 常見財務比率（37 項，自 `Data_Financials(Q)` 計算，B 欄寫算法） |
-| `Data_Meta` | 申報資訊（Ticker、公司名、抓取日期、季度數） |
+| `Data_Financials(Q)` | **季報三表**（IS + BS + CF，from 10-Q）。表頭 3 列為期間標籤，三表各有專屬底色，公司特有科目集中在底部 `Other (as reported)` |
+| `Data_Financials(Y)` | **年報三表**（from 10-K），結構同上 |
+| `Data_Ratios` | 37 個常見比率（Python 計算，**零 AI**），B 欄寫算法 |
+| `Data_Segments` | 營收／費用分類細項，長格式（各軸合併於一張） |
+| `Data_Meta` | 申報資訊（Ticker、公司名、抓取日期、季數、財年結束月） |
+
+> **列位跨公司固定**：AAPL／NVDA／META／AVGO 實測，`Revenue` 都在第 8 列、`Cash` 第 34 列、`Free Cash Flow` 第 106 列。這是因為公司特有科目（overflow）集中在底部，不再插在 section 之間。跨檔案公式可以直接用固定儲存格參照。
 
 **欄位說明（Data_Financials）：**
 - A 欄 = 標準指標名稱（Std Name）

@@ -25,7 +25,6 @@ from errsafe import _exc_status
 from excel_writer import write_statements, check_output_writable
 from ratios import build_ratio_table
 from segments import build_segments_long
-from std_sheet import build_std_table
 from fetcher_gaap import fetch_gaap_statements
 
 SCRIPT_DIR = Path(__file__).parent
@@ -133,6 +132,18 @@ def _append_ratio_table(tables: list) -> None:
     if seg_long is not None:
         tables.append(seg_long)
 
+    # 輸出精簡（2026-08-03）：只留有意義的原始資料表。
+    # 砍掉的都是「同資料換個排法」或「幾乎全空」的：
+    #   Data_Seg_*          寬格式，與 Data_Segments 同源，且每家 sheet 名稱都不同
+    #   Data_Financials_NG  XBRL overflow 的 Non-GAAP 分流，內容已在主表 overflow 區
+    #   Data_NonGAAP        暫停（等 skill 方案，見 TODO B）
+    #   Data_EPS_Recon      edgartools 從未回傳過內容
+    #   Data_Std            列位固定已移進三表本身，不需要獨立一張
+    tables[:] = [t for t in tables
+                 if not t.sheet_name.startswith("Data_Seg_")
+                 and not t.sheet_name.startswith("Data_Financials_NG")
+                 and t.sheet_name not in ("Data_NonGAAP", "Data_EPS_Recon", "Data_Std")]
+
     q_tbl = next((t for t in tables if t.sheet_name == "Data_Financials(Q)"), None)
     if q_tbl is None:
         return
@@ -140,18 +151,6 @@ def _append_ratio_table(tables: list) -> None:
     if ratio_tbl is not None:
         tables.append(ratio_tbl)
 
-    # Data_Std 放最後：版面完全固定，給跨公司模板用。日曆季換算需要結算月，
-    # 從 Data_Meta 讀（fetcher_gaap 偵測後寫進去的）。
-    fy_end_month = 12
-    meta = next((t for t in tables if t.sheet_name == "Data_Meta"), None)
-    if meta is not None and "Fiscal Year End Month" in meta.concepts:
-        raw = meta.values[meta.concepts.index("Fiscal Year End Month")]
-        if raw and str(raw[0]).isdigit():
-            fy_end_month = int(raw[0])
-
-    std_tbl = build_std_table(q_tbl, ratio_tbl, fy_end_month)
-    if std_tbl is not None:
-        tables.append(std_tbl)
 
 
 class SECFetcherApp:

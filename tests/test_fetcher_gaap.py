@@ -312,11 +312,13 @@ def test_build_is_table_returns_statement_table():
     assert gaap_tbl.sheet_name == "Data_IS"
     assert isinstance(ng_tbl, StatementTable)
 
-def test_build_is_table_has_22_concept_rows():
+def test_build_is_table_has_all_template_concept_rows():
     # Mock IS df has only 3 rows; all 3 are consumed by template → no overflow
     filing = _make_filing()
     gaap_tbl, _ = _build_is_table([filing], max_filings=1)
-    assert len(gaap_tbl.concepts) == 22
+    from fetcher_gaap import IS_TEMPLATE
+    # 2026-08-03 依 49 家實測新增 Total Costs and Expenses、Net Income incl. NCI
+    assert len(gaap_tbl.concepts) == len(IS_TEMPLATE) == 24
 
 def test_build_is_table_quarter_labels_format():
     filing = _make_filing(period_col="2025-12-27 (Q1)")
@@ -1671,3 +1673,157 @@ def test_apply_shares_no_row_is_a_noop():
     )
     _apply_shares_outstanding([tbl], {"FY2025Q1": 103.0})
     assert tbl.values[0] == [1.0]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 依 49 家實測補進模板的列（2026-08-03，docs_statement_template_proposal.md）
+#
+# 判準：多數公司都有的就進固定模板，某些公司沒有就留空白列。
+# 這五列的跨公司覆蓋率（非金融 46 家為分母）：
+#   CF Change in Accounts Payable        52%  ← 營運資金四大項唯一漏掉的
+#   IS Net Income incl. NCI (ProfitLoss) 46%  ← 有 NCI 結構的公司分開報
+#   CF Change in Prepaid & Other Assets  35%
+#   IS Total Costs and Expenses          33%
+#   CF Change in Other Operating Assets  26%
+# 刻意不收 BS CommitmentsAndContingencies（70%）——法定揭露列，幾乎永遠無值。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _names(template):
+    return [r[0] for r in template]
+
+
+def test_is_has_net_income_incl_nci():
+    from fetcher_gaap import IS_TEMPLATE
+    assert "Net Income incl. NCI" in _names(IS_TEMPLATE)
+
+
+def test_net_income_incl_nci_maps_to_profitloss():
+    from fetcher_gaap import IS_TEMPLATE
+    row = next(r for r in IS_TEMPLATE if r[0] == "Net Income incl. NCI")
+    assert "ProfitLoss" in r[2] if (r := row) else False
+
+
+def test_net_income_incl_nci_sits_after_minority_interest():
+    from fetcher_gaap import IS_TEMPLATE
+    n = _names(IS_TEMPLATE)
+    assert n.index("Minority Interest") < n.index("Net Income incl. NCI")
+
+
+def test_is_has_total_costs_and_expenses():
+    from fetcher_gaap import IS_TEMPLATE
+    assert "Total Costs and Expenses" in _names(IS_TEMPLATE)
+
+
+def test_cf_has_change_in_accounts_payable():
+    """營運資金四大項：應收、存貨、應付、預付。應付原本漏了。"""
+    from fetcher_gaap import CF_TEMPLATE
+    assert "Change in Accounts Payable" in _names(CF_TEMPLATE)
+
+
+def test_change_in_ap_maps_to_the_right_concept():
+    from fetcher_gaap import CF_TEMPLATE
+    row = next(r for r in CF_TEMPLATE if r[0] == "Change in Accounts Payable")
+    assert "IncreaseDecreaseInAccountsPayable" in row[2]
+
+
+def test_change_in_ap_sits_with_the_other_working_capital_rows():
+    from fetcher_gaap import CF_TEMPLATE
+    n = _names(CF_TEMPLATE)
+    assert n.index("Change in Inventories") < n.index("Change in Accounts Payable")
+    assert n.index("Change in Accounts Payable") < n.index("Operating Cash Flow")
+
+
+def test_cf_has_prepaid_and_other_asset_changes():
+    from fetcher_gaap import CF_TEMPLATE
+    n = _names(CF_TEMPLATE)
+    assert "Change in Prepaid & Other Assets" in n
+    assert "Change in Other Operating Assets" in n
+
+
+def test_commitments_and_contingencies_deliberately_absent():
+    """70% 的公司有這個 tag，但它是法定揭露列、幾乎永遠無值，收進來只是多一列空白。"""
+    from fetcher_gaap import BS_TEMPLATE
+    joined = " ".join(f"{r[0]} {r[1] or ''} {r[2] or ''}" for r in BS_TEMPLATE)
+    assert "CommitmentsAndContingencies" not in joined
+
+
+def test_no_template_row_was_removed():
+    """使用者明確要求「不要砍東西」——低命中列一律保留。"""
+    from fetcher_gaap import IS_TEMPLATE, BS_TEMPLATE, CF_TEMPLATE
+    for name in ("Other Operating Expense", "Interest Income", "Other Non-op Inc/(Exp)"):
+        assert name in _names(IS_TEMPLATE)
+    for name in ("Finance Lease Liabilities, LT", "Treasury Stock",
+                 "Deferred Revenue, LT", "Pension & Retirement Oblig."):
+        assert name in _names(BS_TEMPLATE)
+    assert "Amortization of Intangibles" in _names(CF_TEMPLATE)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# overflow 移到 sheet 最底部（2026-08-03）
+#
+# 原本 overflow 接在每個 section 的模板列之後，所以 IS 多幾行 overflow，
+# BS 整段就往下推——實測 `Cash` 在 11 個輸出檔裡落在第 28~56 列之間。
+# 移到底部之後模板列號跨公司固定，跨檔案公式才寫得出來。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _mk(sheet, concepts, quarters=("FY2025Q1",), labels=None):
+    from fetcher_gaap import StatementTable
+    return StatementTable(
+        sheet_name=sheet, quarter_labels=list(quarters),
+        filing_dates=[""] * len(quarters), concepts=list(concepts),
+        values=[[1.0] * len(quarters) for _ in concepts],
+        ticker="T", labels=list(labels or [""] * len(concepts)),
+    )
+
+
+def _merged_with_overflow():
+    from fetcher_gaap import _merge_financials, IS_TEMPLATE, BS_TEMPLATE, CF_TEMPLATE
+    is_names = [r[0] for r in IS_TEMPLATE] + ["公司特有的 IS 科目"]
+    bs_names = [r[0] for r in BS_TEMPLATE] + ["公司特有的 BS 科目"]
+    cf_names = [r[0] for r in CF_TEMPLATE] + ["公司特有的 CF 科目"]
+    return _merge_financials(_mk("IS", is_names), _mk("BS", bs_names), _mk("CF", cf_names))
+
+
+def test_overflow_rows_moved_to_the_bottom():
+    from fetcher_gaap import OVERFLOW_SECTION
+    t = _merged_with_overflow()
+    assert OVERFLOW_SECTION in t.concepts
+    head = t.concepts.index(OVERFLOW_SECTION)
+    for name in ("公司特有的 IS 科目", "公司特有的 BS 科目", "公司特有的 CF 科目"):
+        assert t.concepts.index(name) > head
+
+
+def test_template_row_positions_are_independent_of_overflow_count():
+    """同樣的模板，overflow 多寡不可影響 BS/CF 模板列的位置。"""
+    from fetcher_gaap import _merge_financials, IS_TEMPLATE, BS_TEMPLATE, CF_TEMPLATE
+    is_base = [r[0] for r in IS_TEMPLATE]
+    bs_names = [r[0] for r in BS_TEMPLATE]
+    cf_names = [r[0] for r in CF_TEMPLATE]
+
+    few = _merge_financials(_mk("IS", is_base + ["X1"]), _mk("BS", bs_names), _mk("CF", cf_names))
+    many = _merge_financials(_mk("IS", is_base + [f"X{i}" for i in range(1, 12)]),
+                             _mk("BS", bs_names), _mk("CF", cf_names))
+    for probe in ("Cash", "Total Assets", "Operating Cash Flow", "Capex"):
+        assert few.concepts.index(probe) == many.concepts.index(probe), probe
+
+
+def test_overflow_row_keeps_its_original_label():
+    t = _merged_with_overflow()
+    i = t.concepts.index("公司特有的 BS 科目")
+    assert t.values[i] is not None
+
+
+def test_overflow_section_absent_when_no_overflow():
+    from fetcher_gaap import _merge_financials, OVERFLOW_SECTION, IS_TEMPLATE, BS_TEMPLATE, CF_TEMPLATE
+    t = _merge_financials(_mk("IS", [r[0] for r in IS_TEMPLATE]),
+                          _mk("BS", [r[0] for r in BS_TEMPLATE]),
+                          _mk("CF", [r[0] for r in CF_TEMPLATE]))
+    assert OVERFLOW_SECTION not in t.concepts
+
+
+def test_three_sections_still_present_and_ordered():
+    t = _merged_with_overflow()
+    a = t.concepts.index("Income Statement")
+    b = t.concepts.index("Balance Sheet")
+    c = t.concepts.index("Cash Flow")
+    assert a < b < c

@@ -92,12 +92,14 @@ def test_row2_fill_navy_mid():
     ws = wb["Data_Financials(Q)"]
     assert _rgb(ws, "A2") == "FF2D4A82"
 
-def test_section_header_fill_blue_mid():
+def test_section_header_fill_uses_its_own_colour():
+    """2026-08-03 起三表各有專屬底色（見 SECTION_COLOURS），不再共用 BLUE_MID。"""
     wb = _make_wb()
     format_workbook(wb, [])
     ws = wb["Data_Financials(Q)"]
     # A3 = "Income Statement"
-    assert _rgb(ws, "A3") == "FF2E75B6"
+    from excel_formatter import SECTION_COLOURS
+    assert _rgb(ws, "A3") == SECTION_COLOURS["Income Statement"]
 
 def test_section_header_font_bold_white():
     wb = _make_wb()
@@ -663,3 +665,60 @@ def test_suffix_rule_does_not_leak_into_financials_sheet():
     wb = _make_wb()
     format_workbook(wb, [])
     assert wb["Data_Financials(Q)"]["C4"].value == pytest.approx(117154.0)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 三表視覺區隔（2026-08-03）
+#
+# 三張表併在同一個 sheet，捲動時很容易搞不清楚現在看的是哪一張。
+# 三個 section 標題各用不同底色，overflow 區再用第四種（灰）。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _section_wb():
+    from fetcher_gaap import OVERFLOW_SECTION
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data_Financials(Q)"
+    ws["A1"] = "TEST"
+    ws["C1"] = "FY2025Q1"
+    for i, name in enumerate(["Income Statement", "Balance Sheet",
+                              "Cash Flow", OVERFLOW_SECTION], start=3):
+        ws.cell(row=i, column=1, value=name)
+    return wb
+
+
+def test_each_statement_header_has_its_own_colour():
+    from excel_formatter import SECTION_COLOURS
+    wb = _section_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    fills = [ws.cell(row=r, column=1).fill.fgColor.rgb for r in range(3, 7)]
+    assert len(set(fills)) == 4, f"四個 section 應有四種底色，實際 {fills}"
+
+
+def test_section_colours_cover_all_four_sections():
+    from excel_formatter import SECTION_COLOURS
+    from fetcher_gaap import OVERFLOW_SECTION
+    for name in ("Income Statement", "Balance Sheet", "Cash Flow", OVERFLOW_SECTION):
+        assert name in SECTION_COLOURS
+
+
+def test_section_header_text_still_white_and_bold():
+    wb = _section_wb()
+    format_workbook(wb, [])
+    cell = wb["Data_Financials(Q)"]["A3"]
+    assert cell.font.bold is True
+
+
+def test_period_label_rows_are_not_treated_as_numbers():
+    """財季／日曆季／期末日三列是文字，不可被 ÷1M。"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Data_Financials(Q)"
+    ws["A1"] = "TEST"; ws["C1"] = "FY2025Q1"
+    ws["A3"] = "財季 Fiscal Quarter";        ws["C3"] = "FY2025FQ1"
+    ws["A4"] = "日曆季 Calendar Quarter";     ws["C4"] = "2025Q1"
+    ws["A5"] = "期末結算日 Period End";       ws["C5"] = "2025-03-30"
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["C3"].value == "FY2025FQ1"
+    assert wb["Data_Financials(Q)"]["C5"].value == "2025-03-30"

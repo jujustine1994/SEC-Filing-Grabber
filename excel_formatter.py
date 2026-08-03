@@ -32,7 +32,18 @@ import nongaap_layout as _ng_layout
 
 # 分隔標題列：值全空、整列上色。Data_NonGAAP 的四個分區也算在內，
 # 否則它們會被當成一般指標列去套 ÷1M。
-SECTION_HEADERS = {"Income Statement", "Balance Sheet", "Cash Flow"} | set(_ng_layout.ALL_SECTIONS) | {"Ratios"}
+# 三表併在同一個 sheet，捲動時容易分不清現在看的是哪一張，所以三個 section
+# 標題各給一種底色，overflow 區用灰色。顏色是唯一的視覺線索，不要拿掉。
+SECTION_COLOURS = {
+    "Income Statement":    "FF1F3864",   # 深藍
+    "Balance Sheet":       "FF31859B",   # 藍綠
+    "Cash Flow":           "FF7B4F9D",   # 紫
+    "Other (as reported)": "FF808080",   # 灰（公司特有科目，非模板）
+    "Ratios":              "FF2E75B6",
+}
+
+SECTION_HEADERS = ({"Income Statement", "Balance Sheet", "Cash Flow"}
+                   | set(_ng_layout.ALL_SECTIONS) | set(SECTION_COLOURS))
 
 SUBTOTAL_CONCEPTS = {
     "Gross Profit", "Total Operating Expense", "Operating Income",
@@ -166,7 +177,7 @@ def _apply_row_styles(ws) -> None:
         concept = str(concept).strip()
 
         if concept in SECTION_HEADERS:
-            row_fill  = _fill(BLUE_MID)
+            row_fill  = _fill(SECTION_COLOURS.get(concept, BLUE_MID))
             row_font  = Font(color="FFFFFFFF", bold=True, size=10)
             row_height = 16
         elif concept == "":
