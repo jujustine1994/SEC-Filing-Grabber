@@ -1375,3 +1375,81 @@ def test_oversized_text_is_still_bounded(monkeypatch):
 
     fn._call_ai("y" * (fn.PROMPT_TEXT_LIMIT + 50_000), {"provider": "google"})
     assert len(seen["prompt"]) < fn.PROMPT_TEXT_LIMIT + 5_000
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 額度用盡後停止重試（2026-08-03）
+#
+# Gemini 的額度是**按請求次數**算的。撞到 429（額度用盡）之後再重試，每一次都
+# 必敗、而且每一次都扣一次額度。實測 CRM 一趟燒掉 12 次呼叫換到 0 筆資料
+# （4 季 × 3 次嘗試）。熔斷後只會花 3 次，省下的 9 次可以換 9 季真實資料。
+#
+# 注意：只對「額度型」失敗熔斷。一般的暫時性錯誤（連線中斷等）仍要重試。
+# ═════════════════════════════════════════════════════════════════════════════
+
+class _Quota429(Exception):
+    """模擬 SDK 的額度耗盡例外（帶 HTTP 429）。"""
+    status_code = 429
+
+
+def test_no_retry_after_quota_exhausted(monkeypatch):
+    """429 不重試——重試也是必敗，而且每次都扣額度。"""
+    import fetcher_nongaap as fn
+    calls = []
+    def quota_fail(prompt, cfg):
+        calls.append(1)
+        raise _Quota429("quota")
+    monkeypatch.setattr(fn, "_ai_request", quota_fail)
+    monkeypatch.setattr(fn.time, "sleep", lambda s: None)
+
+    assert fn._call_ai("text", {"provider": "google"}) is None
+    assert len(calls) == 1
+
+
+def test_transient_failure_still_retries(monkeypatch):
+    """非額度型的失敗仍要重試——那種重試是有機會成功的。"""
+    import fetcher_nongaap as fn
+    calls = []
+    def flaky(prompt, cfg):
+        calls.append(1)
+        if len(calls) < 2:
+            raise RuntimeError("connection reset")
+        return '{"Non-GAAP Revenue": 1.0}'
+    monkeypatch.setattr(fn, "_ai_request", flaky)
+    monkeypatch.setattr(fn.time, "sleep", lambda s: None)
+
+    assert fn._call_ai("text", {"provider": "google"}) == {"Non-GAAP Revenue": 1.0}
+    assert len(calls) == 2
+
+
+def test_quota_exhaustion_stops_remaining_quarters(tmp_path, monkeypatch):
+    """一季撞到額度後，同一趟剩下的季不再呼叫 AI——否則每季再燒一次。"""
+    import fetcher_nongaap as fn
+
+    company = FakeCompany([
+        RecoverableFiling("2.02", "2024-12-31", has_earnings=True),
+        RecoverableFiling("2.02", "2024-09-30", has_earnings=True),
+        RecoverableFiling("2.02", "2024-06-30", has_earnings=True),
+    ])
+    monkeypatch.setattr(fn, "set_identity", lambda *a, **k: None)
+    monkeypatch.setattr(fn, "Company", lambda ticker: company)
+    monkeypatch.setattr(fn, "_extract_eps_recon", lambda ek: {})
+
+    calls = []
+    def quota_fail(ek, cfg):
+        calls.append(1)
+        raise _Quota429("quota")
+    monkeypatch.setattr(fn, "_extract_nongaap_metrics", quota_fail)
+    monkeypatch.setattr(fn.time, "sleep", lambda s: None)
+
+    fn.fetch_nongaap_statements("TEST", "CTH x@y.com", {"api_key": "k"}, tmp_path)
+    assert len(calls) == 1
+
+    # 失敗的季一律不寫快取，下次執行仍會全部重抓
+    assert fn._load_cache(tmp_path / fn.CACHE_FILENAME, "TEST") == {}
+
+
+def test_is_quota_error_detects_429():
+    from fetcher_nongaap import _is_quota_error
+    assert _is_quota_error(_Quota429("x")) is True
+    assert _is_quota_error(RuntimeError("boom")) is False

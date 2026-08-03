@@ -426,6 +426,16 @@ AI_RETRY_BACKOFF_SECONDS = (5, 15)   # 第 1、2 次重試前各等幾秒
 PROMPT_TEXT_LIMIT = 200_000
 
 
+def _is_quota_error(exc: BaseException) -> bool:
+    """是不是「額度用盡」型的失敗（HTTP 429）。
+
+    Gemini 的額度**按請求次數**計算，所以撞到 429 之後再重試每一次都必敗、
+    而且每一次都扣一次額度。實測 CRM 一趟燒掉 12 次呼叫換到 0 筆資料
+    （4 季 × 3 次嘗試）。這個判斷讓重試只用在真正有機會成功的暫時性錯誤上。
+    """
+    return _exc_status(exc).strip().endswith("429")
+
+
 def _ai_request(prompt: str, ai_config: dict) -> str | None:
     """實際打 AI provider，回傳原始文字。provider 設錯回 None，其餘失敗直接拋。
 
@@ -498,6 +508,9 @@ def _call_ai(text: str, ai_config: dict) -> dict[str, Any] | None:
                 f"{_exc_status(exc)} | 嘗試 {attempt}/{AI_MAX_ATTEMPTS}",
                 file=sys.stderr,
             )
+            if _is_quota_error(exc):
+                # 額度用盡：重試必敗且每次都扣額度，直接放棄這一季
+                return None
             if attempt < AI_MAX_ATTEMPTS:
                 time.sleep(AI_RETRY_BACKOFF_SECONDS[attempt - 1])
 
@@ -796,6 +809,18 @@ def fetch_nongaap_statements(
                 f"{type(exc).__name__}{_exc_status(exc)}",
                 file=sys.stderr,
             )
+            failed_quarters.append(quarter_label)
+            if _is_quota_error(exc):
+                # 額度已用盡，這趟剩下的季再打也只是白扣額度
+                remaining = [lbl for lbl, _ in new_filings[i:]
+                             if lbl not in cache and lbl not in failed_quarters]
+                failed_quarters.extend(remaining)
+                print(
+                    f"[fetcher_nongaap] {ticker} AI 額度用盡，本趟停止"
+                    f"（尚餘 {len(remaining)} 季未抓）",
+                    file=sys.stderr,
+                )
+                break
 
     # 未取得的季度要講清楚。這些季**沒有寫進快取**，直接重跑就會補抓；
     # 若是 AI 配額用盡（HTTP 429），換一把 key 或隔天再跑即可。
