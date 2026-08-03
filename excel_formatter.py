@@ -18,6 +18,9 @@ from datetime import date
 from override_engine import check_key_rows
 import metric_rules
 
+# 與 excel_writer 一致：A 英文名 / B 中文 / C 原始標籤 / D 起數據
+_DATA_START_COL = 4
+
 # ── Colours (ARGB) ────────────────────────────────────────────────────────
 NAVY_DARK = "FF1F3864"
 NAVY_MID  = "FF2D4A82"
@@ -116,16 +119,17 @@ def _fill(hex_argb: str) -> PatternFill:
 # ── Column widths ─────────────────────────────────────────────────────────
 
 def _apply_column_widths(ws) -> None:
-    ws.column_dimensions["A"].width = 22
-    ws.column_dimensions["B"].width = 24
-    for col in range(3, ws.max_column + 1):
+    ws.column_dimensions["A"].width = 30
+    ws.column_dimensions["B"].width = 34    # 中文說明
+    ws.column_dimensions["C"].width = 30    # 公司原始 XBRL 標籤
+    for col in range(4, ws.max_column + 1):
         ws.column_dimensions[get_column_letter(col)].width = 13
 
 
 # ── Freeze panes ──────────────────────────────────────────────────────────
 
 def _set_freeze_panes(ws) -> None:
-    ws.freeze_panes = "C3"
+    ws.freeze_panes = "D3"
 
 
 # ── Number formatting and unit conversion ────────────────────────────────
@@ -224,7 +228,7 @@ def _apply_number_formats(ws) -> None:
             fmt = FMT_FINANCIAL
             divisor = 1_000_000
 
-        for col_idx in range(3, ws.max_column + 1):
+        for col_idx in range(_DATA_START_COL, ws.max_column + 1):
             cell = ws.cell(row=row_idx, column=col_idx)
             if isinstance(cell.value, (int, float)):
                 cell.value = cell.value / divisor
@@ -286,8 +290,27 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     ws["A1"].font = Font(color="FFFFFFFF", bold=True, size=14)
     ws.merge_cells("A1:E1")
 
-    # Row 2: metadata
-    ws["A2"] = f"抓取日期：{date.today()}　　資料來源：SEC EDGAR"
+    # Row 2: metadata。使用者要在第一頁就看到「資料抓到哪一季、那季何時結束、
+    # 公司財年怎麼算」——不必再翻到 Data_Meta。
+    def _meta_value(name: str) -> str:
+        if meta is None or name not in meta.concepts:
+            return ""
+        vals = meta.values[meta.concepts.index(name)]
+        return str(vals[0]) if vals else ""
+
+    latest_period = _meta_value("最新期間")
+    latest_end    = _meta_value("最新期末日")
+    fy_span       = _meta_value("財年起訖")
+
+    bits = [f"抓取日期：{date.today()}"]
+    if latest_period:
+        bits.append(f"資料最新至：{latest_period}"
+                    + (f"（期末 {latest_end}）" if latest_end else ""))
+    if fy_span:
+        bits.append(f"財年起訖：{fy_span}")
+    bits.append("資料來源：SEC EDGAR")
+
+    ws["A2"] = "　　".join(bits)
     ws["A2"].fill = _fill(NAVY_MID)
     ws["A2"].font = Font(color="FFAABBCC", size=9)
     ws.merge_cells("A2:E2")

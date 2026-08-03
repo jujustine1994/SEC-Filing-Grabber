@@ -90,9 +90,9 @@ def test_col_b_is_original_item(tmp_path, sample_tables):
     write_statements(sample_tables, out)
     wb = openpyxl.load_workbook(out)
     ws = wb["Data_IS"]
-    assert ws["B3"].value == "Total net revenues"
-    assert ws["B4"].value == "Net income"
-    assert ws["B5"].value is None   # empty string stored as None in Excel cells
+    assert ws["C3"].value == "Total net revenues"
+    assert ws["C4"].value == "Net income"
+    assert ws["C5"].value is None   # empty string stored as None in Excel cells
 
 
 def test_col_b_is_none_when_no_labels(tmp_path):
@@ -107,7 +107,7 @@ def test_col_b_is_none_when_no_labels(tmp_path):
     out = tmp_path / "test.xlsx"
     write_statements([tbl], out)
     wb = openpyxl.load_workbook(out)
-    assert wb["Data_BS"]["B3"].value is None
+    assert wb["Data_BS"]["C3"].value is None
 
 
 def test_row1_is_quarter_labels(tmp_path, sample_tables):
@@ -116,9 +116,9 @@ def test_row1_is_quarter_labels(tmp_path, sample_tables):
     wb = openpyxl.load_workbook(out)
     ws = wb["Data_IS"]
     # Quarter labels now start at col C (index 3)
-    assert ws["C1"].value == "FY2023Q1"
-    assert ws["D1"].value == "FY2023Q2"
-    assert ws["E1"].value == "FY2023Q3"
+    assert ws["D1"].value == "FY2023Q1"
+    assert ws["E1"].value == "FY2023Q2"
+    assert ws["F1"].value == "FY2023Q3"
 
 
 def test_row1_b_is_empty(tmp_path, sample_tables):
@@ -126,7 +126,7 @@ def test_row1_b_is_empty(tmp_path, sample_tables):
     out = tmp_path / "AAPL.xlsx"
     write_statements(sample_tables, out)
     wb = openpyxl.load_workbook(out)
-    assert wb["Data_IS"]["B1"].value is None
+    assert wb["Data_IS"]["C1"].value is None
 
 
 def test_row2_is_filing_dates(tmp_path, sample_tables):
@@ -134,8 +134,8 @@ def test_row2_is_filing_dates(tmp_path, sample_tables):
     write_statements(sample_tables, out)
     wb = openpyxl.load_workbook(out)
     ws = wb["Data_IS"]
-    assert ws["C2"].value == "2023-02-03"
-    assert ws["D2"].value == "2023-05-05"
+    assert ws["D2"].value == "2023-02-03"
+    assert ws["E2"].value == "2023-05-05"
 
 
 def test_data_values_correct(tmp_path, sample_tables):
@@ -144,9 +144,9 @@ def test_data_values_correct(tmp_path, sample_tables):
     wb = openpyxl.load_workbook(out)
     ws = wb["Data_IS"]
     # Values are divided by 1M during formatting: 1000.0 → 0.001
-    assert ws["C3"].value == pytest.approx(1000.0 / 1_000_000)
-    assert ws["D3"].value == pytest.approx(1100.0 / 1_000_000)
-    assert ws["E3"].value == pytest.approx(1200.0 / 1_000_000)
+    assert ws["D3"].value == pytest.approx(1000.0 / 1_000_000)
+    assert ws["E3"].value == pytest.approx(1100.0 / 1_000_000)
+    assert ws["F3"].value == pytest.approx(1200.0 / 1_000_000)
 
 
 def test_preserves_non_data_sheets(tmp_path, sample_tables):
@@ -155,7 +155,7 @@ def test_preserves_non_data_sheets(tmp_path, sample_tables):
     wb = openpyxl.Workbook()
     ws_user = wb.create_sheet("My_IS")
     ws_user["A1"] = "User annotation"
-    ws_user["B1"] = "=Data_IS!C3"
+    ws_user["C1"] = "=Data_IS!C3"
     wb.save(out)
     wb.close()
 
@@ -188,7 +188,7 @@ def test_rewrite_replaces_old_data(tmp_path, sample_tables):
 
     wb = openpyxl.load_workbook(out)
     ws = wb["Data_IS"]
-    assert ws["F1"].value == "FY2023Q4"   # 4th quarter now at col F
+    assert ws["G1"].value == "FY2023Q4"   # 第 4 季在 G 欄（A/B/C 為名稱欄）
     assert "Data_BS" not in wb.sheetnames  # not in updated list → removed
 
 
@@ -284,7 +284,7 @@ def test_existing_file_intact_when_save_fails(tmp_path, monkeypatch):
 
     monkeypatch.setattr(Workbook, "save", real_save)
     ws = load_workbook(p)["Data_Financials(Q)"]
-    assert ws["C3"].value == pytest.approx(111.0 / 1_000_000)
+    assert ws["D3"].value == pytest.approx(111.0 / 1_000_000)
 
 
 # ── 覆蓋前備份 ─────────────────────────────────────────────────────────────
@@ -298,7 +298,7 @@ def test_backup_created_when_overwriting(tmp_path):
     bak = tmp_path / "out.bak.xlsx"
     assert bak.exists()
     ws = load_workbook(bak)["Data_Financials(Q)"]
-    assert ws["C1"].value == "FY2024Q1"      # 備份裡還有被覆蓋掉的舊季
+    assert ws["D1"].value == "FY2024Q1"      # 備份裡還有被覆蓋掉的舊季
 
 
 def test_no_backup_for_new_file(tmp_path):
@@ -330,3 +330,62 @@ def test_custom_sheets_still_preserved(tmp_path):
     wb2 = load_workbook(p)
     assert "My_IS" in wb2.sheetnames
     assert wb2["My_IS"]["A1"].value == "我的分析"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 四欄版面：A 英文名 / B 中文說明 / C 原始標籤 / D 起數據（2026-08-03）
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_data_starts_at_column_d():
+    from excel_writer import _DATA_START_COL
+    assert _DATA_START_COL == 4
+
+
+def _four_col_wb(tmp_path):
+    tbl = StatementTable(
+        sheet_name="Data_Financials(Q)",
+        quarter_labels=["FY2025Q1", "FY2025Q2"],
+        filing_dates=["2025-05-01", "2025-08-01"],
+        concepts=["Revenue", "Cash", "某公司特有科目"],
+        values=[[100.0, 110.0], [50.0, 55.0], [7.0, 8.0]],
+        ticker="TEST",
+        labels=["Net sales", "Cash and cash equivalents", "us-gaap_Weird"],
+    )
+    p = tmp_path / "four.xlsx"
+    write_statements([tbl], p)
+    return load_workbook(p)["Data_Financials(Q)"]
+
+
+def test_english_name_in_column_a(tmp_path):
+    ws = _four_col_wb(tmp_path)
+    assert ws["A3"].value == "Revenue"
+
+
+def test_chinese_label_in_column_b(tmp_path):
+    ws = _four_col_wb(tmp_path)
+    assert ws["B3"].value == "營業收入"
+    assert ws["B4"].value == "現金及約當現金"
+
+
+def test_original_xbrl_label_in_column_c(tmp_path):
+    ws = _four_col_wb(tmp_path)
+    assert ws["C3"].value == "Net sales"
+
+
+def test_unknown_concept_has_blank_chinese(tmp_path):
+    """overflow 區的公司特有科目沒有中文，留白不可報錯。"""
+    ws = _four_col_wb(tmp_path)
+    assert ws["B5"].value in (None, "")
+    assert ws["C5"].value == "us-gaap_Weird"
+
+
+def test_values_start_at_column_d(tmp_path):
+    ws = _four_col_wb(tmp_path)
+    assert ws["D3"].value == pytest.approx(100.0 / 1_000_000)
+    assert ws["E3"].value == pytest.approx(110.0 / 1_000_000)
+
+
+def test_quarter_labels_start_at_column_d(tmp_path):
+    ws = _four_col_wb(tmp_path)
+    assert ws["D1"].value == "FY2025Q1"
+    assert ws["E1"].value == "FY2025Q2"

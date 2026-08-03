@@ -24,9 +24,11 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import PatternFill
 from fetcher_gaap import StatementTable
 from excel_formatter import format_workbook
+from zh_labels import zh_label, axis_label
 
-# Data columns start at column C (index 3)
-_DATA_START_COL = 3
+# 版面：A 英文標準名 / B 中文說明 / C 公司原始 XBRL 標籤 / D 起各期數據
+# 中文說明表在 zh_labels.py，改那裡不影響任何計算邏輯（程式一律用 A 欄英文名比對）。
+_DATA_START_COL = 4
 
 # ── 覆蓋防護（TODO 第 8 項，2026-08-01）────────────────────────────────────
 #
@@ -188,6 +190,7 @@ def _write_sheet_template(ws: Worksheet, tbl: StatementTable) -> None:
     # Write row 1: ticker (A1), quarter labels (C1+)
     ws.cell(row=1, column=1).value = tbl.ticker or None
     ws.cell(row=1, column=2).value = None
+    ws.cell(row=1, column=3).value = None
     for i, label in enumerate(tbl.quarter_labels):
         col = _DATA_START_COL + i
         cell = ws.cell(row=1, column=col)
@@ -198,6 +201,7 @@ def _write_sheet_template(ws: Worksheet, tbl: StatementTable) -> None:
     # Write row 2: filing dates (C2+)
     ws.cell(row=2, column=1).value = None
     ws.cell(row=2, column=2).value = None
+    ws.cell(row=2, column=3).value = None
     for i, dt in enumerate(tbl.filing_dates):
         col = _DATA_START_COL + i
         cell = ws.cell(row=2, column=col)
@@ -210,13 +214,22 @@ def _write_sheet_template(ws: Worksheet, tbl: StatementTable) -> None:
     for row_offset, (concept, row_values) in enumerate(zip(tbl.concepts, tbl.values)):
         row = 3 + row_offset
         ws.cell(row=row, column=1).value = concept
-        ws.cell(row=row, column=2).value = tbl.labels[row_offset] if has_labels else None
+        ws.cell(row=row, column=2).value = zh_label(concept) or None
+        ws.cell(row=row, column=3).value = tbl.labels[row_offset] if has_labels else None
         for i, val in enumerate(row_values):
             col = _DATA_START_COL + i
             cell = ws.cell(row=row, column=col)
             cell.value = val
             if col > template_max_col:
                 _copy_cell_format(ws.cell(row=row, column=last_tpl_data_col), cell)
+
+
+def _col_b(tbl: StatementTable, concept: str, row_offset: int) -> str:
+    """B 欄內容：三表放中文說明；Data_Segments 放維度軸的中文分類。"""
+    if tbl.sheet_name == "Data_Segments":
+        raw_axis = tbl.labels[row_offset] if tbl.labels and row_offset < len(tbl.labels) else ""
+        return axis_label(raw_axis)
+    return zh_label(concept)
 
 
 def _write_sheet(ws: Worksheet, tbl: StatementTable) -> None:
@@ -230,12 +243,14 @@ def _write_sheet(ws: Worksheet, tbl: StatementTable) -> None:
     # Row 1: ticker in A1; quarter labels from C1
     ws.cell(row=1, column=1, value=tbl.ticker or None)
     ws.cell(row=1, column=2, value=None)
+    ws.cell(row=1, column=3, value=None)
     for col_idx, label in enumerate(tbl.quarter_labels, start=_DATA_START_COL):
         ws.cell(row=1, column=col_idx, value=label)
 
     # Row 2: filing dates from C2
     ws.cell(row=2, column=1, value=None)
     ws.cell(row=2, column=2, value=None)
+    ws.cell(row=2, column=3, value=None)
     for col_idx, date_str in enumerate(tbl.filing_dates, start=_DATA_START_COL):
         ws.cell(row=2, column=col_idx, value=date_str)
 
@@ -244,7 +259,8 @@ def _write_sheet(ws: Worksheet, tbl: StatementTable) -> None:
     for row_offset, (concept, row_values) in enumerate(zip(tbl.concepts, tbl.values)):
         row = 3 + row_offset
         ws.cell(row=row, column=1, value=concept)
-        ws.cell(row=row, column=2,
+        ws.cell(row=row, column=2, value=_col_b(tbl, concept, row_offset) or None)
+        ws.cell(row=row, column=3,
                 value=tbl.labels[row_offset] if has_labels else None)
         for col_idx, val in enumerate(row_values, start=_DATA_START_COL):
             ws.cell(row=row, column=col_idx, value=val)

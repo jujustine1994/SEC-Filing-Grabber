@@ -11,22 +11,22 @@ def _make_wb(sheet_name="Data_Financials(Q)"):
     ws = wb.active
     ws.title = sheet_name
     ws["A1"] = "AAPL"
-    ws["C1"] = "FY2023Q1"
-    ws["D1"] = "FY2023Q2"
-    ws["C2"] = "2023-02-03"
-    ws["D2"] = "2023-05-05"
+    ws["D1"] = "FY2023Q1"
+    ws["E1"] = "FY2023Q2"
+    ws["D2"] = "2023-02-03"
+    ws["E2"] = "2023-05-05"
     ws["A3"] = "Income Statement"   # section header
     ws["A4"] = "Revenue"
-    ws["B4"] = "Revenues"
-    ws["C4"] = 117154000000.0
-    ws["D4"] = 94836000000.0
+    ws["C4"] = "Revenues"
+    ws["D4"] = 117154000000.0
+    ws["E4"] = 94836000000.0
     ws["A5"] = ""                   # blank separator
     ws["A6"] = "Basic EPS"
-    ws["C6"] = 1.52
-    ws["D6"] = 1.20
+    ws["D6"] = 1.52
+    ws["E6"] = 1.20
     ws["A7"] = "Basic Shares"
-    ws["C7"] = 15787000000.0
-    ws["D7"] = 15813000000.0
+    ws["D7"] = 15787000000.0
+    ws["E7"] = 15813000000.0
     return wb
 
 
@@ -35,22 +35,22 @@ def _make_wb(sheet_name="Data_Financials(Q)"):
 def test_col_a_width():
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"].column_dimensions["A"].width == 22
+    assert wb["Data_Financials(Q)"].column_dimensions["A"].width == 30
 
 def test_col_b_width():
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"].column_dimensions["B"].width == 24
+    assert wb["Data_Financials(Q)"].column_dimensions["B"].width == 34
 
 def test_data_col_width():
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"].column_dimensions["C"].width == 13
+    assert wb["Data_Financials(Q)"].column_dimensions["E"].width == 13
 
 def test_data_col_d_width():
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"].column_dimensions["D"].width == 13
+    assert wb["Data_Financials(Q)"].column_dimensions["E"].width == 13
 
 
 # ── freeze panes ───────────────────────────────────────────────────────────
@@ -58,12 +58,12 @@ def test_data_col_d_width():
 def test_freeze_panes():
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"].freeze_panes == "C3"
+    assert wb["Data_Financials(Q)"].freeze_panes == "D3"
 
 def test_freeze_panes_seg_sheet():
     wb = _make_wb(sheet_name="Data_Seg_Revenue")
     format_workbook(wb, [])
-    assert wb["Data_Seg_Revenue"].freeze_panes == "C3"
+    assert wb["Data_Seg_Revenue"].freeze_panes == "D3"
 
 
 # ── row styles ─────────────────────────────────────────────────────────────
@@ -145,7 +145,7 @@ def test_subtotal_row_bold():
     wb = _make_wb()
     # Add a Gross Profit row
     wb["Data_Financials(Q)"]["A8"] = "Gross Profit"
-    wb["Data_Financials(Q)"]["C8"] = 5000000000.0
+    wb["Data_Financials(Q)"]["D8"] = 5000000000.0
     format_workbook(wb, [])
     ws = wb["Data_Financials(Q)"]
     assert ws["A8"].font.bold is True
@@ -165,46 +165,46 @@ def test_revenue_divided_by_million():
     format_workbook(wb, [])
     ws = wb["Data_Financials(Q)"]
     # C4 = "Revenue" row, raw = 117154000000
-    assert ws["C4"].value == pytest.approx(117154.0)
+    assert ws["D4"].value == pytest.approx(117154.0)
 
 def test_revenue_second_col_divided():
     wb = _make_wb()
     format_workbook(wb, [])
     ws = wb["Data_Financials(Q)"]
-    assert ws["D4"].value == pytest.approx(94836.0)
+    assert ws["E4"].value == pytest.approx(94836.0)
 
 def test_revenue_number_format():
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C4"].number_format == FMT_FINANCIAL
+    assert wb["Data_Financials(Q)"]["D4"].number_format == FMT_FINANCIAL
 
 def test_eps_not_divided():
     wb = _make_wb()
     format_workbook(wb, [])
     # C6 = "Basic EPS" = 1.52 → must stay 1.52
-    assert wb["Data_Financials(Q)"]["C6"].value == pytest.approx(1.52)
+    assert wb["Data_Financials(Q)"]["D6"].value == pytest.approx(1.52)
 
 def test_eps_number_format():
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C6"].number_format == FMT_EPS
+    assert wb["Data_Financials(Q)"]["D6"].number_format == FMT_EPS
 
 def test_shares_divided_by_million():
     wb = _make_wb()
     format_workbook(wb, [])
     # C7 = "Basic Shares" = 15787000000 → 15787.0
-    assert wb["Data_Financials(Q)"]["C7"].value == pytest.approx(15787.0)
+    assert wb["Data_Financials(Q)"]["D7"].value == pytest.approx(15787.0)
 
 def test_shares_number_format():
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C7"].number_format == FMT_SHARES
+    assert wb["Data_Financials(Q)"]["D7"].number_format == FMT_SHARES
 
 def test_section_header_values_unchanged():
     wb = _make_wb()
     format_workbook(wb, [])
     # C3 = "Income Statement" row — all None
-    assert wb["Data_Financials(Q)"]["C3"].value is None
+    assert wb["Data_Financials(Q)"]["D3"].value is None
 
 def test_data_meta_values_not_converted():
     """Data_Meta contains strings — must not be divided."""
@@ -212,18 +212,18 @@ def test_data_meta_values_not_converted():
     ws = wb.active
     ws.title = "Data_Meta"
     ws["A1"] = "AAPL"
-    ws["C1"] = "FY2023Q1"
+    ws["D1"] = "FY2023Q1"
     ws["A3"] = "Ticker"
-    ws["C3"] = "AAPL"
+    ws["D3"] = "AAPL"
     format_workbook(wb, [])
-    assert wb["Data_Meta"]["C3"].value == "AAPL"
+    assert wb["Data_Meta"]["D3"].value == "AAPL"
 
 def test_seg_sheet_financial_converted():
     wb = _make_wb(sheet_name="Data_Seg_Revenue")
     wb["Data_Seg_Revenue"]["A4"] = "Americas"
-    wb["Data_Seg_Revenue"]["C4"] = 50000000000.0
+    wb["Data_Seg_Revenue"]["D4"] = 50000000000.0
     format_workbook(wb, [])
-    assert wb["Data_Seg_Revenue"]["C4"].value == pytest.approx(50000.0)
+    assert wb["Data_Seg_Revenue"]["D4"].value == pytest.approx(50000.0)
 
 
 # ── Index sheet ────────────────────────────────────────────────────────────
@@ -453,10 +453,10 @@ def _make_nongaap_wb():
     ws = wb.active
     ws.title = "Data_NonGAAP"
     ws["A1"] = "ARLO"
-    ws["C1"] = "FY2026Q1"
-    ws["D1"] = "FY2026Q2"
-    ws["C2"] = "2026-02-01"
-    ws["D2"] = "2026-05-01"
+    ws["D1"] = "FY2026Q1"
+    ws["E1"] = "FY2026Q2"
+    ws["D2"] = "2026-02-01"
+    ws["E2"] = "2026-05-01"
     rows = [
         ("Non-GAAP Gross Margin",        47.8,       50.1),
         ("Non-GAAP 毛利率",              47.8,       50.1),   # 舊快取殘留的中文名
@@ -470,12 +470,12 @@ def _make_nongaap_wb():
     ]
     for i, (name, v1, v2) in enumerate(rows, start=3):
         ws.cell(row=i, column=1, value=name)
-        ws.cell(row=i, column=3, value=v1)
-        ws.cell(row=i, column=4, value=v2)
+        ws.cell(row=i, column=4, value=v1)
+        ws.cell(row=i, column=5, value=v2)
     return wb
 
 
-def _cell(name, col="C"):
+def _cell(name, col="D"):
     """跑完 format_workbook 後，取指定指標那一列的儲存格。"""
     wb = _make_nongaap_wb()
     format_workbook(wb, [])
@@ -537,7 +537,7 @@ def test_nongaap_zh_amount_still_divided():
     assert _cell("自由現金流").value == pytest.approx(66.9)
 
 def test_nongaap_fcf_divided():
-    assert _cell("Free Cash Flow", col="D").value == pytest.approx(25.4)
+    assert _cell("Free Cash Flow", col="E").value == pytest.approx(25.4)
 
 
 # ── GAAP 三表不可被影響 ──────────────────────────────────────────────────────
@@ -546,12 +546,12 @@ def test_gaap_revenue_still_divided_after_nongaap_rules():
     """新分類規則不得動到 Data_Financials 的行為。"""
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C4"].value == pytest.approx(117154.0)
+    assert wb["Data_Financials(Q)"]["D4"].value == pytest.approx(117154.0)
 
 def test_gaap_basic_shares_still_shares_format():
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C7"].number_format == FMT_SHARES
+    assert wb["Data_Financials(Q)"]["D7"].number_format == FMT_SHARES
 
 
 # ── 百分比關鍵字不可用裸子字串比對（實查 fetcher_gaap 模板後補的迴歸測試）────
@@ -565,34 +565,34 @@ def _make_wb_with_concept(name, value):
     ws = wb.active
     ws.title = "Data_Financials(Q)"
     ws["A1"] = "AAPL"
-    ws["C1"] = "FY2023Q1"
+    ws["D1"] = "FY2023Q1"
     ws["A3"] = name
-    ws["C3"] = value
+    ws["D3"] = value
     return wb
 
 def test_operations_row_still_divided():
     """'Income from Discontinued Operations' 含 'ratio'，但它是金額。"""
     wb = _make_wb_with_concept("Income from Discontinued Operations", 5000000.0)
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(5.0)
+    assert wb["Data_Financials(Q)"]["D3"].value == pytest.approx(5.0)
 
 def test_corporate_row_still_divided():
     """'Corporate Expense' 含 'rate'，但它是金額。"""
     wb = _make_wb_with_concept("Corporate Expense", 8000000.0)
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(8.0)
+    assert wb["Data_Financials(Q)"]["D3"].value == pytest.approx(8.0)
 
 def test_real_tax_rate_still_percent():
     """真的以 Rate 結尾的才算百分比（17.0 → 0.17）。"""
     wb = _make_wb_with_concept("Non-GAAP Effective Tax Rate", 17.0)
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(0.17)
+    assert wb["Data_Financials(Q)"]["D3"].value == pytest.approx(0.17)
 
 def test_steps_not_eps():
     """'eps' 不可命中 'Steps' 之類的字（同一個裸子字串問題）。"""
     wb = _make_wb_with_concept("Restructuring Steps Charge", 3000000.0)
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C3"].value == pytest.approx(3.0)
+    assert wb["Data_Financials(Q)"]["D3"].value == pytest.approx(3.0)
 
 
 def test_percent_format_matches_storage_mode():
@@ -617,16 +617,16 @@ def _ratio_wb(name, value):
     ws = wb.active
     ws.title = "Data_Ratios"
     ws["A1"] = "TEST"
-    ws["C1"] = "FY2025Q1"
+    ws["D1"] = "FY2025Q1"
     ws["A3"] = name
-    ws["B3"] = "some / formula"
-    ws["C3"] = value
+    ws["C3"] = "some / formula"
+    ws["D3"] = value
     return wb
 
 def _ratio_cell(name, value):
     wb = _ratio_wb(name, value)
     format_workbook(wb, [])
-    return wb["Data_Ratios"]["C3"]
+    return wb["Data_Ratios"]["D3"]
 
 
 def test_ratio_percent_suffix_uses_percent_format():
@@ -658,13 +658,13 @@ def test_ratio_dollar_suffix_uses_two_decimals():
 def test_ratio_none_cells_untouched():
     wb = _ratio_wb("毛利率 (%)", None)
     format_workbook(wb, [])
-    assert wb["Data_Ratios"]["C3"].value is None
+    assert wb["Data_Ratios"]["D3"].value is None
 
 def test_suffix_rule_does_not_leak_into_financials_sheet():
     """Data_Financials 沒有後綴，行為不可改變。"""
     wb = _make_wb()
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C4"].value == pytest.approx(117154.0)
+    assert wb["Data_Financials(Q)"]["D4"].value == pytest.approx(117154.0)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -680,7 +680,7 @@ def _section_wb():
     ws = wb.active
     ws.title = "Data_Financials(Q)"
     ws["A1"] = "TEST"
-    ws["C1"] = "FY2025Q1"
+    ws["D1"] = "FY2025Q1"
     for i, name in enumerate(["Income Statement", "Balance Sheet",
                               "Cash Flow", OVERFLOW_SECTION], start=3):
         ws.cell(row=i, column=1, value=name)
@@ -715,10 +715,60 @@ def test_period_label_rows_are_not_treated_as_numbers():
     wb = Workbook()
     ws = wb.active
     ws.title = "Data_Financials(Q)"
-    ws["A1"] = "TEST"; ws["C1"] = "FY2025Q1"
-    ws["A3"] = "財季 Fiscal Quarter";        ws["C3"] = "FY2025FQ1"
-    ws["A4"] = "日曆季 Calendar Quarter";     ws["C4"] = "2025Q1"
-    ws["A5"] = "期末結算日 Period End";       ws["C5"] = "2025-03-30"
+    ws["A1"] = "TEST"; ws["D1"] = "FY2025Q1"
+    ws["A3"] = "財季 Fiscal Quarter";        ws["D3"] = "FY2025FQ1"
+    ws["A4"] = "日曆季 Calendar Quarter";     ws["D4"] = "2025Q1"
+    ws["A5"] = "期末結算日 Period End";       ws["D5"] = "2025-03-30"
     format_workbook(wb, [])
-    assert wb["Data_Financials(Q)"]["C3"].value == "FY2025FQ1"
-    assert wb["Data_Financials(Q)"]["C5"].value == "2025-03-30"
+    assert wb["Data_Financials(Q)"]["D3"].value == "FY2025FQ1"
+    assert wb["Data_Financials(Q)"]["D5"].value == "2025-03-30"
+
+
+# ── Index 摘要列（2026-08-03）────────────────────────────────────────────
+#
+# 使用者要在第一頁就看到：資料抓到哪一季、那一季何時結束、公司財年怎麼算。
+
+def _index_wb_with_meta():
+    from fetcher_gaap import StatementTable
+    q = StatementTable(
+        sheet_name="Data_Financials(Q)",
+        quarter_labels=["FY2025Q3", "FY2026Q1"], filing_dates=["", ""],
+        period_ends=["2025-09-28", "2026-03-29"],
+        concepts=["Revenue"], values=[[1.0, 2.0]], ticker="AAPL", labels=[""],
+    )
+    meta = StatementTable(
+        sheet_name="Data_Meta", quarter_labels=["FY2025Q3", "FY2026Q1"],
+        filing_dates=["", ""],
+        concepts=["Ticker", "Company Name", "Fetched Date", "Quarters Available",
+                  "Fiscal Year End Month", "財年起訖", "最新期間", "最新期末日",
+                  "Key Rows 完整度", "缺漏的 Key Rows"],
+        values=[["AAPL"]*2, ["Apple Inc."]*2, ["2026-08-03"]*2, ["2"]*2,
+                ["9"]*2, ["10 月 – 9 月"]*2, ["FY2026Q1"]*2, ["2026-03-29"]*2,
+                ["9/9"]*2, ["無"]*2],
+        ticker="AAPL", labels=[""]*10,
+    )
+    wb = Workbook()
+    wb.active.title = "Data_Financials(Q)"
+    format_workbook(wb, [q, meta])
+    return wb["Index"]
+
+
+def _index_text(ws):
+    return " ".join(str(c.value or "") for row in ws.iter_rows() for c in row)
+
+
+def test_index_shows_latest_period():
+    assert "FY2026Q1" in _index_text(_index_wb_with_meta())
+
+
+def test_index_shows_latest_period_end_date():
+    assert "2026-03-29" in _index_text(_index_wb_with_meta())
+
+
+def test_index_shows_fiscal_year_span():
+    assert "10 月 – 9 月" in _index_text(_index_wb_with_meta())
+
+
+def test_index_still_shows_fetch_date():
+    from datetime import date
+    assert str(date.today()) in _index_text(_index_wb_with_meta())

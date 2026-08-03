@@ -37,10 +37,27 @@ def test_row_name_combines_metric_and_member():
     assert "Revenue — US" in tbl.concepts
 
 
-def test_source_sheet_recorded_in_column_b():
-    tbl = build_segments_long([_seg("Data_Seg_Revenue", ["FY2025Q1"], {"US": [10.0]})])
+def test_dimension_axis_recorded_in_labels():
+    """2026-08-03 起 labels 改放維度軸——沒有軸就分不出這列是業務別營收
+    還是權益項目別（MSFT 實測會混進 Retained earnings、Service Life）。"""
+    t = _seg("Data_Seg_Revenue", ["FY2025Q1"], {"US": [10.0]})
+    t.labels = ["srt:StatementGeographicalAxis"]
+    tbl = build_segments_long([t])
     i = tbl.concepts.index("Revenue — US")
-    assert tbl.labels[i] == "Data_Seg_Revenue"
+    assert tbl.labels[i] == "srt:StatementGeographicalAxis"
+
+
+def test_axis_label_maps_known_axes():
+    from zh_labels import axis_label
+    assert axis_label("us-gaap:StatementBusinessSegmentsAxis") == "業務別"
+    assert axis_label("us-gaap:StatementEquityComponentsAxis") == "權益項目別（非 segment）"
+
+
+def test_axis_label_flags_unknown_rather_than_blank():
+    """沒收錄的軸標成「其他維度」，不可留空白——空白會讓人以為沒有軸。"""
+    from zh_labels import axis_label
+    assert axis_label("foo:BarAxis") == "其他維度"
+    assert axis_label("") == ""
 
 
 def test_multiple_axes_land_in_one_sheet():

@@ -1827,3 +1827,100 @@ def test_three_sections_still_present_and_ordered():
     b = t.concepts.index("Balance Sheet")
     c = t.concepts.index("Cash Flow")
     assert a < b < c
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 品質檢查併進 Data_Meta（2026-08-03，原本在已移除的 Index sheet）
+#
+# 判斷方式（override_engine.check_key_rows）：9 個關鍵科目，每個檢查
+# 「最近 4 期是否全部為空」——全空才算缺。只要有任一期有值就算通過，
+# 所以 9/9 的意思是「九個核心科目都至少抓到一期」，不代表每期都完整。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _q_table_for_meta(missing=()):
+    from fetcher_gaap import StatementTable
+    from excel_formatter import ALL_KEY_ROWS
+    concepts, values = [], []
+    for name in ALL_KEY_ROWS:
+        concepts.append(name)
+        values.append([None, None] if name in missing else [1.0, 2.0])
+    return StatementTable(
+        sheet_name="Data_Financials(Q)", quarter_labels=["FY2025Q1", "FY2025Q2"],
+        filing_dates=["", ""], concepts=concepts, values=values,
+        ticker="T", labels=[""] * len(concepts),
+    )
+
+
+def test_meta_has_quality_rows():
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [_q_table_for_meta()])
+    assert "Key Rows 完整度" in m.concepts
+
+
+def test_meta_quality_all_present():
+    from fetcher_gaap import _build_meta_table
+    from excel_formatter import ALL_KEY_ROWS
+    m = _build_meta_table("T", "Test Inc", [_q_table_for_meta()])
+    assert m.values[m.concepts.index("Key Rows 完整度")][0] == f"{len(ALL_KEY_ROWS)}/{len(ALL_KEY_ROWS)}"
+
+
+def test_meta_quality_lists_missing_rows():
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [_q_table_for_meta(missing={"Capex", "Diluted EPS"})])
+    score = m.values[m.concepts.index("Key Rows 完整度")][0]
+    missing = m.values[m.concepts.index("缺漏的 Key Rows")][0]
+    assert score == "7/9"
+    assert "Capex" in missing and "Diluted EPS" in missing
+
+
+def test_meta_quality_blank_when_no_quarterly_table():
+    """只抓年報時沒有季表，品質列留空而不是報 0/9（那會被誤讀成全缺）。"""
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [])
+    idx = m.concepts.index("Key Rows 完整度")
+    assert m.values[idx] in ([], [""], [None]) or all(not v for v in m.values[idx])
+
+
+# ── Data_Meta 再補：最新期間與財年起訖（2026-08-03）──────────────────────
+
+def _q_table_with_periods():
+    from fetcher_gaap import StatementTable
+    return StatementTable(
+        sheet_name="Data_Financials(Q)",
+        quarter_labels=["FY2025Q3", "FY2026Q1"],
+        filing_dates=["2025-11-06", "2026-05-07"],
+        period_ends=["2025-09-28", "2026-03-29"],
+        concepts=["Revenue"], values=[[1.0, 2.0]], ticker="T", labels=[""],
+    )
+
+
+def test_meta_reports_latest_period():
+    """要一眼看出「這份檔案的資料抓到哪一季」。"""
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [_q_table_with_periods()], fy_end_month=12)
+    assert m.values[m.concepts.index("最新期間")][0] == "FY2026Q1"
+
+
+def test_meta_reports_latest_period_end_date():
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [_q_table_with_periods()], fy_end_month=12)
+    assert m.values[m.concepts.index("最新期末日")][0] == "2026-03-29"
+
+
+def test_meta_reports_fiscal_year_span_for_december_fye():
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [_q_table_with_periods()], fy_end_month=12)
+    assert m.values[m.concepts.index("財年起訖")][0] == "1 月 – 12 月"
+
+
+def test_meta_reports_fiscal_year_span_for_september_fye():
+    """AAPL 9 月結算 → 財年從 10 月開始。"""
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Apple", [_q_table_with_periods()], fy_end_month=9)
+    assert m.values[m.concepts.index("財年起訖")][0] == "10 月 – 9 月"
+
+
+def test_meta_latest_period_blank_without_quarterly_table():
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [])
+    assert all(not v for v in m.values[m.concepts.index("最新期間")]) or            m.values[m.concepts.index("最新期間")] == []

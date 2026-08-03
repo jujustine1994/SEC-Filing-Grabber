@@ -113,9 +113,27 @@ A99=〔CF overflow 行〕                          ← 可能 0 到 N 行（僅 
 Non-GAAP 判斷：label 含 "adjusted"/"non-gaap"/"non gaap"/"excluding"/"excl."/"ex-"。  
 **與 Data_EPS_Recon / Data_NonGAAP 完全獨立**（來源不同：這裡是 XBRL，那裡是 8-K press release）。
 
-### Data_Seg_*
+### Data_Segments（長格式，各軸合併於一張）
 
-每個有 segment breakdown 的 IS 概念一張 sheet，格式同上但沒有 B 欄 labels。
+A 欄 `{XBRL 概念} — {成員}`、B 欄維度軸的中文分類、C 欄原始軸名、D 欄起各期數值。
+
+**公司改變分類時怎麼呈現**（MSFT FY2025 改過營收分類，實測）：
+
+```
+                                     2023 →→→→→→→→→→→→→→→→→→→→ 2026
+Office Products and Cloud Services   11.8  12.4  13.1  13.5  13.9
+Windows                               4.8   5.3   5.6   5.3   5.9
+Devices                               1.4   1.3   1.1   1.3   1.1
+Microsoft 365 Commercial                                       20.4  21.1  ...
+Microsoft 365 Consumer                                          1.7   1.8  ...
+Windows and Devices                                             4.3   4.5  ...
+```
+
+**新舊分類各自成列，各自只在存在的期間有值，不硬接成一條線。** MSFT 的新舊分類不是一對一（Office → M365 Commercial + M365 Consumer），硬接等於替使用者做判斷，而且會錯。要接是使用者（或下游 skill）的工作，工具只負責照實落地。
+
+改名的情況同理：`Search and News Advertising` 與 `Search Advertising` 是兩列。
+
+**維度軸為什麼一定要標**：XBRL 的分類細項掛在不同的軸上，只看成員名稱會混進根本不是 segment 的東西——MSFT 實測有 `Retained earnings`（權益項目軸）與 `Service Life`（固定資產耐用年限軸）。B/C 欄把軸標出來讓使用者自行篩選；**不過濾、不丟棄**，軸表在 `zh_labels.AXIS_LABELS`，沒收錄的標成「其他維度」。
 
 ### Data_EPS_Recon
 

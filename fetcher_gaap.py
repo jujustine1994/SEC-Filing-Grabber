@@ -34,6 +34,9 @@ from edgar import Company, set_identity as set_identity
 
 from override_engine import load_overrides, run_diagnosis, check_key_rows
 
+# 9 個關鍵科目的清單（品質檢查用）。定義在 excel_formatter，避免兩處各記一份。
+_ALL_KEY_ROWS_LAZY = None
+
 
 # ── Data contract ────────────────────────────────────────────────────────
 
@@ -1325,6 +1328,9 @@ def _period_end(label: str, fy_end_month: int) -> str:
 # 實測每家中位數 IS 4 / BS 2 / CF 10 個，合計約 16 列。
 OVERFLOW_SECTION = "Other (as reported)"
 
+# 三表之間空幾列。捲動時要一眼看出換表了，光靠標題底色不夠。
+SECTION_GAP = 5
+
 
 def _merge_financials(is_tbl: StatementTable,
                        bs_tbl: StatementTable,
@@ -1411,15 +1417,18 @@ def _merge_financials(is_tbl: StatementTable,
 
     _add_header("Income Statement")
     _add_rows(is_tbl, {r[0] for r in IS_TEMPLATE})
-    _add_blank()
+    for _ in range(SECTION_GAP):
+        _add_blank()
     _add_header("Balance Sheet")
     _add_rows(bs_tbl, {r[0] for r in BS_TEMPLATE})
-    _add_blank()
+    for _ in range(SECTION_GAP):
+        _add_blank()
     _add_header("Cash Flow")
     _add_rows(cf_tbl, {r[0] for r in CF_TEMPLATE})
 
     if overflow:
-        _add_blank()
+        for _ in range(SECTION_GAP):
+            _add_blank()
         _add_header(OVERFLOW_SECTION)
         for concept, label, row in overflow:
             concepts.append(concept)
@@ -1501,6 +1510,19 @@ def _build_dynamic_table(filings, stmt_method: str, sheet_name: str,
 
 # ── Segment breakdown sheets ────────────────────────────────────────────────
 
+def _dimension_axis(row) -> str:
+    """從 XBRL 列取維度軸名稱，例如 `us-gaap:StatementBusinessSegmentsAxis`。
+
+    edgartools 有 `dimension_axis` 欄；沒有時退回從 `dimension_label`
+    （格式為 `"軸: 成員"`）取冒號前那段。都取不到回空字串。
+    """
+    axis = str(row.get("dimension_axis", "") or "").strip()
+    if axis and axis != "nan":
+        return axis
+    label = str(row.get("dimension_label", "") or "")
+    return label.split(":", 2)[0].strip() + ":" + label.split(":", 2)[1].strip()         if label.count(":") >= 2 else (label.split(":")[0].strip() if ":" in label else "")
+
+
 def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> list[StatementTable]:
     """Build one StatementTable per IS concept that has segment/dimension rows."""
     seg_data: dict[str, dict] = {}
@@ -1543,9 +1565,13 @@ def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> 
             member = str(row.get("dimension_member_label", "") or "")
 
             if concept_xbrl not in seg_data:
-                seg_data[concept_xbrl] = {"std": std, "members": {}, "periods": {}}
+                seg_data[concept_xbrl] = {"std": std, "members": {}, "axes": {}, "periods": {}}
 
             seg_data[concept_xbrl]["members"].setdefault(member, member)
+            # 記下這個 member 屬於哪個維度軸。沒有軸就分不出「業務別營收」與
+            # 「權益項目別」——MSFT 實測會混進 `Retained earnings`、`Service Life`
+            # 這種根本不是 segment 的東西。
+            seg_data[concept_xbrl]["axes"].setdefault(member, _dimension_axis(row))
 
             if period_label not in seg_data[concept_xbrl]["periods"]:
                 seg_data[concept_xbrl]["periods"][period_label] = (filing_date, {})
@@ -1580,6 +1606,8 @@ def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> 
             concepts=members_ordered,
             values=[[data["periods"][lbl][1].get(m) for lbl in sorted_periods]
                     for m in members_ordered],
+            # B 欄借放維度軸，讓 segments.py 組長格式時能標出每一列屬於哪個軸
+            labels=[data["axes"].get(m, "") for m in members_ordered],
         ))
 
     return tables
@@ -1683,20 +1711,53 @@ def _build_meta_table(ticker: str, company_name: str,
             filing_dates   = tbl.filing_dates
             break
 
+    # 品質檢查：9 個關鍵科目，各檢查「最近 4 期是否全部為空」——全空才算缺。
+    # 只要有任一期有值就通過，所以 9/9 是「都至少抓到一期」，不代表每期都完整。
+    score, missing_txt = "", ""
+    q_tbl = next((t for t in tables if t.sheet_name == "Data_Financials(Q)"), None)
+    if q_tbl is not None:
+        missing = sorted(set(
+            check_key_rows(q_tbl.concepts, q_tbl.values, "IS")
+            + check_key_rows(q_tbl.concepts, q_tbl.values, "BS")
+            + check_key_rows(q_tbl.concepts, q_tbl.values, "CF")
+        ))
+        from excel_formatter import ALL_KEY_ROWS as _ALL_KEY_ROWS
+        total = len(_ALL_KEY_ROWS)
+        score = f"{total - len(missing)}/{total}"
+        missing_txt = "、".join(missing) if missing else "無"
+
+    # 最新期間：這份檔案的資料抓到哪一季、那一季實際結束在哪天。
+    latest_label, latest_end = "", ""
+    if q_tbl is not None and q_tbl.quarter_labels:
+        latest_label = q_tbl.quarter_labels[-1]
+        ends = q_tbl.period_ends or []
+        latest_end = ends[-1] if ends and ends[-1] else _period_end(latest_label, fy_end_month)
+
+    # 財年起訖：結算月的下個月為起月。AAPL 9 月結算 → 財年 10 月起。
+    start_month = fy_end_month % 12 + 1
+    fy_span = f"{start_month} 月 – {fy_end_month} 月"
+
     return StatementTable(
         sheet_name="Data_Meta",
         quarter_labels=quarter_labels,
         filing_dates=filing_dates,
-        # Fiscal Year End Month 是 Data_Std 換算日曆季的依據——沒有它就無法把
-        # 不同結算月公司的 FY 標籤對齊到同一個日曆季。
+        # Fiscal Year End Month 是換算日曆季的依據——沒有它就無法把不同結算月
+        # 公司的 FY 標籤對齊到同一個日曆季，是這張表唯一「程式在用」的欄位。
+        # 品質檢查（原本在已移除的 Index sheet）也併到這裡。
         concepts=["Ticker", "Company Name", "Fetched Date", "Quarters Available",
-                  "Fiscal Year End Month"],
+                  "Fiscal Year End Month", "財年起訖", "最新期間", "最新期末日",
+                  "Key Rows 完整度", "缺漏的 Key Rows"],
         values=[
             [ticker]            * n_quarters,
             [company_name]      * n_quarters,
             [str(date.today())] * n_quarters,
             [str(n_quarters)]   * n_quarters,
             [str(fy_end_month)] * n_quarters,
+            [fy_span]           * n_quarters,
+            [latest_label]      * n_quarters,
+            [latest_end]        * n_quarters,
+            [score]             * n_quarters,
+            [missing_txt]       * n_quarters,
         ],
     )
 

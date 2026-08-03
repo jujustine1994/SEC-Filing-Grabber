@@ -229,3 +229,15 @@ def _pick(rows):
 **影響：** JPM 的 `Capex` row 在 live snapshot test 中被標記為 structural_absence。GS 沒有此問題（GS 的 Capex 可正常匹配）。
 
 **已知限制，不修：** `test_snapshot_cf` 的金融股測試已將 `"Capex"` 加入 `allowed_missing`，與 IS 的 `"Operating Income"` 同等處理。
+
+---
+
+## 地雷：公司改變 segment 分類時，不可硬接成一條時間序列
+
+**問題：** MSFT 在 FY2025 改過營收分類。舊的 `Office Products and Cloud Services` / `Windows` / `Devices` 停止揭露，改成 `Microsoft 365 Commercial` / `Microsoft 365 Consumer` / `Windows and Devices`。若把新舊硬接成同一列，會得到一條看起來連續、實際上定義不同的假序列。
+
+**為什麼不能接：** 不是一對一對映。Office 拆成 M365 Commercial + M365 Consumer，Windows 與 Devices 合併成 Windows and Devices。任何接法都是替使用者做判斷，而且會錯。
+
+**現行做法：** 新舊各自成列，各自只在存在的期間有值。`Data_Segments` 的 A 欄自我描述（`{概念} — {成員}`），使用者一眼看得出哪一段有資料。改名（`Search and News Advertising` → `Search Advertising`）同理，兩列並存。
+
+**連帶注意：** XBRL 的分類細項掛在不同的「軸」上，只看成員名稱會混進非 segment 的東西（MSFT 實測有 `Retained earnings`、`Service Life`）。`Data_Segments` 的 B 欄標軸的中文分類、C 欄標原始軸名，篩選是使用者的事，工具不代為過濾。

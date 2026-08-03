@@ -30,6 +30,7 @@ from __future__ import annotations
 from typing import Any
 
 from fetcher_gaap import StatementTable
+from zh_labels import axis_label
 
 SHEET_NAME  = "Data_Segments"
 SEG_PREFIX  = "Data_Seg_"
@@ -74,9 +75,12 @@ def build_segments_long(tables: list[StatementTable]) -> StatementTable | None:
     for t in seg_tables:
         metric = _metric_name(t.sheet_name)
         index_of = {q: i for i, q in enumerate(t.quarter_labels)}
-        for member, row in zip(t.concepts, t.values):
+        axes = list(t.labels or [""] * len(t.concepts))
+        for i, (member, row) in enumerate(zip(t.concepts, t.values)):
             concepts.append(f"{metric}{NAME_JOINER}{member}")
-            labels.append(t.sheet_name)
+            # B 欄放軸的中文分類、C 欄放原始軸名，讓使用者能篩掉非 segment 的維度
+            axis = axes[i] if i < len(axes) else ""
+            labels.append(axis)
             values.append([
                 row[index_of[p]] if p in index_of and index_of[p] < len(row) else None
                 for p in all_periods
