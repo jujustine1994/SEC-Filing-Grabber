@@ -42,9 +42,21 @@ C3. `financial-assistant/scripts/` 的 `read_excel.py` / `query_excel.py` 可直
 
 C4. ⚠ **衝突要處理**：`finance-analysis.md` 規定「每次更新前先給 CTH 看草稿，確認後才寫入檔案」。本工具是直接寫 Excel 的，接進 financial-assistant 流程時不可直接覆蓋公司資料夾的檔案。
 
+## 執行順序建議（2026-08-03 排定）
+
+| 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
+|---|---|---|---|---|
+| 1 | **B1 CLI 工具層** | 否 | 否 | 擋在 B2/B3 前面的必要基礎；純封裝，可完全自動完成 |
+| 2 | **D4 前半：查清 8-K off-by-one** | 否 | 否 | 用 `scripts/` 已快取的 26 份新聞稿原文判定實際財期，純比對 |
+| 3 | **B3 確定性表格解析** | 否 | 否 | 已驗證 `pandas.read_html` 可行，工程量大但可測 |
+| 4 | **D1 Excel 排版驗收** | 否 | **是** | 要開 Excel 用眼睛看，AI 代勞不了 |
+| 5 | **D4 後半：實際修 off-by-one** | 是 | 是 | 會動到快取 key，需重抓，先確認影響再改 |
+| 6 | D8 金融股模板 | 否 | 是 | 51 家調查已有資料；但要不要另開模板是判斷題 |
+| 7 | D7 `google-genai` 汰換 | 是 | 否 | 要真呼叫才驗得了，等 B 段定案後再說 |
+
 ## D. 既有待辦
 
-1. 確認 Excel 排版現況：實跑一次輸出，逐 sheet 檢視 `Data_Financials(Q/Y)`、`Data_Financials_NG(Q/Y)`、`Data_Seg_*`、`Index` 的欄寬、凍結窗格、數字格式（÷1M 與 EPS 例外）、section 分隔行、subtotal 粗體是否都正確，記錄實際問題再決定要不要調整 `excel_formatter.py`。
+1. **人工驗收 Excel 排版**（只剩這件需要人眼）：`output/_final/` 有 AAPL / NVDA / META / AVGO / MSFT / COHR 六份。逐項看欄寬、凍結窗格、三表底色與 5 列間隔、數字格式（÷1M、百分比 0.0%、每股兩位小數）、中文說明欄。**此項不可由 AI 代勞**，要開 Excel 用眼睛看。
 2. ~~**`Data_NonGAAP` 資料品質修復**~~ ✅ **已完成（2026-08-01 下午，方案 c）**，詳見 CHANGELOG。規則表集中在 `metric_rules.py`，改表後重跑即生效、不必重抓。ARLO 實跑對 8-K 原文逐項核對全中。**殘留待決定事項（都有現成開關，不急）**：
    - ~~年度值補洞~~ ✅ 已改為 `FY_ONLY_HANDLING = "label"`：年度值另成一列加 ` (FY)`，不再填進季欄位。
    - ~~百分比存法~~ ✅ 已改為 Excel 原生比例（`PERCENT_AS_EXCEL_RATIO = True`，0.375 + `0.0%`）。
@@ -66,4 +78,4 @@ C4. ⚠ **衝突要處理**：`finance-analysis.md` 規定「每次更新前先�
 6. CLI 工具層（`cli.py`）：讓外部 skill 用指令調用現有 fetcher，不經 GUI。例如 `python cli.py nongaap NVDA --years 2020-2026 --json`、`python cli.py gaap AAPL --xlsx out.xlsx`；輸出支援 JSON（給 skill 讀）與 Excel（給人看）。GUI 與核心函式不動，只加一層薄封裝。等「Excel 排版確認」與「8-K 抽取正確性抽檢」驗收完再做。
 7. 套件汰換：`google-generativeai` 官方已終止支援（不再更新與修 bug），需改用 `google-genai`。影響 `fetcher_nongaap.py:_call_ai()` 與 `override_engine.py:_llm_call()` 的 google 分支，以及 `requirements.txt`。現行版本仍可運作，非緊急。
 8. 金融股（GS/JPM 等）獨立模板：現行 IS/BS 模板對金融股部分欄位空白，需另建模板。低優先。
-9. 重複抓同一 ticker 的檔案行為需補防護：`excel_writer.write_statements()` 開啟既有檔後刪除所有 `Data_*` sheet 重寫（`My_*` 等自訂 sheet 保留），無備份無版本號。兩個風險：(a) 第二次抓的年份範圍較窄時，`Data_*` 是整批替換而非合併，舊季度直接消失（GAAP 無快取需重抓）；(b) 該 xlsx 正被 Excel 開啟時 Windows 鎖檔，`wb.save()` 拋 `PermissionError`，但這發生在全部抓取與 AI 呼叫都跑完的最後一步，白等一分鐘且無友善提示（僅落到 `main.py:1502` 的泛用 except）。至少要在寫檔前先偵測可寫入並提早提示，或改為寫暫存檔再置換。
+9. ~~重複抓同一 ticker 的檔案防護~~ ✅ 已完成（commit `d9c684c`）：抓取前 `check_output_writable()` 偵測鎖檔、寫暫存檔再 `os.replace()`、覆蓋前留一份滾動 `.bak.xlsx`。
