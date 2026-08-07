@@ -24,6 +24,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.styles import PatternFill
 from fetcher_gaap import StatementTable
 from excel_formatter import format_workbook
+from fiscal_input import apply_fiscal_year_input
 from zh_labels import zh_label, axis_label
 
 # 版面：A 英文標準名 / B 中文說明 / C 公司原始 XBRL 標籤 / D 起各期數據
@@ -75,6 +76,18 @@ def check_output_writable(output_path: str | Path) -> str | None:
 
 def _backup_path(output_path: Path) -> Path:
     return output_path.with_name(output_path.stem + BACKUP_SUFFIX)
+
+
+def _meta_fy_end_month(tables: list[StatementTable]) -> int:
+    """從 Data_Meta 取財年結束月。找不到退回 12（日曆年）。"""
+    meta = next((t for t in tables if t.sheet_name == "Data_Meta"), None)
+    if meta is None or "Fiscal Year End Month" not in meta.concepts:
+        return 12
+    vals = meta.values[meta.concepts.index("Fiscal Year End Month")]
+    try:
+        return int(vals[0])
+    except (IndexError, TypeError, ValueError):
+        return 12
 
 
 def write_statements(tables: list[StatementTable], output_path: str | Path,
@@ -130,6 +143,10 @@ def write_statements(tables: list[StatementTable], output_path: str | Path,
             ws = wb.create_sheet(tbl.sheet_name)
             _write_sheet(ws, tbl)
         format_workbook(wb, tables)
+
+    # 期間表頭改成公式，由 Index 上那格「財年起始月」驅動。放在最後——
+    # format_workbook 會重建 Index，先寫輸入格會被蓋掉。
+    apply_fiscal_year_input(wb, _meta_fy_end_month(tables))
 
     # 先寫暫存檔再置換：save() 中途失敗（磁碟滿、被鎖）時原檔完好，
     # 不會留下一個寫到一半、開不起來的 xlsx。

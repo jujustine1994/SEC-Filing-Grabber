@@ -62,6 +62,19 @@ C4. ⚠ **衝突要處理**：`finance-analysis.md` 規定「每次更新前先�
 | 5 | D8 金融股模板 | 否 | 是 | 51 家調查已有資料；但要不要另開模板是判斷題 |
 | 6 | D7 `google-genai` 汰換 | 是 | 否 | 要真呼叫才驗得了，等 B 段定案後再說 |
 
+## D0. 2026-08-08 四家實測抓到的（NVDA/AAPL/PLTR/AVGO）
+
+D0-1. **`Data_Financials(Q)` 永遠沒有 Q4** → TTM 類比率算不出來。Q4 沒有 10-Q，數字在 10-K。
+   - 實測：NVDA/AVGO/PLTR 的 ROE／ROA／FCF per Share／淨負債EBITDA **整列全空**
+   - AAPL 原本有兩欄有值，但那是**錯的**——標籤 off-by-one 造成四欄「看似連續」，TTM 實際上跳過 Sep 季又重複 Dec 季。標籤修好後正確地變成空白
+   - 修法：Q4 = 年報 − Q1 − Q2 − Q3（流量項）＋ 資產負債表直接取 10-K。**要 CTH 決定做不做**
+
+D0-2. **多股別公司抓不到期末流通股數**：PLTR／GOOGL／META `company.get_facts()` 裡 `dei:EntityCommonStockSharesOutstanding` **0 筆**（只有 `EntityPublicFloat`），因為 Class A/B/C 是分開標的。TSLA 61 筆、COHR 62 筆、BRK.B 7 筆正常。連帶 BVPS／FCF per Share／流通股數 YoY 空白。`output/_final/META.xlsx` 現在就有這個洞。
+
+D0-3. ~~**AAPL 財季標籤 off-by-one**~~ ✅ 已於 2026-08-08 隨「財年起始月公式化」修掉。原本 `2023-04-01` 被標成 `FY2023Q3`（實為 FY2023 Q2，營收 94,836 = Apple 自報的 Q2 FY23）。389 格比對只有 AAPL 這 2 欄有差，改後全對。
+
+D0-4. **凍結窗格在 D3，但表頭有 5 列**：往下捲會看不到第 3~5 列（財季／日曆季／期末結算日）。建議改 D6，但屬使用習慣，等 CTH 決定。
+
 ## D. 既有待辦
 
 1. **人工驗收 Excel 排版**（只剩這件需要人眼）：`output/_final/` 有 AAPL / NVDA / META / AVGO / MSFT / COHR 六份。逐項看欄寬、凍結窗格、三表底色與 5 列間隔、數字格式（÷1M、百分比 0.0%、每股兩位小數）、中文說明欄。**此項不可由 AI 代勞**，要開 Excel 用眼睛看。

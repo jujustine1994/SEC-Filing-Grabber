@@ -2,7 +2,7 @@
 import pytest
 from openpyxl import Workbook
 from fetcher_gaap import StatementTable
-from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, FMT_PERCENT, FMT_MULTIPLE, FMT_DAYS, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE, QUALITY_MISS_BG
+from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, FMT_PERCENT, FMT_MULTIPLE, FMT_DAYS, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE, QUALITY_MISS_BG, FY_INPUT_ROWS
 
 
 def _make_wb(sheet_name="Data_Financials(Q)"):
@@ -347,15 +347,20 @@ def _index_ws(tables=None):
     return wb["Index"]
 
 
+# Index 表格標題列的位置。第 4、5 列留給「財年起始月」輸入格
+# （見 fiscal_input），所以這裡跟著 FY_INPUT_ROWS 走，不寫死 4。
+_HDR_ROW = FY_INPUT_ROWS + 1
+
+
 def test_index_quality_header_exists():
     ws = _index_ws()
-    assert ws.cell(row=4, column=5).value == "完成度"
+    assert ws.cell(row=_HDR_ROW, column=5).value == "完成度"
 
 
 def test_index_quality_col_all_ok():
     tbl = _make_q_table()
     ws = _index_ws([tbl])
-    cell = ws.cell(row=5, column=5)
+    cell = ws.cell(row=_HDR_ROW + 1, column=5)
     assert "9/9" in str(cell.value)
     assert "✓" in str(cell.value)
     assert cell.font.color.rgb == QUALITY_GREEN
@@ -364,7 +369,7 @@ def test_index_quality_col_all_ok():
 def test_index_quality_col_missing():
     tbl = _make_q_table(missing=["Operating Income", "Capex"])
     ws = _index_ws([tbl])
-    cell = ws.cell(row=5, column=5)
+    cell = ws.cell(row=_HDR_ROW + 1, column=5)
     assert "7/9" in str(cell.value)
     assert "⚠" in str(cell.value)
     assert cell.font.color.rgb == QUALITY_ORANGE
@@ -372,7 +377,7 @@ def test_index_quality_col_missing():
 
 def test_index_quality_col_no_q_table():
     ws = _index_ws([])
-    assert ws.cell(row=4, column=5).value == "完成度"
+    assert ws.cell(row=_HDR_ROW, column=5).value == "完成度"
 
 
 def test_index_header_merged_to_e():

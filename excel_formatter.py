@@ -18,6 +18,10 @@ from datetime import date
 from override_engine import check_key_rows
 import metric_rules
 
+# Index 上留給「財年起始月」輸入格 + 提醒的列數（第 4、5 列）。
+# 實際內容由 fiscal_input 寫，這裡只負責讓位——見該模組的說明。
+FY_INPUT_ROWS = 5
+
 # 與 excel_writer 一致：A 英文名 / B 中文 / C 原始標籤 / D 起數據
 _DATA_START_COL = 4
 
@@ -318,18 +322,23 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     # Row 3: blank
     ws.row_dimensions[3].height = 6
 
-    # Row 4: column headers
+    # Row 4-5 由 fiscal_input.apply_fiscal_year_input() 填「財年起始月」輸入格
+    # 與提醒（在 write_statements 最後才寫，因為這裡每次都會重建整張 Index）。
+    # 這裡只把表格往下讓位，不要在中間插列——插列會讓那格的位址跟著動。
+    _TABLE_HDR_ROW = FY_INPUT_ROWS + 1
+
+    # 表格標題列
     hdr_font = Font(bold=True, size=10)
     hdr_fill = _fill(BLUE_HDR)
     for col, label in enumerate(["Sheet", "說明", "最早期間", "最新期間", "完成度"], start=1):
-        cell = ws.cell(row=4, column=col, value=label)
+        cell = ws.cell(row=_TABLE_HDR_ROW, column=col, value=label)
         cell.font = hdr_font
         cell.fill = hdr_fill
 
-    # Row 5+: one row per Data_* sheet
+    # 之後每張 Data_* sheet 一列
     data_sheets = [t for t in tables if t.sheet_name.startswith("Data_")]
     for i, tbl in enumerate(data_sheets):
-        row = 5 + i
+        row = _TABLE_HDR_ROW + 1 + i
         earliest = tbl.quarter_labels[0]  if tbl.quarter_labels else "—"
         latest   = tbl.quarter_labels[-1] if tbl.quarter_labels else "—"
 
@@ -373,7 +382,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
         return
 
     _, _, missing = quality
-    next_row = 5 + len(data_sheets) + 2   # blank row gap
+    next_row = _TABLE_HDR_ROW + 1 + len(data_sheets) + 2   # blank row gap
 
     # Section header
     hdr_cell = ws.cell(row=next_row, column=1, value="品質明細 — Data_Financials(Q)")

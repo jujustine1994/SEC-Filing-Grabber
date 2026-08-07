@@ -58,6 +58,63 @@
 
 ## 更新記錄
 
+### 2026-08-08
+
+**財年起始月改成使用者可編輯，期間標籤全部用公式帶（測試 597 → 632）**
+
+財年結束月是程式從 10-K 的 XBRL 欄名自動判讀的（`_detect_fy_end_month()`），
+**會出錯**；出錯時整排財季標籤跟著錯，而使用者除了重跑程式沒有別的辦法，
+看到的還只是一堆寫死的文字。
+
+改法：`Index!B4`（黃底）放一格可編輯的財年起始月，定義名稱 `FY_START_MONTH`。
+`Data_Financials(Q)/(Y)` 第 1、3、4 列改成引用它的 Excel 公式，改一格整本更新。
+第 5 列（期末結算日）是 XBRL 真實日期，**永遠靜態**，是所有公式的錨。
+Index 上有一段醒目的核對說明，明講怎麼對、以及哪些東西不會跟著變
+（Index 表格的最早/最新期間、`Data_Ratios`、`Data_Meta` 是 Python 算好的靜態值）。
+
+**順帶修掉 AAPL 真實存在的 off-by-one**
+
+新公式與舊靜態值逐格比對 10 個活頁簿共 **389 格，只有 12 格有差，全部是 AAPL 的兩欄**：
+
+| 期末結算日 | 舊標籤 | 新標籤 | 事實 |
+|---|---|---|---|
+| 2023-04-01 | `FY2023Q3` ❌ | `FY2023Q2` ✅ | Apple 自報 Q2 FY23，營收 94,836 |
+| 2023-07-01 | `FY2023Q4` ❌ | `FY2023Q3` ✅ | Apple 自報 Q3 FY23 |
+
+也就是說舊版的 AAPL 有兩欄標錯了一季。連帶效果：AAPL 原本是四家裡唯一
+ROE／ROA／FCF per Share 有值的，但那四欄「看似連續」正是標籤錯造成的假象，
+TTM 實際上跳過 Sep 季又重複 Dec 季——**數字是錯的**。改對之後正確地變成空白。
+
+**52/53 週制：換算前先把期末日往前推 15 天**
+
+美股期末日在月底前後浮動最多 6 天，WDC 的 FY2026 Q2 結束在 `2026-01-02`，
+直接看月份會算成 Q3。往前推 15 天必定落回該季最後一個月。這正是
+`docs/8k-period-off-by-one.md` 裡 COST／WDC／PANW 七份對不上的原因，
+這次一併處理掉。
+
+另加 `wb.calculation.fullCalcOnLoad = True`——openpyxl 不算公式、寫出去沒有
+快取值，不強制重算 Excel 有機會直接顯示空白（看起來像整排標籤不見了）。
+
+**四家實測（NVDA/AAPL/PLTR/AVGO，財年結束月 1/9/12/11 月）另外抓到的問題**
+
+- **`Data_Financials(Q)` 永遠沒有 Q4**（Q4 沒有 10-Q，數字在 10-K）→ TTM 類比率
+  湊不到連續四季，NVDA/AVGO/PLTR 的 ROE／ROA／FCF per Share／淨負債EBITDA 整列全空
+- **多股別公司抓不到期末流通股數**：PLTR／GOOGL／META 的 `company.get_facts()` 裡
+  `dei:EntityCommonStockSharesOutstanding` **0 筆**（Class A/B/C 分開標），
+  TSLA 61 筆、COHR 62 筆正常。連帶 BVPS／FCF per Share／流通股數 YoY 空白
+- 兩項都未修，列在 TODO D0
+
+**跨公司列位再驗一次**：四家財年結束月完全不同，`Revenue` 8、`Gross Profit` 10、
+`Operating Income` 17、`Net Income` 24、`Cash` 38、`Total Assets` 51、`OCF` 98、
+`Capex` 99、`Free Cash Flow` 114 **完全一致**。
+
+**文件同步**：README 有三處已經過期到會誤導的內容——欄位說明還寫「B 欄 =
+Original Item、C 欄起 = 各季數據」（實際是 A/B/C/D 四欄、表頭 5 列）、
+列位對照表寫 `Cash` 在 34 列（實際 38）、以及一整章「用 `Data_Std` 寫跨公司模板」
+（那張 sheet 8/3 就刪了）。照現況重寫。
+
+---
+
 ### 2026-08-07
 
 **B1 CLI 工具層、B3 確定性表格解析、D4 前半調查（三項，測試 524 → 593）**

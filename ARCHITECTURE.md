@@ -9,13 +9,13 @@
 | main.py | Tkinter GUI，兩個 tab + 兩個 popup |
 | cli.py | 指令列介面（給外部 skill）：`gaap` / `press-release` 兩個子指令，薄封裝，零 AI |
 | output_tables.py | `append_ratio_table()`：決定最後寫進 Excel 的 sheet 清單。GUI 與 CLI 共用同一份 |
+| fiscal_input.py | Index 上「財年起始月」可編輯輸入格 + 由它驅動的期間標籤公式（定義名稱 `FY_START_MONTH`） |
 | press_release_tables.py | 8-K 新聞稿表格的確定性解析（`pandas.read_html` + Workiva 版面規則），零 AI |
 | config.py | load_config() / save_config() |
 | fetcher_gaap.py | edgartools XBRL 抓取 → StatementTable 列表 |
 | fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
 | excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx，並呼叫 excel_formatter |
 | excel_formatter.py | 寫 Index sheet（品質明細）、設欄寬、凍結窗格、數值分類（÷1M／百分比／每股） |
-| std_sheet.py | `Data_Std`：跨公司固定版面表（固定列位 + 機器鍵 + 日曆季標籤） |
 | ratios.py | `Data_Ratios`：37 個常見比率，值 + B 欄算法文字 + 列名單位後綴 |
 | nongaap_layout.py | `Data_NonGAAP` 固定模板版面（Core／調節／overflow／年度分區） |
 | segments.py | `Data_Segments`：把 `Data_Seg_*` 寬表彙成單一長格式表 |
@@ -88,27 +88,40 @@ excel_writer.py
 ### Data_Financials(Q) / Data_Financials(Y)（主要輸出）
 
 ```
-A1=ticker  B1=空  C1=FY2024Q1  D1=FY2024Q2  ...
-A2=空      B2=空  C2=2024-02-01 D2=2024-05-03 ...
-A3=Income Statement  (section header, all values = None)
-A4=Revenue  B4=Net sales  C4=100.0  ...   ← 22 IS 固定模板行
+     A                    B              C                    D, E, F...
+ 1   AAPL                                                      =公式 → FY2026Q1
+ 2                                                             2026-01-29        ← 申報日
+ 3   財季 Fiscal Quarter   公司財年基準                          =公式 → FY2026FQ1
+ 4   日曆季 Calendar…      日曆年基準                            =公式 → 2025Q4
+ 5   期末結算日 Period End 該期實際結束日                        2025-12-27        ← XBRL 真實日期（靜態）
+ 6   (空)
+ 7   Income Statement     損益表                                                  ← section header
+ 8   Revenue              營業收入        Net sales             124300.0
 ...
-A25=〔IS overflow 行〕  B25=us-gaap_ConceptXxx   ← 可能 0 到 N 行
-A26=空  (blank separator)
-A27=Balance Sheet  (section header)
-A28=Cash  B28=Cash and cash equivalents  ...   ← 41 BS 固定模板行
+31   Diluted Shares       稀釋加權平均股數
+32-36 (空 5 列)
+37   Balance Sheet        資產負債表
+38   Cash                 現金及約當現金   Cash and cash equiv.  30000.0
 ...
-A70=〔BS overflow 行〕                          ← 可能 0 到 N 行
-A71=空
-A72=Cash Flow  (section header)
-A73=Net Income  B73=Net income  ...            ← 26 CF 固定模板行（含 FCF DERIVED）
+85   Cash Flow            現金流量表
+98   Operating Cash Flow  營業活動現金流
+114  Free Cash Flow       自由現金流（衍生）
 ...
-A99=〔CF overflow 行〕                          ← 可能 0 到 N 行（僅 Q1/FY filings）
+     Other (as reported)  ← overflow 一律在最底部，所以上面的列號跨公司固定
 ```
 
-- **Col A** = 標準指標名稱（template 行）或 XBRL 原始 label（overflow 行）
-- **Col B** = Original Item（XBRL 原始標籤，overflow 行為 concept name）
-- **Col C+** = 季度數據（oldest → newest）
+- **Col A** = 標準指標名稱（英文；程式一律用這欄比對）
+- **Col B** = 中文說明（表在 `zh_labels.py`，改它不影響任何計算）
+- **Col C** = Original Item（公司的 XBRL 原始標籤）
+- **Col D+** = 各期數據（oldest → newest）
+
+**第 1、3、4 列是 Excel 公式**，由 `Index!B4`（定義名稱 `FY_START_MONTH`）驅動——
+財年結束月是程式判讀的，會出錯，使用者改那一格就能修正整本活頁簿的期間標籤。
+第 5 列是公式的錨，永遠是 XBRL 的靜態值。細節見 `fiscal_input.py`。
+
+> **實測列位（NVDA/AAPL/PLTR/AVGO，財年結束月 1/9/12/11）**：`Revenue` 8、
+> `Gross Profit` 10、`Operating Income` 17、`Net Income` 24、`Cash` 38、
+> `Total Assets` 51、`Operating Cash Flow` 98、`Capex` 99、`Free Cash Flow` 114。
 
 ### Data_Financials_NG(Q) / Data_Financials_NG(Y)（有 Non-GAAP overflow 時才產生）
 
@@ -152,7 +165,7 @@ AI 從 8-K press release 提取的所有 Non-GAAP / Adjusted / Excluding 指標�
 → `_metric_merge_key()`（忽略大小寫與標點的跨季合併鍵）。
 Excel 數值分類（每股 → 百分比 → 股數 → 金額）同樣讀 `metric_rules.py` 的關鍵字表；ASCII 關鍵字一律以詞界比對（`Operations` 含 `ratio`、`Corporate` 含 `rate`）。
 
-> ⚠️ **欄位標籤已知不準（2026-07-31 查證，未修，見 TODO 第 3 項）**：季度標籤由 `_period_to_quarter_label()` 依 8-K 的 `period_of_report` 推算，但該欄在 Item 2.02 財報 8-K 上存的是**發布日**而非財期結束日，故標籤普遍比數字實際所屬財季**晚約一季**（INTC `20260723` 標成 `FY2026Q3`，實報 FY2026 Q2）。同一根因下，同一日曆季內發布兩份財報 8-K 時（如 WDC 2025-01-10 與 2025-01-29）兩者標籤相同，去重「留最舊」會丟掉較新那份。此為長期行為，`Data_Financials` 走 XBRL 不受影響。
+> ⚠️ **欄位標籤已知不準（2026-08-07 完整量化，未修）**：季度標籤由 `_period_to_quarter_label()` 依 8-K 的 `period_of_report` 推算，但該欄在 Item 2.02 8-K 上存的是**發布日**而非財期結束日。實測 16 家 128 份、成功比對 119 份，**只有 13% 標對**，偏移量 −3 到 +1 季且由財年結束月決定（NVDA/CRM −3、ORCL/QRVO −2、MSFT/MU/COST/PANW/WDC −1、ARLO/AMD/INTC/NOW +1、AAPL/AVGO 0）。同根因下 dedupe「留最舊」實測撞到 2 次、兩次都留錯（WDC 整季消失、QRVO 拿到 preliminary）。完整報告與三個修法選項見 `docs/8k-period-off-by-one.md`。`Data_Financials` 走 XBRL 不受影響。
 
 ## StatementTable（fetcher_gaap.py 的輸出合約）
 
