@@ -224,6 +224,16 @@ def _build_e2_prompt(df: pd.DataFrame, target_std_name: str, ticker: str) -> str
     )
 
 
+# ── E2 LLM 診斷開關（2026-08-03）─────────────────────────────────────────
+#
+# 專案定位確立為「只把 SEC EDGAR 的原始財務資料抓好」，GAAP 這條路徑不該碰 AI。
+# E1（模糊比對）是純程式的，照常運作；E2 會呼叫 LLM，預設關閉。
+#
+# 關在這裡而不是呼叫端：即使有人把 ai_config 傳進來（GUI 目前就會傳），
+# 也不會真的打 API。要用時把這個改 True。
+E2_LLM_ENABLED = False
+
+
 def e2_llm_diagnose(
     df: pd.DataFrame,
     target_std_name: str,
@@ -238,6 +248,8 @@ def e2_llm_diagnose(
         {"fix_type": "structural_absence", "confirmed_absent": True, "source": "E2"}
         None  — if api_key is empty or LLM call fails
     """
+    if not E2_LLM_ENABLED:
+        return None      # 預設關閉，見上方 E2_LLM_ENABLED
     if not ai_config.get("api_key", ""):
         return None
 

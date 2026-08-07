@@ -13,9 +13,11 @@ A1. **輸出精簡為 5 張 sheet**（原 11 張）：
    - 砍掉：`Data_Std`（併入 Q/Y）、`Data_Seg_*` 寬格式 5 張、`Data_Financials_NG`、`Data_EPS_Recon`（從未產生）、`Index`
    - **關鍵**：overflow 原本插在每個 section 之間，害 BS/CF 整段位移（`Cash` 在 28~56 列之間跑）。移到底部後模板列號跨公司固定，`Data_Std` 就不需要獨立存在
 
-A2. **GAAP 抓取移除 AI 依賴**：`fetch_gaap_statements()` 在 key rows 缺漏時會呼叫 `override_engine.run_diagnosis()`，其中 E2 是 LLM 診斷（有設 key 就會打）。E1 模糊比對是純程式，保留；E2 改為預設關閉。
+A2. ~~**GAAP 抓取移除 AI 依賴**~~ ✅ 已完成：`override_engine.E2_LLM_ENABLED = False`。關在 override_engine 而非呼叫端——即使 GUI 照舊把 `ai_config` 傳進來也不會真的打 API。E1 模糊比對照常運作，找不到就警告（不叫 AI 猜）。實測傳真實 ai_config 抓 COHR，AI 呼叫次數 0。
 
-A3. **Non-GAAP 暫停產出**：`Data_NonGAAP` 從預設輸出移除。既有程式碼（`nongaap_layout` / `metric_rules` / 快取）全部保留不刪，等 skill 方案定案再接回。
+A3. ~~**Non-GAAP 暫停產出**~~ ✅ 已完成：`main.NONGAAP_ENABLED = False`。兩個 GUI checkbox 停用並改標「暫停中，改由 skill 處理」，抓取路徑也加了守衛。
+   - ⚠ 差點犯的錯：一開始只在輸出端過濾掉 `Data_NonGAAP`，但 checkbox 還能勾——會照常呼叫 AI 抓完 6 季**才被丟掉**，等於白燒額度。停用要停在源頭。
+   - 相關程式碼（`nongaap_layout` / `metric_rules` / 快取）全部保留，改 `True` 就回來。
 
 ## B. Non-GAAP 改走 skill（下一階段，另開對話處理）
 

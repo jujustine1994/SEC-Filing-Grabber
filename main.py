@@ -122,6 +122,16 @@ def show_cth_banner():
 # ---- App ----
 
 
+# ── Non-GAAP 暫停開關（2026-08-03）───────────────────────────────────────
+#
+# Non-GAAP 改走 skill 抽取（TODO B），本工具暫不產出 Data_NonGAAP。
+# 兩個 checkbox 因此停用——不停用的話會照常呼叫 AI 抓完 6 季，**抓完才被
+# 過濾掉**，等於白燒你的 API 額度。
+#
+# 相關程式碼（nongaap_layout / metric_rules / 快取）全部保留，改 True 就回來。
+NONGAAP_ENABLED = False
+
+
 def _append_ratio_table(tables: list) -> None:
     """把 Data_Segments（長格式）與 Data_Ratios 加進輸出清單（就地修改）。
 
@@ -301,7 +311,12 @@ class SECFetcherApp:
         self.fetch_gaap_var    = tk.BooleanVar(value=True)
         self.fetch_nongaap_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(row_type, text="GAAP 財報",               variable=self.fetch_gaap_var).pack(side="left", padx=(0, 16))
-        ttk.Checkbutton(row_type, text="Non-GAAP（需設定 AI API）", variable=self.fetch_nongaap_var).pack(side="left")
+        _ng_text = ("Non-GAAP（需設定 AI API）" if NONGAAP_ENABLED
+                    else "Non-GAAP（暫停中，改由 skill 處理）")
+        _ng_cb = ttk.Checkbutton(row_type, text=_ng_text, variable=self.fetch_nongaap_var)
+        if not NONGAAP_ENABLED:
+            _ng_cb.state(["disabled"])
+        _ng_cb.pack(side="left")
         self.fetch_nongaap_var.trace_add("write", self._on_nongaap_toggle)
 
         # Row 2: 進階設定 toggle
@@ -477,8 +492,12 @@ class SECFetcherApp:
         row_opts = ttk.Frame(tab)
         row_opts.grid(row=2, column=0, sticky="w", pady=(4, 0))
         self.batch_nongaap_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(row_opts, text="同時抓取 Non-GAAP（需設定 AI API）",
-                        variable=self.batch_nongaap_var).pack(side="left")
+        _bng_text = ("同時抓取 Non-GAAP（需設定 AI API）" if NONGAAP_ENABLED
+                     else "同時抓取 Non-GAAP（暫停中，改由 skill 處理）")
+        _bng_cb = ttk.Checkbutton(row_opts, text=_bng_text, variable=self.batch_nongaap_var)
+        if not NONGAAP_ENABLED:
+            _bng_cb.state(["disabled"])
+        _bng_cb.pack(side="left")
         self.batch_nongaap_warn = ttk.Label(
             row_opts, text="⚠ 請先在進階設定填入 AI API Key", foreground="#cc8800"
         )
@@ -1503,7 +1522,7 @@ class SECFetcherApp:
                     self._log(f"[{ticker}] ⚠ 金融股：BS/IS 部分欄位可能為空（模板尚未針對金融業最佳化）")
                 step += 1
 
-            if fetch_nongaap:
+            if fetch_nongaap and NONGAAP_ENABLED:
                 from fetcher_nongaap import fetch_nongaap_statements
                 ai_config = self.cfg.get("ai", {})
                 self._log(f"[{ticker}] 抓取 Non-GAAP 財報中...")
@@ -1586,7 +1605,7 @@ class SECFetcherApp:
                 if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
                     self._log(f"[{ticker}] ⚠ 金融股：BS/IS 部分欄位可能為空（模板尚未針對金融業最佳化）")
 
-                if fetch_nongaap:
+                if fetch_nongaap and NONGAAP_ENABLED:
                     from fetcher_nongaap import fetch_nongaap_statements
                     output_path = self._build_output_path(ticker)
                     output_dir  = output_path.parent

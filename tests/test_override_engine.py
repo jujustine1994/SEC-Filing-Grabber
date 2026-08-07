@@ -216,6 +216,8 @@ def test_e2_llm_diagnose_returns_none_when_no_api_key():
 
 
 def test_e2_llm_diagnose_returns_concept_override_on_match(monkeypatch):
+    # E2 預設關閉（見 override_engine.E2_LLM_ENABLED），測 E2 行為要先打開
+    monkeypatch.setattr("override_engine.E2_LLM_ENABLED", True)
     df = _make_edgar_df()
     ai_cfg = {"provider": "google", "model": "gemini", "api_key": "test-key"}
     monkeypatch.setattr("override_engine._llm_call", lambda prompt, cfg: "Revenues")
@@ -224,6 +226,8 @@ def test_e2_llm_diagnose_returns_concept_override_on_match(monkeypatch):
 
 
 def test_e2_llm_diagnose_returns_structural_absence_on_absent(monkeypatch):
+    # E2 預設關閉（見 override_engine.E2_LLM_ENABLED），測 E2 行為要先打開
+    monkeypatch.setattr("override_engine.E2_LLM_ENABLED", True)
     df = _make_edgar_df()
     ai_cfg = {"provider": "google", "model": "gemini", "api_key": "test-key"}
     monkeypatch.setattr("override_engine._llm_call", lambda prompt, cfg: "ABSENT")
@@ -232,6 +236,8 @@ def test_e2_llm_diagnose_returns_structural_absence_on_absent(monkeypatch):
 
 
 def test_e2_llm_diagnose_handles_llm_whitespace(monkeypatch):
+    # E2 預設關閉（見 override_engine.E2_LLM_ENABLED），測 E2 行為要先打開
+    monkeypatch.setattr("override_engine.E2_LLM_ENABLED", True)
     df = _make_edgar_df()
     ai_cfg = {"provider": "google", "model": "gemini", "api_key": "test-key"}
     monkeypatch.setattr("override_engine._llm_call", lambda prompt, cfg: "  OperatingIncomeLoss  \n")
@@ -240,6 +246,8 @@ def test_e2_llm_diagnose_handles_llm_whitespace(monkeypatch):
 
 
 def test_e2_llm_diagnose_absent_in_sentence_returns_structural_absence(monkeypatch):
+    # E2 預設關閉（見 override_engine.E2_LLM_ENABLED），測 E2 行為要先打開
+    monkeypatch.setattr("override_engine.E2_LLM_ENABLED", True)
     """LLM returns 'ABSENT' embedded in a sentence — should still be structural_absence."""
     df = _make_edgar_df()
     ai_cfg = {"provider": "google", "model": "gemini", "api_key": "test-key"}
@@ -261,6 +269,8 @@ def test_e2_llm_diagnose_garbage_response_returns_none(monkeypatch):
 
 
 def test_e2_llm_diagnose_absent_case_insensitive(monkeypatch):
+    # E2 預設關閉（見 override_engine.E2_LLM_ENABLED），測 E2 行為要先打開
+    monkeypatch.setattr("override_engine.E2_LLM_ENABLED", True)
     """ABSENT check must be case-insensitive."""
     df = _make_edgar_df()
     ai_cfg = {"provider": "google", "model": "gemini", "api_key": "test-key"}
@@ -298,6 +308,8 @@ def test_run_diagnosis_e1_path_writes_override(tmp_path):
 
 
 def test_run_diagnosis_e2_path_when_e1_fails(tmp_path, monkeypatch):
+    # E2 預設關閉（見 override_engine.E2_LLM_ENABLED），測 E2 行為要先打開
+    monkeypatch.setattr("override_engine.E2_LLM_ENABLED", True)
     df = _make_edgar_df(
         std_concepts=["SomeOddConcept", "AnotherConcept", "ThirdConcept"],
         labels=["Something", "Another thing", "Third thing"],
@@ -327,3 +339,45 @@ def test_run_diagnosis_skips_e2_when_no_api_key(tmp_path):
     )
     # E1 failed, E2 skipped → no override for Revenue
     assert "Revenue" not in result
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# E2 LLM 診斷預設關閉（2026-08-03）
+#
+# 專案定位確立為「只抓 SEC 原始資料」，GAAP 這條路徑不該碰 AI。
+# E1 模糊比對是純程式的，保留；E2 會呼叫 LLM，預設關掉。
+# 關掉的位置在 override_engine 而不是呼叫端——即使有人不小心把 ai_config
+# 傳進來，也不會真的打 API。
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_e2_disabled_by_default():
+    import override_engine
+    assert override_engine.E2_LLM_ENABLED is False
+
+
+def test_e2_returns_none_when_disabled(monkeypatch):
+    """關閉時直接回 None，且**完全不呼叫** _llm_call。"""
+    import override_engine, pandas as pd
+    called = []
+    monkeypatch.setattr(override_engine, "_llm_call",
+                        lambda *a, **k: called.append(1) or "{}")
+    monkeypatch.setattr(override_engine, "E2_LLM_ENABLED", False)
+
+    out = override_engine.e2_llm_diagnose(
+        pd.DataFrame({"concept": ["us-gaap_Revenues"], "label": ["Revenue"]}),
+        "Revenue", "TEST", {"api_key": "k", "provider": "google"},
+    )
+    assert out is None
+    assert called == []
+
+
+def test_e2_still_works_when_explicitly_enabled(monkeypatch):
+    """留一條開關給日後需要時用，不是把功能刪掉。"""
+    import override_engine, pandas as pd
+    monkeypatch.setattr(override_engine, "E2_LLM_ENABLED", True)
+    monkeypatch.setattr(override_engine, "_llm_call", lambda *a, **k: "Revenues")
+    out = override_engine.e2_llm_diagnose(
+        pd.DataFrame({"concept": ["us-gaap_Revenues"], "label": ["Revenue"]}),
+        "Revenue", "TEST", {"api_key": "k", "provider": "google"},
+    )
+    assert out is not None
