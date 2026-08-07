@@ -8,6 +8,26 @@
 
 雙擊 `啟動器.bat`
 
+### 指令列（給 skill 用，不經 GUI）
+
+```bash
+# GAAP 三表 + 比率 + segment → Excel（與 GUI 產的逐格相同）
+./venv/Scripts/python.exe cli.py gaap AAPL --years 2023-2026 --xlsx out.xlsx
+
+# 8-K 新聞稿的 Non-GAAP 調節表（已解析、已篩過）→ JSON
+./venv/Scripts/python.exe cli.py press-release ARLO --years 2025-2026 --tables --json
+```
+
+兩個子指令都**不呼叫任何 AI API**，只打 SEC EDGAR。共通參數：`--years`
+（`2023-2026` 或 `2024`）、`--identity`、`--max-filings`、`--json`（不給路徑
+就印到 stdout）。`gaap` 另有 `--xlsx` / `--quarterly-only` / `--annual-only`，
+`press-release` 另有 `--raw`（改吐新聞稿全文，除錯用）。
+
+`press-release` 吐的是**解析後的表格**不是原文：ARLO 一季原文 450K 字元，
+篩完 4.4K。⚠ 每一季的 `label` 有已知的 off-by-one（見
+`docs/8k-period-off-by-one.md`），JSON 裡帶著 `label_warning`，實際財期
+請看表格的期間表頭。
+
 ## 系統需求
 
 - Windows 10/11

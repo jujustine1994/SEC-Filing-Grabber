@@ -7,6 +7,9 @@
 | 啟動器.bat | 薄 BAT，呼叫 launcher.ps1 |
 | launcher.ps1 | 環境檢查、uv venv、安裝套件、啟動 main.py |
 | main.py | Tkinter GUI，兩個 tab + 兩個 popup |
+| cli.py | 指令列介面（給外部 skill）：`gaap` / `press-release` 兩個子指令，薄封裝，零 AI |
+| output_tables.py | `append_ratio_table()`：決定最後寫進 Excel 的 sheet 清單。GUI 與 CLI 共用同一份 |
+| press_release_tables.py | 8-K 新聞稿表格的確定性解析（`pandas.read_html` + Workiva 版面規則），零 AI |
 | config.py | load_config() / save_config() |
 | fetcher_gaap.py | edgartools XBRL 抓取 → StatementTable 列表 |
 | fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
@@ -251,7 +254,7 @@ save_overrides()       ← 診斷結果永久寫入，下次同 ticker 不重跑
 
 | 指令 | 時間 | 測試數 | 用途 |
 |------|------|--------|------|
-| `python -m pytest tests/ --ignore=tests/test_live_snapshots.py` | ~13 秒 | 250 | Unit tests（每次改 code 後跑） |
+| `python -m pytest tests/ --ignore=tests/test_live_snapshots.py` | ~10 秒 | 593 | Unit tests（每次改 code 後跑） |
 | `pytest -m "slow and b1"` | ~12 分鐘 | 24 | B1 overflow live 驗證（8 tickers） |
 | `pytest -m "slow and cf_overflow"` | ~5 分鐘 | 15 | CF YTD overflow 驗收（COHR/LITE/AAPL/NVDA/GOOGL） |
 | `pytest -m slow` | ~25 分鐘 | 全部 slow | 完整 live 驗收 |
