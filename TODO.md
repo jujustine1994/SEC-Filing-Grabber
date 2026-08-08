@@ -116,7 +116,8 @@ D0b-1. ~~**`Index` 字體大小要調**~~ ✅ **已完成（2026-08-08）**：CT
    A1 抬頭 14→16、A2 資訊列 9→10、表格（標題＋內容）10→11、B4 輸入格 11→12、財年提醒 9→10。
    字級常數集中在 `excel_formatter`（`INDEX_TITLE_SIZE` / `INDEX_META_SIZE` /
    `INDEX_TABLE_SIZE` / `INDEX_INPUT_SIZE` / `INDEX_NOTE_SIZE`），`fiscal_input` 直接 import。
-   提醒那列的列高一併 28→32——字級變大而列高不動，wrap 的尾巴會被切掉。
+   提醒那列的列高改成**依文字長度與欄寬推算**（`fiscal_input._wrapped_row_height()`，實測 94.5）。
+   原本寫死 28 就已經不夠（文字要 6 行、28 只夠 2.4 行），CTH 驗收時回報被切到才發現。
 
 D0b-2. ~~**整份文件內文字體設為「微軟正黑體」**~~ ✅ **已完成（2026-08-08）**：
    `excel_formatter.FONT_NAME = "微軟正黑體"` + `_font(**kw)` 工廠，兩個模組所有 `Font()` 統一走它。
