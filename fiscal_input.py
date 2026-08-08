@@ -29,6 +29,7 @@ YoY 是按欄位相對位置取的，不受標籤文字影響；`Data_Meta` 的�
 """
 from __future__ import annotations
 
+import math
 import re
 from datetime import date, timedelta
 
@@ -187,6 +188,30 @@ _FY_SPAN_FORMULA = (
 )
 
 
+# 一行的高度（含行距）。10pt 字約 13.5pt，其他字級按比例。
+_LINE_HEIGHT_AT_10PT = 13.5
+
+
+def _wrapped_row_height(ws, text: str, first_col: int = 1, last_col: int = 5,
+                        size: float = INDEX_NOTE_SIZE) -> float:
+    """算 wrap 過的合併儲存格要多高。
+
+    **合併儲存格不會自動調整列高**——這是 Excel 的行為，不是 openpyxl 的限制，
+    所以只能自己算。原本寫死 28，CTH 2026-08-08 驗收時回報文字被切掉：實測要
+    6 行、28 只夠 2.4 行。寫死一個大一點的數字治標，提醒文字一改又會壞，所以
+    改成依文字長度與實際欄寬推算。
+
+    中文是全形（一個字佔兩個半形當量），而 Excel 的欄寬單位就是半形字寬。
+    `column_dimensions` 沒設過寬度時回 None，用 Excel 預設的 8.43。
+    多抓一行餘裕——換行不會剛好斷在邊界，寧可留白也不要切到字。
+    """
+    width = sum(ws.column_dimensions[get_column_letter(c)].width or 8.43
+                for c in range(first_col, last_col + 1))
+    display = sum(2 if ord(ch) > 0x2000 else 1 for ch in text)
+    lines = math.ceil(display / max(width, 1)) + 1
+    return round(lines * _LINE_HEIGHT_AT_10PT * (size / 10), 1)
+
+
 def _write_input_block(ws, start_month: int, row: int = 4) -> None:
     """在 Index 寫出可編輯的輸入格與提醒。"""
     label = ws.cell(row=row, column=1, value="財年起始月（可修改）")
@@ -206,8 +231,7 @@ def _write_input_block(ws, start_month: int, row: int = 4) -> None:
     note.font = _font(size=INDEX_NOTE_SIZE, color="FFBF8F00")
     note.alignment = Alignment(wrap_text=True, vertical="top")
     ws.merge_cells(start_row=row + 1, start_column=1, end_row=row + 1, end_column=5)
-    # 字級 9→10（2026-08-08）後列高要跟著加，不然 wrap 的尾巴會被切掉。
-    ws.row_dimensions[row + 1].height = 32
+    ws.row_dimensions[row + 1].height = _wrapped_row_height(ws, _NOTE)
 
 
 def _is_annual(ws) -> bool:

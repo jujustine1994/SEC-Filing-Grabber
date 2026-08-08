@@ -225,7 +225,26 @@ def test_input_block_sizes_match_the_index_scale():
     assert ws["A5"].font.size == INDEX_NOTE_SIZE == 10    # 核對提醒
 
 
-def test_note_row_is_tall_enough_for_the_bigger_font():
-    """提醒是 wrap 過的長字串。字級 9→10 而列高不動的話，尾巴會被切掉。"""
+def test_note_row_is_tall_enough_for_the_whole_text():
+    """提醒是 wrap 過的長字串，合併儲存格不會自動調列高——只能自己算。
+
+    CTH 2026-08-08 驗收時回報第 5 列會切到文字。實測：文字顯示寬度 508 個半形
+    當量、A~E 合併寬度 86，要 6 行；原本寫死的 28（後來 32）只夠 2.4 行。
+    """
     ws = _input_block()
-    assert ws.row_dimensions[5].height >= 31
+    display = sum(2 if ord(ch) > 0x2000 else 1 for ch in fi._NOTE)
+    width = sum(ws.column_dimensions[c].width or 8.43 for c in "ABCDE")
+    need_lines = display / width
+    assert ws.row_dimensions[5].height >= need_lines * 13.5
+
+
+def test_note_row_height_follows_the_text_length():
+    """列高是算出來的不是寫死的——改了提醒文字不必記得回頭改列高。"""
+    tall = _input_block().row_dimensions[5].height
+    original = fi._NOTE
+    try:
+        fi._NOTE = "短"
+        short = _input_block().row_dimensions[5].height
+    finally:
+        fi._NOTE = original
+    assert short < tall
