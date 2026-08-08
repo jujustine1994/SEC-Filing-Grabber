@@ -777,3 +777,112 @@ def test_index_shows_fiscal_year_span():
 def test_index_still_shows_fetch_date():
     from datetime import date
     assert str(date.today()) in _index_text(_index_wb_with_meta())
+
+
+# ── 字型與 Index 字級（2026-08-08 CTH 指定，TODO D0b）─────────────────────
+#
+# 兩件事釘在這裡：
+#   1. 整份活頁簿只能有一種字型（微軟正黑體，含數字欄）。以前所有 Font() 都
+#      沒帶 name=，同一張表會混 Calibri 與新細明體。
+#   2. Index 的字級整體放大一級（14/9/10/9 → 16/10/11/10）。
+#
+# openpyxl 的 Font 是不可變的，改字型必須整個重建；漏掉任何一處，那幾格就會
+# 掉回 Excel 預設字型——這正是掃描式測試（而非逐格斷言）存在的理由。
+
+from excel_formatter import (
+    FONT_NAME, NUMBER_FONT_NAME,
+    INDEX_TITLE_SIZE, INDEX_META_SIZE, INDEX_TABLE_SIZE,
+)
+
+
+def _fonts_of(ws):
+    """回傳這張 sheet 上所有「有寫過內容或樣式」的儲存格字型。"""
+    return [c.font for row in ws.iter_rows() for c in row]
+
+
+def test_font_name_is_microsoft_jhenghei():
+    assert FONT_NAME == "微軟正黑體"
+
+
+def test_every_font_on_data_sheets_uses_the_configured_family():
+    wb = _make_wb()
+    format_workbook(wb, [])
+    names = {f.name for f in _fonts_of(wb["Data_Financials(Q)"])}
+    assert names == {FONT_NAME, NUMBER_FONT_NAME}, f"混到別的字型：{names}"
+
+
+def test_every_font_on_index_uses_the_configured_family():
+    ws = _index_wb_with_meta()
+    # 合併範圍的填充格（A1:E1 的 B1~E1 之類）沒有內容也不會顯示，Excel 只看
+    # 左上角那格的樣式；它們一律是 openpyxl 預設的 Calibri，不算混字型。
+    names = {c.font.name for row in ws.iter_rows() for c in row if c.value}
+    assert names == {FONT_NAME}, f"混到別的字型：{names}"
+
+
+def test_number_cells_use_the_monospace_family():
+    """數字要等寬才對得齊位數（2026-08-08 CTH 追加，推翻當天稍早的「全部一種」）。"""
+    wb = _make_wb()
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["D4"].font.name == NUMBER_FONT_NAME
+
+
+def test_monospace_font_is_consolas():
+    assert NUMBER_FONT_NAME == "Consolas"
+
+
+def test_text_cells_next_to_numbers_stay_on_the_text_family():
+    """同一列 A 欄是中文/英文名稱、D 欄是數字——只有數字換字型。"""
+    wb = _make_wb()
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert ws["A4"].value == "Revenue"
+    assert ws["A4"].font.name == FONT_NAME
+    assert ws["C4"].font.name == FONT_NAME
+
+
+def test_subtotal_bold_survives_the_monospace_swap():
+    """粗體是靠 A 欄名稱判斷、整列套用的。換字型時 bold 不能掉。"""
+    wb = _make_wb()
+    wb["Data_Financials(Q)"]["A4"] = "Net Income"     # SUBTOTAL_CONCEPTS
+    format_workbook(wb, [])
+    ws = wb["Data_Financials(Q)"]
+    assert ws["A4"].font.bold is True
+    assert ws["D4"].font.bold is True
+    assert ws["D4"].font.name == NUMBER_FONT_NAME
+
+
+def test_period_end_dates_are_text_not_numbers():
+    """第 2、5 列的日期是字串，不該被當數字換成等寬。"""
+    wb = _make_wb()
+    format_workbook(wb, [])
+    assert wb["Data_Financials(Q)"]["D2"].font.name == FONT_NAME
+
+
+def test_index_title_size():
+    assert _index_wb_with_meta()["A1"].font.size == INDEX_TITLE_SIZE == 16
+
+
+def test_index_meta_row_size():
+    assert _index_wb_with_meta()["A2"].font.size == INDEX_META_SIZE == 10
+
+
+def test_index_table_header_size():
+    ws = _index_wb_with_meta()
+    hdr_row = FY_INPUT_ROWS + 1
+    assert ws.cell(row=hdr_row, column=1).value == "Sheet"
+    assert ws.cell(row=hdr_row, column=1).font.size == INDEX_TABLE_SIZE == 11
+
+
+def test_index_sheet_name_and_completeness_size():
+    ws = _index_wb_with_meta()
+    first_data_row = FY_INPUT_ROWS + 2
+    assert ws.cell(row=first_data_row, column=1).font.size == INDEX_TABLE_SIZE
+    assert ws.cell(row=first_data_row, column=5).font.size == INDEX_TABLE_SIZE
+
+
+def test_index_quality_block_size():
+    """品質明細區塊也要跟著放大，不然表格 11pt、下面 10pt 看起來像沒改完。"""
+    ws = _index_wb_with_meta()
+    sizes = {c.font.size for row in ws.iter_rows(min_col=1, max_col=2) for c in row
+             if c.value and str(c.value).startswith(("✓", "✗", "品質明細"))}
+    assert sizes == {INDEX_TABLE_SIZE}, sizes

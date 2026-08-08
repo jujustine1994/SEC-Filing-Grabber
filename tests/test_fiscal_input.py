@@ -194,3 +194,38 @@ def test_missing_sheets_are_tolerated():
     wb.remove(wb.active)
     wb.create_sheet("Index")
     fi.apply_fiscal_year_input(wb, fy_end_month=12)     # 不該爆
+
+
+# ── 字型與字級（2026-08-08 CTH 指定，TODO D0b）────────────────────────────
+#
+# 輸入格這一塊寫在 Index 上，字型／字級必須跟 excel_formatter 建的表格一致，
+# 否則同一頁會混兩種字體，比全部都是預設還醜。常數只有一份，在 excel_formatter。
+
+def _input_block(fy_end_month=12):
+    wb, _ = _workbook_with_headers(["FY2026Q1"], ["2026-03-29"])
+    fi.apply_fiscal_year_input(wb, fy_end_month=fy_end_month)
+    return wb["Index"]
+
+
+def test_input_block_uses_the_shared_font_family():
+    from excel_formatter import FONT_NAME
+    ws = _input_block()
+    # 只看有內容的格：合併範圍的填充格不顯示，樣式取左上角那格。
+    names = {c.font.name for row in ws.iter_rows() for c in row if c.value}
+    assert names == {FONT_NAME}, f"混到別的字型：{names}"
+
+
+def test_input_block_sizes_match_the_index_scale():
+    """表格 11、輸入格 12、提醒 10——與 excel_formatter 的 Index 同一級。"""
+    from excel_formatter import INDEX_TABLE_SIZE, INDEX_INPUT_SIZE, INDEX_NOTE_SIZE
+    ws = _input_block()
+    assert ws["A4"].font.size == INDEX_TABLE_SIZE == 11   # 「財年起始月（可修改）」
+    assert ws["B4"].font.size == INDEX_INPUT_SIZE == 12   # 黃底輸入格
+    assert ws["C4"].font.size == INDEX_TABLE_SIZE         # 財年區間即時回饋
+    assert ws["A5"].font.size == INDEX_NOTE_SIZE == 10    # 核對提醒
+
+
+def test_note_row_is_tall_enough_for_the_bigger_font():
+    """提醒是 wrap 過的長字串。字級 9→10 而列高不動的話，尾巴會被切掉。"""
+    ws = _input_block()
+    assert ws.row_dimensions[5].height >= 31

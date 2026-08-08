@@ -36,6 +36,16 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
 
+# 輸入格寫在 Index 上，字型／字級必須跟 excel_formatter 建的表格一致，
+# 否則同一頁會混兩種字體。常數只有一份，在 excel_formatter。
+from excel_formatter import (
+    FONT_NAME, INDEX_TABLE_SIZE, INDEX_INPUT_SIZE, INDEX_NOTE_SIZE,
+)
+
+
+def _font(**kwargs) -> Font:
+    return Font(name=FONT_NAME, **kwargs)
+
 # 使用者輸入格與它的定義名稱。公式一律引用定義名稱而不是 Index!$B$4——
 # 日後 Index 版面調整，公式不必跟著改。
 FY_START_CELL = "B4"
@@ -180,23 +190,24 @@ _FY_SPAN_FORMULA = (
 def _write_input_block(ws, start_month: int, row: int = 4) -> None:
     """在 Index 寫出可編輯的輸入格與提醒。"""
     label = ws.cell(row=row, column=1, value="財年起始月（可修改）")
-    label.font = Font(bold=True, size=10)
+    label.font = _font(bold=True, size=INDEX_TABLE_SIZE)
 
     cell = ws.cell(row=row, column=2, value=start_month)
     cell.fill = _INPUT_FILL
     cell.border = _INPUT_BORDER
-    cell.font = Font(bold=True, size=11, color="FFBF8F00")
+    cell.font = _font(bold=True, size=INDEX_INPUT_SIZE, color="FFBF8F00")
     cell.alignment = Alignment(horizontal="center")
     cell.number_format = "0"
 
     span = ws.cell(row=row, column=3, value=_FY_SPAN_FORMULA)
-    span.font = Font(size=10, color="FF666666")
+    span.font = _font(size=INDEX_TABLE_SIZE, color="FF666666")
 
     note = ws.cell(row=row + 1, column=1, value=_NOTE)
-    note.font = Font(size=9, color="FFBF8F00")
+    note.font = _font(size=INDEX_NOTE_SIZE, color="FFBF8F00")
     note.alignment = Alignment(wrap_text=True, vertical="top")
     ws.merge_cells(start_row=row + 1, start_column=1, end_row=row + 1, end_column=5)
-    ws.row_dimensions[row + 1].height = 28
+    # 字級 9→10（2026-08-08）後列高要跟著加，不然 wrap 的尾巴會被切掉。
+    ws.row_dimensions[row + 1].height = 32
 
 
 def _is_annual(ws) -> bool:

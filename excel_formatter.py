@@ -18,6 +18,37 @@ from datetime import date
 from override_engine import check_key_rows
 import metric_rules
 
+# ── 字型（2026-08-08）──────────────────────────────────────────────────────
+#
+# 以前所有 Font() 都沒帶 name=，Excel 各自套預設（英文 Calibri、中文新細明體），
+# 同一張表混兩種字體。統一吃這個常數，日後換字型只改這一行。
+# openpyxl 的 Font 是不可變的，不能事後設 .name——所以一律走 _font()。
+# CTH 選的是「全部含數字欄」：整份一致優先於數字等寬對齊（2026-08-08 決定）。
+FONT_NAME = "微軟正黑體"
+
+# Index 字級（2026-08-08 CTH 指定，整體放大一級）。fiscal_input 也吃這裡。
+INDEX_TITLE_SIZE = 16    # A1 公司抬頭
+INDEX_META_SIZE  = 10    # A2 抓取日期／最新期間那一列
+INDEX_TABLE_SIZE = 11    # sheet 清單、品質明細、財年起始月的標籤
+INDEX_INPUT_SIZE = 12    # B4 黃底輸入格
+INDEX_NOTE_SIZE  = 10    # 財年核對提醒
+
+
+# 數字用等寬字型（2026-08-08 CTH 追加）。微軟正黑體的數字不等寬，同一欄的
+# 1,234,567 與 89,012 位數對不齊，翻財報時很難掃。判斷依據是**儲存格的值是不是
+# 數字**，不是欄號——Data_Meta／Data_Segments 的 D 欄起是文字，用欄號會誤傷。
+NUMBER_FONT_NAME = "Consolas"
+
+
+def _font(numeric: bool = False, **kwargs) -> Font:
+    """所有字型一律走這裡。numeric=True 給數字用等寬字型。"""
+    return Font(name=NUMBER_FONT_NAME if numeric else FONT_NAME, **kwargs)
+
+
+def _is_number(value) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 # Index 上留給「財年起始月」輸入格 + 提醒的列數（第 4、5 列）。
 # 實際內容由 fiscal_input 寫，這裡只負責讓位——見該模組的說明。
 FY_INPUT_ROWS = 5
@@ -166,18 +197,19 @@ def _unit_suffix_rule(concept: str) -> tuple[str, int] | None:
 
 def _apply_row_styles(ws) -> None:
     """Apply fill and font styles to all rows."""
-    white_font  = Font(color="FFFFFFFF", bold=True, size=11)
-    small_font  = Font(color="FFAABBCC", size=9)
+    def _paint(cells, fill, **font_kw) -> None:
+        """整列上色，數字格換等寬字型（其餘樣式完全相同）。"""
+        text_font = _font(**font_kw)
+        num_font  = _font(numeric=True, **font_kw)
+        for cell in cells:
+            cell.fill = fill
+            cell.font = num_font if _is_number(cell.value) else text_font
 
     # Row 1: ticker / quarter labels — dark navy
-    for cell in ws[1]:
-        cell.fill = _fill(NAVY_DARK)
-        cell.font = white_font
+    _paint(ws[1], _fill(NAVY_DARK), color="FFFFFFFF", bold=True, size=11)
 
     # Row 2: filing dates — medium navy
-    for cell in ws[2]:
-        cell.fill = _fill(NAVY_MID)
-        cell.font = small_font
+    _paint(ws[2], _fill(NAVY_MID), color="FFAABBCC", size=9)
 
     # Row 3+: classify by col A value
     for row_idx in range(3, ws.max_row + 1):
@@ -186,21 +218,18 @@ def _apply_row_styles(ws) -> None:
 
         if concept in SECTION_HEADERS:
             row_fill  = _fill(SECTION_COLOURS.get(concept, BLUE_MID))
-            row_font  = Font(color="FFFFFFFF", bold=True, size=10)
+            font_kw   = dict(color="FFFFFFFF", bold=True, size=10)
             row_height = 16
         elif concept == "":
             row_fill  = _fill(GREY_SEP)
-            row_font  = Font(size=9)
+            font_kw   = dict(size=9)
             row_height = 6
         else:
             row_fill  = _fill(ROW_WHITE) if row_idx % 2 == 0 else _fill(ROW_ALT)
-            bold      = concept in SUBTOTAL_CONCEPTS
-            row_font  = Font(bold=bold) if bold else Font()
+            font_kw   = dict(bold=True) if concept in SUBTOTAL_CONCEPTS else {}
             row_height = None
 
-        for cell in ws[row_idx]:
-            cell.fill = row_fill
-            cell.font = row_font
+        _paint(ws[row_idx], row_fill, **font_kw)
         if row_height is not None:
             ws.row_dimensions[row_idx].height = row_height
 
@@ -291,7 +320,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     # Row 1: company header
     ws["A1"] = header_text
     ws["A1"].fill = _fill(NAVY_DARK)
-    ws["A1"].font = Font(color="FFFFFFFF", bold=True, size=14)
+    ws["A1"].font = _font(color="FFFFFFFF", bold=True, size=INDEX_TITLE_SIZE)
     ws.merge_cells("A1:E1")
 
     # Row 2: metadata。使用者要在第一頁就看到「資料抓到哪一季、那季何時結束、
@@ -316,7 +345,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
 
     ws["A2"] = "　　".join(bits)
     ws["A2"].fill = _fill(NAVY_MID)
-    ws["A2"].font = Font(color="FFAABBCC", size=9)
+    ws["A2"].font = _font(color="FFAABBCC", size=INDEX_META_SIZE)
     ws.merge_cells("A2:E2")
 
     # Row 3: blank
@@ -328,7 +357,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     _TABLE_HDR_ROW = FY_INPUT_ROWS + 1
 
     # 表格標題列
-    hdr_font = Font(bold=True, size=10)
+    hdr_font = _font(bold=True, size=INDEX_TABLE_SIZE)
     hdr_fill = _fill(BLUE_HDR)
     for col, label in enumerate(["Sheet", "說明", "最早期間", "最新期間", "完成度"], start=1):
         cell = ws.cell(row=_TABLE_HDR_ROW, column=col, value=label)
@@ -343,8 +372,8 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
         latest   = tbl.quarter_labels[-1] if tbl.quarter_labels else "—"
 
         is_primary = tbl.sheet_name in ("Data_Financials(Q)", "Data_Financials(Y)")
-        name_font  = Font(color="FF1F3864" if is_primary else "FF666666",
-                          bold=is_primary, size=10)
+        name_font  = _font(color="FF1F3864" if is_primary else "FF666666",
+                          bold=is_primary, size=INDEX_TABLE_SIZE)
         row_fill   = _fill(ROW_WHITE) if row % 2 == 0 else _fill(ROW_ALT)
 
         for col, val in enumerate([tbl.sheet_name,
@@ -352,8 +381,9 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
                                     earliest, latest], start=1):
             cell = ws.cell(row=row, column=col, value=val)
             cell.fill = row_fill
-            if col == 1:
-                cell.font = name_font
+            # B 欄是中文說明——不指定字型的話會掉回新細明體，
+            # 整張 Index 就會混兩種字體（這正是 D0b-2 要修的）。
+            cell.font = name_font if col == 1 else _font(size=INDEX_TABLE_SIZE)
 
         # ── E 欄：完成度 ──
         e_cell = ws.cell(row=row, column=5)
@@ -362,13 +392,13 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
             score, total, _ = quality
             if score == total:
                 e_cell.value = f"{score}/{total} ✓"
-                e_cell.font = Font(color=QUALITY_GREEN, size=10)
+                e_cell.font = _font(color=QUALITY_GREEN, size=INDEX_TABLE_SIZE)
             else:
                 e_cell.value = f"{score}/{total} ⚠"
-                e_cell.font = Font(color=QUALITY_ORANGE, size=10)
+                e_cell.font = _font(color=QUALITY_ORANGE, size=INDEX_TABLE_SIZE)
         else:
             e_cell.value = "—"
-            e_cell.font = Font(color="FF999999", size=10)
+            e_cell.font = _font(color="FF999999", size=INDEX_TABLE_SIZE)
 
     # Column widths
     ws.column_dimensions["A"].width = 22
@@ -387,7 +417,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     # Section header
     hdr_cell = ws.cell(row=next_row, column=1, value="品質明細 — Data_Financials(Q)")
     hdr_cell.fill = _fill(NAVY_DARK)
-    hdr_cell.font = Font(color="FFFFFFFF", bold=True, size=10)
+    hdr_cell.font = _font(color="FFFFFFFF", bold=True, size=INDEX_TABLE_SIZE)
     ws.merge_cells(
         start_row=next_row, start_column=1,
         end_row=next_row, end_column=2
@@ -404,8 +434,8 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
         b = ws.cell(row=next_row, column=2, value=status)
         a.fill = bg
         b.fill = bg
-        a.font = Font(color=fg, size=10)
-        b.font = Font(color=fg, size=10)
+        a.font = _font(color=fg, size=INDEX_TABLE_SIZE)
+        b.font = _font(color=fg, size=INDEX_TABLE_SIZE)
         next_row += 1
 
 
