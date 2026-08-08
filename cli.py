@@ -29,7 +29,7 @@ from typing import Any
 
 from config import load_config
 from errsafe import _exc_status
-from excel_writer import write_statements
+from excel_writer import check_output_writable, write_statements
 from output_tables import append_ratio_table
 from press_release_tables import PressTable, filter_nongaap, parse_tables
 
@@ -125,6 +125,14 @@ def _sheet_payload(tbl) -> dict[str, Any]:
 def cmd_gaap(args: argparse.Namespace) -> int:
     identity = resolve_identity(args.identity)
     start_year, end_year = parse_years(args.years)
+
+    # 抓之前先確認寫得進去。失敗點本來在最後一步的 wb.save()——檔案被 Excel
+    # 開著時要白等 24 秒才看到一個裸的 PermissionError。GUI 早就有這道檢查，
+    # CLI 漏了（2026-08-08 實際踩到）。
+    if args.xlsx:
+        lock_msg = check_output_writable(args.xlsx)
+        if lock_msg:
+            raise CliError(lock_msg)
 
     tables = _gaap_tables(
         ticker=args.ticker,

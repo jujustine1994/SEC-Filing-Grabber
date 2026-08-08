@@ -229,3 +229,14 @@ def test_missing_identity_is_an_error(monkeypatch):
     monkeypatch.setattr(cli, "load_config", lambda: {})
     with pytest.raises(cli.CliError):
         cli.resolve_identity(None)
+
+
+def test_gaap_checks_the_output_file_before_fetching(tmp_path, monkeypatch):
+    """檔案被 Excel 開著時要在抓取**之前**就擋下來，不是白抓 24 秒才失敗。"""
+    calls = []
+    monkeypatch.setattr(cli, "_gaap_tables", lambda **kw: calls.append(kw) or [_fake_table()])
+    monkeypatch.setattr(cli, "check_output_writable", lambda p: "檔案正被 Excel 開啟")
+    rc = cli.main(["gaap", "AAPL", "--xlsx", str(tmp_path / "a.xlsx"),
+                   "--identity", "T t@e.com"])
+    assert rc != 0
+    assert calls == [], "應該在抓取前就擋下來"

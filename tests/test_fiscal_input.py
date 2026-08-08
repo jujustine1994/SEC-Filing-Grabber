@@ -161,6 +161,27 @@ def test_annual_sheet_gets_year_labels_not_quarter_labels():
     assert str(ws["D4"].value).startswith("=")
 
 
+def test_fiscal_span_gives_feedback_for_every_single_month_change():
+    """財季是 3 個月一段，B4 改 1 個月常常看不出標籤變化（2、3、4 月開始的
+    公司，4 月底結束那季都是 Q1）。沒有一個「改一格就會動」的東西，使用者
+    會以為公式壞了——財年區間就是那個回饋。"""
+    wb, _ = _workbook_with_headers(["FY2026Q1"], ["2026-03-29"])
+    fi.apply_fiscal_year_input(wb, fy_end_month=1)
+    span = str(wb["Index"]["C4"].value)
+    assert span.startswith("=")
+    assert span.count(fi.FY_START_DEFINED_NAME) == 3   # 條件 + 起月 + 迄月
+    assert "財年" in span
+
+
+def test_quarter_labels_are_stable_within_a_three_month_block():
+    """釘住上面那條註解講的行為：2/3/4 月開始，4 月底結束的那季都算 Q1。"""
+    assert (fi.fiscal_quarter_of("2026-04-26", 2)
+            == fi.fiscal_quarter_of("2026-04-26", 3)
+            == fi.fiscal_quarter_of("2026-04-26", 4)
+            == "FY2027Q1")
+    assert fi.fiscal_quarter_of("2026-04-26", 5) == "FY2026Q4"
+
+
 def test_workbook_is_marked_for_full_recalc():
     """openpyxl 不算公式，沒有快取值。不強制重算，Excel 可能顯示成空白。"""
     wb, _ = _workbook_with_headers(["FY2026Q1"], ["2026-03-29"])
