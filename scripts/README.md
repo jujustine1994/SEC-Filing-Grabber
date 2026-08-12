@@ -8,6 +8,7 @@
 |------|------|------|
 | `smoke_test_10.py` | 批次 live smoke test：10 間公司各抓 GAAP，自動檢查 Revenue/Gross Profit/Operating Income/Net Income/OCF/Capex/FCF 是否有值，輸出彙總表 | 啟用 |
 | `audit_8k_period_labels.py` | 量化 Item 2.02 8-K 季度標籤的 off-by-one（TODO D4 前半）。用新聞稿內文判定實際財期，與 `_period_to_quarter_label()` 現行標籤比對；同時查 dedupe「保留最舊」丟掉哪些財報。**純文字比對，不呼叫 AI**。結論見 `docs/8k-period-off-by-one.md` | 啟用 |
+| `verify_8k_fiscal_labels.py` | 驗證 `cli.py press-release` 的 `fiscal_label`（TODO D4 後半）。15 家 × 8 季，檢查期末日抓取率，並確認新舊標籤的偏移**同一家是常數**且等於 `docs/8k-period-off-by-one.md` 獨立推出的值。**不呼叫 AI**，約 3 分鐘。沒填過進階設定時第一個參數當 identity | 啟用 |
 | `survey_nongaap_metrics.py` | 調查 32 家（大中小型跨產業）8-K 新聞稿實際使用的 Non-GAAP 指標，統計跨公司覆蓋率，決定 `Data_NonGAAP` 固定模板要收哪些行。**不呼叫 AI**（純文字比對，不吃配額）。原文會存到快取目錄，調整比對規則後可重跑分析不必重新下載 | 啟用 |
 
 ---

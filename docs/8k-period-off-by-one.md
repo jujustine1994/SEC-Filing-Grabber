@@ -115,7 +115,22 @@ def _period_to_quarter_label(period_of_report: str) -> str:
   `label_source: "period_of_report"` 與 `label_warning`，下游 skill 讀得到，
   不會無條件相信 label。**這是目前唯一有在對外輸出季度標籤的路徑。**
 
-## 修法建議（未實作，等 CTH 決定）
+## 後續（2026-08-09 更新）
+
+**dedupe 已修**（`_dedupe_by_label()`）：改成「有 Item 9.01 附件優先，其次取最新」。
+WDC 那份壞的 items 是 `2.02,5.02`（沒有 9.01），一條就分得開；QRVO 兩份都有
+9.01，靠「最新」分。仍然零下載。
+
+**標籤採方案 B+**（CTH 2026-08-09 決定）：列清單階段不動，`label` 原值保留；
+下載後從表格裡抓期末日，另外算一個正確的 `fiscal_label` 一起吐。實作在
+`cli.py`，驗證腳本 `scripts/verify_8k_fiscal_labels.py`——15 家 120 份，
+期末日抓取率 120/120，每家偏移都是常數且與下表獨立推得的值完全一致。
+
+選 B+ 而不是 A 的理由：A 的賣點是「兩張 sheet 對得起來」，但 `Data_NonGAAP`
+現在不產（`NONGAAP_ENABLED = False`），依 B2 的方向以後也是 skill 產。而且
+`nongaap_cache.json` 在這台機器上已經不存在，「改 key 要重抓」的成本目前是零。
+
+## 修法建議（原始三選項，2026-08-09 已採 B+）
 
 三個選項，按工程量排：
 

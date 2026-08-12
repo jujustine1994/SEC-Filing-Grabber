@@ -594,6 +594,42 @@ def _filter_nongaap_by_year(
     return result
 
 
+def _has_exhibit(filing) -> bool:
+    """True when the filing declares Item 9.01 (Financial Statements and Exhibits).
+
+    An earnings 8-K carries its press release as an EX-99 exhibit, which is what
+    Item 9.01 announces. A 2.02 filing without it has no press release to parse.
+    Read off listing metadata — no document is downloaded.
+    """
+    return "9.01" in str(getattr(filing, "items", "") or "")
+
+
+def _dedupe_by_label(candidates: list[tuple[str, Any]]) -> list[tuple[str, Any]]:
+    """Collapse same-label filings to one, keeping the best candidate.
+
+    ``candidates`` arrives newest-first, as EDGAR lists filings. Ranking:
+
+    1. **Has an exhibit** (Item 9.01) beats one without. WDC FY2025Q1 collided an
+       Item 2.02+5.02 filing with no press release against the real earnings
+       release 13 days later; keeping the oldest silently lost the whole quarter.
+    2. **Newest** wins ties. A preliminary release always precedes the final one,
+       so recency is what keeps the official numbers — QRVO FY2025Q4 kept a
+       "Preliminary ... Results" filing under the previous rule.
+
+    Amendments never reach here (``get_filings(amendments=False)``), so the old
+    "oldest wins, a corrected re-filing must not displace the original" rationale
+    no longer buys anything.
+    """
+    best: dict[str, tuple[bool, int, Any]] = {}
+    for index, (label, filing) in enumerate(candidates):     # newest → oldest
+        rank = (_has_exhibit(filing), -index)                # newest = smallest index
+        if label not in best or rank > best[label][:2]:
+            best[label] = (rank[0], rank[1], filing)
+
+    order = list(dict.fromkeys(label for label, _ in candidates))   # newest → oldest
+    return [(label, best[label][2]) for label in order]
+
+
 def _list_earnings_filings(
     company,
     start_year: int | None = None,
@@ -630,15 +666,7 @@ def _list_earnings_filings(
             continue
         candidates.append((label, filing))
 
-    # Dedupe by quarter, keeping the oldest filing for each — matches prior behaviour
-    # where a corrected re-filing does not displace the original release.
-    seen: set[str] = set()
-    deduped: list[tuple[str, Any]] = []
-    for label, filing in reversed(candidates):      # oldest → newest
-        if label not in seen:
-            seen.add(label)
-            deduped.append((label, filing))
-    deduped.reverse()                               # back to newest → oldest
+    deduped = _dedupe_by_label(candidates)
 
     deduped = _filter_nongaap_by_year(deduped, start_year, end_year)
     return deduped[:max_filings]

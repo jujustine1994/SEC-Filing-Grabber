@@ -381,14 +381,69 @@ def test_list_earnings_filings_skips_malformed_period():
     assert [label for label, _ in result] == ["FY2024Q1"]
 
 
-def test_list_earnings_filings_dedupes_keeping_oldest():
-    """Same quarter filed twice (e.g. 8-K then corrected 8-K): keep the oldest filing."""
-    oldest = FakeFiling("2.02", "2024-09-30", accession="OLDEST")
-    newer  = FakeFiling("2.02", "2024-09-30", accession="NEWER")
+def test_list_earnings_filings_dedupes_keeping_newest():
+    """Same label twice with equally good metadata: keep the newest filing.
+
+    A preliminary release always precedes the final one, so "newest" is the rule
+    that keeps the official numbers. Amendments never reach here
+    (``get_filings(amendments=False)``).
+    """
+    oldest = FakeFiling("2.02,9.01", "2024-09-30", accession="OLDEST")
+    newer  = FakeFiling("2.02,9.01", "2024-09-30", accession="NEWER")
     company = FakeCompany([newer, oldest])   # newest-first, as EDGAR returns
     result = _list_earnings_filings(company)
     assert len(result) == 1
-    assert result[0][1].accession_no == "OLDEST"
+    assert result[0][1].accession_no == "NEWER"
+
+
+def test_list_earnings_filings_dedupe_prefers_the_one_with_an_exhibit_wdc():
+    """WDC FY2025Q1 (real case): keeping the oldest lost the whole quarter.
+
+    0001193125-25-007725 is an Item 2.02+5.02 filing with **no exhibit** (no
+    Item 9.01 → no press release attached); 0000106040-25-000005 filed 13 days
+    later is the actual FY2025 Q2 earnings release. Listing metadata is verbatim
+    from EDGAR.
+    """
+    no_exhibit = FakeFiling("2.02,5.02", "2025-01-10", accession="0001193125-25-007725")
+    real       = FakeFiling("2.02,9.01", "2025-01-29", accession="0000106040-25-000005")
+    company = FakeCompany([real, no_exhibit])
+    result = _list_earnings_filings(company)
+    assert len(result) == 1
+    assert result[0][1].accession_no == "0000106040-25-000005"
+
+
+def test_list_earnings_filings_dedupe_drops_preliminary_release_qrvo():
+    """QRVO FY2025Q4 (real case): keeping the oldest kept the *preliminary* numbers.
+
+    0000950103-25-013685 (2025-10-28) is titled "Preliminary Fiscal 2026 Second
+    Quarter Results"; 0001628280-25-048216 (2025-11-03) is the official release.
+    Both carry Item 9.01, so the exhibit test cannot separate them — recency can.
+    """
+    preliminary = FakeFiling("2.02,9.01", "2025-10-28", accession="0000950103-25-013685")
+    official    = FakeFiling("2.02,9.01", "2025-11-03", accession="0001628280-25-048216")
+    company = FakeCompany([official, preliminary])
+    result = _list_earnings_filings(company)
+    assert len(result) == 1
+    assert result[0][1].accession_no == "0001628280-25-048216"
+
+
+def test_list_earnings_filings_dedupe_falls_back_to_newest_without_exhibits():
+    """Neither candidate carries Item 9.01: still keep the newest, never the oldest."""
+    older = FakeFiling("2.02", "2024-09-15", accession="OLDER")
+    newer = FakeFiling("2.02", "2024-09-30", accession="NEWER")
+    company = FakeCompany([newer, older])
+    result = _list_earnings_filings(company)
+    assert [f.accession_no for _, f in result] == ["NEWER"]
+
+
+def test_list_earnings_filings_dedupe_does_not_download():
+    """The exhibit test must read listing metadata only — obj() stays untouched."""
+    filings = [
+        FakeFiling("2.02,9.01", "2025-01-29", accession="A"),
+        FakeFiling("2.02,5.02", "2025-01-10", accession="B"),
+    ]
+    _list_earnings_filings(FakeCompany(filings))
+    assert all(f.obj_called is False for f in filings)
 
 
 def test_list_earnings_filings_applies_year_range():
