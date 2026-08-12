@@ -31,7 +31,7 @@ Pass definitions:
 """
 import pytest
 from config import load_config
-from fetcher_gaap import fetch_gaap_statements
+from fetcher_gaap import fetch_gaap_statements, OVERFLOW_SECTION
 from override_engine import check_key_rows
 
 FINANCIAL_TICKERS = {"GS", "JPM"}
@@ -40,7 +40,7 @@ CF_OVERFLOW_TICKERS = ["COHR", "LITE", "AAPL", "NVDA", "GOOGL"]
 
 # Template row counts per section (must stay in sync with IS/BS/CF_TEMPLATE in fetcher_gaap.py)
 _IS_TEMPLATE_ROWS = 22
-_BS_TEMPLATE_ROWS = 42   # 2026-08-01 新增 Shares Outstanding
+_BS_TEMPLATE_ROWS = 44   # 2026-08-12 新增 Total Non-current Assets/Liabilities
 _CF_TEMPLATE_ROWS = 26
 
 
@@ -198,32 +198,26 @@ def test_b1_overflow_rows_nonnull(all_tables, ticker):
 
     The build functions already filter all-None overflow rows before appending,
     so any row that made it into the table must have data somewhere.
+
+    自 commit 71ed50e（三表模板依 49 家實測擴充、overflow 移到底部）起，
+    IS/BS/CF 的 overflow（公司特有科目）不再各自接在該表模板列後面，全部
+    集中搬到合併表最底部、`OVERFLOW_SECTION` 標題列之後的單一區塊——這裡
+    只掃那一個區塊，不再分別掃 IS/BS/CF 三段（原本的三段掃法會把 section
+    之間 SECTION_GAP 的空白列也算進來，那些本來就設計成全空，一定會誤判）。
     """
     tbl = _get_tbl(all_tables, ticker)
     c = tbl.concepts
-    is_rows, bs_rows, cf_rows = _section_row_counts(tbl)
-    if is_rows is None:
+    if "Income Statement" not in c:
         pytest.skip(f"[{ticker}] Section headers missing")
+    if OVERFLOW_SECTION not in c:
+        pytest.skip(f"[{ticker}] No overflow rows")
 
-    is_hdr = c.index("Income Statement")
-    bs_hdr = c.index("Balance Sheet")
-    cf_hdr = c.index("Cash Flow")
-    is_start, bs_start, cf_start = is_hdr + 1, bs_hdr + 1, cf_hdr + 1
-
-    failures = []
-    # IS overflow
-    for i in range(is_start + _IS_TEMPLATE_ROWS, bs_hdr - 1):
-        if all(v is None for v in tbl.values[i]):
-            failures.append(f"IS overflow '{c[i]}' is all-None")
-    # BS overflow
-    for i in range(bs_start + _BS_TEMPLATE_ROWS, cf_hdr - 1):
-        if all(v is None for v in tbl.values[i]):
-            failures.append(f"BS overflow '{c[i]}' is all-None")
-    # CF overflow
-    for i in range(cf_start + _CF_TEMPLATE_ROWS, len(c)):
-        if all(v is None for v in tbl.values[i]):
-            failures.append(f"CF overflow '{c[i]}' is all-None")
-
+    overflow_start = c.index(OVERFLOW_SECTION) + 1
+    failures = [
+        f"overflow '{c[i]}' is all-None"
+        for i in range(overflow_start, len(c))
+        if all(v is None for v in tbl.values[i])
+    ]
     assert not failures, f"[{ticker}] all-None overflow rows found:\n" + "\n".join(failures)
 
 
@@ -258,7 +252,11 @@ def test_b1_ng_sheet_structure(all_tables, ticker):
         )
 
     # Non-header rows must have ≥1 non-None value
-    _HEADER_LABELS = {"Income Statement", "Balance Sheet", "Cash Flow", ""}
+    # OVERFLOW_SECTION（"Other (as reported)"）沒列進來的話，會被當成一般資料列
+    # 檢查——但 NG 表的內容本來就 100% 是 overflow（NG 表沒有模板列，is_ng/bs_ng/
+    # cf_ng 送進 _merge_financials 後全部落在這個標題底下），標題列本身全空值是
+    # 設計如此，誤把它當資料列檢查一定會 fail（GS 就是這樣中的）。
+    _HEADER_LABELS = {"Income Statement", "Balance Sheet", "Cash Flow", OVERFLOW_SECTION, ""}
     failures = []
     for i, concept in enumerate(ng_tbl.concepts):
         if concept in _HEADER_LABELS:
@@ -292,21 +290,19 @@ def cf_overflow_tables(identity, ai_config):
 
 
 def _cf_overflow_rows(tbl):
-    """Return overflow rows from the CF section of a merged financials table.
+    """Return overflow rows from the merged financials table's overflow block.
 
-    Returns list of (concept_name, values_list) for rows beyond the template rows.
+    自 commit 71ed50e 起 IS/BS/CF 的 overflow 全部集中到 `OVERFLOW_SECTION`
+    標題列之後的單一區塊，不再各自接在自己表的模板列後面——這裡拿到的
+    可能混了 IS/BS 的 overflow 列，不是嚴格意義上「只有 CF」，但這 3 個
+    測試本來就只檢查「有沒有全空列」「涵蓋幾個季度」，混進其他表的 overflow
+    列不影響這兩種檢查的正確性（只是沒辦法 100% 精準歸因來源表）。
     """
     c = tbl.concepts
-    try:
-        cf_hdr = c.index("Cash Flow")
-    except ValueError:
+    if OVERFLOW_SECTION not in c:
         return []
-    cf_start = cf_hdr + 1
-    overflow_start = cf_start + _CF_TEMPLATE_ROWS
-    rows = []
-    for i in range(overflow_start, len(c)):
-        rows.append((c[i], tbl.values[i]))
-    return rows
+    overflow_start = c.index(OVERFLOW_SECTION) + 1
+    return [(c[i], tbl.values[i]) for i in range(overflow_start, len(c))]
 
 
 @pytest.mark.slow

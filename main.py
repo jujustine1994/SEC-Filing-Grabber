@@ -29,6 +29,37 @@ from output_tables import append_ratio_table
 SCRIPT_DIR = Path(__file__).parent
 CACHE_PATH = SCRIPT_DIR / "company_cache.json"
 
+
+def _build_fixed_height_scrollable(parent, height=110):
+    """固定高度的可捲動容器。回傳 (container, inner_frame)——動態內容（如掃描後的
+
+    sheet 勾選清單）塞進 inner_frame，多了就捲動，不會撐大 parent。
+    見 project-rules windows-tool-tkinter-ui pattern_fixed_window.py。
+    """
+    container = tk.Frame(parent, height=height)
+    container.pack(fill="x", pady=(4, 8))
+    container.pack_propagate(False)
+
+    canvas = tk.Canvas(container, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    inner_frame = tk.Frame(canvas)
+    window_id = canvas.create_window((0, 0), window=inner_frame, anchor="nw")
+
+    inner_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+    )
+    canvas.bind(
+        "<Configure>",
+        lambda e: canvas.itemconfigure(window_id, width=e.width),
+    )
+
+    return container, inner_frame
+
 _FINANCIAL_SECTOR_TICKERS = frozenset({"GS", "JPM", "BAC", "C", "WFC", "MS", "BLK", "BX", "KKR"})
 
 
@@ -150,8 +181,13 @@ class SECFetcherApp:
         """Load config, initialise state, build UI, start the 100ms queue poll."""
         self.root = root
         self.root.title("SEC Financial Fetcher")
+        self.root.minsize(700, 650)
+        # 明確呼叫一次 geometry() 就會永久關閉 tkinter 的自動撐高（geometry
+        # propagation）——快速掃描跳出的可選 Sheet 清單原本會撐高視窗，改用
+        # _build_sheet_panel 裡的固定高度可捲動容器承接，不會再撐開這裡鎖定的尺寸。
+        # resizable(True, True) 保留、不衝突：那只管使用者能不能手動拖邊框。
+        self.root.geometry("700x650")
         self.root.resizable(True, True)
-        self.root.minsize(520, 600)
 
         _migrate_config_if_needed()
         self.cfg = load_config(CONFIG_PATH)
@@ -278,6 +314,10 @@ class SECFetcherApp:
         self.tab1_name_label.pack(side="left", padx=(10, 0))
         self._scan_btn = ttk.Button(row_ticker, text="快速掃描 ▶", command=self._run_preview_scan, width=12)
         self._scan_btn.pack(side="left", padx=(12, 0))
+        _scan_help_lbl = tk.Label(row_ticker, text="？", foreground="#0078D4", cursor="hand2",
+                                   font=("Microsoft JhengHei", 11, "bold"))
+        _scan_help_lbl.pack(side="left", padx=(4, 0))
+        _scan_help_lbl.bind("<Button-1>", lambda e: self._show_scan_help())
 
         # Row 1: Checkboxes
         row_type = ttk.Frame(tab)
@@ -325,6 +365,7 @@ class SECFetcherApp:
         # Row 5: Sheet selection panel (hidden until scan completes)
         self._sheet_panel_frame = ttk.LabelFrame(tab, text=" 可選 Sheet（掃描後顯示）", padding=6)
         self._sheet_panel_frame.grid(row=5, column=0, sticky="ew", pady=(0, 4))
+        _, self._sheet_panel_inner = _build_fixed_height_scrollable(self._sheet_panel_frame, height=90)
         self._sheet_panel_frame.grid_remove()
 
         # Row 6: Non-GAAP warning (hidden by default)
@@ -1374,6 +1415,31 @@ class SECFetcherApp:
             start_year=start_year, end_year=end_year,
         ))
 
+    def _show_scan_help(self):
+        """Explain what 快速掃描 does — triggered by the '？' label next to the button."""
+        win = tk.Toplevel(self.root)
+        win.title("快速掃描說明")
+        win.resizable(False, False)
+        win.grab_set()
+
+        ttk.Label(win, text="快速掃描是什麼？", font=("Microsoft JhengHei", 12, "bold")).pack(
+            anchor="w", padx=20, pady=(16, 4)
+        )
+        lines = [
+            "只抓該公司「最新一期」10-Q，偵測有哪些額外的 Segment 明細表",
+            "（依業務別、地區別等軸拆出來的子表），不會抓完整財報資料。",
+            "",
+            "目的是讓你在正式抓取前，先看到「可選 Sheet」清單，決定要不要",
+            "保留這些額外的表——固定的 Data_Financials(Q/Y)／Data_Meta",
+            "一定會抓，Segment 表可以自己勾掉不要。",
+            "",
+            "通常 5~15 秒（只打一次 API），比正式抓取快很多。",
+        ]
+        for line in lines:
+            ttk.Label(win, text=line, justify="left").pack(anchor="w", padx=20, pady=1)
+
+        ttk.Button(win, text="關閉", command=win.destroy).pack(pady=(12, 16))
+
     def _run_preview_scan(self):
         """Start background preview scan for the current ticker."""
         ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
@@ -1414,19 +1480,22 @@ class SECFetcherApp:
         if not sheet_names:
             self._sheet_panel_frame.grid_remove()
             return
-        for w in self._sheet_panel_frame.winfo_children():
+        for w in self._sheet_panel_inner.winfo_children():
             w.destroy()
         self._sheet_check_vars = {}
 
-        for name in sheet_names:
+        # 3 欄排列而非單欄直排——sheet 數一多（segment 軸拆出多張）減少捲動需求。
+        # 外層 _sheet_panel_inner 是固定高度可捲動容器，超過還是可以捲，不會撐高視窗。
+        _COLS = 3
+        for i, name in enumerate(sheet_names):
             var = tk.BooleanVar(value=True)
             self._sheet_check_vars[name] = var
             is_fixed = name in self._FIXED_SHEETS
             cb = ttk.Checkbutton(
-                self._sheet_panel_frame, text=name, variable=var,
+                self._sheet_panel_inner, text=name, variable=var,
                 state="disabled" if is_fixed else "normal",
             )
-            cb.pack(anchor="w", padx=4)
+            cb.grid(row=i // _COLS, column=i % _COLS, sticky="w", padx=4, pady=1)
 
         self._sheet_panel_frame.grid()
 

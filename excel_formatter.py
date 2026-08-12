@@ -86,9 +86,10 @@ SECTION_HEADERS = ({"Income Statement", "Balance Sheet", "Cash Flow"}
 SUBTOTAL_CONCEPTS = {
     "Gross Profit", "Total Operating Expense", "Operating Income",
     "Pre-tax Income", "Net Income",
-    "Total Current Assets", "Total Assets",
-    "Total Current Liabilities", "Total Liabilities", "Total Equity",
-    "Operating Cash Flow", "Free Cash Flow",
+    "Total Current Assets", "Total Non-current Assets", "Total Assets",
+    "Total Current Liabilities", "Total Non-current Liabilities", "Total Liabilities",
+    "Total Equity — Parent", "Total Equity incl. NCI", "Total Liabilities & Equity",
+    "Operating Cash Flow", "Investing Cash Flow", "Financing Cash Flow", "Free Cash Flow",
 }
 
 SHEET_DESCRIPTIONS = {

@@ -58,6 +58,105 @@
 
 ## 更新記錄
 
+### 2026-08-12
+
+**BS 新增非流動資產／負債合計列；權益與 CF 合計列粗體修正；GUI 調整**
+
+- `fetcher_gaap.py` BS_TEMPLATE 新增 `Total Non-current Assets`／
+  `Total Non-current Liabilities`：先試接 XBRL 的 `AssetsNoncurrent`／
+  `LiabilitiesNoncurrent`（`^us-gaap_...$` 精確錨定字串比對），查不到就用
+  `Total − Current` 相減算。**踩到的坑**：一開始用裸子字串比對 `fallback`
+  tag，`AssetsNoncurrent` 是 `OtherAssetsNoncurrent` 的子字串，結果新列的值
+  跟「其他非流動資產」一模一樣——AAPL 實測揪出後改成錨定比對，驗證
+  流動＋非流動＝總計，兩邊都對得起來
+- `excel_formatter.SUBTOTAL_CONCEPTS` 補上新兩列；順手修一個既有 bug——
+  原本寫的 `"Total Equity"` 對不上實際列名（`Total Equity — Parent` /
+  `incl. NCI` / `Total Liabilities & Equity`），權益合計列從沒真的粗體過；
+  也補上 `Investing Cash Flow`／`Financing Cash Flow`，跟既有的
+  `Operating Cash Flow`／`Free Cash Flow` 一致處理
+- `tests/test_live_snapshots.py` 修掉沒跟上 commit `71ed50e`（overflow 移到
+  底部）版面重構的舊索引算法：`test_b1_overflow_rows_nonnull`、
+  `test_b1_ng_sheet_structure`、`_cf_overflow_rows`（3 個 cf_overflow 測試
+  共用）改用 `OVERFLOW_SECTION` 標題列位置直接定位合併後的單一 overflow
+  區塊，不再假設 overflow 各自接在 IS/BS/CF 模板列後面——14 個假陽性失敗
+  （測試沒跟上版面，不是資料品質退化）清掉。live test 覆跑驗證：14 failed → 14 passed
+- GUI：主視窗改 700×650 並鎖高度（`geometry()` 只呼叫一次即關閉自動撐大），
+  快速掃描跳出的可選 Sheet 清單改成固定高度可捲動容器、3 欄排版；快速掃描
+  按鈕旁加「？」說明泡泡
+
+### 2026-08-09（後半）
+
+**8-K 季度標籤 off-by-one 實修：方案 B+（測試 656 → 672）**
+
+CTH 從報告的三個選項選了 B+：**B 的成本 + A 的正確性**。列清單階段一行不動
+（那裡零下載，正確性要求本來就低），改在**下載之後**重算。
+
+`cli.py press-release --json` 每一季多三個欄位，舊欄位一個都沒改：
+
+| 欄位 | 內容 |
+|---|---|
+| `period_end` | 從已解析的表格抓到的真實財期結束日 |
+| `fiscal_label` | `period_end` + 財年結束月算出的正確財季，與 `Data_Q` 同一套慣例 |
+| `fiscal_label_source` | 固定 `"period_end"` |
+
+頂層另加 `fy_end_month`（來自 `Company.fiscal_year_end`，**一個 ticker 一次請求**，
+不必為了問財年下載 10-K）。查不到就是 `None`、`fiscal_label` 留空——**不猜 12**，
+非 12 月結算的公司會被整批標錯一到三季。
+
+期末日的規則繞了一圈才定下來：
+
+1. 第一版「取不晚於申報日的最新日期」——AMD 抓到發布日（安全港聲明寫
+   `speak only as of August 4, 2026`），整家標錯一季
+2. 第二版「優先採信 `ended` / `as of` 後面那個日期」——**更糟**，AMD／INTC／
+   AVGO 三家全錯：關鍵字指到的是安全港聲明、資產負債表去年年底、上一季的
+   註腳，而它們真正的期末日只是**沒有引導詞的表頭**（colspan 展開後只剩日期）
+3. 定案：**單純取「不晚於申報日前 3 天」的最新日期**。3 天的緩衝排掉發布日，
+   財報最快也要期末後兩週才發，不會誤傷
+
+另外每一欄要**直向串起來**再找一次日期：NVDA／INTC 把表頭排成 `April 26,`
+一列、`2026` 下一列，只看單一儲存格 NVDA 三季全空。
+
+驗證 `scripts/verify_8k_fiscal_labels.py`（新增）：15 家 × 8 季 = 120 份，
+期末日抓取率 **120/120**，每家的新舊標籤偏移都是常數，且與
+`docs/8k-period-off-by-one.md` 用新聞稿內文獨立推出的偏移**完全一致**。
+
+順手修掉一個必炸的洞：`cli.py press-release` 不給 `--json` 時在 cp950 主控台
+只印得出 `失敗 -> UnicodeEncodeError`（`⚠` 編不進 cp950）。`main()` 開頭
+強制 stdout/stderr 轉 UTF-8（`errors="replace"`）。新聞稿內文的重音字母、
+`™` 之類同樣會炸，逐字元挑符號治不完。
+
+**沒做**：`--years` 篩的仍是發布日換算的年份——篩選發生在下載前，那時讀不到
+期末日。非 12 月結算公司在年份邊界可能差到 3 季，已寫進 `--help` 與 README。
+
+---
+
+### 2026-08-09
+
+**8-K dedupe 由「保留最舊」改為「有附件優先、其次最新」（測試 652 → 656）**
+
+`_list_earnings_filings()` 撞到同一季度標籤時原本保留最舊那份。實測 16 家 128 份撞到
+2 次，**兩次都保留錯的**：
+
+| 公司 | 舊規則保留 | 實際該留 | 後果 |
+|---|---|---|---|
+| WDC `FY2025Q1` | `0001193125-25-007725`（items `2.02,5.02`） | `0000106040-25-000005`（`2.02,9.01`） | 整季靜默消失 |
+| QRVO `FY2025Q4` | `0000950103-25-013685`（2025-10-28 Preliminary） | `0001628280-25-048216`（2025-11-03 正式） | 拿到初步數字 |
+
+新規則抽成 `_dedupe_by_label()`，兩層排序：
+
+1. **有 Item 9.01 者優先**。9.01 是「Financial Statements and Exhibits」，新聞稿就是
+   那個 EX-99 附件；只有 2.02 沒有 9.01 的那份根本沒有東西可以解析。WDC 那份壞的
+   items 是 `2.02,5.02`（EDGAR 實際值），一條規則就分得開
+2. **同層取最新**。preliminary 一定早於正式版，所以 QRVO 靠這條分
+
+**仍然零下載**：兩層判斷都只讀 listing metadata（`items`），沒有 `obj()`，有測試釘著。
+原本「保留最舊」的理由是「更正版的重新申報不該取代原始發布」，但
+`get_filings(amendments=False)` 本來就把 8-K/A 排除掉了，這個理由早就不成立。
+
+與季度標籤 off-by-one（TODO D4 後半）是獨立的兩件事，標籤怎麼改都不影響這條。
+
+---
+
 ### 2026-08-08（晚間）
 
 **D1 Excel 排版驗收通過（CTH 逐項親驗，執行順序表第 1 順位解除）**
@@ -270,6 +369,23 @@ INTC `20260723` 標成 `FY2026Q3`、實際 FY2026 Q2 —— 與 TODO 裡手動�
 
 ---
 
+### 2026-08-07（早上）
+
+**GAAP 路徑徹底移除 AI；Non-GAAP 從源頭停用避免白燒額度**
+
+- `override_engine.E2_LLM_ENABLED = False`：GAAP 抓取不再呼叫 AI，即使 GUI
+  照舊把 `ai_config` 傳進來也不會真的打 API。E1 模糊比對照常運作，找不到就
+  警告，不叫 AI 猜。實測傳真實 `ai_config` 抓 COHR，AI 呼叫次數 0
+- `main.NONGAAP_ENABLED = False`：兩個 GUI checkbox 停用並改標「暫停中，
+  改由 skill 處理」。**差點犯的錯**：一開始只在輸出端過濾掉 `Data_NonGAAP`，
+  但 checkbox 還能勾——會照常呼叫 AI 抓完 6 季**才被丟掉**，等於白燒額度；
+  停用要停在源頭，抓取路徑本身也加了守衛
+- 相關程式碼（`nongaap_layout` / `metric_rules` / 快取）全部保留，改回
+  `True` 即可恢復
+- 補一條測試釘住「預設不打 AI API」，避免旗標被改回去沒人發現
+
+---
+
 ### 2026-08-02（晚間）
 
 **新聞稿截斷 12,000 字元——Non-GAAP 調節表抓不到的真正原因**
@@ -348,6 +464,25 @@ INTC `20260723` 標成 `FY2026Q3`、實際 FY2026 Q2 —— 與 TODO 裡手動�
 - 測試 423 → **464**
 
 **待解**：期末流通股數實測 ARLO/AAPL/NVDA/MSFT/COHR 五家皆未在資產負債表 tag `CommonStockSharesOutstanding`，需改走封面頁 `dei:EntityCommonStockSharesOutstanding`（TODO 第 3 項）。GAAP 對照行與調節項目在既有快取上是空的——那些快取用舊 prompt 抓的，重抓後才會填上。
+
+---
+
+### 2026-08-01（晚間）
+
+**輸出檔覆蓋防護 + max_filings 回補後重新裁切（TODO 第 8、4 項）**
+
+- 新增 `check_output_writable()`，抓取開始前偵測檔案是否被 Excel 鎖住。
+  原本失敗點在最後一步 `wb.save()`，使用者要白等一分多鐘才看到
+  `PermissionError`；single/batch 兩條路徑都接上，批次模式只跳過該家
+- `write_statements()` 改為寫暫存檔再 `os.replace()`，save 中途失敗時原檔
+  完好；覆蓋既有檔前留一份滾動備份 `.bak.xlsx`（`KEEP_BACKUP` 可關）——
+  年份範圍變窄時舊季度會整批消失，這是唯一的後路
+- `_recover_missing_quarters()` 補回缺季後重新套用 `max_filings` 裁切。
+  原本要 4 季、保留區間有 2 個缺口會實際處理 6 季，每多一季多一次 AI
+  呼叫；裁切保留最新的
+- 新增 `scripts/survey_nongaap_metrics.py`：調查 32 家公司 8-K 新聞稿實際
+  使用的 Non-GAAP 指標，純文字比對不呼叫 AI，供決定 `Data_NonGAAP` 固定模板
+- 測試 358 → 372
 
 ---
 

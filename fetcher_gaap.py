@@ -150,6 +150,7 @@ BS_TEMPLATE: list[_T] = [
     ("Intangible Assets, net",         "IntangibleAssets",                        "IntangibleAssetsNet",                                       "BS", "first", None),
     ("Deferred Tax Assets",            "DeferredTaxNoncurrentAssets",             "DeferredIncomeTaxAssetsNet",                                "BS", "first", None),
     ("Other Non-current Assets",       "OtherNonOperatingNonCurrentAssets",       "OtherAssetsNoncurrent",                                     "BS", "last",  "other"),
+    ("Total Non-current Assets",       None,                                      "^us-gaap_AssetsNoncurrent$",                                "BS", "first", None),
     ("Total Assets",                   "Assets",                                  "Assets",                                                    "BS", "last",  None),
     # ── Liabilities ─────────────────────────────────────────────────────
     ("Accounts Payable",               "TradePayables",                           "AccountsPayable",                                           "BS", "first", None),
@@ -168,6 +169,7 @@ BS_TEMPLATE: list[_T] = [
     ("Deferred Tax Liability, LT",     "DeferredTaxNonCurrentLiabilities",        "DeferredIncomeTaxLiabilitiesNet",                           "BS", "first", None),
     ("Pension & Retirement Oblig.",    "PensionObligations",                      "PensionAndOtherPostretirementDefinedBenefitPlans",          "BS", "first", None),
     ("Other Non-current Liabilities",  "OtherNonOperatingNonCurrentLiabilities",  "OtherLiabilitiesNoncurrent",                                "BS", "first", None),
+    ("Total Non-current Liabilities",  None,                                      "^us-gaap_LiabilitiesNoncurrent$",                           "BS", "first", None),
     ("Total Liabilities",              "Liabilities",                             "Liabilities",                                               "BS", "last",  None),
     # ── Equity ──────────────────────────────────────────────────────────
     ("Preferred Stock",                "PreferredStock",                          "PreferredStockValue",                                       "BS", "first", None),
@@ -233,6 +235,14 @@ _DA_CF_IDX         = _IS_IDX["D&A (CF memo)"]
 _REVENUE_IDX       = _IS_IDX["Revenue"]
 _COGS_IDX          = _IS_IDX["Cost of Revenue"]
 _GROSS_PROFIT_IDX  = _IS_IDX["Gross Profit"]
+
+_BS_IDX: dict[str, int] = {row[0]: i for i, row in enumerate(BS_TEMPLATE)}
+_TCA_IDX = _BS_IDX["Total Current Assets"]
+_NCA_IDX = _BS_IDX["Total Non-current Assets"]
+_TA_IDX  = _BS_IDX["Total Assets"]
+_TCL_IDX = _BS_IDX["Total Current Liabilities"]
+_NCL_IDX = _BS_IDX["Total Non-current Liabilities"]
+_TL_IDX  = _BS_IDX["Total Liabilities"]
 
 _CF_IDX: dict[str, int] = {row[0]: i for i, row in enumerate(CF_TEMPLATE)}
 _CF_NET_INCOME_IDX      = _CF_IDX["Net Income"]
@@ -944,6 +954,19 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
                 if i not in row_labels:
                     raw = str(df.loc[idx, "label"] or "")
                     row_labels[i] = unicodedata.normalize("NFKC", raw)
+
+        # ── Post-processing: non-current subtotals ──────────────────────────
+        # 多數公司不直接標記 AssetsNoncurrent / LiabilitiesNoncurrent，用
+        # Total - Current 相減補上，跟 IS 的 Total Non-op 做法一致。
+        if row_vals.get(_NCA_IDX) is None:
+            ta, tca = row_vals.get(_TA_IDX), row_vals.get(_TCA_IDX)
+            if ta is not None and tca is not None:
+                row_vals[_NCA_IDX] = ta - tca
+
+        if row_vals.get(_NCL_IDX) is None:
+            tl, tcl = row_vals.get(_TL_IDX), row_vals.get(_TCL_IDX)
+            if tl is not None and tcl is not None:
+                row_vals[_NCL_IDX] = tl - tcl
 
         _collect_overflow(df, consumed, bs_col, label, gaap_overflow, ng_overflow)
         periods[label] = (str(filing.filing_date), row_vals)

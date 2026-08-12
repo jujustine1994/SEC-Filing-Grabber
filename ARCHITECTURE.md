@@ -50,6 +50,7 @@ fetcher_gaap.py
 
 fetcher_nongaap.py（勾選 Non-GAAP 時，完全獨立於 GAAP fetcher）
     ├─ _list_earnings_filings()   → 在 SEC 申報清單階段以 items（2.02）+ period_of_report 篩選、去重、套年份與 max_filings，零下載
+    │       └─ _dedupe_by_label() → 同標籤只留一份：有 Item 9.01（＝有新聞稿附件）優先，其次取最新。仍只讀 listing metadata
     ├─ _find_missing_quarters()   → 偵測季度序列缺口
     ├─ _recover_missing_quarters()→ 只對缺季區間逐筆 obj() 深掃，用 has_earnings 找回未標 2.02 的財報
     ├─（以上皆不下載；filing.obj() 移進 fetch_nongaap_statements() 的逐季迴圈，
@@ -119,9 +120,10 @@ excel_writer.py
 財年結束月是程式判讀的，會出錯，使用者改那一格就能修正整本活頁簿的期間標籤。
 第 5 列是公式的錨，永遠是 XBRL 的靜態值。細節見 `fiscal_input.py`。
 
-> **實測列位（NVDA/AAPL/PLTR/AVGO，財年結束月 1/9/12/11）**：`Revenue` 8、
-> `Gross Profit` 10、`Operating Income` 17、`Net Income` 24、`Cash` 38、
-> `Total Assets` 51、`Operating Cash Flow` 98、`Capex` 99、`Free Cash Flow` 114。
+> **實測列位（AAPL，2026-08-12 隨 BS 新增 Total Non-current Assets/Liabilities 重驗）**：
+> `Revenue` 8、`Gross Profit` 10、`Operating Income` 17、`Net Income` 24、`Cash` 38、
+> `Total Assets` 52、`Operating Cash Flow` 100、`Capex` 101、`Free Cash Flow` 116。
+> `Total Assets` 之後（含）的列位比 BS 改動前全部 +1～+2，改跨檔案 `MATCH` 公式的人要注意。
 
 ### Data_Financials_NG(Q) / Data_Financials_NG(Y)（有 Non-GAAP overflow 時才產生）
 
@@ -165,7 +167,9 @@ AI 從 8-K press release 提取的所有 Non-GAAP / Adjusted / Excluding 指標�
 → `_metric_merge_key()`（忽略大小寫與標點的跨季合併鍵）。
 Excel 數值分類（每股 → 百分比 → 股數 → 金額）同樣讀 `metric_rules.py` 的關鍵字表；ASCII 關鍵字一律以詞界比對（`Operations` 含 `ratio`、`Corporate` 含 `rate`）。
 
-> ⚠️ **欄位標籤已知不準（2026-08-07 完整量化，未修）**：季度標籤由 `_period_to_quarter_label()` 依 8-K 的 `period_of_report` 推算，但該欄在 Item 2.02 8-K 上存的是**發布日**而非財期結束日。實測 16 家 128 份、成功比對 119 份，**只有 13% 標對**，偏移量 −3 到 +1 季且由財年結束月決定（NVDA/CRM −3、ORCL/QRVO −2、MSFT/MU/COST/PANW/WDC −1、ARLO/AMD/INTC/NOW +1、AAPL/AVGO 0）。同根因下 dedupe「留最舊」實測撞到 2 次、兩次都留錯（WDC 整季消失、QRVO 拿到 preliminary）。完整報告與三個修法選項見 `docs/8k-period-off-by-one.md`。`Data_Financials` 走 XBRL 不受影響。
+> ⚠️ **欄位標籤已知不準（2026-08-07 完整量化，未修）**：季度標籤由 `_period_to_quarter_label()` 依 8-K 的 `period_of_report` 推算，但該欄在 Item 2.02 8-K 上存的是**發布日**而非財期結束日。實測 16 家 128 份、成功比對 119 份，**只有 13% 標對**，偏移量 −3 到 +1 季且由財年結束月決定（NVDA/CRM −3、ORCL/QRVO −2、MSFT/MU/COST/PANW/WDC −1、ARLO/AMD/INTC/NOW +1、AAPL/AVGO 0）。同根因下 dedupe「留最舊」實測撞到 2 次、兩次都留錯（WDC 整季消失、QRVO 拿到 preliminary）。完整報告見 `docs/8k-period-off-by-one.md`。`Data_Financials` 走 XBRL 不受影響。
+>
+> ✅ **2026-08-09 已處理**：dedupe 改成「有 Item 9.01 優先、其次最新」（`_dedupe_by_label()`）；標籤採方案 B+——`_period_to_quarter_label()` 的 `label` 保留原值不動（它只用於列清單分組與年份篩選），`cli.py press-release` 另外吐 `period_end` 與正確的 `fiscal_label`。15 家 120 份實測期末日 120/120、偏移全對。`--years` 篩的仍是發布日，年份邊界可能差到 3 季。
 
 ## StatementTable（fetcher_gaap.py 的輸出合約）
 
@@ -199,7 +203,7 @@ match:      "first"（預設）= 最早那行；"last" = 最後那行（用於 C
 | 報表 | 行數 | 格式 |
 |------|------|------|
 | IS_TEMPLATE | 22 | 6-tuple (label, std_concept, fallback_suffix, source, match, label_hint) |
-| BS_TEMPLATE | 41 | 同上 |
+| BS_TEMPLATE | 44 | 同上（含 Total Non-current Assets/Liabilities，2026-08-12 新增） |
 | CF_TEMPLATE | 26 | 同上（第 26 行為 Free Cash Flow，DERIVED = OCF − |Capex|） |
 
 source 欄位值：`"IS"` / `"BS"` / `"CF"` = 從哪個 DataFrame 取值；`"DERIVED"` = 不做 XBRL 比對，由 post-processing 計算。
