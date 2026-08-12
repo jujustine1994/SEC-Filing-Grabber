@@ -1,7 +1,7 @@
 """cli.py — 給外部 skill 用的指令列介面（TODO B1）。
 
-    ./venv/Scripts/python.exe cli.py gaap AAPL --years 2023-2026 --xlsx out.xlsx
-    ./venv/Scripts/python.exe cli.py press-release ARLO --years 2025-2026 --tables --json
+    ./venv/Scripts/python.exe src/cli.py gaap AAPL --years 2023-2026 --xlsx out.xlsx
+    ./venv/Scripts/python.exe src/cli.py press-release ARLO --years 2025-2026 --tables --json
 
 **薄封裝**：這裡只做參數解析與輸出格式化，抓取邏輯一律轉呼叫既有核心函式，
 GUI 與核心一行都沒動。輸出組裝走 `output_tables.append_ratio_table`，跟 GUI
@@ -403,7 +403,7 @@ def _emit_json(payload: dict[str, Any], target: str) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="cli.py",
+        prog="src/cli.py",
         description="SEC Financial Fetcher 指令列介面（不呼叫任何 AI API）",
     )
     sub = parser.add_subparsers(dest="command", required=True)
@@ -446,7 +446,7 @@ def build_parser() -> argparse.ArgumentParser:
 def _force_utf8_io() -> None:
     """把 stdout／stderr 轉成 UTF-8。Windows 主控台預設 cp950，編不出去就整個掛。
 
-    實測：`cli.py press-release ARLO`（不給 --json）在 cp950 主控台只印得出
+    實測：`src/cli.py press-release ARLO`（不給 --json）在 cp950 主控台只印得出
     `失敗 -> UnicodeEncodeError`——`⚠` 編不進 cp950。新聞稿內文更危險，數字
     旁邊的 `—`、`™`、重音字母都可能出現，逐字元挑符號是治不完的。
 

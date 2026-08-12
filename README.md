@@ -12,10 +12,10 @@
 
 ```bash
 # GAAP 三表 + 比率 + segment → Excel（與 GUI 產的逐格相同）
-./venv/Scripts/python.exe cli.py gaap AAPL --years 2023-2026 --xlsx out.xlsx
+./venv/Scripts/python.exe src/cli.py gaap AAPL --years 2023-2026 --xlsx out.xlsx
 
 # 8-K 新聞稿的 Non-GAAP 調節表（已解析、已篩過）→ JSON
-./venv/Scripts/python.exe cli.py press-release ARLO --years 2025-2026 --tables --json
+./venv/Scripts/python.exe src/cli.py press-release ARLO --years 2025-2026 --tables --json
 ```
 
 兩個子指令都**不呼叫任何 AI API**，只打 SEC EDGAR。共通參數：`--years`

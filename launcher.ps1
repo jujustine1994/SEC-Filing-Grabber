@@ -163,7 +163,7 @@ Write-Host "[START] 啟動中，請保持此視窗開啟..." -ForegroundColor Gr
 Write-Host ""
 
 # 主程式執行期間由它自己寫 log，launcher 不寫（避免搶 handle，地雷十）
-python main.py
+python src\main.py
 $exitCode = $LASTEXITCODE
 
 if (Test-Path "__pycache__") { Remove-Item -Recurse -Force "__pycache__" }

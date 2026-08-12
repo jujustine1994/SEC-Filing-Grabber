@@ -1,4 +1,10 @@
+import sys
+from pathlib import Path
+
 import pytest
+
+_ROOT = Path(__file__).parent
+sys.path.insert(0, str(_ROOT / "src"))
 
 
 def pytest_configure(config):

@@ -2,28 +2,34 @@
 
 ## File Map
 
+> 2026-08-12 目錄結構整理：17 個 `.py` 全部搬進 `src/`（下表路徑已更新），
+> `conftest.py`／`company_cache.json`／`config.example.json` 判斷後留根目錄不動。
+
 | File | Role |
 |------|------|
 | 啟動器.bat | 薄 BAT，呼叫 launcher.ps1 |
-| launcher.ps1 | 環境檢查、uv venv、安裝套件、啟動 main.py |
-| main.py | Tkinter GUI，兩個 tab + 兩個 popup |
-| cli.py | 指令列介面（給外部 skill）：`gaap` / `press-release` 兩個子指令，薄封裝，零 AI |
-| output_tables.py | `append_ratio_table()`：決定最後寫進 Excel 的 sheet 清單。GUI 與 CLI 共用同一份 |
-| fiscal_input.py | Index 上「財年起始月」可編輯輸入格 + 由它驅動的期間標籤公式（定義名稱 `FY_START_MONTH`） |
-| press_release_tables.py | 8-K 新聞稿表格的確定性解析（`pandas.read_html` + Workiva 版面規則），零 AI |
-| config.py | load_config() / save_config() |
-| fetcher_gaap.py | edgartools XBRL 抓取 → StatementTable 列表 |
-| fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
-| excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx，並呼叫 excel_formatter |
-| excel_formatter.py | 寫 Index sheet（品質明細）、設欄寬、凍結窗格、數值分類（÷1M／百分比／每股） |
-| ratios.py | `Data_Ratios`：37 個常見比率，值 + B 欄算法文字 + 列名單位後綴 |
-| nongaap_layout.py | `Data_NonGAAP` 固定模板版面（Core／調節／overflow／年度分區） |
-| segments.py | `Data_Segments`：把 `Data_Seg_*` 寬表彙成單一長格式表 |
-| metric_rules.py | **Non-GAAP 指標名稱規則表（唯一可調整處）**：期間 token、guidance 詞、中英對照、Excel 數值分類關鍵字 |
-| override_engine.py | 自動修復缺失 key rows（E1 fuzzy + E2 LLM） |
+| launcher.ps1 | 環境檢查、uv venv、安裝套件、啟動 src/main.py |
+| src/main.py | Tkinter GUI，兩個 tab + 兩個 popup |
+| src/cli.py | 指令列介面（給外部 skill）：`gaap` / `press-release` 兩個子指令，薄封裝，零 AI |
+| src/output_tables.py | `append_ratio_table()`：決定最後寫進 Excel 的 sheet 清單。GUI 與 CLI 共用同一份 |
+| src/fiscal_input.py | Index 上「財年起始月」可編輯輸入格 + 由它驅動的期間標籤公式（定義名稱 `FY_START_MONTH`） |
+| src/press_release_tables.py | 8-K 新聞稿表格的確定性解析（`pandas.read_html` + Workiva 版面規則），零 AI |
+| src/config.py | load_config() / save_config() |
+| src/fetcher_gaap.py | edgartools XBRL 抓取 → StatementTable 列表 |
+| src/fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
+| src/excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx，並呼叫 excel_formatter |
+| src/excel_formatter.py | 寫 Index sheet（品質明細）、設欄寬、凍結窗格、數值分類（÷1M／百分比／每股） |
+| src/ratios.py | `Data_Ratios`：37 個常見比率，值 + B 欄算法文字 + 列名單位後綴 |
+| src/nongaap_layout.py | `Data_NonGAAP` 固定模板版面（Core／調節／overflow／年度分區） |
+| src/segments.py | `Data_Segments`：把 `Data_Seg_*` 寬表彙成單一長格式表 |
+| src/metric_rules.py | **Non-GAAP 指標名稱規則表（唯一可調整處）**：期間 token、guidance 詞、中英對照、Excel 數值分類關鍵字 |
+| src/override_engine.py | 自動修復缺失 key rows（E1 fuzzy + E2 LLM） |
+| src/errsafe.py | `_exc_status()`：從例外物件安全萃取 HTTP status，main / fetcher_* 共用 |
+| src/zh_labels.py | 中文標籤對照表 |
+| conftest.py | pytest 探索設施（rootdir 定位 + slow/b1/cf_overflow marker 註冊），留根目錄不進 `src/` |
 | config.json | 使用者設定（gitignored） |
-| config.example.json | 範本（committed） |
-| company_cache.json | Ticker → 公司名快取（committed） |
+| config.example.json | 範本（committed，留根目錄） |
+| company_cache.json | Ticker → 公司名快取（committed，留根目錄——程式主動讀寫的執行期狀態，非純靜態資料） |
 | output/ | 輸出的 Excel 檔（gitignored） |
 | nongaap_cache.json | 各公司輸出資料夾內，Non-GAAP 快取（runtime，非 git） |
 

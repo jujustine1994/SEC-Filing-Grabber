@@ -58,6 +58,41 @@
 
 ## 更新記錄
 
+### 2026-08-12（目錄結構整理）
+
+**根目錄改走 `windows-tool.md` 標準結構：MD 進 `docs/`，17 個 `.py` 分 4 批搬進 `src/`**
+
+- 根目錄的 `20260812 sec工具.rar`（466KB，未追蹤於 git）確認為手動備份後直接刪除
+- `ARCHITECTURE.md`／`CHANGELOG.md`／`PITFALLS.md`／`TODO.md`／
+  `docs_statement_template_proposal.md` 全部 `git mv` 進 `docs/`；
+  `doc-init-protocol.md` 本來就有「`docs/` 找不到就 fallback 讀根目錄」的相容邏輯，
+  搬完不影響 AI 讀取；`pytest -q` 跑一次確認沒有測試寫死根目錄路徑
+- 17 個 `.py`（含 `main.py`／`cli.py`／`fetcher_gaap.py` 等）分 4 批搬進 `src/`，
+  每批跑一次 `pytest -q -m "not slow"` 全綠才搬下一批：
+  1. `main.py`／`cli.py`（入口，沒人 import）
+  2. `errsafe.py`／`metric_rules.py`／`override_engine.py`／
+     `press_release_tables.py`／`zh_labels.py`（葉節點）
+  3. `ratios.py`／`segments.py`／`nongaap_layout.py`／`excel_formatter.py`／
+     `fetcher_nongaap.py`／`fiscal_input.py`／`excel_writer.py`／`output_tables.py`
+  4. `config.py`／`fetcher_gaap.py`（被最多檔案 import，留到最後）
+  - 全程維持 flat import（`from fetcher_gaap import ...` 語句本身沒改），
+    靠 `conftest.py`／`scripts/*.py` 過渡期同時把根目錄跟 `src/` 塞進
+    `sys.path`，搬完後拔掉根目錄那段
+  - **踩到的坑**：`main.py` 的 `SCRIPT_DIR = Path(__file__).parent` 搬到
+    `src/` 後從「專案根目錄」變成「`src/`」，`company_cache.json` 快取路徑、
+    輸出資料夾預設路徑、舊版 `config.json` 遷移路徑三處都跟著算錯位置。
+    改用既有的 `_find_project_root()`（往上找 `launcher.ps1`）算出
+    `PROJECT_ROOT` 取代這三處的 `SCRIPT_DIR`
+  - `tests/test_no_ai_by_default.py` 有一處靜態讀 `main.py` 原始碼文字做規則檢查，
+    路徑寫死在根目錄，一併修正
+- `launcher.ps1` 呼叫路徑改成 `python src\main.py`；用背景程序啟動驗證
+  log 有正常寫入「環境就緒」且無 `[CRASH]`、程序存活有回應，**實際雙擊驗收
+  待 CTH 確認**
+- `conftest.py`、`company_cache.json`、`config.example.json` 判斷後留根目錄不搬：
+  `conftest.py` 是 pytest 探索機制（不是被 import 的程式碼），搬進 `src/`
+  會讓 pytest 找不到、marker 註冊失效；後兩者是資料/範本檔，規則沒明講歸屬，
+  CTH 確認不動
+
 ### 2026-08-12
 
 **BS 新增非流動資產／負債合計列；權益與 CF 合計列粗體修正；GUI 調整**

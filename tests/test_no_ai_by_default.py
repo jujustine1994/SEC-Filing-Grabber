@@ -60,7 +60,7 @@ def test_nongaap_guard_sits_before_the_fetch_call():
     差別很重要：擋在輸出端的話，AI 會照常抓完 6 季**才被丟掉**，等於白燒額度
     （2026-08-03 差點犯的錯）。
     """
-    source = (ROOT / "main.py").read_text(encoding="utf-8")
+    source = (ROOT / "src" / "main.py").read_text(encoding="utf-8")
     guard = source.index("fetch_nongaap and NONGAAP_ENABLED")
     call = source.index("ng_tables = fetch_nongaap_statements(")
     assert guard < call

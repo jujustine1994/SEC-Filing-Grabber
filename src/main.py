@@ -26,10 +26,6 @@ from excel_writer import write_statements, check_output_writable
 from fetcher_gaap import fetch_gaap_statements
 from output_tables import append_ratio_table
 
-SCRIPT_DIR = Path(__file__).parent
-CACHE_PATH = SCRIPT_DIR / "company_cache.json"
-
-
 def _build_fixed_height_scrollable(parent, height=110):
     """固定高度的可捲動容器。回傳 (container, inner_frame)——動態內容（如掃描後的
 
@@ -85,6 +81,9 @@ def _find_project_root() -> str:
         d = parent
 
 
+PROJECT_ROOT = Path(_find_project_root())
+CACHE_PATH = PROJECT_ROOT / "company_cache.json"
+
 LOG_DIR = os.path.join(_find_project_root(), "logs")
 LOG_FILE = os.path.join(LOG_DIR, "app.log")
 
@@ -117,7 +116,7 @@ def _write_log_header(msg: str):
 
 def _migrate_config_if_needed():
     """If old config.json exists in project dir, move it to APPDATA."""
-    old_path = SCRIPT_DIR / "config.json"
+    old_path = PROJECT_ROOT / "config.json"
     if old_path.exists() and not CONFIG_PATH.exists():
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
         import shutil
@@ -659,7 +658,7 @@ class SECFetcherApp:
         """Open folder picker and save selection globally and as a per-ticker path memory."""
         from tkinter import filedialog
         current = self.tab1_outdir_var.get().strip() if self.tab1_outdir_var else "output"
-        initial = str(SCRIPT_DIR / current) if not os.path.isabs(current) else current
+        initial = str(PROJECT_ROOT / current) if not os.path.isabs(current) else current
         folder = filedialog.askdirectory(title="選擇儲存位置", initialdir=initial)
         if folder:
             self.tab1_outdir_var.set(folder)
@@ -1316,7 +1315,7 @@ class SECFetcherApp:
                 output_dir = Path(ticker_dir)
             else:
                 # 3. global output_dir
-                output_dir = SCRIPT_DIR / self.cfg.get("output_dir", "output")
+                output_dir = PROJECT_ROOT / self.cfg.get("output_dir", "output")
 
         fmt = self.cfg.get("filename_format", "ticker_name")
         if fmt == "ticker_name":
@@ -1335,7 +1334,7 @@ class SECFetcherApp:
     # =========================================================
 
     def _open_output_folder(self):
-        folder = self._last_output_folder or SCRIPT_DIR / self.cfg.get("output_dir", "output")
+        folder = self._last_output_folder or PROJECT_ROOT / self.cfg.get("output_dir", "output")
         if folder.exists():
             os.startfile(str(folder))
 

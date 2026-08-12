@@ -23,7 +23,8 @@ import unicodedata
 from collections import Counter, defaultdict
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(_ROOT / "src"))
 sys.stdout.reconfigure(encoding="utf-8")
 
 import config
