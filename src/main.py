@@ -1385,6 +1385,12 @@ class SECFetcherApp:
         不用 os.execv：Windows 上它會就地覆寫當前行程，tkinter 還沒釋放的
         視窗 handle 可能殘留，看起來像關不掉的殭屍視窗。Popen + destroy
         讓 tkinter 走完自己的關閉流程。
+
+        ⚠ 已知的小瑕疵：launcher.ps1 是同步等 `python src\\main.py` 結束的，
+        我們一 destroy 它就往下跑到收尾段，其中 `Remove-Item __pycache__`
+        可能因為新行程正在用那些 .pyc 而在主控台印一行紅字。新視窗本身正常，
+        exit code 也是 0（不會誤記 ERROR log）。要根治得改 launcher，
+        不值得為一個選用的重啟路徑動啟動流程。
         """
         try:
             subprocess.Popen([sys.executable, *sys.argv], close_fds=True)
