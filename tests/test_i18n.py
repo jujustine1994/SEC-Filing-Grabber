@@ -216,3 +216,43 @@ def test_ratio_keys_keep_their_unit_suffix(lang):
     for key in _strings(lang):
         if key.startswith("ratio."):
             assert key.endswith(("(%)", "(x)", "(days)", "($)")), key
+
+
+# ── Watchlist 群組名稱：顯示與儲存必須分開 ────────────────────────────────
+#
+# 這是整個 i18n 改動裡唯一會**污染使用者資料**的地方，所以單獨釘住。
+# 群組名稱寫進 config.json，程式到處在 `g["name"] == UNCATEGORIZED` 比對。
+# 若顯示名直接被存回去，日文使用者新增公司時會建出一個叫「未分類」的
+# 日文群組與既有的並存，股票分散在兩邊——而且畫面上兩個群組名稱長得一樣，
+# 看起來只是「怎麼多了一個空群組」，不會有人聯想到是語言造成的。
+
+def test_group_name_round_trips_in_every_language():
+    import main
+
+    for lang in LANGS:
+        i18n.set_lang(lang)
+        shown = main._group_display(main.UNCATEGORIZED)
+        assert main._group_stored(shown) == main.UNCATEGORIZED, (
+            f"{lang}: {shown!r} 換不回 {main.UNCATEGORIZED!r}，"
+            f"存回 config.json 會建出重複群組"
+        )
+    i18n.set_lang("zh_tw")
+
+
+def test_user_group_names_are_never_translated():
+    """使用者自訂的群組名原樣進出——只有預設群組有譯名。"""
+    import main
+
+    for lang in LANGS:
+        i18n.set_lang(lang)
+        for name in ("半導體", "AI Infra", "watchlist-2026"):
+            assert main._group_display(name) == name
+            assert main._group_stored(name) == name
+    i18n.set_lang("zh_tw")
+
+
+def test_uncategorized_stored_value_is_still_the_original():
+    """儲存值不可以改——改了等於讓所有既有 config.json 的群組失聯。"""
+    import main
+
+    assert main.UNCATEGORIZED == "未分類"
