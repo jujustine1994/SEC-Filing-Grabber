@@ -12,6 +12,8 @@ import json
 import os
 import queue
 import re
+import subprocess
+import sys
 import threading
 import time
 import tkinter as tk
@@ -20,6 +22,8 @@ from datetime import date
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
+import i18n
+from i18n import t
 from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
 from excel_writer import write_statements, check_output_writable
@@ -190,6 +194,9 @@ class SECFetcherApp:
 
         _migrate_config_if_needed()
         self.cfg = load_config(CONFIG_PATH)
+        # 語言必須在建任何 widget 之前設好——t() 是在建置時查一次表，
+        # 設晚了介面會停在預設語言。不認得的代號 set_lang 會自己退回繁中。
+        i18n.set_lang(self.cfg.get("language"))
         self.msg_queue: queue.Queue = queue.Queue()
         self.is_running = False
         # Runtime state for popups
@@ -362,7 +369,13 @@ class SECFetcherApp:
         ttk.Label(row_date, text="年　（留空 = 全部）", foreground="#555555").pack(side="left", padx=(4, 0))
 
         # Row 5: Sheet selection panel (hidden until scan completes)
-        self._sheet_panel_frame = ttk.LabelFrame(tab, text=" 可選 Sheet（掃描後顯示）", padding=6)
+        # 最新季度／送件日不能另開一行 Label——這個視窗鎖死 650px 高、不會自動撐大
+        # （見 __init__ 的 geometry() 註解），下面「處理進度」的 log 區已經很緊繃，
+        # 實測顯示 sheet 面板一展開，log 可視高度就只剩個位數 px；多加一行 23px
+        # 會直接把 log 擠到全隱形。改寫進 LabelFrame 自己的標題列，不佔新的一行，
+        # 高度成本是 0
+        self._SHEET_PANEL_TITLE_BASE = " 可選 Sheet（掃描後顯示）"
+        self._sheet_panel_frame = ttk.LabelFrame(tab, text=self._SHEET_PANEL_TITLE_BASE, padding=6)
         self._sheet_panel_frame.grid(row=5, column=0, sticky="ew", pady=(0, 4))
         _, self._sheet_panel_inner = _build_fixed_height_scrollable(self._sheet_panel_frame, height=90)
         self._sheet_panel_frame.grid_remove()
@@ -1113,9 +1126,29 @@ class SECFetcherApp:
         """Build settings popup: SEC identity, AI config, fetch limits, template mode."""
         pad = {"padx": 12, "pady": 4}
 
+        # Language — 最上方獨立一列。
+        # 不另開 tab：主視窗高度鎖死 650px（見 __init__ 的 geometry 註解），
+        # log 顯示區已緊到剩個位數 px，多一列會把 log 擠到全隱形。語言屬
+        # 「設一次不再動」，與 Identity / API Key 同性質。
+        #
+        # 標籤固定英文、不翻譯（CTH 指定）；選項用各語言自稱，任何語言下
+        # 都認得出哪個是哪個。選項由 i18n.LANGUAGES 動態生成——新增語言時
+        # 這裡一個字都不必改。
+        lang_frame = ttk.Frame(popup)
+        lang_frame.grid(row=0, column=0, sticky="w", **pad)
+        ttk.Label(lang_frame, text="Language:").pack(side="left", padx=(0, 8))
+        self._lang_choices = i18n.available_languages()
+        self._lang_saved_code = i18n.get_lang()
+        names = [name for _, name in self._lang_choices]
+        current_name = next((n for c, n in self._lang_choices if c == self._lang_saved_code),
+                            names[0])
+        self.settings_lang_var = tk.StringVar(value=current_name)
+        ttk.Combobox(lang_frame, textvariable=self.settings_lang_var,
+                     values=names, width=14, state="readonly").pack(side="left")
+
         # SEC Identity
         id_frame = ttk.LabelFrame(popup, text=" SEC EDGAR Identity ", padding=8)
-        id_frame.grid(row=0, column=0, sticky="ew", **pad)
+        id_frame.grid(row=1, column=0, sticky="ew", **pad)
         ttk.Label(id_frame, text="格式：姓名 空格 信箱（如 John Smith john@example.com）",
                   foreground="#555555", font=("", 10)).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(id_frame, text="Identity:").grid(row=1, column=0, sticky="w", pady=4)
@@ -1124,7 +1157,7 @@ class SECFetcherApp:
 
         # AI Config
         ai_frame = ttk.LabelFrame(popup, text=" AI 設定（Non-GAAP 功能需要，未設定不影響 GAAP）", padding=8)
-        ai_frame.grid(row=1, column=0, sticky="ew", **pad)
+        ai_frame.grid(row=2, column=0, sticky="ew", **pad)
 
         ttk.Label(ai_frame, text="Provider:").grid(row=0, column=0, sticky="w")
         self.settings_provider_var = tk.StringVar(value=self.cfg["ai"].get("provider", "google"))
@@ -1156,7 +1189,7 @@ class SECFetcherApp:
 
         # Fetch settings frame
         fetch_frame = ttk.LabelFrame(popup, text=" 抓取設定 ", padding=8)
-        fetch_frame.grid(row=2, column=0, sticky="ew", **pad)
+        fetch_frame.grid(row=3, column=0, sticky="ew", **pad)
         fetch_frame.columnconfigure(2, weight=1)
 
         ttk.Label(fetch_frame, text="最多季報數量:").grid(row=0, column=0, sticky="w", padx=(0, 8))
@@ -1192,7 +1225,7 @@ class SECFetcherApp:
 
         # Buttons
         btn_row = ttk.Frame(popup)
-        btn_row.grid(row=3, column=0, pady=10)
+        btn_row.grid(row=4, column=0, pady=10)
         ttk.Button(btn_row, text="儲存", command=lambda: self._save_settings(popup), width=10).pack(side="left", padx=6)
         ttk.Button(btn_row, text="取消", command=popup.destroy, width=10).pack(side="left", padx=6)
 
@@ -1277,8 +1310,49 @@ class SECFetcherApp:
                 self.cfg["template_path"] = self.settings_template_var.get().strip()
             else:
                 self.cfg["template_path"] = ""
+        new_lang = self._selected_lang_code()
+        lang_changed = new_lang != self._lang_saved_code
+        self.cfg["language"] = new_lang
         save_config(self.cfg, CONFIG_PATH)
         popup.destroy()
+        # 只有語言真的變更才打擾使用者——改 API Key 不該跳重啟視窗
+        if lang_changed:
+            self._prompt_restart_for_language()
+
+    def _selected_lang_code(self) -> str:
+        """把下拉選單顯示的語言名稱換回代號。取不到就維持原設定，不亂改。"""
+        chosen = self.settings_lang_var.get()
+        for code, name in self._lang_choices:
+            if name == chosen:
+                return code
+        return self._lang_saved_code
+
+    def _prompt_restart_for_language(self):
+        """語言變更後問是否重啟。
+
+        視窗全英文：此刻介面還是舊語言、使用者要的是新語言，用任一方都尷尬，
+        英文最中立。
+        """
+        if messagebox.askyesno(
+            "Language Changed",
+            "Restart the app to apply the new language.\n\nRestart now?",
+        ):
+            self._restart_app()
+
+    def _restart_app(self):
+        """起一個新行程再關掉自己。
+
+        不用 os.execv：Windows 上它會就地覆寫當前行程，tkinter 還沒釋放的
+        視窗 handle 可能殘留，看起來像關不掉的殭屍視窗。Popen + destroy
+        讓 tkinter 走完自己的關閉流程。
+        """
+        try:
+            subprocess.Popen([sys.executable, *sys.argv], close_fds=True)
+        except OSError:
+            # 起不了新行程就什麼都不做——使用者下次自己開一樣會生效，
+            # 這裡把舊視窗關掉反而讓人以為程式壞了
+            return
+        self.root.destroy()
 
     # =========================================================
     # Output path helpers
@@ -1433,6 +1507,9 @@ class SECFetcherApp:
             "一定會抓，Segment 表可以自己勾掉不要。",
             "",
             "通常 5~15 秒（只打一次 API），比正式抓取快很多。",
+            "",
+            "同時會顯示目前抓得到的最新一季（財季＋期末日）與該份 10-Q 的送件日",
+            "（SEC 公開日，不是精確到秒的受理時間戳）。",
         ]
         for line in lines:
             ttk.Label(win, text=line, justify="left").pack(anchor="w", padx=20, pady=1)
@@ -1456,6 +1533,8 @@ class SECFetcherApp:
             self._scan_btn.config(state="disabled", text="掃描中...")
         if self._sheet_panel_frame:
             self._sheet_panel_frame.grid_remove()
+            self._sheet_panel_frame.configure(text=self._SHEET_PANEL_TITLE_BASE)
+            self.root.geometry(self._WIN_HEIGHT_IDLE)
         self._sheet_check_vars = {}
         threading.Thread(
             target=lambda: self._preview_scan_worker(ticker, identity), daemon=True
@@ -1465,12 +1544,24 @@ class SECFetcherApp:
         """Background thread: call preview_sheets() and push result to queue."""
         try:
             from fetcher_gaap import preview_sheets
-            sheets = preview_sheets(ticker, identity)
-            self.msg_queue.put(("preview_scan_done", sheets))
+            result = preview_sheets(ticker, identity)
+            self.msg_queue.put(("preview_scan_done", result))
         except Exception as e:
-            self.msg_queue.put(("preview_scan_error", str(e)))
+            # 不把 str(e) 原文丟給使用者——edgartools 的 CompanyNotFoundError 訊息
+            # 挾帶 "Tip: Search by name with find_company(...)" 這種給開發者看的 API
+            # 建議，使用者看了只會更困惑。只留類型名，UI 端自己組使用者看得懂的話。
+            self.msg_queue.put(("preview_scan_error", (ticker, type(e).__name__)))
 
     _FIXED_SHEETS = frozenset({"Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"})
+
+    # 視窗高度鎖死不會自動撐大（見 __init__ 的 geometry() 註解）。可選 Sheet 面板
+    # 展開時，Tab 1 實際需要的高度比閒置狀態多了約 160px（面板本身 + 可捲動容器），
+    # 但下面「處理進度」的 log 是唯一 weight=1 的列，硬吃掉這 160px 的後果是 log
+    # 可視高度被壓到只剩 1px、視覺上完全消失——這正是本次要修的症狀。改成面板
+    # 展開/收合時主動切換視窗高度（此處用實測值：800px 讓 log 恢復到約 4~5 行可視），
+    # 而不是靠固定 650px 硬撐。
+    _WIN_HEIGHT_IDLE = "700x650"
+    _WIN_HEIGHT_SCANNED = "700x800"
 
     def _build_sheet_panel(self, sheet_names: list[str]):
         """Populate sheet selection panel with checkboxes. Fixed sheets are disabled."""
@@ -1478,6 +1569,7 @@ class SECFetcherApp:
             return
         if not sheet_names:
             self._sheet_panel_frame.grid_remove()
+            self.root.geometry(self._WIN_HEIGHT_IDLE)
             return
         for w in self._sheet_panel_inner.winfo_children():
             w.destroy()
@@ -1497,6 +1589,7 @@ class SECFetcherApp:
             cb.grid(row=i // _COLS, column=i % _COLS, sticky="w", padx=4, pady=1)
 
         self._sheet_panel_frame.grid()
+        self.root.geometry(self._WIN_HEIGHT_SCANNED)
 
     def _start_worker(self, target):
         """Clear log, disable run buttons, and start target as a daemon thread. Guards against double-runs."""
@@ -1805,14 +1898,23 @@ class SECFetcherApp:
                             self.settings_test_label.config(text=f"失敗：{str(err)[:60]}", foreground="red")
 
                 elif msg_type == "preview_scan_done":
-                    self._build_sheet_panel(data)
+                    self._build_sheet_panel(data["sheets"])
+                    if self._sheet_panel_frame:
+                        label, end, fdate = data["latest_label"], data["latest_period_end"], data["filing_date"]
+                        info = f"最新資料：{label}（期末 {end}）｜送件日 {fdate}" if label else "最新資料：無法判斷財季"
+                        self._sheet_panel_frame.configure(text=f"{self._SHEET_PANEL_TITLE_BASE} ｜ {info}")
                     if self._scan_btn:
                         self._scan_btn.config(state="normal", text="快速掃描 ▶")
 
                 elif msg_type == "preview_scan_error":
                     if self._scan_btn:
                         self._scan_btn.config(state="normal", text="快速掃描 ▶")
-                    messagebox.showerror("掃描失敗", f"無法完成快速掃描：{data}")
+                    ticker, exc_name = data
+                    if exc_name in ("CompanyNotFoundError", "ValueError"):
+                        msg = f"查無此 Ticker「{ticker}」，請確認代碼是否正確。"
+                    else:
+                        msg = f"快速掃描失敗（{exc_name}），請檢查網路連線後再試一次。"
+                    messagebox.showerror("掃描失敗", msg)
 
         except queue.Empty:
             pass

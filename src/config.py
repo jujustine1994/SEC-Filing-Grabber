@@ -20,6 +20,10 @@ def _default_config_path() -> Path:
 CONFIG_PATH = _default_config_path()
 
 DEFAULT_CONFIG: dict = {
+    # 介面與 Excel 顯示語言。代號清單見 i18n.LANGUAGES。
+    # 舊 config.json 沒這個欄位時由下面的 merge-with-defaults 自動補上，
+    # 不需要任何遷移程式碼。
+    "language": "zh_tw",
     "identity": "",
     "output_dir": "output",
     "ticker_paths": {},
