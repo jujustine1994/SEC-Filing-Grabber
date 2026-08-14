@@ -42,6 +42,7 @@
 - [x] CF Net Income fallback regex OR（`NetIncomeLoss|ProfitLoss`）
 - [x] CF 彙總行 label_hint 改為 `^net cash|^cash`（同時支援 AAPL 與 XOM 排除）
 - [x] 實機測試（GAAP）：AAPL ✅ TSLA ✅ BA ✅ XOM ✅ NVDA ✅ COHR ✅（2026-04-23）
+- [x] 快速掃描顯示最新季度＋送件日（2026-08-13）
 
 ### 待辦
 - [x] 實機測試（Non-GAAP）：NVDA ✅（正規化後每季 6 指標整齊；修前 34 個稀疏 row）；AAPL ⚠️ 少報屬預期行為（2026-04-19）
@@ -57,6 +58,92 @@
 ---
 
 ## 更新記錄
+
+### 2026-08-14（晚間）
+
+**修「處理進度」log 消失——快速掃描面板一展開就把 log 擠不見（實測根因，非猜測）**
+
+CTH 回報點「執行」後看不到進度視窗，附圖顯示「處理進度」LabelFrame 底下
+完全空白。用 `winfo_reqheight()`/`winfo_height()` 實際量測 `SECFetcherApp`
+的 grid 佈局才找到根因：
+
+- 主視窗高度鎖死 650px 不會自動撐大（`main.py` `__init__` 的
+  `geometry()`，2026-08-12 的既有設計，防止可選 Sheet 清單把視窗撐爆）
+- 快速掃描找到 segment 表、展開「可選 Sheet」面板時，Tab 1 實際需要的高度
+  比閒置時多約 160px，但視窗高度不會跟著長；`處理進度` 是**唯一**
+  `rowconfigure(weight=1)` 的列，這 160px 的缺口全部由它吸收
+  ——實測面板一展開，`log_text` 的可視高度直接被壓到 **1px**，等於整個
+  消失，正是回報看到的症狀。這是 **pre-existing 問題**（本次的
+  `preview_sheets` 快速掃描顯示最新季度功能另外加了一行 Label，一度把它
+  改得更糟，已在同一次修正中拿掉，改寫進 LabelFrame 自己的標題列，
+  不佔額外一行、高度成本 0）
+- 修法：**視窗高度跟著面板展開/收合動態切換**，而非死守 650px。
+  `_build_sheet_panel()` 在面板展開時呼叫
+  `root.geometry("700x800")`，收合（含重新掃描前的清空、掃描到 0 張表）
+  時呼叫 `root.geometry("700x650")`。800 是實測值——`log_text` 在該高度
+  下恢復到約 120px（4~5 行可視），比閒置時的 107px 還寬裕
+- 驗證方法：寫一次性診斷腳本直接呼叫 `SECFetcherApp` 並用
+  `winfo_height()` 量測 `frame_log`／`log_text` 的**實際分配高度**（不是
+  `winfo_reqheight()`——那個在視窗尺寸鎖死時會回報「假想」的未裁切需求值，
+  跟畫面上真正看得到的高度是兩回事，一開始被這點誤導繞了一圈）。
+  idle→scanned→reset 三態各測一輪，log_text 107→120→107，不再出現 1px
+  的塌陷
+- 全套測試 673 過（GUI 無自動化測試，本次修正靠上述量測腳本驗證，非
+  test suite 覆蓋）
+- **待 CTH 實機驗收**：目前開著的視窗是舊 code 起的，需要關掉重開
+  （或重新雙擊 `啟動器.bat`）才會套用新的動態視窗高度
+
+### 2026-08-14
+
+**打包給朋友前的地雷排查：`launcher.ps1` 加強 Python 偵測**
+
+- 全新 Windows 電腦沒裝過 Python 時，PATH 裡常有內建的「App execution alias」
+  `python.exe` 存根——`Get-Command python` 找得到它、看起來像已安裝，但實際
+  執行只會跳出 Microsoft Store 頁面，不會印版本號。原本的偵測只看指令存不
+  存在，會誤判成「已安裝」而跳過安裝流程，之後才默默失敗。改成二次確認
+  `python --version` 的輸出符合 `^Python \d+\.\d+`，安裝完成後的判斷也套用
+  同一套邏輯
+- 實測：清空 venv 重新用 `uv venv` + `uv pip install` + 直接跑
+  `python src\main.py`，GUI 存活未閃退，確認偵測邏輯改動沒有連帶弄壞正常
+  安裝路徑
+- 打包格式由 `.rar` 改 `.zip`——`.rar` 需要朋友電腦另外裝 WinRAR/7-Zip 才
+  打得開（Windows 11 24H2 以下都沒有內建支援），`.zip` 全版本 Windows
+  資源管理器原生可解壓縮，少一個「連第一步都過不去」的地雷
+- 打包範圍維持最小化（`啟動器.bat` / `launcher.ps1` / `README.md` /
+  `requirements.txt` / `src/`），不含 `venv`／`docs`／`tests`／`scripts`／
+  `.git`／個人設定；`config.json`（Identity + API Key）本來就存在
+  `%APPDATA%`，未被打包
+- **未處理、留給朋友看說明文字自行判斷**：解壓縮/雙擊 bat 時 Windows 可能
+  跳出「已保護您的電腦」的 SmartScreen 警告（檔案帶網路下載標記）；
+  `uv` 安裝走 `Invoke-RestMethod | Invoke-Expression`，公司防火牆/防毒
+  較可能擋下，擋下時只會看到「uv 安裝失敗」，沒有進一步診斷
+
+### 2026-08-13
+
+**快速掃描新增「最新季度＋送件日」顯示**
+
+- `fetcher_gaap.preview_sheets()` 回傳型別由 `list[str]` 改為 `dict`：
+  `sheets`（原本的可選 Sheet 清單）＋新增 `latest_label`（如 `FY2026Q1`）、
+  `latest_period_end`（期末日）、`filing_date`（送件日）。三個新欄位全部
+  從掃描時已經抓到的最新一筆 10-Q filing metadata（`period_of_report` /
+  `filing_date`）算出，**不多打一次 API**
+- 財年結束月走 `Company.fiscal_year_end` 屬性（一次請求），不用
+  `_detect_fy_end_month()`——那個要 `filing.obj()` 抓 10-K 全文，快速掃描
+  用不起
+- `filing_date` 是 EDGAR 的送件／公開日，**不是** SEC 受理的精確時間戳
+  （這版 edgartools 沒有 `acceptance_date` 欄位，要拿的話得繞過 edgartools
+  直打 submissions JSON，本次未做）
+- **循環匯入地雷**：`fiscal_quarter_of` 原本想在 `fetcher_gaap.py` 頂層
+  `from fiscal_input import ...`，但 `fiscal_input.py` 會 `from
+  excel_formatter import ...`、`excel_formatter.py` 又 `from fetcher_gaap
+  import StatementTable`——三檔案兜成一圈，模組載入到一半互相要對方還沒
+  定義好的名字就炸。改成在 `preview_sheets()` 函式內部延後 import
+- GUI：「可選 Sheet（掃描後顯示）」面板上方加一行藍字
+  `最新資料：FY2026Q1（期末 2025-12-27）｜送件日 2026-02-01`；抓不到
+  財季時顯示「無法判斷財季」而非空白。快速掃描的「？」說明泡泡同步補充
+- `tests/test_fetcher_gaap.py`：3 個既有 `preview_sheets` 測試改配合新
+  dict 回傳型別，新增 1 個驗證財季換算的測試。全套 673 過（不含
+  `test_live_snapshots.py`，那個連真實網路）
 
 ### 2026-08-12（目錄結構整理）
 

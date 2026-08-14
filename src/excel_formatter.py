@@ -332,9 +332,9 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
         vals = meta.values[meta.concepts.index(name)]
         return str(vals[0]) if vals else ""
 
-    latest_period = _meta_value("最新期間")
-    latest_end    = _meta_value("最新期末日")
-    fy_span       = _meta_value("財年起訖")
+    latest_period = _meta_value("Latest Period")
+    latest_end    = _meta_value("Latest Period End")
+    fy_span       = _meta_value("Fiscal Year Span")
 
     bits = [f"抓取日期：{date.today()}"]
     if latest_period:

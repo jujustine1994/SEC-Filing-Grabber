@@ -1478,9 +1478,9 @@ def test_preview_sheets_fixed_always_present(mock_id, mock_co):
 
     result = preview_sheets("AAPL", "Test test@test.com")
 
-    assert "Data_Financials(Q)" in result
-    assert "Data_Financials(Y)" in result
-    assert "Data_Meta" in result
+    assert "Data_Financials(Q)" in result["sheets"]
+    assert "Data_Financials(Y)" in result["sheets"]
+    assert "Data_Meta" in result["sheets"]
 
 
 @patch("fetcher_gaap.Company")
@@ -1492,20 +1492,40 @@ def test_preview_sheets_no_q_filings(mock_id, mock_co):
 
     result = preview_sheets("NOFILINGS", "Test test@test.com")
 
-    assert result == ["Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"]
+    assert result["sheets"] == ["Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"]
+    assert result["latest_label"] == ""
+    assert result["latest_period_end"] == ""
+    assert result["filing_date"] == ""
 
 
 @patch("fetcher_gaap.Company")
 @patch("fetcher_gaap.set_identity")
 def test_preview_sheets_returns_list_of_strings(mock_id, mock_co):
-    """Return type should be list[str]."""
+    """result["sheets"] should be list[str]."""
     q = _make_filing()
     mock_co.return_value = _make_mock_company_fgs(q_filings=[q])
 
     result = preview_sheets("TEST", "Test test@test.com")
 
-    assert isinstance(result, list)
-    assert all(isinstance(s, str) for s in result)
+    assert isinstance(result["sheets"], list)
+    assert all(isinstance(s, str) for s in result["sheets"])
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+def test_preview_sheets_computes_latest_quarter(mock_id, mock_co):
+    """latest_label / latest_period_end / filing_date should come from the newest 10-Q."""
+    q = _make_filing(filing_date="2026-02-01")
+    q.period_of_report = "2025-12-27"
+    company = _make_mock_company_fgs(q_filings=[q])
+    company.fiscal_year_end = "0930"  # AAPL: FY 結束於 9 月
+    mock_co.return_value = company
+
+    result = preview_sheets("AAPL", "Test test@test.com")
+
+    assert result["latest_label"] == "FY2026Q1"
+    assert result["latest_period_end"] == "2025-12-27"
+    assert result["filing_date"] == "2026-02-01"
 
 
 # ── FY month probe when fetch_annual=False ────────────────────────────────────
@@ -1854,21 +1874,21 @@ def _q_table_for_meta(missing=()):
 def test_meta_has_quality_rows():
     from fetcher_gaap import _build_meta_table
     m = _build_meta_table("T", "Test Inc", [_q_table_for_meta()])
-    assert "Key Rows 完整度" in m.concepts
+    assert "Key Rows Complete" in m.concepts
 
 
 def test_meta_quality_all_present():
     from fetcher_gaap import _build_meta_table
     from excel_formatter import ALL_KEY_ROWS
     m = _build_meta_table("T", "Test Inc", [_q_table_for_meta()])
-    assert m.values[m.concepts.index("Key Rows 完整度")][0] == f"{len(ALL_KEY_ROWS)}/{len(ALL_KEY_ROWS)}"
+    assert m.values[m.concepts.index("Key Rows Complete")][0] == f"{len(ALL_KEY_ROWS)}/{len(ALL_KEY_ROWS)}"
 
 
 def test_meta_quality_lists_missing_rows():
     from fetcher_gaap import _build_meta_table
     m = _build_meta_table("T", "Test Inc", [_q_table_for_meta(missing={"Capex", "Diluted EPS"})])
-    score = m.values[m.concepts.index("Key Rows 完整度")][0]
-    missing = m.values[m.concepts.index("缺漏的 Key Rows")][0]
+    score = m.values[m.concepts.index("Key Rows Complete")][0]
+    missing = m.values[m.concepts.index("Key Rows Missing")][0]
     assert score == "7/9"
     assert "Capex" in missing and "Diluted EPS" in missing
 
@@ -1877,7 +1897,7 @@ def test_meta_quality_blank_when_no_quarterly_table():
     """只抓年報時沒有季表，品質列留空而不是報 0/9（那會被誤讀成全缺）。"""
     from fetcher_gaap import _build_meta_table
     m = _build_meta_table("T", "Test Inc", [])
-    idx = m.concepts.index("Key Rows 完整度")
+    idx = m.concepts.index("Key Rows Complete")
     assert m.values[idx] in ([], [""], [None]) or all(not v for v in m.values[idx])
 
 
@@ -1898,29 +1918,29 @@ def test_meta_reports_latest_period():
     """要一眼看出「這份檔案的資料抓到哪一季」。"""
     from fetcher_gaap import _build_meta_table
     m = _build_meta_table("T", "Test Inc", [_q_table_with_periods()], fy_end_month=12)
-    assert m.values[m.concepts.index("最新期間")][0] == "FY2026Q1"
+    assert m.values[m.concepts.index("Latest Period")][0] == "FY2026Q1"
 
 
 def test_meta_reports_latest_period_end_date():
     from fetcher_gaap import _build_meta_table
     m = _build_meta_table("T", "Test Inc", [_q_table_with_periods()], fy_end_month=12)
-    assert m.values[m.concepts.index("最新期末日")][0] == "2026-03-29"
+    assert m.values[m.concepts.index("Latest Period End")][0] == "2026-03-29"
 
 
 def test_meta_reports_fiscal_year_span_for_december_fye():
     from fetcher_gaap import _build_meta_table
     m = _build_meta_table("T", "Test Inc", [_q_table_with_periods()], fy_end_month=12)
-    assert m.values[m.concepts.index("財年起訖")][0] == "1 月 – 12 月"
+    assert m.values[m.concepts.index("Fiscal Year Span")][0] == "1 月 – 12 月"
 
 
 def test_meta_reports_fiscal_year_span_for_september_fye():
     """AAPL 9 月結算 → 財年從 10 月開始。"""
     from fetcher_gaap import _build_meta_table
     m = _build_meta_table("T", "Apple", [_q_table_with_periods()], fy_end_month=9)
-    assert m.values[m.concepts.index("財年起訖")][0] == "10 月 – 9 月"
+    assert m.values[m.concepts.index("Fiscal Year Span")][0] == "10 月 – 9 月"
 
 
 def test_meta_latest_period_blank_without_quarterly_table():
     from fetcher_gaap import _build_meta_table
     m = _build_meta_table("T", "Test Inc", [])
-    assert all(not v for v in m.values[m.concepts.index("最新期間")]) or            m.values[m.concepts.index("最新期間")] == []
+    assert all(not v for v in m.values[m.concepts.index("Latest Period")]) or            m.values[m.concepts.index("Latest Period")] == []

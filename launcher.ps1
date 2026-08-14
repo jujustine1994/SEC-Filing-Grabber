@@ -52,8 +52,20 @@ Write-Host ""
 # [1/3] 檢查 Python
 # ======================================
 Write-Host "[1/3] 檢查 Python 環境..." -ForegroundColor Cyan
-if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    Write-Host "[WARNING] 未偵測到 Python，本程式需要 Python 才能執行。" -ForegroundColor Yellow
+# 全新 Windows 電腦沒裝過 Python 時，PATH 裡常有內建的「App execution alias」
+# python.exe 存根——Get-Command 找得到它、看起來像已安裝，但實際執行只會跳出
+# Microsoft Store 頁面，`python --version` 不會印出版本號。用輸出內容二次確認，
+# 不能只看命令存不存在。
+$pythonReady = $false
+if (Get-Command python -ErrorAction SilentlyContinue) {
+    $verOutput = (python --version 2>&1 | Out-String).Trim()
+    if ($verOutput -match "^Python \d+\.\d+") {
+        $pythonReady = $true
+    }
+}
+if (-not $pythonReady) {
+    Write-Host "[WARNING] 未偵測到可用的 Python（若剛剛跳出 Microsoft Store，代表偵測到的是" -ForegroundColor Yellow
+    Write-Host "          Windows 內建的假別名，不是真的 Python），本程式需要 Python 才能執行。" -ForegroundColor Yellow
     $ans = Read-Host "是否要立即安裝 Python？[Y/n] - 直接按 Enter 代表同意"
     if ($ans -eq "" -or $ans -ieq "Y") {
         if (Get-Command winget -ErrorAction SilentlyContinue) {
@@ -65,16 +77,21 @@ if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
             Read-Host "按 Enter 關閉"; exit 1
         }
         $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
-        if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
+        $verOutput = ""
+        if (Get-Command python -ErrorAction SilentlyContinue) {
+            $verOutput = (python --version 2>&1 | Out-String).Trim()
+        }
+        if ($verOutput -notmatch "^Python \d+\.\d+") {
             Write-Host "[INFO] 安裝完成，請關閉視窗後重新點兩下啟動檔。" -ForegroundColor Yellow
             Read-Host "按 Enter 關閉"; exit 0
         }
+        $pyVer = $verOutput
         Write-Host "[OK] Python 安裝完成。" -ForegroundColor Green
     } else {
         Write-Host "已取消。" -ForegroundColor Gray; Read-Host "按 Enter 關閉"; exit 1
     }
 } else {
-    $pyVer = python --version 2>&1
+    $pyVer = $verOutput
     Write-Host "[OK] $pyVer 已安裝。" -ForegroundColor Green
 }
 

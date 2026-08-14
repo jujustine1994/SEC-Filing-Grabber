@@ -1768,8 +1768,8 @@ def _build_meta_table(ticker: str, company_name: str,
         # 公司的 FY 標籤對齊到同一個日曆季，是這張表唯一「程式在用」的欄位。
         # 品質檢查（原本在已移除的 Index sheet）也併到這裡。
         concepts=["Ticker", "Company Name", "Fetched Date", "Quarters Available",
-                  "Fiscal Year End Month", "財年起訖", "最新期間", "最新期末日",
-                  "Key Rows 完整度", "缺漏的 Key Rows"],
+                  "Fiscal Year End Month", "Fiscal Year Span", "Latest Period", "Latest Period End",
+                  "Key Rows Complete", "Key Rows Missing"],
         values=[
             [ticker]            * n_quarters,
             [company_name]      * n_quarters,
@@ -1928,29 +1928,55 @@ def fetch_gaap_statements(ticker: str, identity: str,
     return tables
 
 
-def preview_sheets(ticker: str, identity: str) -> list[str]:
-    """Quick scan: fetch only the latest 10-Q to detect segment sheet names.
+def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
+    """Quick scan: fetch only the latest 10-Q to detect segment sheet names
+    and report the newest quarter currently available on EDGAR.
 
-    Returns the predicted list of sheet names without performing a full fetch.
+    Predicts sheet names + reports latest quarter without a full fetch.
     Takes ~5-15 seconds (one HTTP request for the latest filing).
 
     Returns:
-        List of sheet name strings. Fixed sheets (Financials Q/Y, Meta) are
-        always included. Data_Seg_* sheets are detected from the latest 10-Q.
+        {
+            "sheets": [...],            # Fixed sheets (Financials Q/Y, Meta)
+                                         # always included; Data_Seg_* detected
+                                         # from the latest 10-Q.
+            "latest_label": "FY2026Q1", # "" if undetectable
+            "latest_period_end": "2025-12-27",
+            "filing_date": "2026-02-01",  # 送件/公開日，不是 SEC accepted 時間戳
+        }
     """
+    from fiscal_input import fiscal_quarter_of  # 延後 import：fiscal_input -> excel_formatter -> fetcher_gaap 會循環匯入
+
     fixed = ["Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"]
+    empty = {"sheets": fixed, "latest_label": "", "latest_period_end": "", "filing_date": ""}
 
     set_identity(identity)
     company = Company(ticker)
     filings_q = list(company.get_filings(form="10-Q", amendments=False))
     if not filings_q:
-        return fixed
+        return empty
+
+    latest = filings_q[0]
+    period_end = str(getattr(latest, "period_of_report", "") or "")
+    filing_date = str(getattr(latest, "filing_date", "") or "")
+
+    # 財年結束月：走 Company.fiscal_year_end 屬性（一次請求，已經在 company 物件上），
+    # 不用 _detect_fy_end_month()——那個要 filing.obj() 抓 10-K 全文，太慢，快速掃描用不起。
+    raw_fy = str(getattr(company, "fiscal_year_end", "") or "").strip()
+    fy_end_month = int(raw_fy[:2]) if len(raw_fy) == 4 and raw_fy.isdigit() and 1 <= int(raw_fy[:2]) <= 12 else 12
+    start_month = fy_end_month % 12 + 1
+    latest_label = fiscal_quarter_of(period_end, start_month)
 
     try:
-        seg_tables = _build_segment_tables([filings_q[0]], max_filings=1)
+        seg_tables = _build_segment_tables([latest], max_filings=1)
         seg_names = [t.sheet_name for t in seg_tables]
     except Exception as exc:
         print(f"[preview_sheets] Segment scan failed: {exc!r}", file=sys.stderr)
         seg_names = []
 
-    return fixed + seg_names
+    return {
+        "sheets": fixed + seg_names,
+        "latest_label": latest_label,
+        "latest_period_end": period_end,
+        "filing_date": filing_date,
+    }

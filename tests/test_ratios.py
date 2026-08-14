@@ -37,7 +37,8 @@ def _row(tbl, name):
 
 
 def _find(tbl, keyword):
-    """用關鍵字找列名（列名帶單位後綴，例如「營收 YoY (%)」）。"""
+    """用關鍵字找列名。列名是英文機器鍵＋單位後綴，例如「Revenue YoY (%)」——
+    後綴不可省略，excel_formatter 靠它決定數字格式。"""
     hits = [c for c in tbl.concepts if c.startswith(keyword)]
     assert hits, f"找不到以 {keyword} 開頭的列：{tbl.concepts}"
     return _row(tbl, hits[0])
@@ -70,58 +71,58 @@ def test_gross_margin():
     tbl = build_ratio_table(_q_table(**{
         "Revenue": [1000.0], "Gross Profit": [380.0],
     }))
-    assert _find(tbl, "毛利率")[0] == pytest.approx(38.0)
+    assert _find(tbl, "Gross Margin")[0] == pytest.approx(38.0)
 
 def test_margins_stored_as_percentage_numbers():
     """存 38.0 不是 0.38——excel_formatter 會再 ÷100 套 0.0% 格式。"""
     tbl = build_ratio_table(_q_table(**{
         "Revenue": [1000.0], "Operating Income": [150.0],
     }))
-    assert _find(tbl, "營利率")[0] == pytest.approx(15.0)
+    assert _find(tbl, "Operating Margin")[0] == pytest.approx(15.0)
 
 def test_opex_ratio():
     tbl = build_ratio_table(_q_table(**{
         "Revenue": [1000.0], "Total Operating Expense": [230.0],
     }))
-    assert _find(tbl, "營業費用率")[0] == pytest.approx(23.0)
+    assert _find(tbl, "Opex Ratio")[0] == pytest.approx(23.0)
 
 def test_net_margin():
     tbl = build_ratio_table(_q_table(**{
         "Revenue": [1000.0], "Net Income": [120.0],
     }))
-    assert _find(tbl, "稅後淨利率")[0] == pytest.approx(12.0)
+    assert _find(tbl, "Net Margin")[0] == pytest.approx(12.0)
 
 def test_effective_tax_rate():
     tbl = build_ratio_table(_q_table(**{
         "Pre-tax Income": [200.0], "Income Tax": [42.0],
     }))
-    assert _find(tbl, "有效稅率")[0] == pytest.approx(21.0)
+    assert _find(tbl, "Effective Tax Rate")[0] == pytest.approx(21.0)
 
 def test_depreciation_over_cost_and_expense():
     """折舊 / (成本 + 費用)。"""
     tbl = build_ratio_table(_q_table(**{
         "D&A": [50.0], "Cost of Revenue": [600.0], "Total Operating Expense": [400.0],
     }))
-    assert _find(tbl, "折舊/(成本+費用)")[0] == pytest.approx(5.0)
+    assert _find(tbl, "D&A / (COGS + Opex)")[0] == pytest.approx(5.0)
 
 def test_nonop_over_pretax():
     tbl = build_ratio_table(_q_table(**{
         "Total Non-op Income/(Loss)": [20.0], "Pre-tax Income": [200.0],
     }))
-    assert _find(tbl, "業外/稅前")[0] == pytest.approx(10.0)
+    assert _find(tbl, "Non-op / Pre-tax")[0] == pytest.approx(10.0)
 
 
 # ── 成長率 ─────────────────────────────────────────────────────────────────
 
 def test_revenue_qoq():
     tbl = build_ratio_table(_q_table(Revenue=[100.0, 110.0]))
-    row = _find(tbl, "營收 QoQ")
+    row = _find(tbl, "Revenue QoQ")
     assert row[0] is None                    # 第一季沒有前一季
     assert row[1] == pytest.approx(10.0)
 
 def test_revenue_yoy_needs_four_quarters_back():
     tbl = build_ratio_table(_q_table(Revenue=[100.0, 100.0, 100.0, 100.0, 125.0]))
-    row = _find(tbl, "營收 YoY")
+    row = _find(tbl, "Revenue YoY")
     assert row[3] is None                    # 第 4 季往前數不到第 0 季的前一年
     assert row[4] == pytest.approx(25.0)
 
@@ -129,7 +130,7 @@ def test_net_income_yoy():
     tbl = build_ratio_table(_q_table(**{
         "Net Income": [10.0, 10.0, 10.0, 10.0, 13.0],
     }))
-    assert _find(tbl, "稅後淨利 YoY")[4] == pytest.approx(30.0)
+    assert _find(tbl, "Net Income YoY")[4] == pytest.approx(30.0)
 
 def test_eps_yoy():
     tbl = build_ratio_table(_q_table(**{
@@ -142,7 +143,7 @@ def test_yoy_from_negative_base_is_none():
     tbl = build_ratio_table(_q_table(**{
         "Net Income": [-10.0, 1.0, 1.0, 1.0, 5.0],
     }))
-    assert _find(tbl, "稅後淨利 YoY")[4] is None
+    assert _find(tbl, "Net Income YoY")[4] is None
 
 
 # ── ROE（TTM 淨利 ÷ 期初期末平均權益）──────────────────────────────────────
@@ -176,7 +177,7 @@ def test_fcf_over_net_income_is_a_multiple_not_percent():
     tbl = build_ratio_table(_q_table(**{
         "Free Cash Flow": [120.0], "Net Income": [100.0],
     }))
-    hits = [c for c in tbl.concepts if c.startswith("FCF/淨利")]
+    hits = [c for c in tbl.concepts if c.startswith("FCF / Net Income")]
     assert hits and hits[0].endswith("(x)")
     assert _row(tbl, hits[0])[0] == pytest.approx(1.2)
 
@@ -215,9 +216,11 @@ def test_every_ratio_row_present_even_when_uncomputable():
     assert len(tbl.concepts) == len(RATIO_DEFS)
 
 def test_b_column_holds_the_formula_text():
-    """B 欄寫算法——skill 讀值，人看得懂這格怎麼來的。"""
+    """C 欄寫算法——skill 讀值，人看得懂這格怎麼來的。
+
+    （欄名：StatementTable.labels 寫到 Excel 的 C 欄；B 欄放列名譯文。）"""
     tbl = build_ratio_table(_q_table(**{"Revenue": [1000.0], "Gross Profit": [380.0]}))
-    idx = next(i for i, c in enumerate(tbl.concepts) if c.startswith("毛利率"))
+    idx = next(i for i, c in enumerate(tbl.concepts) if c.startswith("Gross Margin"))
     assert "Gross Profit" in tbl.labels[idx] and "Revenue" in tbl.labels[idx]
 
 def test_every_row_name_carries_a_unit_suffix():
@@ -289,7 +292,7 @@ def test_yoy_uses_label_not_position_when_a_quarter_is_missing():
         ["FY2024Q1", "FY2024Q2", "FY2024Q3", "FY2025Q1", "FY2025Q2"],
         Revenue=[100.0, 200.0, 300.0, 400.0, 260.0],
     ))
-    assert _find(tbl, "營收 YoY")[4] == pytest.approx(30.0)
+    assert _find(tbl, "Revenue YoY")[4] == pytest.approx(30.0)
 
 
 def test_yoy_none_when_prior_year_quarter_truly_absent():
@@ -299,8 +302,8 @@ def test_yoy_none_when_prior_year_quarter_truly_absent():
         Revenue=[100.0, 100.0, 100.0, 100.0, 130.0],
     ))
     # FY2025Q3 的基期 FY2024Q3 存在 → 有值；FY2025Q1 的基期 FY2024Q1 不存在 → None
-    assert _find(tbl, "營收 YoY")[2] is None
-    assert _find(tbl, "營收 YoY")[4] == pytest.approx(30.0)
+    assert _find(tbl, "Revenue YoY")[2] is None
+    assert _find(tbl, "Revenue YoY")[4] == pytest.approx(30.0)
 
 
 def test_yoy_correct_when_quarters_contiguous():
@@ -308,7 +311,7 @@ def test_yoy_correct_when_quarters_contiguous():
         ["FY2024Q1", "FY2024Q2", "FY2024Q3", "FY2024Q4", "FY2025Q1"],
         Revenue=[100.0, 0.0, 0.0, 0.0, 130.0],
     ))
-    assert _find(tbl, "營收 YoY")[4] == pytest.approx(30.0)
+    assert _find(tbl, "Revenue YoY")[4] == pytest.approx(30.0)
 
 
 def test_qoq_skips_across_a_gap():
@@ -316,7 +319,7 @@ def test_qoq_skips_across_a_gap():
         ["FY2024Q2", "FY2024Q3", "FY2025Q1"],
         Revenue=[100.0, 110.0, 120.0],
     ))
-    row = _find(tbl, "營收 QoQ")
+    row = _find(tbl, "Revenue QoQ")
     assert row[1] == pytest.approx(10.0)     # Q3 vs Q2，連續
     assert row[2] is None                    # FY2025Q1 前一季 FY2024Q4 不存在
 
