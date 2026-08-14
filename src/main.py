@@ -1984,6 +1984,60 @@ class SECFetcherApp:
 # Entry point
 # =========================================================
 
+def _pick_language_on_first_run(root: tk.Tk) -> None:
+    """首次啟動時問一次語言，選完寫進 config.json，之後不再出現。
+
+    「還沒選過」的判斷依據是 `config.json` 的 `language` **不是合法代號**
+    （空字串、缺這個鍵、或舊版留下的怪值）。不另外開一個 `language_chosen`
+    布林值——兩個欄位描述同一件事，遲早會不同步。
+
+    視窗本身刻意**不翻譯**：這時候還不知道使用者要哪個語言，用任一種當說明
+    都在賭。所以只有一個英文抬頭，其餘全是各語言的自稱，看得懂哪個就點哪個。
+
+    直接關掉視窗＝接受第一個選項（繁體中文）並且**照樣存檔**——需求是「選完
+    就記住不要再跳」，關掉還一直跳才是煩人。選錯了在「進階設定」隨時能改。
+    """
+    _migrate_config_if_needed()
+    cfg = load_config(CONFIG_PATH)
+    if i18n.is_supported(cfg.get("language", "")):
+        return                      # 選過了，直接進主畫面
+
+    choices = i18n.available_languages()
+    chosen = {"code": choices[0][0]}
+
+    dlg = tk.Toplevel(root)
+    dlg.title("Language")
+    dlg.resizable(False, False)
+    dlg.attributes("-topmost", True)
+
+    ttk.Label(dlg, text="Select your language",
+              font=("", 12, "bold")).pack(padx=28, pady=(20, 4))
+    ttk.Label(dlg, text="You can change this later in Settings.",
+              foreground="#555555").pack(padx=28, pady=(0, 14))
+
+    def _choose(code: str) -> None:
+        chosen["code"] = code
+        dlg.destroy()
+
+    for code, name in choices:
+        ttk.Button(dlg, text=name, width=20,
+                   command=lambda c=code: _choose(c)).pack(padx=28, pady=3)
+    ttk.Frame(dlg, height=10).pack()
+
+    dlg.update_idletasks()
+    # 置中在主視窗上，不要跑到螢幕角落
+    x = root.winfo_rootx() + (root.winfo_width() - dlg.winfo_width()) // 2
+    y = root.winfo_rooty() + (root.winfo_height() - dlg.winfo_height()) // 3
+    dlg.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+
+    dlg.grab_set()
+    dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)   # 關掉＝用預設值，照樣存
+    root.wait_window(dlg)
+
+    cfg["language"] = chosen["code"]
+    save_config(cfg, CONFIG_PATH)
+
+
 def main():
     """Entry point: show banner, create Tk root, launch app, enter event loop."""
     show_cth_banner()
@@ -1991,6 +2045,7 @@ def main():
     root.attributes("-topmost", True)
     root.update()
     root.attributes("-topmost", False)
+    _pick_language_on_first_run(root)
     SECFetcherApp(root)
     root.mainloop()
 

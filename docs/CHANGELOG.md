@@ -15,6 +15,9 @@
       Excel 只有 B 欄與 Index 版面隨語言變——A 欄英文機器鍵與 C 欄公司原文
       任何語言下都不變，既有跨檔案公式不受影響。新增語言只要複製一份
       `src/locales/*.py` 再加一行登錄。詳見 `docs/ARCHITECTURE.md`「多語言」
+- [x] **首次啟動選語言（2026-08-15）**：第一次開程式跳一個純英文的 `Language` 視窗，
+      四個按鈕點一下就記住，之後不再出現。判斷依據是 `config.json` 的 `language`
+      不是合法代號，所以既有使用者也會被問一次
 - [x] `cli.py --lang`：讓 skill 直接指定產出的 Excel 語言，不必先去改 GUI 設定
 - [x] B1 Overflow Rows：IS/BS/CF 三表各自追加未被模板消耗的 XBRL rows，確保不遺漏任何財務數字
 - [x] Non-GAAP overflow 自動分流至 `Data_Financials_NG(Q/Y)` 獨立 sheet（label 含 "adjusted"/"non-gaap"/"excluding" 等）

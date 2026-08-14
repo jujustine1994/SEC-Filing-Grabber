@@ -83,7 +83,7 @@ excel_writer.py
 
 | 鍵 | 說明 |
 |----|------|
-| `language` | 介面與 Excel 顯示語言：`zh_tw` / `zh_cn` / `en` / `ja`（預設 `zh_tw`）。重開程式生效。舊 config.json 沒這欄時自動補 |
+| `language` | 介面與 Excel 顯示語言：`zh_tw` / `zh_cn` / `en` / `ja`。重開程式生效。**預設是空字串＝「使用者還沒選過」**，首次啟動據此決定要不要跳選語言視窗；不另開 `language_chosen` 布林值，兩個欄位描述同一件事遲早不同步 |
 | `identity` | SEC EDGAR 身份字串（必填，格式：名字 空格 信箱） |
 | `output_dir` | Excel 輸出路徑（預設 "output"） |
 | `ticker_paths` | `{TICKER: absolute_path}` 各公司輸出資料夾記憶 |
@@ -318,6 +318,18 @@ key 命名空間：`gui.*`（介面）、`acct.*`（三表科目）、`ratio.*`
 简中用 Microsoft YaHei。`excel_formatter._font()` 與 `fiscal_input._font()`
 都是**呼叫時**才解析——綁在 import 當下會凍結在預設語言。
 
+### 首次啟動選語言
+
+`main._pick_language_on_first_run()`，在建主視窗之前跑。判斷依據是
+`config.json` 的 `language` **不是合法代號**（空字串、缺鍵、舊版怪值）。
+
+視窗刻意**不翻譯**：這時候還不知道使用者要哪個語言，用任一種當說明都在賭。
+只有一個英文抬頭，其餘全是各語言的自稱，看得懂哪個就點哪個。按鈕由
+`i18n.LANGUAGES` 生成。
+
+直接關掉視窗＝接受第一個選項並**照樣存檔**——需求是「選完就記住不要再跳」，
+關掉還一直跳才是煩人。選錯了在「進階設定」隨時能改。
+
 ### 新增語言
 
 兩步，不必碰 `main.py` 或任何功能程式碼：
@@ -327,7 +339,7 @@ key 命名空間：`gui.*`（介面）、`acct.*`（三表科目）、`ratio.*`
 
 下拉選單、Excel 字型、`tests/test_i18n.py` 的漏 key 檢查全部自動涵蓋。
 
-### 三道防線（`tests/test_i18n.py`，28 條）
+### 三道防線（`tests/test_i18n.py`，38 條）
 
 1. **四語言 key 集合必須完全一致**——新增語言時漏翻幾條是必然，靠人眼比對
    341 條不可能可靠
@@ -337,11 +349,35 @@ key 命名空間：`gui.*`（介面）、`acct.*`（三表科目）、`ratio.*`
    不是這一次：新增功能時順手寫個中文按鈕標籤最自然不過，沒有它三個月後就
    又回到全部寫死的狀態。豁免清單在測試檔裡，每條都要寫理由
 
+另外釘住兩件不屬於上述三類、但錯了會很難發現的事：
+
+4. **Watchlist 群組名稱的顯示／儲存往返**（`_group_display` ↔ `_group_stored`）。
+   這是整個 i18n 唯一會污染使用者資料的地方
+5. **財年區間 Excel 公式的引號逸出與月份格式**。譯文含撇號會把公式切碎
+   （Excel 顯示 `#NAME?` 或拒絕開檔，而 Python 一點錯都不會報）；月份格式碼
+   要跟著語言走，寫死 `"m"` 的話英文會得到 `FY 10 – 9` 而不是 `FY Oct – Sep`
+
+### 改動 Excel 相關程式碼前先存基準
+
+`scripts/excel_golden.py` 把 `output/_final/*.xlsx` 讀回來、走**真正的**寫檔
+流程重產，dump 每一格的值／數字格式／字型／粗體／底色。不打網路。
+
+```
+./venv/Scripts/python.exe scripts/excel_golden.py make  base
+# ...改 excel_writer / excel_formatter / ratios / fiscal_input...
+./venv/Scripts/python.exe scripts/excel_golden.py make  new
+./venv/Scripts/python.exe scripts/excel_golden.py check base new
+```
+
+單元測試驗的是邏輯，這支驗的是「產出來那份 xlsx 有沒有變」——「÷1M 沒套到」
+「百分比格式掉了」「字型混到別的」這幾種最常見的排版回歸，值都是對的，
+只有逐格比對抓得到。
+
 ## 測試分層
 
 | 指令 | 時間 | 測試數 | 用途 |
 |------|------|--------|------|
-| `python -m pytest -m "not slow"` | ~25 秒 | 701 | Unit tests（每次改 code 後跑） |
+| `python -m pytest -m "not slow"` | ~25 秒 | 725 | Unit tests（每次改 code 後跑） |
 | `pytest -m "slow and b1"` | ~12 分鐘 | 24 | B1 overflow live 驗證（8 tickers） |
 | `pytest -m "slow and cf_overflow"` | ~5 分鐘 | 15 | CF YTD overflow 驗收（COHR/LITE/AAPL/NVDA/GOOGL） |
 | `pytest -m slow` | ~25 分鐘 | 全部 slow | 完整 live 驗收 |

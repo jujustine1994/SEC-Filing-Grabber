@@ -21,9 +21,15 @@ CONFIG_PATH = _default_config_path()
 
 DEFAULT_CONFIG: dict = {
     # 介面與 Excel 顯示語言。代號清單見 i18n.LANGUAGES。
-    # 舊 config.json 沒這個欄位時由下面的 merge-with-defaults 自動補上，
-    # 不需要任何遷移程式碼。
-    "language": "zh_tw",
+    #
+    # 預設是**空字串而不是 "zh_tw"**：空字串代表「使用者還沒選過」，
+    # main._pick_language_on_first_run() 靠它決定首次啟動要不要問。填了
+    # "zh_tw" 就分不出「他選了繁中」和「他沒選過」，只能再加一個布林值，
+    # 而兩個欄位描述同一件事遲早會不同步。
+    #
+    # 空字串餵給 i18n.set_lang() 會退回預設語言，所以就算問語言那步被跳過
+    # （例如 cli.py 這種沒有 GUI 的路徑），程式照樣跑得動。
+    "language": "",
     "identity": "",
     "output_dir": "output",
     "ticker_paths": {},

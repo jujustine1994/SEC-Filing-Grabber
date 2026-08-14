@@ -240,4 +240,96 @@ def _pick(rows):
 
 **現行做法：** 新舊各自成列，各自只在存在的期間有值。`Data_Segments` 的 A 欄自我描述（`{概念} — {成員}`），使用者一眼看得出哪一段有資料。改名（`Search and News Advertising` → `Search Advertising`）同理，兩列並存。
 
-**連帶注意：** XBRL 的分類細項掛在不同的「軸」上，只看成員名稱會混進非 segment 的東西（MSFT 實測有 `Retained earnings`、`Service Life`）。`Data_Segments` 的 B 欄標軸的中文分類、C 欄標原始軸名，篩選是使用者的事，工具不代為過濾。
+**連帶注意：** XBRL 的分類細項掛在不同的「軸」上，只看成員名稱會混進非 segment 的東西（MSFT 實測有 `Retained earnings`、`Service Life`）。`Data_Segments` 的 B 欄標軸的分類說明（隨介面語言）、C 欄標原始軸名，篩選是使用者的事，工具不代為過濾。
+
+---
+
+## 地雷十七：`t()` 在 import 時求值會凍結在預設語言
+
+**問題：** 語言是 `main.SECFetcherApp.__init__` 讀完 `config.json` 才
+`i18n.set_lang()` 的。任何在**模組層級**或**類別屬性**呼叫 `t()` 的地方，
+求值發生在 import 當下——那時語言還是預設值，之後永遠不會更新。
+
+**實際踩到的兩處：**
+
+```python
+class SECFetcherApp:
+    TICKER_PH = t("gui.lbl.ticker_placeholder")   # ❌ 凍結在繁中
+```
+
+```python
+def _font(**kwargs):
+    return Font(name=FONT_NAME, **kwargs)          # ❌ FONT_NAME 是 import 時綁的
+```
+
+第二個特別陰險：`fiscal_input` 從 `excel_formatter` import `FONT_NAME`，
+日文使用者的 Index 輸入區會留在微軟正黑體、其餘是 Yu Gothic，**同一頁混兩種
+字體**——而那個常數當初就是為了解決混字體才存在的。
+
+**做法：** 改成 property 或函式，呼叫時才查。
+
+```python
+@property
+def TICKER_PH(self) -> str:
+    return t("gui.lbl.ticker_placeholder")
+
+def _font(**kwargs):
+    return Font(name=excel_font(), **kwargs)
+```
+
+**怎麼發現：** `tests/test_i18n.py` 的 GUI 建置測試抓不到這種——它建的時候
+語言已經設好了。要靠實際切語言跑一次（`scratchpad/verify_langs.py` 的作法：
+四種語言各產一份 xlsx 比對字型）。
+
+---
+
+## 地雷十八：組 Excel 公式不可以用 `repr()` 換引號
+
+**問題：** 想把 Python 字串塞進 Excel 公式當字串常值，很自然會寫成
+
+```python
+f'="{...}"'.replace("'", '"')       # ❌
+f'{t("some.key")!r}'.replace("'", '"')   # ❌ 同樣的錯
+```
+
+`repr()` 遇到內含單引號的字串時**會自己改用雙引號包**，那次 `replace` 就把
+公式切碎：
+
+```
+="Fisc" l "&TEXT(DATE(...),"m")&...
+```
+
+Excel 開起來是 `#NAME?` 或乾脆拒絕開檔，而 **Python 這邊一點錯都不會報**——
+`wb.save()` 成功、測試全綠、檔案產出來了，只有真的用 Excel 打開才會發現。
+
+譯文出現撇號完全是可預期的（英文尤其）。
+
+**做法：** Excel 的逸出規則是雙引號寫兩次。
+
+```python
+def _xl_str(s: str) -> str:
+    return '"' + s.replace('"', '""') + '"'
+```
+
+**連帶：** `TEXT(DATE(...), "m")` 的格式碼也要跟著語言走。`"m"` 出的是月份
+**數字**，中日文後面自己接「月」沒問題，英文會得到 `FY 10 – 9`；英文要
+`"mmm"` 才會出 `Oct`。
+
+---
+
+## 地雷十九：介面顯示名不可以直接存回 config.json
+
+**問題：** Watchlist 的預設群組叫「未分類」，這個字串**同時是**畫面上的標籤
+和寫進 `config.json` 的群組名稱。程式到處在 `g["name"] == "未分類"` 比對。
+
+一旦把它 i18n 化，日文使用者新增公司時存進去的會是「未分類」的日文譯名，
+與既有那個並存——**兩個群組，股票分散在兩邊**。而且畫面上兩個名稱長得一樣
+（都顯示成當前語言的譯名），看起來只像「怎麼多了一個空群組」，不會有人聯想
+到是語言造成的。
+
+**做法：** 儲存值固定不翻（`main.UNCATEGORIZED`），顯示走 `_group_display()`、
+從下拉選單讀回來走 `_group_stored()`。使用者自訂的群組名原樣進出。
+
+**判斷準則：** 這個字串會不會被寫進檔案、或被拿去跟檔案裡的值比對？會的話
+它是**資料**不是介面文字，不進 i18n。同樣的判斷也適用於 Excel A 欄的機器鍵。
+
