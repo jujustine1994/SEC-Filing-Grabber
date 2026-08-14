@@ -25,9 +25,10 @@ import metric_rules
 # 同一張表混兩種字體。統一吃這個常數，日後換字型只改這一行。
 # openpyxl 的 Font 是不可變的，不能事後設 .name——所以一律走 _font()。
 # CTH 選的是「全部含數字欄」：整份一致優先於數字等寬對齊（2026-08-08 決定）。
-# 預設（繁中）字型。實際採用的字型由 i18n.excel_font() 依語言決定——
-# 微軟正黑體缺日文假名字形。這個常數保留給既有測試與 fiscal_input 當預設值。
-FONT_NAME = "微軟正黑體"
+# 繁中的字型。實際採用哪個由 i18n.excel_font() 依語言決定——微軟正黑體
+# 缺日文假名字形，日文要 Yu Gothic。字面只住在 i18n.LANGUAGES 一處，
+# 這裡推導出來，避免兩邊各寫一次然後漂移。
+FONT_NAME = excel_font("zh_tw")
 
 # Index 字級（2026-08-08 CTH 指定，整體放大一級）。fiscal_input 也吃這裡。
 INDEX_TITLE_SIZE = 16    # A1 公司抬頭

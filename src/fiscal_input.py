@@ -39,14 +39,16 @@ from openpyxl.workbook.defined_name import DefinedName
 
 # 輸入格寫在 Index 上，字型／字級必須跟 excel_formatter 建的表格一致，
 # 否則同一頁會混兩種字體。常數只有一份，在 excel_formatter。
-from i18n import t
+from i18n import t, excel_font
 from excel_formatter import (
-    FONT_NAME, INDEX_TABLE_SIZE, INDEX_INPUT_SIZE, INDEX_NOTE_SIZE,
+    INDEX_TABLE_SIZE, INDEX_INPUT_SIZE, INDEX_NOTE_SIZE,
 )
 
 
 def _font(**kwargs) -> Font:
-    return Font(name=FONT_NAME, **kwargs)
+    # 每次呼叫重查，不在 import 時綁死：語言是 import 之後才設定的，
+    # 綁死的話日文 Index 會留在微軟正黑體，同一頁混兩種字體。
+    return Font(name=excel_font(), **kwargs)
 
 # 使用者輸入格與它的定義名稱。公式一律引用定義名稱而不是 Index!$B$4——
 # 日後 Index 版面調整，公式不必跟著改。
