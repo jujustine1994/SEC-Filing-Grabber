@@ -5,10 +5,17 @@
 - Phase 1 (GAAP)：萬能模板完成 ✅
 - Phase 2 (Non-GAAP)：完成 ✅
 - Phase 3 (Excel 美化)：完成 ✅
+- Phase 4 (多語言)：完成 ✅
 
 ## 功能清單
 
 ### 已完成
+- [x] **多語言（2026-08-14）**：GUI 與 Excel 顯示文字支援繁中／简中／英文／日文。
+      進階設定最上方選語言，重開程式生效（選完會跳英文視窗問是否重啟）。
+      Excel 只有 B 欄與 Index 版面隨語言變——A 欄英文機器鍵與 C 欄公司原文
+      任何語言下都不變，既有跨檔案公式不受影響。新增語言只要複製一份
+      `src/locales/*.py` 再加一行登錄。詳見 `docs/ARCHITECTURE.md`「多語言」
+- [x] `cli.py --lang`：讓 skill 直接指定產出的 Excel 語言，不必先去改 GUI 設定
 - [x] B1 Overflow Rows：IS/BS/CF 三表各自追加未被模板消耗的 XBRL rows，確保不遺漏任何財務數字
 - [x] Non-GAAP overflow 自動分流至 `Data_Financials_NG(Q/Y)` 獨立 sheet（label 含 "adjusted"/"non-gaap"/"excluding" 等）
 - [x] Auto-repair override engine（新 ticker 首次 fetch 自動診斷並修復缺失 key rows）

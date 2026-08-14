@@ -20,7 +20,9 @@
 
 兩個子指令都**不呼叫任何 AI API**，只打 SEC EDGAR。共通參數：`--years`
 （`2023-2026` 或 `2024`）、`--identity`、`--max-filings`、`--json`（不給路徑
-就印到 stdout）。`gaap` 另有 `--xlsx` / `--quarterly-only` / `--annual-only`，
+就印到 stdout）、`--lang`（產出 Excel 的顯示語言：`zh_tw` / `zh_cn` / `en` /
+`ja`，不給就跟 GUI 用同一個設定；只影響 B 欄與 Index 版面，A 欄機器鍵與 C 欄
+公司原文不變）。`gaap` 另有 `--xlsx` / `--quarterly-only` / `--annual-only`，
 `press-release` 另有 `--raw`（改吐新聞稿全文，除錯用）。
 
 `press-release` 吐的是**解析後的表格**不是原文：ARLO 一季原文 450K 字元，
@@ -48,6 +50,7 @@
 1. 雙擊 `啟動器.bat`，按照提示完成套件安裝
 2. 程式啟動後點「進階設定」，填入 SEC EDGAR Identity（姓名 + 信箱）
 3. 若要使用 Non-GAAP 功能，在進階設定填入 AI API Key
+4. 要換介面語言的話，「進階設定」最上方的 `Language` 選單有繁體中文／简体中文／English／日本語。選完會跳一個英文視窗問要不要重啟，按 Restart 就直接換好
 
 ## Excel 結構
 
@@ -57,7 +60,7 @@
 |-------|------|
 | `Data_Financials(Q)` | **季報三表**（IS + BS + CF，from 10-Q）。表頭 3 列為期間標籤，三表各有專屬底色，公司特有科目集中在底部 `Other (as reported)` |
 | `Data_Financials(Y)` | **年報三表**（from 10-K），結構同上 |
-| `Data_Ratios` | 37 個常見比率（Python 計算，**零 AI**），B 欄寫算法 |
+| `Data_Ratios` | 37 個常見比率（Python 計算，**零 AI**）。A 欄英文列名（含 `(%)` / `(x)` / `(days)` / `($)` 單位後綴）、B 欄說明、C 欄算法 |
 | `Data_Segments` | 營收／費用分類細項，長格式（各軸合併於一張） |
 | `Data_Meta` | 申報資訊（Ticker、公司名、抓取日期、季數、財年結束月） |
 | `Index` | 第一頁：公司抬頭、**財年起始月輸入格**、sheet 清單、品質明細 |
@@ -68,9 +71,9 @@
 
 | 位置 | 內容 |
 |---|---|
-| A 欄 | 標準指標名稱（英文，程式一律用這欄比對） |
-| B 欄 | 中文說明 |
-| C 欄 | Original Item（公司的 XBRL 原始標籤） |
+| A 欄 | 標準指標名稱（**永遠英文**，程式一律用這欄比對，跨檔案 `MATCH` 也吃這欄） |
+| B 欄 | 說明（**跟著介面語言走**：繁中／简中／English／日本語） |
+| C 欄 | Original Item（**永遠是公司財報上的英文原文**，如 AAPL 的 `Net sales`。拿它去 10-Q 裡 Ctrl+F 核對用，所以不翻譯） |
 | D 欄起 | 各期數據（舊→新） |
 | 第 1 列 | 期間標籤（`FY2026Q1`）**← 公式** |
 | 第 2 列 | 申報日期 |

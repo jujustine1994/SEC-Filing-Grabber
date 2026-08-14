@@ -14,7 +14,7 @@
 | src/output_tables.py | `append_ratio_table()`：決定最後寫進 Excel 的 sheet 清單。GUI 與 CLI 共用同一份 |
 | src/fiscal_input.py | Index 上「財年起始月」可編輯輸入格 + 由它驅動的期間標籤公式（定義名稱 `FY_START_MONTH`） |
 | src/press_release_tables.py | 8-K 新聞稿表格的確定性解析（`pandas.read_html` + Workiva 版面規則），零 AI |
-| src/config.py | load_config() / save_config() |
+| src/config.py | load_config() / save_config()。`language` 欄位靠 merge-with-defaults 自動補，舊 config.json 零遷移 |
 | src/fetcher_gaap.py | edgartools XBRL 抓取 → StatementTable 列表 |
 | src/fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
 | src/excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx，並呼叫 excel_formatter |
@@ -25,7 +25,9 @@
 | src/metric_rules.py | **Non-GAAP 指標名稱規則表（唯一可調整處）**：期間 token、guidance 詞、中英對照、Excel 數值分類關鍵字 |
 | src/override_engine.py | 自動修復缺失 key rows（E1 fuzzy + E2 LLM） |
 | src/errsafe.py | `_exc_status()`：從例外物件安全萃取 HTTP status，main / fetcher_* 共用 |
-| src/zh_labels.py | 中文標籤對照表 |
+| src/zh_labels.py | 薄 wrapper：`zh_label()` / `ratio_label()` / `meta_label()` / `axis_label()`，查 `locales/` 的 `acct.*` / `ratio.*` / `meta.*` / `axis.*`。譯文本體已遷入 locale |
+| src/i18n.py | **多語言核心**：`LANGUAGES` 登錄表（代號／顯示名／Excel 字型）、`set_lang()` / `t()` / `excel_font()`。`t()` 的 fallback 鏈為 目標語言 → 繁中 → key 本身 |
+| src/locales/*.py | 四份字串表（zh_tw／zh_cn／en／ja），各 341 條。繁中是母表，其餘從它翻出來 |
 | conftest.py | pytest 探索設施（rootdir 定位 + slow/b1/cf_overflow marker 註冊），留根目錄不進 `src/` |
 | config.json | 使用者設定（gitignored） |
 | config.example.json | 範本（committed，留根目錄） |
@@ -81,6 +83,7 @@ excel_writer.py
 
 | 鍵 | 說明 |
 |----|------|
+| `language` | 介面與 Excel 顯示語言：`zh_tw` / `zh_cn` / `en` / `ja`（預設 `zh_tw`）。重開程式生效。舊 config.json 沒這欄時自動補 |
 | `identity` | SEC EDGAR 身份字串（必填，格式：名字 空格 信箱） |
 | `output_dir` | Excel 輸出路徑（預設 "output"） |
 | `ticker_paths` | `{TICKER: absolute_path}` 各公司輸出資料夾記憶 |
@@ -95,17 +98,17 @@ excel_writer.py
 ### Data_Financials(Q) / Data_Financials(Y)（主要輸出）
 
 ```
-     A                    B              C                    D, E, F...
- 1   AAPL                                                      =公式 → FY2026Q1
- 2                                                             2026-01-29        ← 申報日
- 3   財季 Fiscal Quarter   公司財年基準                          =公式 → FY2026FQ1
- 4   日曆季 Calendar…      日曆年基準                            =公式 → 2025Q4
- 5   期末結算日 Period End 該期實際結束日                        2025-12-27        ← XBRL 真實日期（靜態）
+     A（機器鍵，永遠英文）  B（隨語言）      C（公司原文，永遠英文）  D, E, F...
+ 1   AAPL                                                       =公式 → FY2026Q1
+ 2                                                              2026-01-29        ← 申報日
+ 3   Fiscal Quarter        公司財年基準的季度                     =公式 → FY2026FQ1
+ 4   Calendar Quarter      日曆年基準的季度                       =公式 → 2025Q4
+ 5   Period End            該期實際結束日                         2025-12-27        ← XBRL 真實日期（靜態）
  6   (空)
- 7   Income Statement     損益表                                                  ← section header
- 8   Revenue              營業收入        Net sales             124300.0
+ 7   Income Statement      損益表                                                   ← section header
+ 8   Revenue               營業收入         Net sales             124300.0
 ...
-31   Diluted Shares       稀釋加權平均股數
+31   Diluted Shares        稀釋加權平均股數
 32-36 (空 5 列)
 37   Balance Sheet        資產負債表
 38   Cash                 現金及約當現金   Cash and cash equiv.  30000.0
@@ -273,11 +276,72 @@ save_overrides()       ← 診斷結果永久寫入，下次同 ticker 不重跑
 **Override 套用時機**：每個 filing 的 row_vals 計算前（loop 開頭），不是 post-processing。  
 **新增檔案**：`override_engine.py`
 
+## 多語言（i18n）
+
+2026-08-14 導入。四種語言：繁體中文、简体中文、English、日本語。
+
+### 分工
+
+```
+src/i18n.py          LANGUAGES 登錄表 + set_lang() / t() / excel_font()
+src/locales/zh_tw.py 繁中母表（341 條），其餘語言從它翻出來
+src/locales/zh_cn.py 简中
+src/locales/en.py    English
+src/locales/ja.py    日本語
+```
+
+`t(key, **fmt)` 的查找順序是 **目標語言 → 繁中 → key 本身**。查不到絕不
+raise、絕不回空字串——最壞情況畫面顯示 `gui.btn.run` 這串 key，一眼看得出
+哪裡漏翻；回空字串會變成看不見的按鈕。
+
+key 命名空間：`gui.*`（介面）、`acct.*`（三表科目）、`ratio.*`
+（Data_Ratios 列名）、`meta.*`（Data_Meta 欄位）、`axis.*`（segment 維度
+軸）、`xls.*`（Index 版面）、`err.*`（使用者可見的錯誤）。
+
+### 什麼跟著語言變、什麼不變
+
+| 位置 | 是否隨語言變 | 原因 |
+|---|---|---|
+| Excel A 欄（`Revenue`、`Gross Margin (%)`） | ❌ 永遠英文 | 下游跨檔案 `MATCH` 的機器鍵；`Data_Ratios` 的單位後綴還兼任數字格式判斷依據 |
+| Excel B 欄 | ✅ | 純顯示，改錯不影響任何計算 |
+| Excel C 欄（`Net sales`） | ❌ 永遠公司原文 | 開放集合（七家公司的 Revenue 有六種寫法），且用途是拿回 10-Q Ctrl+F 核對 |
+| Excel D 欄起的值 | ❌ | 數字 |
+| Index sheet 版面文字 | ✅ | |
+| GUI | ✅ | 重開程式生效 |
+| `logs/app.log` | ❌ 永遠繁中 | 給維護者除錯用，跟著使用者語言變等於自廢。`_write_log*` 落檔，`self._log()` 預設只推 UI 所以照翻 |
+| `cli.py` 的主控台訊息與 argparse help | ❌ 繁中 | 給 skill 與維護者的開發者介面。它產出的 Excel 語言由 `--lang` 控制 |
+| Watchlist 的「未分類」群組名 | ❌ 存的值固定 | 那是寫進 config.json 的**資料**。顯示走 `_group_display()`、存回走 `_group_stored()`；少了這層，日文使用者會長出第二個空群組 |
+
+### Excel 字型隨語言
+
+`i18n.LANGUAGES` 第三欄。微軟正黑體缺日文假名字形，日文用 Yu Gothic、
+简中用 Microsoft YaHei。`excel_formatter._font()` 與 `fiscal_input._font()`
+都是**呼叫時**才解析——綁在 import 當下會凍結在預設語言。
+
+### 新增語言
+
+兩步，不必碰 `main.py` 或任何功能程式碼：
+
+1. 複製一份 `locales/en.py` 改譯文
+2. `i18n.LANGUAGES` 加一行 `("ko", "한국어", "Malgun Gothic")`
+
+下拉選單、Excel 字型、`tests/test_i18n.py` 的漏 key 檢查全部自動涵蓋。
+
+### 三道防線（`tests/test_i18n.py`，28 條）
+
+1. **四語言 key 集合必須完全一致**——新增語言時漏翻幾條是必然，靠人眼比對
+   341 條不可能可靠
+2. **placeholder 必須一致**——譯文把 `{name}` 打錯不會 crash，只會靜默吐出
+   未格式化的字串，特別容易漏
+3. **`src/` 不得再出現寫死的中日文字面**。這條是**永久**的，擋的是下一次而
+   不是這一次：新增功能時順手寫個中文按鈕標籤最自然不過，沒有它三個月後就
+   又回到全部寫死的狀態。豁免清單在測試檔裡，每條都要寫理由
+
 ## 測試分層
 
 | 指令 | 時間 | 測試數 | 用途 |
 |------|------|--------|------|
-| `python -m pytest tests/ --ignore=tests/test_live_snapshots.py` | ~10 秒 | 593 | Unit tests（每次改 code 後跑） |
+| `python -m pytest -m "not slow"` | ~25 秒 | 701 | Unit tests（每次改 code 後跑） |
 | `pytest -m "slow and b1"` | ~12 分鐘 | 24 | B1 overflow live 驗證（8 tickers） |
 | `pytest -m "slow and cf_overflow"` | ~5 分鐘 | 15 | CF YTD overflow 驗收（COHR/LITE/AAPL/NVDA/GOOGL） |
 | `pytest -m slow` | ~25 分鐘 | 全部 slow | 完整 live 驗收 |

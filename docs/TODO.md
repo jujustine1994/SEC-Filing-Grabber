@@ -24,12 +24,24 @@ C3. `financial-assistant/scripts/` 的 `read_excel.py` / `query_excel.py` 可直
 
 C4. ⚠ **衝突要處理**：`finance-analysis.md` 規定「每次更新前先給 CTH 看草稿，確認後才寫入檔案」。本工具是直接寫 Excel 的，接進 financial-assistant 流程時不可直接覆蓋公司資料夾的檔案。
 
-## E. GUI 功能需求（CTH 提出，另開對話處理）
+## E. GUI 功能需求（CTH 提出）
 
-E1. **GUI 語言可切換**（2026-08-14 CTH 提出）
-   - 需求：至少支援繁體中文、簡體中文、英文、日文四種
-   - 現況：`main.py` 所有介面文字（按鈕、標籤、錯誤訊息、log）全部是寫死的繁體中文字串，散在整個檔案裡，沒有集中管理
-   - **待研究，未動手**——初步方向是抽出一份 i18n 字串表（如 `zh_labels.py` 的模式，該檔目前是財報科目中文對照，可另建一份介面用字串表），進階設定加語言下拉選單，寫入 `config.json` 記住選擇。工作量隨介面文字量而定，需要先盤點總共有多少處寫死字串
+E1. ~~**GUI 語言可切換**~~ ✅ **已完成（2026-08-14）**
+   - 繁體中文／简体中文／English／日本語四語，範圍含 GUI 與 Excel 輸出的 B 欄
+   - 實作見 `docs/superpowers/specs/2026-08-14-i18n-design.md` 與
+     `docs/ARCHITECTURE.md`「多語言」章節
+   - **未涵蓋（刻意）**：`logs/app.log` 內容、`cli.py` 自己的主控台訊息與
+     argparse help、`nongaap_layout.py` / `metric_rules.py`（Data_NonGAAP 的
+     版面，該功能停用中）。理由與豁免清單在 `tests/test_i18n.py`
+
+E2. **Data_NonGAAP 版面的 i18n**（承 E1，等 Non-GAAP 功能恢復再做）
+   - `nongaap_layout.py` 11 條、`metric_rules.py` 60 條中文字串仍是寫死的
+   - 現況：`main.NONGAAP_ENABLED = False`，這張 sheet 根本不產出，沒有
+     golden 覆蓋，遷移風險驗不掉
+   - 要做的話得連 A 欄機器鍵一起改英文（跟 Data_Ratios 同一套處理），
+     不是單純把字串搬進 locale
+   - **綁定 TODO B**：Non-GAAP 改走 skill 之後這張表的形態可能整個變，
+     現在做很可能白做
 
 ## 執行順序建議
 
