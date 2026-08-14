@@ -232,7 +232,7 @@ def test_note_row_is_tall_enough_for_the_whole_text():
     當量、A~E 合併寬度 86，要 6 行；原本寫死的 28（後來 32）只夠 2.4 行。
     """
     ws = _input_block()
-    display = sum(2 if ord(ch) > 0x2000 else 1 for ch in fi._NOTE)
+    display = sum(2 if ord(ch) > 0x2000 else 1 for ch in fi._note())
     width = sum(ws.column_dimensions[c].width or 8.43 for c in "ABCDE")
     need_lines = display / width
     assert ws.row_dimensions[5].height >= need_lines * 13.5
@@ -241,10 +241,10 @@ def test_note_row_is_tall_enough_for_the_whole_text():
 def test_note_row_height_follows_the_text_length():
     """列高是算出來的不是寫死的——改了提醒文字不必記得回頭改列高。"""
     tall = _input_block().row_dimensions[5].height
-    original = fi._NOTE
+    original = fi._note
     try:
-        fi._NOTE = "短"
+        fi._note = lambda: "短"
         short = _input_block().row_dimensions[5].height
     finally:
-        fi._NOTE = original
+        fi._note = original
     assert short < tall

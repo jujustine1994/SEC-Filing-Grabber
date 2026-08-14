@@ -16,6 +16,7 @@ from openpyxl.utils import get_column_letter
 from fetcher_gaap import StatementTable
 from datetime import date
 from override_engine import check_key_rows
+from i18n import t, excel_font
 import metric_rules
 
 # ── 字型（2026-08-08）──────────────────────────────────────────────────────
@@ -24,6 +25,8 @@ import metric_rules
 # 同一張表混兩種字體。統一吃這個常數，日後換字型只改這一行。
 # openpyxl 的 Font 是不可變的，不能事後設 .name——所以一律走 _font()。
 # CTH 選的是「全部含數字欄」：整份一致優先於數字等寬對齊（2026-08-08 決定）。
+# 預設（繁中）字型。實際採用的字型由 i18n.excel_font() 依語言決定——
+# 微軟正黑體缺日文假名字形。這個常數保留給既有測試與 fiscal_input 當預設值。
 FONT_NAME = "微軟正黑體"
 
 # Index 字級（2026-08-08 CTH 指定，整體放大一級）。fiscal_input 也吃這裡。
@@ -42,7 +45,7 @@ NUMBER_FONT_NAME = "Consolas"
 
 def _font(numeric: bool = False, **kwargs) -> Font:
     """所有字型一律走這裡。numeric=True 給數字用等寬字型。"""
-    return Font(name=NUMBER_FONT_NAME if numeric else FONT_NAME, **kwargs)
+    return Font(name=NUMBER_FONT_NAME if numeric else excel_font(), **kwargs)
 
 
 def _is_number(value) -> bool:
@@ -92,16 +95,12 @@ SUBTOTAL_CONCEPTS = {
     "Operating Cash Flow", "Investing Cash Flow", "Financing Cash Flow", "Free Cash Flow",
 }
 
-SHEET_DESCRIPTIONS = {
-    "Data_Financials(Q)": "季報三表合一（IS + BS + CF，from 10-Q）",
-    "Data_Financials(Y)": "年報三表合一（IS + BS + CF，from 10-K）",
-    "Data_EPS_Recon":     "Non-GAAP EPS 調節表（from 8-K）",
-    "Data_NonGAAP":       "Non-GAAP 指標（AI 提取）",
-    "Data_Std":           "跨公司標準表（列位固定、含日曆季標籤與機器鍵，給通用模板參照）",
-    "Data_Segments":      "營收/費用分類細項（長格式，各軸合併於一張；寬格式見 Data_Seg_*）",
-    "Data_Ratios":        "常見財務比率（自 Data_Financials(Q) 計算，B 欄為算法）",
-    "Data_Meta":          "申報資訊（Ticker、公司名、抓取日期）",
-}
+# Index 上每張 sheet 的一句話說明。key 是 sheet 名稱（機器鍵，不翻譯），
+# 值走 i18n。
+SHEET_DESCRIPTION_KEYS = (
+    "Data_Financials(Q)", "Data_Financials(Y)", "Data_EPS_Recon", "Data_NonGAAP",
+    "Data_Std", "Data_Segments", "Data_Ratios", "Data_Meta",
+)
 
 
 # ── 數值分類 ──────────────────────────────────────────────────────────────
@@ -141,10 +140,10 @@ _is_shares_concept = _keyword_matcher(metric_rules.SHARES_KEYWORDS)
 
 
 def _sheet_description(name: str) -> str:
-    if name in SHEET_DESCRIPTIONS:
-        return SHEET_DESCRIPTIONS[name]
+    if name in SHEET_DESCRIPTION_KEYS:
+        return t(f"xls.sheet_desc.{name}")
     if name.startswith("Data_Seg_"):
-        return f"Segment 細項：{name[9:]}"
+        return t("xls.sheet_desc.segment_detail", axis=name[9:])
     return name
 
 
@@ -336,13 +335,13 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     latest_end    = _meta_value("Latest Period End")
     fy_span       = _meta_value("Fiscal Year Span")
 
-    bits = [f"抓取日期：{date.today()}"]
+    bits = [t("xls.index.fetched_on", date=date.today())]
     if latest_period:
-        bits.append(f"資料最新至：{latest_period}"
-                    + (f"（期末 {latest_end}）" if latest_end else ""))
+        bits.append(t("xls.index.data_through", period=latest_period)
+                    + (t("xls.index.period_end_paren", end=latest_end) if latest_end else ""))
     if fy_span:
-        bits.append(f"財年起訖：{fy_span}")
-    bits.append("資料來源：SEC EDGAR")
+        bits.append(t("xls.index.fy_span", span=fy_span))
+    bits.append(t("xls.index.source"))
 
     ws["A2"] = "　　".join(bits)
     ws["A2"].fill = _fill(NAVY_MID)
@@ -360,7 +359,9 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     # 表格標題列
     hdr_font = _font(bold=True, size=INDEX_TABLE_SIZE)
     hdr_fill = _fill(BLUE_HDR)
-    for col, label in enumerate(["Sheet", "說明", "最早期間", "最新期間", "完成度"], start=1):
+    headers = ["Sheet", t("xls.index.col_desc"), t("xls.index.col_earliest"),
+               t("xls.index.col_latest"), t("xls.index.col_complete")]
+    for col, label in enumerate(headers, start=1):
         cell = ws.cell(row=_TABLE_HDR_ROW, column=col, value=label)
         cell.font = hdr_font
         cell.fill = hdr_fill
@@ -416,7 +417,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     next_row = _TABLE_HDR_ROW + 1 + len(data_sheets) + 2   # blank row gap
 
     # Section header
-    hdr_cell = ws.cell(row=next_row, column=1, value="品質明細 — Data_Financials(Q)")
+    hdr_cell = ws.cell(row=next_row, column=1, value=t("xls.index.quality_detail"))
     hdr_cell.fill = _fill(NAVY_DARK)
     hdr_cell.font = _font(color="FFFFFFFF", bold=True, size=INDEX_TABLE_SIZE)
     ws.merge_cells(
@@ -428,7 +429,7 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     for row_name in ALL_KEY_ROWS:
         is_missing = row_name in missing
         bg = _fill(QUALITY_MISS_BG) if is_missing else _fill(ROW_WHITE)
-        status = "✗  缺失" if is_missing else "✓"
+        status = t("xls.index.missing") if is_missing else "✓"
         fg = QUALITY_MISS_FG if is_missing else QUALITY_GREEN
 
         a = ws.cell(row=next_row, column=1, value=row_name)

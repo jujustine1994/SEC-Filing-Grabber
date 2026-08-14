@@ -39,6 +39,7 @@ from openpyxl.workbook.defined_name import DefinedName
 
 # 輸入格寫在 Index 上，字型／字級必須跟 excel_formatter 建的表格一致，
 # 否則同一頁會混兩種字體。常數只有一份，在 excel_formatter。
+from i18n import t
 from excel_formatter import (
     FONT_NAME, INDEX_TABLE_SIZE, INDEX_INPUT_SIZE, INDEX_NOTE_SIZE,
 )
@@ -169,23 +170,21 @@ def calendar_quarter_formula(col: str) -> str:
 
 # ── 套用 ────────────────────────────────────────────────────────────────────
 
-_NOTE = ("⚠ 請核對：財年起始月是程式從 10-K 自動判讀的，可能出錯。把上面 B4 改成"
-         "正確的月份（1-12），Data_Financials(Q)/(Y) 第 1、3、4 列的期間標籤會自動更新。"
-         "核對方法：看 Data_Financials 第 5 列的期末結算日（來自 XBRL，一定正確），"
-         "對照公司財報上寫的財季。"
-         "　※ 財季是 3 個月一段，所以 B4 改 1~2 個月常常看不出變化（例如 2、3、4 月"
-         "開始，4 月底結束的那季都算 Q1），這是正確的不是沒生效——右邊的財年區間"
-         "會即時反映你改的月份。"
-         "　※ 本頁表格的「最早/最新期間」、Data_Ratios、Data_Meta 是程式算好的靜態值，"
-         "改這格不會跟著變。")
+def _note() -> str:
+    """B4 輸入格底下那段提醒。每次呼叫重查——語言可能在這之間換過。"""
+    return t("xls.fy_input.note")
 
 # 財年區間：唯一「改 1 個月就會變」的即時回饋。沒有它，使用者把 2 改成 3
 # 看到標籤沒動，會以為公式壞了（2026-08-08 CTH 實際回報）。
 # DATE(2000, m+11, 1) 讓月份自己進位，不必寫 MOD。
-_FY_SPAN_FORMULA = (
-    f'=IF({FY_START_DEFINED_NAME}="","","財年 "&TEXT(DATE(2000,{FY_START_DEFINED_NAME},1),"m")'
-    f'&" 月 – "&TEXT(DATE(2000,{FY_START_DEFINED_NAME}+11,1),"m")&" 月")'
-)
+def _fy_span_formula() -> str:
+    """財年區間的 Excel 公式。三段文字（前綴／分隔／後綴）走 i18n——
+    英文要的是 `FY Oct – Sep`，硬把「財年 X 月 – Y 月」的中文夾在公式裡就出不來。"""
+    n = FY_START_DEFINED_NAME
+    return (f'=IF({n}="","",{t("xls.fy_input.span_prefix")!r}'
+            f'&TEXT(DATE(2000,{n},1),"m")&{t("xls.fy_input.span_sep")!r}'
+            f'&TEXT(DATE(2000,{n}+11,1),"m")&{t("xls.fy_input.span_suffix")!r})'
+            ).replace("'", '"')
 
 
 # 一行的高度（含行距）。10pt 字約 13.5pt，其他字級按比例。
@@ -214,7 +213,7 @@ def _wrapped_row_height(ws, text: str, first_col: int = 1, last_col: int = 5,
 
 def _write_input_block(ws, start_month: int, row: int = 4) -> None:
     """在 Index 寫出可編輯的輸入格與提醒。"""
-    label = ws.cell(row=row, column=1, value="財年起始月（可修改）")
+    label = ws.cell(row=row, column=1, value=t("xls.fy_input.label"))
     label.font = _font(bold=True, size=INDEX_TABLE_SIZE)
 
     cell = ws.cell(row=row, column=2, value=start_month)
@@ -224,14 +223,14 @@ def _write_input_block(ws, start_month: int, row: int = 4) -> None:
     cell.alignment = Alignment(horizontal="center")
     cell.number_format = "0"
 
-    span = ws.cell(row=row, column=3, value=_FY_SPAN_FORMULA)
+    span = ws.cell(row=row, column=3, value=_fy_span_formula())
     span.font = _font(size=INDEX_TABLE_SIZE, color="FF666666")
 
-    note = ws.cell(row=row + 1, column=1, value=_NOTE)
+    note = ws.cell(row=row + 1, column=1, value=_note())
     note.font = _font(size=INDEX_NOTE_SIZE, color="FFBF8F00")
     note.alignment = Alignment(wrap_text=True, vertical="top")
     ws.merge_cells(start_row=row + 1, start_column=1, end_row=row + 1, end_column=5)
-    ws.row_dimensions[row + 1].height = _wrapped_row_height(ws, _NOTE)
+    ws.row_dimensions[row + 1].height = _wrapped_row_height(ws, _note())
 
 
 def _is_annual(ws) -> bool:
