@@ -165,6 +165,32 @@ def show_cth_banner():
 NONGAAP_ENABLED = False
 
 
+# ── Watchlist 的預設群組名稱（2026-08-14）─────────────────────────────────
+#
+# 這是**存進 config.json 的資料，不是介面文字**，所以不進 i18n。程式到處在
+# `g["name"] == UNCATEGORIZED` 比對群組；跟著語言翻譯的話，使用者切成英文後
+# 既有的「未分類」就對不上，會再長出一個 "Uncategorized" 空群組，股票留在
+# 舊的那個裡看起來像消失了。
+#
+# 顯示給人看時走 _group_display()，那層才換成當前語言。
+UNCATEGORIZED = "未分類"
+
+
+def _group_display(name: str) -> str:
+    """群組名稱的顯示文字。預設群組翻譯，使用者自訂的群組原樣顯示。"""
+    return t("gui.wl.uncategorized") if name == UNCATEGORIZED else name
+
+
+def _group_stored(display: str) -> str:
+    """顯示名稱換回儲存名稱，_group_display 的反向。
+
+    下拉選單顯示的是譯名，但寫進 config.json 的必須永遠是 UNCATEGORIZED——
+    少了這層，日文使用者新增公司會建出一個叫「未分類」的日文群組，跟既有的
+    那個並存，股票分散在兩邊。
+    """
+    return UNCATEGORIZED if display == t("gui.wl.uncategorized") else display
+
+
 # 抽到 output_tables.py（2026-08-07）讓 cli.py 共用同一份組裝邏輯。
 # 這裡保留舊名稱的別名，呼叫端與既有測試都不必改。
 _append_ratio_table = append_ratio_table
@@ -178,7 +204,15 @@ class SECFetcherApp:
     and applied in _poll_queue every 100ms because Tkinter is not thread-safe.
     """
 
-    TICKER_PH = "輸入 Ticker（如 AAPL）"
+    @property
+    def TICKER_PH(self) -> str:
+        """Ticker 輸入框的 placeholder。
+
+        必須是 property 不能是類別屬性——類別屬性在 import 時就求值，那時
+        set_lang() 還沒跑（語言是 __init__ 讀 config 之後才設的），值會凍結
+        在預設語言。所有呼叫端都是 self.TICKER_PH，改成 property 不必動。
+        """
+        return t("gui.lbl.ticker_placeholder")
 
     def __init__(self, root: tk.Tk):
         """Load config, initialise state, build UI, start the 100ms queue poll."""
@@ -272,15 +306,15 @@ class SECFetcherApp:
         # Persistent buttons
         frame_persist = tk.Frame(self.root)
         frame_persist.grid(row=1, column=0, pady=4)
-        ttk.Button(frame_persist, text="管理 Watchlist", command=self._open_watchlist_popup, width=18).pack(side="left", padx=6)
-        ttk.Button(frame_persist, text="進階設定",       command=self._open_settings_popup,  width=14).pack(side="left", padx=6)
+        ttk.Button(frame_persist, text=t("gui.btn.manage_watchlist"), command=self._open_watchlist_popup, width=18).pack(side="left", padx=6)
+        ttk.Button(frame_persist, text=t("gui.btn.settings"),       command=self._open_settings_popup,  width=14).pack(side="left", padx=6)
 
         # Progress log
-        frame_log = ttk.LabelFrame(self.root, text=" 處理進度 ", padding=8)
+        frame_log = ttk.LabelFrame(self.root, text=t("gui.frame.progress"), padding=8)
         frame_log.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 4))
         frame_log.rowconfigure(2, weight=1)
         frame_log.columnconfigure(0, weight=1)
-        self.progress_label = ttk.Label(frame_log, text="等待開始...")
+        self.progress_label = ttk.Label(frame_log, text=t("gui.status.idle"))
         self.progress_label.pack(anchor="w")
         self.progress_bar = ttk.Progressbar(frame_log, mode="determinate", length=440)
         self.progress_bar.pack(fill="x", pady=(4, 8))
@@ -293,7 +327,7 @@ class SECFetcherApp:
         frame_output = tk.Frame(self.root)
         frame_output.grid(row=3, column=0, pady=(0, 12))
         self.btn_open_folder = ttk.Button(
-            frame_output, text="開啟輸出資料夾", command=self._open_output_folder
+            frame_output, text=t("gui.btn.open_output_folder"), command=self._open_output_folder
         )
 
         self.root.columnconfigure(0, weight=1)
@@ -302,7 +336,7 @@ class SECFetcherApp:
     def _build_tab1(self):
         """Build Tab 1 (單一公司): ticker input, GAAP/Non-GAAP toggles, output settings, run button."""
         tab = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(tab, text="  單一公司  ")
+        self.notebook.add(tab, text=t("gui.tab.single"))
 
         # Row 0: Ticker + inline company name
         row_ticker = ttk.Frame(tab)
@@ -318,7 +352,7 @@ class SECFetcherApp:
         self.btn_confirm_company = None
         self.tab1_name_label = ttk.Label(row_ticker, text="", foreground="#555555")
         self.tab1_name_label.pack(side="left", padx=(10, 0))
-        self._scan_btn = ttk.Button(row_ticker, text="快速掃描 ▶", command=self._run_preview_scan, width=12)
+        self._scan_btn = ttk.Button(row_ticker, text=t("gui.btn.scan"), command=self._run_preview_scan, width=12)
         self._scan_btn.pack(side="left", padx=(12, 0))
         _scan_help_lbl = tk.Label(row_ticker, text="？", foreground="#0078D4", cursor="hand2",
                                    font=("Microsoft JhengHei", 11, "bold"))
@@ -330,9 +364,9 @@ class SECFetcherApp:
         row_type.grid(row=1, column=0, sticky="ew", pady=4)
         self.fetch_gaap_var    = tk.BooleanVar(value=True)
         self.fetch_nongaap_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(row_type, text="GAAP 財報",               variable=self.fetch_gaap_var).pack(side="left", padx=(0, 16))
-        _ng_text = ("Non-GAAP（需設定 AI API）" if NONGAAP_ENABLED
-                    else "Non-GAAP（暫停中，改由 skill 處理）")
+        ttk.Checkbutton(row_type, text=t("gui.chk.gaap"),               variable=self.fetch_gaap_var).pack(side="left", padx=(0, 16))
+        _ng_text = (t("gui.chk.nongaap") if NONGAAP_ENABLED
+                    else t("gui.chk.nongaap_paused"))
         _ng_cb = ttk.Checkbutton(row_type, text=_ng_text, variable=self.fetch_nongaap_var)
         if not NONGAAP_ENABLED:
             _ng_cb.state(["disabled"])
@@ -342,7 +376,7 @@ class SECFetcherApp:
         # Row 2: 進階設定 toggle
         adv_toggle_row1 = ttk.Frame(tab)
         adv_toggle_row1.grid(row=2, column=0, sticky="ew", pady=(4, 0))
-        self._tab1_adv_toggle_btn = ttk.Button(adv_toggle_row1, text="▶ 進階設定",
+        self._tab1_adv_toggle_btn = ttk.Button(adv_toggle_row1, text=t("gui.btn.adv_collapsed"),
                                                 command=self._toggle_tab1_adv, width=12)
         self._tab1_adv_toggle_btn.pack(side="left")
 
@@ -351,22 +385,22 @@ class SECFetcherApp:
         self._tab1_adv_frame.grid(row=3, column=0, sticky="ew", pady=(0, 4))
         self.tab1_fetch_q_var = tk.BooleanVar(value=True)
         self.tab1_fetch_k_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(self._tab1_adv_frame, text="季報 (10-Q)", variable=self.tab1_fetch_q_var).pack(side="left", padx=(0, 16))
-        ttk.Checkbutton(self._tab1_adv_frame, text="年報 (10-K)", variable=self.tab1_fetch_k_var).pack(side="left")
+        ttk.Checkbutton(self._tab1_adv_frame, text=t("gui.chk.quarterly"), variable=self.tab1_fetch_q_var).pack(side="left", padx=(0, 16))
+        ttk.Checkbutton(self._tab1_adv_frame, text=t("gui.chk.annual"), variable=self.tab1_fetch_k_var).pack(side="left")
         self._tab1_adv_frame.grid_remove()
 
         # Row 4: Date range
         row_date = ttk.Frame(tab)
         row_date.grid(row=4, column=0, sticky="ew", pady=(2, 4))
-        ttk.Label(row_date, text="日期區間：起").pack(side="left", padx=(0, 4))
+        ttk.Label(row_date, text=t("gui.lbl.year_from")).pack(side="left", padx=(0, 4))
         self.tab1_start_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date, from_=1993, to=2099, textvariable=self.tab1_start_year_var,
                     width=6).pack(side="left")
-        ttk.Label(row_date, text="迄").pack(side="left", padx=(8, 4))
+        ttk.Label(row_date, text=t("gui.lbl.year_to")).pack(side="left", padx=(8, 4))
         self.tab1_end_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date, from_=1993, to=2099, textvariable=self.tab1_end_year_var,
                     width=6).pack(side="left")
-        ttk.Label(row_date, text="年　（留空 = 全部）", foreground="#555555").pack(side="left", padx=(4, 0))
+        ttk.Label(row_date, text=t("gui.lbl.year_hint"), foreground="#555555").pack(side="left", padx=(4, 0))
 
         # Row 5: Sheet selection panel (hidden until scan completes)
         # 最新季度／送件日不能另開一行 Label——這個視窗鎖死 650px 高、不會自動撐大
@@ -374,7 +408,7 @@ class SECFetcherApp:
         # 實測顯示 sheet 面板一展開，log 可視高度就只剩個位數 px；多加一行 23px
         # 會直接把 log 擠到全隱形。改寫進 LabelFrame 自己的標題列，不佔新的一行，
         # 高度成本是 0
-        self._SHEET_PANEL_TITLE_BASE = " 可選 Sheet（掃描後顯示）"
+        self._SHEET_PANEL_TITLE_BASE = t("gui.frame.optional_sheets")
         self._sheet_panel_frame = ttk.LabelFrame(tab, text=self._SHEET_PANEL_TITLE_BASE, padding=6)
         self._sheet_panel_frame.grid(row=5, column=0, sticky="ew", pady=(0, 4))
         _, self._sheet_panel_inner = _build_fixed_height_scrollable(self._sheet_panel_frame, height=90)
@@ -382,7 +416,7 @@ class SECFetcherApp:
 
         # Row 6: Non-GAAP warning (hidden by default)
         self.nongaap_warn_label = ttk.Label(
-            tab, text="⚠ Non-GAAP 需先在「進階設定」填入 AI API Key",
+            tab, text=t("gui.lbl.nongaap_need_key"),
             foreground="orange", font=("", 10)
         )
         self.nongaap_warn_label.grid(row=6, column=0, sticky="w", padx=2)
@@ -392,7 +426,7 @@ class SECFetcherApp:
         self._out_collapsed = False
         out_toggle_row = ttk.Frame(tab)
         out_toggle_row.grid(row=7, column=0, sticky="ew", pady=(8, 0))
-        self._out_toggle_btn = ttk.Button(out_toggle_row, text="▼ 輸出設定",
+        self._out_toggle_btn = ttk.Button(out_toggle_row, text=t("gui.btn.output_expanded"),
                                            command=self._toggle_out_settings, width=12)
         self._out_toggle_btn.pack(side="left")
 
@@ -404,25 +438,25 @@ class SECFetcherApp:
         # Storage location row
         loc_row = ttk.Frame(out_frame)
         loc_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        ttk.Label(loc_row, text="儲存位置：").pack(side="left")
+        ttk.Label(loc_row, text=t("gui.lbl.save_location")).pack(side="left")
         self.tab1_outdir_var = tk.StringVar(value=self.cfg.get("output_dir", "output"))
         ttk.Entry(loc_row, textvariable=self.tab1_outdir_var, width=26).pack(side="left", padx=(0, 6))
-        ttk.Button(loc_row, text="瀏覽", width=5, command=self._browse_output_dir).pack(side="left")
+        ttk.Button(loc_row, text=t("gui.btn.browse"), width=5, command=self._browse_output_dir).pack(side="left")
 
         # Filename format radios
-        ttk.Label(out_frame, text="檔名格式：").grid(row=1, column=0, sticky="w", pady=(2, 0))
+        ttk.Label(out_frame, text=t("gui.lbl.filename_format")).grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.tab1_fmt_var = tk.StringVar(value=self.cfg.get("filename_format", "ticker_name"))
 
-        ttk.Radiobutton(out_frame, text="Ticker + 公司名稱（如 AAPL Apple Inc. data.xlsx）",
+        ttk.Radiobutton(out_frame, text=t("gui.radio.name_ticker_company"),
                         variable=self.tab1_fmt_var, value="ticker_name",
                         command=self._on_tab1_fmt_change).grid(row=2, column=0, sticky="w", padx=(16, 0))
-        ttk.Radiobutton(out_frame, text="僅 Ticker（如 AAPL.xlsx）",
+        ttk.Radiobutton(out_frame, text=t("gui.radio.name_ticker_only"),
                         variable=self.tab1_fmt_var, value="ticker_only",
                         command=self._on_tab1_fmt_change).grid(row=3, column=0, sticky="w", padx=(16, 0))
 
         custom_row = ttk.Frame(out_frame)
         custom_row.grid(row=4, column=0, sticky="w", padx=(16, 0))
-        ttk.Radiobutton(custom_row, text="自訂：",
+        ttk.Radiobutton(custom_row, text=t("gui.radio.name_custom"),
                         variable=self.tab1_fmt_var, value="custom",
                         command=self._on_tab1_fmt_change).pack(side="left")
         self.tab1_custom_var = tk.StringVar(value=self.cfg.get("filename_custom", ""))
@@ -439,36 +473,36 @@ class SECFetcherApp:
         self._update_tab1_preview()
 
         # Row 5: Execute button
-        self.btn_run_single = ttk.Button(tab, text="▶  執行", command=self._run_single, width=16)
+        self.btn_run_single = ttk.Button(tab, text=t("gui.btn.run"), command=self._run_single, width=16)
         self.btn_run_single.grid(row=9, column=0, pady=(8, 4))
 
     def _toggle_tab1_adv(self):
         self._tab1_adv_collapsed = not self._tab1_adv_collapsed
         if self._tab1_adv_collapsed:
             self._tab1_adv_frame.grid_remove()
-            self._tab1_adv_toggle_btn.config(text="▶ 進階設定")
+            self._tab1_adv_toggle_btn.config(text=t("gui.btn.adv_collapsed"))
         else:
             self._tab1_adv_frame.grid()
-            self._tab1_adv_toggle_btn.config(text="▼ 進階設定")
+            self._tab1_adv_toggle_btn.config(text=t("gui.btn.adv_expanded"))
 
     def _toggle_tab2_adv(self):
         self._tab2_adv_collapsed = not self._tab2_adv_collapsed
         if self._tab2_adv_collapsed:
             self._tab2_adv_frame.grid_remove()
-            self._tab2_adv_toggle_btn.config(text="▶ 進階設定")
+            self._tab2_adv_toggle_btn.config(text=t("gui.btn.adv_collapsed"))
         else:
             self._tab2_adv_frame.grid()
-            self._tab2_adv_toggle_btn.config(text="▼ 進階設定")
+            self._tab2_adv_toggle_btn.config(text=t("gui.btn.adv_expanded"))
 
     def _toggle_out_settings(self):
         """Collapse or expand the output-settings section, updating the toggle button arrow."""
         self._out_collapsed = not self._out_collapsed
         if self._out_collapsed:
             self._out_settings_frame.grid_remove()
-            self._out_toggle_btn.config(text="▶ 輸出設定")
+            self._out_toggle_btn.config(text=t("gui.btn.output_collapsed"))
         else:
             self._out_settings_frame.grid()
-            self._out_toggle_btn.config(text="▼ 輸出設定")
+            self._out_toggle_btn.config(text=t("gui.btn.output_expanded"))
 
     def _on_nongaap_toggle(self, *_args):
         """Show the API Key warning when Non-GAAP is enabled but api_key is not yet configured."""
@@ -486,7 +520,7 @@ class SECFetcherApp:
     def _build_tab2(self):
         """Build Tab 2 (批量更新): scrollable group-organised watchlist + batch run button."""
         tab = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(tab, text="  批量更新  ")
+        self.notebook.add(tab, text=t("gui.tab.batch"))
 
         self.tab2_list_frame = ttk.LabelFrame(tab, text=" Watchlist ", padding=6)
         self.tab2_list_frame.grid(row=0, column=0, sticky="ew", pady=4)
@@ -513,20 +547,20 @@ class SECFetcherApp:
 
         row_sel = ttk.Frame(tab)
         row_sel.grid(row=1, column=0, sticky="w", pady=4)
-        ttk.Button(row_sel, text="全選",   command=self._select_all,   width=8).pack(side="left", padx=(0, 8))
-        ttk.Button(row_sel, text="全不選", command=self._deselect_all, width=8).pack(side="left")
+        ttk.Button(row_sel, text=t("gui.btn.select_all"),   command=self._select_all,   width=8).pack(side="left", padx=(0, 8))
+        ttk.Button(row_sel, text=t("gui.btn.select_none"), command=self._deselect_all, width=8).pack(side="left")
 
         row_opts = ttk.Frame(tab)
         row_opts.grid(row=2, column=0, sticky="w", pady=(4, 0))
         self.batch_nongaap_var = tk.BooleanVar(value=False)
-        _bng_text = ("同時抓取 Non-GAAP（需設定 AI API）" if NONGAAP_ENABLED
-                     else "同時抓取 Non-GAAP（暫停中，改由 skill 處理）")
+        _bng_text = (t("gui.chk.batch_nongaap") if NONGAAP_ENABLED
+                     else t("gui.chk.batch_nongaap_paused"))
         _bng_cb = ttk.Checkbutton(row_opts, text=_bng_text, variable=self.batch_nongaap_var)
         if not NONGAAP_ENABLED:
             _bng_cb.state(["disabled"])
         _bng_cb.pack(side="left")
         self.batch_nongaap_warn = ttk.Label(
-            row_opts, text="⚠ 請先在進階設定填入 AI API Key", foreground="#cc8800"
+            row_opts, text=t("gui.lbl.need_api_key"), foreground="#cc8800"
         )
         self.batch_nongaap_warn.pack(side="left", padx=8)
         self.batch_nongaap_warn.pack_forget()
@@ -535,7 +569,7 @@ class SECFetcherApp:
         # Row 3: 進階設定 toggle
         adv_toggle_row2 = ttk.Frame(tab)
         adv_toggle_row2.grid(row=3, column=0, sticky="ew", pady=(4, 0))
-        self._tab2_adv_toggle_btn = ttk.Button(adv_toggle_row2, text="▶ 進階設定",
+        self._tab2_adv_toggle_btn = ttk.Button(adv_toggle_row2, text=t("gui.btn.adv_collapsed"),
                                                 command=self._toggle_tab2_adv, width=12)
         self._tab2_adv_toggle_btn.pack(side="left")
 
@@ -544,24 +578,24 @@ class SECFetcherApp:
         self._tab2_adv_frame.grid(row=4, column=0, sticky="ew", pady=(0, 4))
         self.batch_fetch_q_var = tk.BooleanVar(value=True)
         self.batch_fetch_k_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(self._tab2_adv_frame, text="季報 (10-Q)", variable=self.batch_fetch_q_var).pack(side="left", padx=(0, 16))
-        ttk.Checkbutton(self._tab2_adv_frame, text="年報 (10-K)", variable=self.batch_fetch_k_var).pack(side="left")
+        ttk.Checkbutton(self._tab2_adv_frame, text=t("gui.chk.quarterly"), variable=self.batch_fetch_q_var).pack(side="left", padx=(0, 16))
+        ttk.Checkbutton(self._tab2_adv_frame, text=t("gui.chk.annual"), variable=self.batch_fetch_k_var).pack(side="left")
         self._tab2_adv_frame.grid_remove()
 
         # Row 5: Date range
         row_date2 = ttk.Frame(tab)
         row_date2.grid(row=5, column=0, sticky="ew", pady=(2, 0))
-        ttk.Label(row_date2, text="日期區間：起").pack(side="left", padx=(0, 4))
+        ttk.Label(row_date2, text=t("gui.lbl.year_from")).pack(side="left", padx=(0, 4))
         self.batch_start_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date2, from_=1993, to=2099, textvariable=self.batch_start_year_var,
                     width=6).pack(side="left")
-        ttk.Label(row_date2, text="迄").pack(side="left", padx=(8, 4))
+        ttk.Label(row_date2, text=t("gui.lbl.year_to")).pack(side="left", padx=(8, 4))
         self.batch_end_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date2, from_=1993, to=2099, textvariable=self.batch_end_year_var,
                     width=6).pack(side="left")
-        ttk.Label(row_date2, text="年　（留空 = 全部）", foreground="#555555").pack(side="left", padx=(4, 0))
+        ttk.Label(row_date2, text=t("gui.lbl.year_hint"), foreground="#555555").pack(side="left", padx=(4, 0))
 
-        self.btn_run_batch = ttk.Button(tab, text="▶  開始批量更新", command=self._run_batch, width=20)
+        self.btn_run_batch = ttk.Button(tab, text=t("gui.btn.run_batch"), command=self._run_batch, width=20)
         self.btn_run_batch.grid(row=6, column=0, pady=(8, 4))
 
     # =========================================================
@@ -592,7 +626,7 @@ class SECFetcherApp:
             self._update_tab1_preview()
             return
         if self.tab1_name_label:
-            self.tab1_name_label.config(text="查詢中...", foreground="#555555")
+            self.tab1_name_label.config(text=t("gui.status.looking_up"), foreground="#555555")
         if self.btn_confirm_company:
             self.btn_confirm_company.config(state="disabled")
         self._update_tab1_preview()
@@ -604,7 +638,7 @@ class SECFetcherApp:
         if not ticker:
             return
         if self.tab1_name_label:
-            self.tab1_name_label.config(text="查詢中...", foreground="#555555")
+            self.tab1_name_label.config(text=t("gui.status.looking_up"), foreground="#555555")
         if self.btn_confirm_company:
             self.btn_confirm_company.config(state="disabled")
         threading.Thread(target=lambda: self._tab1_lookup_worker(ticker), daemon=True).start()
@@ -659,20 +693,20 @@ class SECFetcherApp:
                 safe_name = re.sub(r'[\\/:*?"<>|]', "", name).strip()
                 preview = f"{ticker} {safe_name} data.xlsx"
             else:
-                preview = "TICKER 公司名稱 data.xlsx"
+                preview = t("gui.lbl.filename_sample")
         elif fmt == "ticker_only":
             preview = f"{ticker}.xlsx" if ticker else "TICKER.xlsx"
         else:  # custom
             custom = self.tab1_custom_var.get().strip() if self.tab1_custom_var else ""
-            preview = f"{custom}.xlsx" if custom else "（請輸入檔名）"
-        self.tab1_preview_label.config(text=f"預覽：{preview}")
+            preview = f"{custom}.xlsx" if custom else t("gui.lbl.filename_empty")
+        self.tab1_preview_label.config(text=t("gui.lbl.preview", name=preview))
 
     def _browse_output_dir(self):
         """Open folder picker and save selection globally and as a per-ticker path memory."""
         from tkinter import filedialog
         current = self.tab1_outdir_var.get().strip() if self.tab1_outdir_var else "output"
         initial = str(PROJECT_ROOT / current) if not os.path.isabs(current) else current
-        folder = filedialog.askdirectory(title="選擇儲存位置", initialdir=initial)
+        folder = filedialog.askdirectory(title=t("gui.dlg.choose_output_dir"), initialdir=initial)
         if folder:
             self.tab1_outdir_var.set(folder)
             # 記住這個 ticker 的路徑
@@ -704,7 +738,7 @@ class SECFetcherApp:
         self.tab2_check_vars = {}
         watchlist = self.cfg.get("watchlist", [])
         if not watchlist:
-            ttk.Label(self._tab2_inner, text="Watchlist 為空，請先在「管理 Watchlist」新增公司。",
+            ttk.Label(self._tab2_inner, text=t("gui.lbl.watchlist_empty"),
                       foreground="gray").grid(row=0, column=0, columnspan=4, sticky="w")
             self._tab2_inner.update_idletasks()
             self._tab2_canvas.configure(scrollregion=self._tab2_canvas.bbox("all"))
@@ -725,9 +759,9 @@ class SECFetcherApp:
             hdr = ttk.Frame(self._tab2_inner)
             hdr.grid(row=grid_row, column=0, columnspan=cols + 1, sticky="ew", pady=(6, 2))
             ttk.Label(hdr, text=gname, font=("", 11, "bold"), foreground="#333").pack(side="left")
-            ttk.Button(hdr, text="全選", width=5,
+            ttk.Button(hdr, text=t("gui.btn.select_all"), width=5,
                        command=lambda ts=tickers: self._select_group(ts, True)).pack(side="left", padx=(8, 2))
-            ttk.Button(hdr, text="全不選", width=6,
+            ttk.Button(hdr, text=t("gui.btn.select_none"), width=6,
                        command=lambda ts=tickers: self._select_group(ts, False)).pack(side="left")
             grid_row += 1
             # Ticker checkboxes
@@ -769,7 +803,7 @@ class SECFetcherApp:
         })
         self._wl_group_collapsed = {}
         popup = tk.Toplevel(self.root)
-        popup.title("管理 Watchlist")
+        popup.title(t("gui.btn.manage_watchlist"))
         popup.resizable(False, False)
         popup.grab_set()
         popup.attributes("-topmost", True)
@@ -784,7 +818,7 @@ class SECFetcherApp:
         popup.columnconfigure(0, weight=1)
 
         # ── Watchlist (scrollable, groups) ──────────────────────────
-        list_frame = ttk.LabelFrame(popup, text=" 目前 Watchlist ", padding=6)
+        list_frame = ttk.LabelFrame(popup, text=t("gui.frame.watchlist_current"), padding=6)
         list_frame.grid(row=0, column=0, sticky="ew", **pad)
         list_frame.columnconfigure(0, weight=1)
 
@@ -804,12 +838,12 @@ class SECFetcherApp:
         self._wl_list_container = wl_inner
         self._refresh_wl_popup_list(wl_inner)
 
-        ttk.Button(popup, text="＋ 新增群組",
+        ttk.Button(popup, text=t("gui.btn.add_group"),
                    command=lambda: self._wl_add_group(wl_inner)).grid(
             row=1, column=0, sticky="w", padx=12, pady=(0, 4))
 
         # ── Add company ────────────────────────────────────────────
-        add_frame = ttk.LabelFrame(popup, text=" 新增公司 ", padding=6)
+        add_frame = ttk.LabelFrame(popup, text=t("gui.frame.add_company"), padding=6)
         add_frame.grid(row=2, column=0, sticky="ew", **pad)
         row_add = ttk.Frame(add_frame)
         row_add.grid(row=0, column=0, sticky="ew")
@@ -818,16 +852,17 @@ class SECFetcherApp:
         wl_entry = ttk.Entry(row_add, textvariable=self.wl_add_var, width=10)
         wl_entry.pack(side="left", padx=(0, 8))
         wl_entry.bind("<Return>", lambda e: self._wl_lookup())
-        ttk.Label(row_add, text="群組:").pack(side="left", padx=(8, 4))
-        group_names = [g["name"] for g in self._get_groups_sorted(self._wl_draft)] or ["未分類"]
+        ttk.Label(row_add, text=t("gui.lbl.group")).pack(side="left", padx=(8, 4))
+        group_names = [_group_display(g["name"])
+                       for g in self._get_groups_sorted(self._wl_draft)] or [_group_display(UNCATEGORIZED)]
         self.wl_group_var = tk.StringVar(value=group_names[0])
         self.wl_group_cb = ttk.Combobox(row_add, textvariable=self.wl_group_var,
                                          values=group_names, width=12, state="readonly")
         self.wl_group_cb.pack(side="left", padx=(0, 8))
-        ttk.Button(row_add, text="查詢", command=lambda: self._wl_lookup()).pack(side="left")
+        ttk.Button(row_add, text=t("gui.btn.lookup"), command=lambda: self._wl_lookup()).pack(side="left")
         self.wl_lookup_label = ttk.Label(add_frame, text="", foreground="gray")
         self.wl_lookup_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
-        self.wl_add_btn = ttk.Button(add_frame, text="加入 Watchlist", command=self._wl_add, state="disabled")
+        self.wl_add_btn = ttk.Button(add_frame, text=t("gui.btn.add_to_watchlist"), command=self._wl_add, state="disabled")
         self.wl_add_btn.grid(row=2, column=0, sticky="w", pady=4)
         self._wl_found_name = ""
 
@@ -836,15 +871,15 @@ class SECFetcherApp:
         cache_frame.grid(row=3, column=0, sticky="ew", **pad)
         self.wl_cache_label = ttk.Label(cache_frame, text=self._wl_cache_status(), foreground="#555555")
         self.wl_cache_label.pack(side="left")
-        ttk.Button(cache_frame, text="更新名稱庫（下載完整美股清單）",
+        ttk.Button(cache_frame, text=t("gui.btn.update_name_cache"),
                    command=self._wl_update_cache).pack(side="left", padx=10)
 
         # ── Save / discard ─────────────────────────────────────────
         btn_row = ttk.Frame(popup)
         btn_row.grid(row=4, column=0, pady=8)
-        ttk.Button(btn_row, text="儲存關閉", width=12,
+        ttk.Button(btn_row, text=t("gui.btn.save_close"), width=12,
                    command=lambda: self._wl_save_close(popup)).pack(side="left", padx=6)
-        ttk.Button(btn_row, text="放棄關閉", width=12,
+        ttk.Button(btn_row, text=t("gui.btn.discard_close"), width=12,
                    command=popup.destroy).pack(side="left", padx=6)
 
     def _refresh_wl_popup_list(self, container):
@@ -856,7 +891,7 @@ class SECFetcherApp:
         groups = self._get_groups_sorted(self._wl_draft)
 
         if not watchlist and not any(g["tickers"] for g in groups):
-            ttk.Label(container, text="（空）", foreground="gray").pack(anchor="w")
+            ttk.Label(container, text=t("gui.wl.empty"), foreground="gray").pack(anchor="w")
             container.update_idletasks()
             if hasattr(self, "_wl_list_canvas"):
                 self._wl_list_canvas.configure(scrollregion=self._wl_list_canvas.bbox("all"))
@@ -871,17 +906,17 @@ class SECFetcherApp:
             hdr = ttk.Frame(container)
             hdr.pack(fill="x", pady=(6, 0))
             arrow = "▶" if is_collapsed else "▼"
-            ttk.Button(hdr, text=f"{arrow} {gname}", width=16,
+            ttk.Button(hdr, text=f"{arrow} {_group_display(gname)}", width=16,
                        command=lambda g=gname, c=container: self._wl_toggle_group(g, c)).pack(side="left")
-            ttk.Button(hdr, text="重新命名", width=8,
+            ttk.Button(hdr, text=t("gui.btn.rename"), width=8,
                        command=lambda g=gname, c=container: self._wl_rename_group(g, c)).pack(side="left", padx=(4, 0))
-            if gname != "未分類":
-                ttk.Button(hdr, text="刪除群組", width=8,
+            if gname != UNCATEGORIZED:
+                ttk.Button(hdr, text=t("gui.btn.delete_group"), width=8,
                            command=lambda g=gname, c=container: self._wl_delete_group(g, c)).pack(side="left", padx=(4, 0))
 
             if not is_collapsed:
                 if not tickers:
-                    ttk.Label(container, text="  （空群組）", foreground="gray").pack(anchor="w", padx=(20, 0))
+                    ttk.Label(container, text=t("gui.wl.empty_group"), foreground="gray").pack(anchor="w", padx=(20, 0))
                 for ticker in tickers:
                     item = wl_map[ticker]
                     row = ttk.Frame(container)
@@ -896,7 +931,7 @@ class SECFetcherApp:
                         path_text = f"…{os.sep}{short}"
                         path_fg = "black"
                     else:
-                        path_text = "（預設）"
+                        path_text = t("gui.wl.default_group")
                         path_fg = "gray"
                     ttk.Label(row, text=path_text, foreground=path_fg, width=18).pack(side="left", padx=(4, 2))
                     ttk.Button(row, text="[x]", width=4,
@@ -910,9 +945,9 @@ class SECFetcherApp:
         """Start async company-name lookup for the ticker in the add-company input."""
         ticker = self.wl_add_var.get().strip().upper()
         if not ticker:
-            self.wl_lookup_label.config(text="請輸入 Ticker", foreground="red")
+            self.wl_lookup_label.config(text=t("gui.msg.enter_ticker"), foreground="red")
             return
-        self.wl_lookup_label.config(text="查詢中...", foreground="gray")
+        self.wl_lookup_label.config(text=t("gui.status.looking_up"), foreground="gray")
         self.wl_add_btn.config(state="disabled")
         self._wl_found_name = ""
         threading.Thread(target=lambda: self._wl_lookup_worker(ticker), daemon=True).start()
@@ -940,7 +975,7 @@ class SECFetcherApp:
 
     def _wl_set_output_dir(self, ticker: str, container):
         from tkinter import filedialog
-        folder = filedialog.askdirectory(title=f"選擇 {ticker} 的輸出資料夾")
+        folder = filedialog.askdirectory(title=t("gui.dlg.choose_ticker_dir", ticker=ticker))
         if not folder:
             return
         for item in self._wl_draft.get("watchlist", []):
@@ -963,17 +998,18 @@ class SECFetcherApp:
         if not ticker or not self._wl_found_name:
             return
         if any(w["ticker"] == ticker for w in self._wl_draft.get("watchlist", [])):
-            self.wl_lookup_label.config(text=f"{ticker} 已在 Watchlist 中", foreground="orange")
+            self.wl_lookup_label.config(text=t("gui.wl.already_added", ticker=ticker), foreground="orange")
             return
         self._wl_draft.setdefault("watchlist", []).append({"ticker": ticker, "name": self._wl_found_name})
-        target = self.wl_group_var.get() if self.wl_group_var else "未分類"
+        target = (_group_stored(self.wl_group_var.get())
+                  if self.wl_group_var else UNCATEGORIZED)
         grp = next((g for g in self._wl_draft.get("groups", []) if g["name"] == target), None)
         if grp is None:
             self._wl_draft.setdefault("groups", []).append({"name": target, "tickers": [ticker]})
         elif ticker not in grp["tickers"]:
             grp["tickers"].append(ticker)
         self.wl_add_var.set("")
-        self.wl_lookup_label.config(text=f"✓ 已加入 {ticker} 到「{target}」", foreground="#1a7a34")
+        self.wl_lookup_label.config(text=t("gui.wl.added", ticker=ticker, group=_group_display(target)), foreground="#1a7a34")
         self.wl_add_btn.config(state="disabled")
         self._wl_found_name = ""
         self._refresh_wl_popup_list(self._wl_list_container)
@@ -984,12 +1020,12 @@ class SECFetcherApp:
 
     def _wl_add_group(self, container):
         from tkinter import simpledialog
-        name = simpledialog.askstring("新增群組", "群組名稱：", parent=container.winfo_toplevel())
+        name = simpledialog.askstring(t("gui.dlg.add_group_title"), t("gui.dlg.add_group_prompt"), parent=container.winfo_toplevel())
         if not name or not name.strip():
             return
         name = name.strip()
         if any(g["name"] == name for g in self._wl_draft.get("groups", [])):
-            messagebox.showwarning("重複", f"群組「{name}」已存在", parent=container.winfo_toplevel())
+            messagebox.showwarning(t("gui.dlg.duplicate_title"), t("gui.wl.group_exists", name=name), parent=container.winfo_toplevel())
             return
         self._wl_draft.setdefault("groups", []).append({"name": name, "tickers": []})
         self._refresh_group_dropdown()
@@ -997,13 +1033,13 @@ class SECFetcherApp:
 
     def _wl_rename_group(self, old_name: str, container):
         from tkinter import simpledialog
-        new_name = simpledialog.askstring("重新命名", f"新名稱（原：{old_name}）：",
+        new_name = simpledialog.askstring(t("gui.btn.rename"), t("gui.wl.rename_prompt", old=_group_display(old_name)),
                                            parent=container.winfo_toplevel())
         if not new_name or not new_name.strip() or new_name.strip() == old_name:
             return
         new_name = new_name.strip()
         if any(g["name"] == new_name for g in self._wl_draft.get("groups", [])):
-            messagebox.showwarning("重複", f"群組「{new_name}」已存在", parent=container.winfo_toplevel())
+            messagebox.showwarning(t("gui.dlg.duplicate_title"), t("gui.wl.group_exists", name=new_name), parent=container.winfo_toplevel())
             return
         for g in self._wl_draft.get("groups", []):
             if g["name"] == old_name:
@@ -1020,13 +1056,15 @@ class SECFetcherApp:
         if not grp:
             return
         if grp["tickers"]:
-            if not messagebox.askyesno("確認刪除",
-                                        f"刪除「{group_name}」後，其中 {len(grp['tickers'])} 支股票將移至「未分類」。確定嗎？",
+            if not messagebox.askyesno(t("gui.dlg.confirm_delete_title"),
+                                        t("gui.wl.delete_confirm", name=_group_display(group_name),
+                                          n=len(grp["tickers"]),
+                                          fallback=t("gui.wl.uncategorized")),
                                         parent=container.winfo_toplevel()):
                 return
-            uncategorized = next((g for g in self._wl_draft["groups"] if g["name"] == "未分類"), None)
+            uncategorized = next((g for g in self._wl_draft["groups"] if g["name"] == UNCATEGORIZED), None)
             if uncategorized is None:
-                self._wl_draft["groups"].append({"name": "未分類", "tickers": list(grp["tickers"])})
+                self._wl_draft["groups"].append({"name": UNCATEGORIZED, "tickers": list(grp["tickers"])})
             else:
                 uncategorized["tickers"].extend(grp["tickers"])
         self._wl_draft["groups"] = [g for g in self._wl_draft["groups"] if g["name"] != group_name]
@@ -1038,7 +1076,8 @@ class SECFetcherApp:
         if not self.wl_group_cb:
             return
         try:
-            names = [g["name"] for g in self._get_groups_sorted(self._wl_draft)] or ["未分類"]
+            names = [_group_display(g["name"])
+                     for g in self._get_groups_sorted(self._wl_draft)] or [_group_display(UNCATEGORIZED)]
             self.wl_group_cb["values"] = names
             if self.wl_group_var.get() not in names:
                 self.wl_group_var.set(names[0])
@@ -1054,7 +1093,7 @@ class SECFetcherApp:
         popup.destroy()
 
     def _wl_update_cache(self):
-        self.wl_cache_label.config(text="更新中...", foreground="gray")
+        self.wl_cache_label.config(text=t("gui.status.updating"), foreground="gray")
         threading.Thread(target=self._wl_update_cache_worker, daemon=True).start()
 
     def _wl_update_cache_worker(self):
@@ -1077,23 +1116,23 @@ class SECFetcherApp:
         """Migrate old watchlist (no groups key) to groups structure."""
         if "groups" not in cfg:
             tickers = [w["ticker"] for w in cfg.get("watchlist", [])]
-            cfg["groups"] = [{"name": "未分類", "tickers": tickers}] if tickers else []
+            cfg["groups"] = [{"name": UNCATEGORIZED, "tickers": tickers}] if tickers else []
         else:
             all_grouped = {t for g in cfg["groups"] for t in g["tickers"]}
             ungrouped = [w["ticker"] for w in cfg.get("watchlist", []) if w["ticker"] not in all_grouped]
             if ungrouped:
                 for g in cfg["groups"]:
-                    if g["name"] == "未分類":
+                    if g["name"] == UNCATEGORIZED:
                         g["tickers"].extend(ungrouped)
                         break
                 else:
-                    cfg["groups"].append({"name": "未分類", "tickers": ungrouped})
+                    cfg["groups"].append({"name": UNCATEGORIZED, "tickers": ungrouped})
 
     def _get_groups_sorted(self, cfg: dict) -> list[dict]:
         """Return groups sorted A-Z, 未分類 always last."""
         groups = cfg.get("groups", [])
-        known = sorted([g for g in groups if g["name"] != "未分類"], key=lambda g: g["name"])
-        uncategorized = [g for g in groups if g["name"] == "未分類"]
+        known = sorted([g for g in groups if g["name"] != UNCATEGORIZED], key=lambda g: g["name"])
+        uncategorized = [g for g in groups if g["name"] == UNCATEGORIZED]
         return known + uncategorized
 
     def _wl_cache_status(self) -> str:
@@ -1102,10 +1141,11 @@ class SECFetcherApp:
                 with open(CACHE_PATH, encoding="utf-8") as f:
                     data = json.load(f)
                 count = len(data.get("companies", {}))
-                return f"已載入 {count:,} 間公司，上次更新：{data.get('last_updated', '未知')}"
+                return t("gui.wl.cache_loaded", count=f"{count:,}",
+                                 updated=data.get("last_updated") or t("gui.wl.unknown_time"))
             except (json.JSONDecodeError, OSError):
-                return "名稱庫：檔案損毀"
-        return "名稱庫：尚未建立（建議先點「更新名稱庫」下載完整清單）"
+                return t("gui.wl.cache_corrupt")
+        return t("gui.wl.cache_absent")
 
     # =========================================================
     # Advanced settings popup
@@ -1113,7 +1153,7 @@ class SECFetcherApp:
 
     def _open_settings_popup(self):
         popup = tk.Toplevel(self.root)
-        popup.title("進階設定")
+        popup.title(t("gui.btn.settings"))
         popup.resizable(False, False)
         popup.grab_set()
         popup.attributes("-topmost", True)
@@ -1149,14 +1189,14 @@ class SECFetcherApp:
         # SEC Identity
         id_frame = ttk.LabelFrame(popup, text=" SEC EDGAR Identity ", padding=8)
         id_frame.grid(row=1, column=0, sticky="ew", **pad)
-        ttk.Label(id_frame, text="格式：姓名 空格 信箱（如 John Smith john@example.com）",
+        ttk.Label(id_frame, text=t("gui.lbl.identity_hint"),
                   foreground="#555555", font=("", 10)).grid(row=0, column=0, columnspan=2, sticky="w")
         ttk.Label(id_frame, text="Identity:").grid(row=1, column=0, sticky="w", pady=4)
         self.settings_identity_var = tk.StringVar(value=self.cfg.get("identity", ""))
         ttk.Entry(id_frame, textvariable=self.settings_identity_var, width=42).grid(row=1, column=1, sticky="ew", padx=(8, 0))
 
         # AI Config
-        ai_frame = ttk.LabelFrame(popup, text=" AI 設定（Non-GAAP 功能需要，未設定不影響 GAAP）", padding=8)
+        ai_frame = ttk.LabelFrame(popup, text=t("gui.frame.ai_settings"), padding=8)
         ai_frame.grid(row=2, column=0, sticky="ew", **pad)
 
         ttk.Label(ai_frame, text="Provider:").grid(row=0, column=0, sticky="w")
@@ -1176,32 +1216,32 @@ class SECFetcherApp:
         self.settings_key_var = tk.StringVar(value=self.cfg["ai"].get("api_key", ""))
         self.settings_key_entry = ttk.Entry(key_row, textvariable=self.settings_key_var, width=28, show="•")
         self.settings_key_entry.pack(side="left", padx=(0, 8))
-        self.settings_key_toggle_btn = ttk.Button(key_row, text="顯示", width=5, command=self._toggle_key_show)
+        self.settings_key_toggle_btn = ttk.Button(key_row, text=t("gui.btn.show"), width=5, command=self._toggle_key_show)
         self.settings_key_toggle_btn.pack(side="left")
-        tk.Label(ai_frame, text="API Key 僅存於本機 config.json，請勿分享給他人。",
+        tk.Label(ai_frame, text=t("gui.lbl.api_key_notice"),
                  foreground="#555555", font=("", 10)).grid(row=3, column=0, columnspan=2, sticky="w")
 
         test_row = ttk.Frame(ai_frame)
         test_row.grid(row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        ttk.Button(test_row, text="測試連線", command=self._test_ai_connection).pack(side="left")
+        ttk.Button(test_row, text=t("gui.btn.test_connection"), command=self._test_ai_connection).pack(side="left")
         self.settings_test_label = ttk.Label(test_row, text="", foreground="gray")
         self.settings_test_label.pack(side="left", padx=10)
 
         # Fetch settings frame
-        fetch_frame = ttk.LabelFrame(popup, text=" 抓取設定 ", padding=8)
+        fetch_frame = ttk.LabelFrame(popup, text=t("gui.frame.fetch_settings"), padding=8)
         fetch_frame.grid(row=3, column=0, sticky="ew", **pad)
         fetch_frame.columnconfigure(2, weight=1)
 
-        ttk.Label(fetch_frame, text="最多季報數量:").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(fetch_frame, text=t("gui.lbl.max_filings")).grid(row=0, column=0, sticky="w", padx=(0, 8))
         self.settings_max_filings_var = tk.IntVar(value=self.cfg.get("max_filings", 80))
         max_spin = ttk.Spinbox(fetch_frame, from_=4, to=320, increment=4,
                                textvariable=self.settings_max_filings_var, width=6)
         max_spin.grid(row=0, column=1, sticky="w")
-        ttk.Label(fetch_frame, text="筆（預設 80，約 20 年）", foreground="#555555").grid(
+        ttk.Label(fetch_frame, text=t("gui.lbl.max_filings_hint"), foreground="#555555").grid(
             row=0, column=2, sticky="w", padx=(4, 0))
 
         # Template mode
-        ttk.Label(fetch_frame, text="著色模板:").grid(row=1, column=0, sticky="nw", pady=(10, 0))
+        ttk.Label(fetch_frame, text=t("gui.lbl.template")).grid(row=1, column=0, sticky="nw", pady=(10, 0))
         has_tpl = bool(self.cfg.get("template_path", ""))
         self.settings_template_mode_var = tk.StringVar(value="custom" if has_tpl else "default")
         self.settings_template_var = tk.StringVar(value=self.cfg.get("template_path", ""))
@@ -1209,16 +1249,16 @@ class SECFetcherApp:
         tpl_frame = ttk.Frame(fetch_frame)
         tpl_frame.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(10, 0))
 
-        ttk.Radiobutton(tpl_frame, text="預設模板（Python 自動著色）",
+        ttk.Radiobutton(tpl_frame, text=t("gui.radio.template_default"),
                         variable=self.settings_template_mode_var, value="default",
                         command=self._on_template_mode_change).grid(row=0, column=0, columnspan=3, sticky="w")
 
-        ttk.Radiobutton(tpl_frame, text="自訂模板：",
+        ttk.Radiobutton(tpl_frame, text=t("gui.radio.template_custom"),
                         variable=self.settings_template_mode_var, value="custom",
                         command=self._on_template_mode_change).grid(row=1, column=0, sticky="w", pady=(4, 0))
         self._tpl_entry = ttk.Entry(tpl_frame, textvariable=self.settings_template_var, width=24)
         self._tpl_entry.grid(row=1, column=1, sticky="ew", padx=(4, 4), pady=(4, 0))
-        self._tpl_browse_btn = ttk.Button(tpl_frame, text="瀏覽", width=5,
+        self._tpl_browse_btn = ttk.Button(tpl_frame, text=t("gui.btn.browse"), width=5,
                                            command=self._browse_template)
         self._tpl_browse_btn.grid(row=1, column=2, pady=(4, 0))
         self._on_template_mode_change()  # set initial enabled/disabled state
@@ -1226,8 +1266,8 @@ class SECFetcherApp:
         # Buttons
         btn_row = ttk.Frame(popup)
         btn_row.grid(row=4, column=0, pady=10)
-        ttk.Button(btn_row, text="儲存", command=lambda: self._save_settings(popup), width=10).pack(side="left", padx=6)
-        ttk.Button(btn_row, text="取消", command=popup.destroy, width=10).pack(side="left", padx=6)
+        ttk.Button(btn_row, text=t("gui.btn.save"), command=lambda: self._save_settings(popup), width=10).pack(side="left", padx=6)
+        ttk.Button(btn_row, text=t("gui.btn.cancel"), command=popup.destroy, width=10).pack(side="left", padx=6)
 
     def _on_template_mode_change(self):
         is_custom = getattr(self, "settings_template_mode_var", None) and \
@@ -1241,7 +1281,7 @@ class SECFetcherApp:
     def _browse_template(self):
         from tkinter import filedialog
         path = filedialog.askopenfilename(
-            title="選擇著色模板",
+            title=t("gui.dlg.choose_template"),
             filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
         )
         if path and hasattr(self, "settings_template_var"):
@@ -1257,16 +1297,16 @@ class SECFetcherApp:
         new_show = "" if current else "•"
         self.settings_key_entry.config(show=new_show)
         if self.settings_key_toggle_btn:
-            self.settings_key_toggle_btn.config(text="隱藏" if new_show == "" else "顯示")
+            self.settings_key_toggle_btn.config(text=t("gui.btn.hide") if new_show == "" else t("gui.btn.show"))
 
     def _test_ai_connection(self):
         provider = self.settings_provider_var.get()
         model    = self.settings_model_var.get().strip()
         api_key  = self.settings_key_var.get().strip()
         if not api_key:
-            self.settings_test_label.config(text="請輸入 API Key", foreground="red")
+            self.settings_test_label.config(text=t("gui.msg.enter_api_key"), foreground="red")
             return
-        self.settings_test_label.config(text="測試中...", foreground="gray")
+        self.settings_test_label.config(text=t("gui.status.testing"), foreground="gray")
         threading.Thread(
             target=lambda: self._test_ai_worker(provider, model, api_key), daemon=True
         ).start()
@@ -1420,33 +1460,33 @@ class SECFetcherApp:
         """Validate inputs then launch the single-ticker fetch+write worker in a background thread."""
         ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
         if not ticker:
-            messagebox.showerror("錯誤", "請輸入 Ticker")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.enter_ticker"))
             return
         if not self.fetch_gaap_var.get() and not self.fetch_nongaap_var.get():
-            messagebox.showerror("錯誤", "請至少勾選 GAAP 或 Non-GAAP")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.pick_gaap_or_nongaap"))
             return
         fetch_gaap    = self.fetch_gaap_var.get()
         fetch_nongaap = self.fetch_nongaap_var.get()
         if fetch_nongaap and not self.cfg["ai"].get("api_key"):
             messagebox.showwarning(
-                "需要 API Key",
-                "Non-GAAP 功能需要 AI API Key。\n請先至「進階設定」填入 API Key 後再執行。"
+                t("gui.dlg.need_key_title"),
+                t("gui.msg.nongaap_need_key_body")
             )
             return
         max_filings = self.cfg.get("max_filings", 80)
         fetch_q = self.tab1_fetch_q_var.get() if self.tab1_fetch_q_var else True
         fetch_k = self.tab1_fetch_k_var.get() if self.tab1_fetch_k_var else True
         if not fetch_q and not fetch_k:
-            messagebox.showerror("錯誤", "請至少勾選季報 (10-Q) 或年報 (10-K)")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.pick_q_or_k"))
             return
         try:
             start_year = int(self.tab1_start_year_var.get()) if self.tab1_start_year_var and self.tab1_start_year_var.get().strip() else None
             end_year   = int(self.tab1_end_year_var.get())   if self.tab1_end_year_var   and self.tab1_end_year_var.get().strip()   else None
         except ValueError:
-            messagebox.showerror("錯誤", "日期區間請輸入有效年份（如 2018）")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.bad_year"))
             return
         if start_year is not None and end_year is not None and start_year > end_year:
-            messagebox.showerror("錯誤", f"起始年份（{start_year}）不可大於結束年份（{end_year}）")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.year_range_reversed", start=start_year, end=end_year))
             return
         excluded = {
             name for name, var in self._sheet_check_vars.items()
@@ -1462,25 +1502,25 @@ class SECFetcherApp:
     def _run_batch(self):
         selected = [t for t, v in self.tab2_check_vars.items() if v.get()]
         if not selected:
-            messagebox.showerror("錯誤", "請至少勾選一間公司")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.pick_a_company"))
             return
         fetch_nongaap = self.batch_nongaap_var.get()
         fetch_q = self.batch_fetch_q_var.get() if self.batch_fetch_q_var else True
         fetch_k = self.batch_fetch_k_var.get() if self.batch_fetch_k_var else True
         if not fetch_q and not fetch_k:
-            messagebox.showerror("錯誤", "請至少勾選季報 (10-Q) 或年報 (10-K)")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.pick_q_or_k"))
             return
         try:
             start_year = int(self.batch_start_year_var.get()) if self.batch_start_year_var and self.batch_start_year_var.get().strip() else None
             end_year   = int(self.batch_end_year_var.get())   if self.batch_end_year_var   and self.batch_end_year_var.get().strip()   else None
         except ValueError:
-            messagebox.showerror("錯誤", "日期區間請輸入有效年份（如 2018）")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.bad_year"))
             return
         if start_year is not None and end_year is not None and start_year > end_year:
-            messagebox.showerror("錯誤", f"起始年份（{start_year}）不可大於結束年份（{end_year}）")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.year_range_reversed", start=start_year, end=end_year))
             return
         if fetch_nongaap and not self.cfg["ai"].get("api_key"):
-            messagebox.showerror("錯誤", "Non-GAAP 需先在「進階設定」填入 AI API Key")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.batch_nongaap_need_key"))
             return
         self._start_worker(lambda: self._worker_batch(
             selected, fetch_nongaap,
@@ -1491,46 +1531,46 @@ class SECFetcherApp:
     def _show_scan_help(self):
         """Explain what 快速掃描 does — triggered by the '？' label next to the button."""
         win = tk.Toplevel(self.root)
-        win.title("快速掃描說明")
+        win.title(t("gui.help.scan_title"))
         win.resizable(False, False)
         win.grab_set()
 
-        ttk.Label(win, text="快速掃描是什麼？", font=("Microsoft JhengHei", 12, "bold")).pack(
+        ttk.Label(win, text=t("gui.help.scan_heading"), font=("Microsoft JhengHei", 12, "bold")).pack(
             anchor="w", padx=20, pady=(16, 4)
         )
         lines = [
-            "只抓該公司「最新一期」10-Q，偵測有哪些額外的 Segment 明細表",
-            "（依業務別、地區別等軸拆出來的子表），不會抓完整財報資料。",
+            t("gui.help.scan_l1"),
+            t("gui.help.scan_l2"),
             "",
-            "目的是讓你在正式抓取前，先看到「可選 Sheet」清單，決定要不要",
-            "保留這些額外的表——固定的 Data_Financials(Q/Y)／Data_Meta",
-            "一定會抓，Segment 表可以自己勾掉不要。",
+            t("gui.help.scan_l3"),
+            t("gui.help.scan_l4"),
+            t("gui.help.scan_l5"),
             "",
-            "通常 5~15 秒（只打一次 API），比正式抓取快很多。",
+            t("gui.help.scan_l6"),
             "",
-            "同時會顯示目前抓得到的最新一季（財季＋期末日）與該份 10-Q 的送件日",
-            "（SEC 公開日，不是精確到秒的受理時間戳）。",
+            t("gui.help.scan_l7"),
+            t("gui.help.scan_l8"),
         ]
         for line in lines:
             ttk.Label(win, text=line, justify="left").pack(anchor="w", padx=20, pady=1)
 
-        ttk.Button(win, text="關閉", command=win.destroy).pack(pady=(12, 16))
+        ttk.Button(win, text=t("gui.btn.close"), command=win.destroy).pack(pady=(12, 16))
 
     def _run_preview_scan(self):
         """Start background preview scan for the current ticker."""
         ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
         if not ticker:
-            messagebox.showerror("錯誤", "請先輸入 Ticker")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.enter_ticker_first"))
             return
         identity = self.cfg.get("identity", "")
         if not identity:
-            messagebox.showerror("錯誤", "請先在進階設定填入 Identity")
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.set_identity"))
             return
         if self.is_running:
-            messagebox.showwarning("提示", "請等待目前的抓取完成後再掃描")
+            messagebox.showwarning(t("gui.dlg.info_title"), t("gui.msg.wait_for_current_run"))
             return
         if self._scan_btn:
-            self._scan_btn.config(state="disabled", text="掃描中...")
+            self._scan_btn.config(state="disabled", text=t("gui.status.scanning"))
         if self._sheet_panel_frame:
             self._sheet_panel_frame.grid_remove()
             self._sheet_panel_frame.configure(text=self._SHEET_PANEL_TITLE_BASE)
@@ -1600,7 +1640,7 @@ class SECFetcherApp:
         self.log_text.config(state="disabled")
         self.btn_open_folder.pack_forget()
         self.progress_bar["value"] = 0
-        self.progress_label.config(text="準備中...")
+        self.progress_label.config(text=t("gui.status.preparing"))
         self.is_running = True
         self.btn_run_single.config(state="disabled")
         self.btn_run_batch.config(state="disabled")
@@ -1614,7 +1654,7 @@ class SECFetcherApp:
         try:
             identity = self.cfg.get("identity", "")
             if not identity:
-                self._log("[ERROR] 請先在進階設定填入 Identity（姓名 + 信箱）")
+                self._log(t("gui.log.need_identity_full"))
                 self._done(False)
                 return
 
@@ -1642,8 +1682,8 @@ class SECFetcherApp:
             step = 0
 
             if fetch_gaap:
-                self._log(f"[{ticker}] 抓取 GAAP 財報中...")
-                self._set_progress(step, total_steps, "抓取 GAAP...")
+                self._log(t("gui.log.fetching_gaap", ticker=ticker))
+                self._set_progress(step, total_steps, t("gui.status.fetching_gaap"))
                 gaap_tables = fetch_gaap_statements(
                     ticker, identity, max_filings=max_filings,
                     ai_config=self.cfg.get("ai", {}),
@@ -1652,16 +1692,16 @@ class SECFetcherApp:
                     excluded_sheets=excluded_sheets or set(),
                 )
                 tables.extend(gaap_tables)
-                self._log(f"[{ticker}] GAAP：取得 {len(gaap_tables)} 份財報")
+                self._log(t("gui.log.gaap_got", ticker=ticker, n=len(gaap_tables)))
                 if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
-                    self._log(f"[{ticker}] ⚠ 金融股：BS/IS 部分欄位可能為空（模板尚未針對金融業最佳化）")
+                    self._log(t("gui.log.financial_sector_warning", ticker=ticker))
                 step += 1
 
             if fetch_nongaap and NONGAAP_ENABLED:
                 from fetcher_nongaap import fetch_nongaap_statements
                 ai_config = self.cfg.get("ai", {})
-                self._log(f"[{ticker}] 抓取 Non-GAAP 財報中...")
-                self._set_progress(step, total_steps, "抓取 Non-GAAP...")
+                self._log(t("gui.log.fetching_nongaap", ticker=ticker))
+                self._set_progress(step, total_steps, t("gui.status.fetching_nongaap"))
 
                 def _ng_progress(current, total, label):
                     self._log(f"[{ticker}] {label}")
@@ -1675,22 +1715,22 @@ class SECFetcherApp:
                     start_year=start_year, end_year=end_year,
                 )
                 tables.extend(ng_tables)
-                self._log(f"[{ticker}] Non-GAAP：{len(ng_tables)} 張 sheet")
+                self._log(t("gui.log.nongaap_sheets", ticker=ticker, n=len(ng_tables)))
                 step += 1
 
             if not tables:
-                self._log("[WARNING] 無資料可寫入")
+                self._log(t("gui.log.nothing_to_write"))
                 self._done(False)
                 return
 
             _append_ratio_table(tables)
 
-            self._log(f"[{ticker}] 寫入 Excel...")
-            self._set_progress(step, total_steps, "寫入 Excel...")
+            self._log(t("gui.log.writing_excel", ticker=ticker))
+            self._set_progress(step, total_steps, t("gui.status.writing_excel"))
             tpl = self.cfg.get("template_path", "") or None
             write_statements(tables, output_path, template_path=tpl)
-            self._log(f"[{ticker}] 完成 → {output_path.name}")
-            self._set_progress(total_steps, total_steps, "完成！")
+            self._log(t("gui.log.done_file", ticker=ticker, name=output_path.name))
+            self._set_progress(total_steps, total_steps, t("gui.status.done"))
             # ---- 任務結果行：成功 + 耗時 ----
             _elapsed = int(time.time() - task_start)
             _write_log(f"{ticker} 成功，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "OK")
@@ -1699,7 +1739,8 @@ class SECFetcherApp:
 
         except Exception as e:
             # ---- 錯誤行：只記 type + status，禁止 {e} 全文（會挾帶 URL/response/key）----
-            self._log(f"[{ticker}] 抓取失敗 -> {type(e).__name__}{_exc_status(e)}", "ERROR", to_file=True)
+            self._log(t("gui.log.fetch_failed", ticker=ticker,
+                                exc=f"{type(e).__name__}{_exc_status(e)}"), "ERROR", to_file=True)
             try:
                 _elapsed = int(time.time() - task_start)
                 _write_log(f"{ticker} 失敗，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "FAIL")
@@ -1714,7 +1755,7 @@ class SECFetcherApp:
         total = len(tickers)
         identity = self.cfg.get("identity", "")
         if not identity:
-            self._log("[ERROR] 請先在進階設定填入 Identity")
+            self._log(t("gui.log.need_identity"))
             self._done(False)
             return
         max_filings = self.cfg.get("max_filings", 80)
@@ -1725,8 +1766,9 @@ class SECFetcherApp:
         scope = f"{start_year or ''}-{end_year or ''}" if (start_year or end_year) else f"max{max_filings}筆"
 
         for i, ticker in enumerate(tickers, 1):
-            self._set_progress(i - 1, total, f"處理中：{ticker} ({i}/{total})")
-            self._log(f"\n[{ticker}] 開始...")
+            self._set_progress(i - 1, total,
+                               t("gui.status.processing", ticker=ticker, i=i, total=total))
+            self._log("\n" + t("gui.log.starting", ticker=ticker))
             # ---- 任務起始行：只記 ticker + 設定 ----
             task_start = time.time()
             _write_log_header(f"批量抓取 {ticker} ({i}/{total}) | {srcs} | {'/'.join(kinds) or '無'} | {scope}")
@@ -1738,7 +1780,7 @@ class SECFetcherApp:
                 )
 
                 if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
-                    self._log(f"[{ticker}] ⚠ 金融股：BS/IS 部分欄位可能為空（模板尚未針對金融業最佳化）")
+                    self._log(t("gui.log.financial_sector_warning", ticker=ticker))
 
                 if fetch_nongaap and NONGAAP_ENABLED:
                     from fetcher_nongaap import fetch_nongaap_statements
@@ -1757,7 +1799,7 @@ class SECFetcherApp:
                         start_year=start_year, end_year=end_year,
                     )
                     tables.extend(ng_tables)
-                    self._log(f"[{ticker}] Non-GAAP：{len(ng_tables)} 張 sheet")
+                    self._log(t("gui.log.nongaap_sheets", ticker=ticker, n=len(ng_tables)))
 
                 _append_ratio_table(tables)
                 output_path = self._build_output_path(ticker)
@@ -1769,17 +1811,18 @@ class SECFetcherApp:
                     continue
                 tpl = self.cfg.get("template_path", "") or None
                 write_statements(tables, output_path, template_path=tpl)
-                self._log(f"[{ticker}] 完成（{len(tables)} 份財報）")
+                self._log(t("gui.log.done_count", ticker=ticker, n=len(tables)))
                 # ---- 任務結果行：成功 + 耗時 ----
                 _elapsed = int(time.time() - task_start)
                 _write_log(f"{ticker} 成功，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "OK")
             except Exception as e:
                 # ---- 錯誤行：只記 type + status，禁止 {e} 全文 ----
-                self._log(f"[{ticker}] 抓取失敗 -> {type(e).__name__}{_exc_status(e)}", "ERROR", to_file=True)
+                self._log(t("gui.log.fetch_failed", ticker=ticker,
+                                exc=f"{type(e).__name__}{_exc_status(e)}"), "ERROR", to_file=True)
                 _elapsed = int(time.time() - task_start)
                 _write_log(f"{ticker} 失敗，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "FAIL")
 
-        self._set_progress(total, total, f"完成：共處理 {total} 間公司")
+        self._set_progress(total, total, t("gui.status.batch_done", total=total))
         self.msg_queue.put(("last_output_folder", self._build_output_path(tickers[-1]).parent))
         self._done(True)
 
@@ -1840,9 +1883,9 @@ class SECFetcherApp:
                     self.btn_run_batch.config(state="normal")
                     if success:
                         self.btn_open_folder.pack(side="left")
-                        self.progress_label.config(text="完成！")
+                        self.progress_label.config(text=t("gui.status.done"))
                     else:
-                        self.progress_label.config(text="發生錯誤，請查看上方記錄")
+                        self.progress_label.config(text=t("gui.status.error_see_log"))
 
                 elif msg_type == "tab1_name_result":
                     status, looked_ticker, name = data
@@ -1855,7 +1898,7 @@ class SECFetcherApp:
                             if saved_path and self.tab1_outdir_var:
                                 self.tab1_outdir_var.set(saved_path)
                         else:
-                            self.tab1_name_label.config(text="　查無此 Ticker，請確認後再試", foreground="orange")
+                            self.tab1_name_label.config(text=t("gui.status.ticker_not_found"), foreground="orange")
                         self._update_tab1_preview()
                     if self.btn_confirm_company:
                         self.btn_confirm_company.config(state="normal")
@@ -1866,25 +1909,25 @@ class SECFetcherApp:
                         _, ticker, name = data
                         self._wl_found_name = name
                         if self.wl_lookup_label:
-                            self.wl_lookup_label.config(text=f"查到：{name}", foreground="#1a7a34")
+                            self.wl_lookup_label.config(text=t("gui.wl.found", name=name), foreground="#1a7a34")
                         if self.wl_add_btn:
                             self.wl_add_btn.config(state="normal")
                         self._wl_add()
                     else:
                         if self.wl_lookup_label:
-                            self.wl_lookup_label.config(text=f"查詢失敗：{data[1]}", foreground="red")
+                            self.wl_lookup_label.config(text=t("gui.wl.lookup_failed", reason=data[1]), foreground="red")
 
                 elif msg_type == "wl_cache_updated":
                     update_date, count = data
                     if self.wl_cache_label:
                         self.wl_cache_label.config(
-                            text=f"已載入 {count:,} 間公司，上次更新：{update_date}",
+                            text=t("gui.wl.cache_loaded", count=f"{count:,}", updated=update_date),
                             foreground="gray"
                         )
 
                 elif msg_type == "wl_cache_update_error":
                     if self.wl_cache_label:
-                        self.wl_cache_label.config(text=f"更新失敗：{data}", foreground="red")
+                        self.wl_cache_label.config(text=t("gui.wl.update_failed", reason=data), foreground="red")
 
                 elif msg_type == "last_output_folder":
                     self._last_output_folder = data
@@ -1893,28 +1936,29 @@ class SECFetcherApp:
                     ok, err = data
                     if self.settings_test_label:
                         if ok == "ok":
-                            self.settings_test_label.config(text="連線成功！", foreground="#1a7a34")
+                            self.settings_test_label.config(text=t("gui.msg.connection_ok"), foreground="#1a7a34")
                         else:
-                            self.settings_test_label.config(text=f"失敗：{str(err)[:60]}", foreground="red")
+                            self.settings_test_label.config(text=t("gui.msg.failed", reason=str(err)[:60]), foreground="red")
 
                 elif msg_type == "preview_scan_done":
                     self._build_sheet_panel(data["sheets"])
                     if self._sheet_panel_frame:
                         label, end, fdate = data["latest_label"], data["latest_period_end"], data["filing_date"]
-                        info = f"最新資料：{label}（期末 {end}）｜送件日 {fdate}" if label else "最新資料：無法判斷財季"
+                        info = (t("gui.status.latest_data", label=label, end=end, filed=fdate)
+                                if label else t("gui.status.latest_unknown"))
                         self._sheet_panel_frame.configure(text=f"{self._SHEET_PANEL_TITLE_BASE} ｜ {info}")
                     if self._scan_btn:
-                        self._scan_btn.config(state="normal", text="快速掃描 ▶")
+                        self._scan_btn.config(state="normal", text=t("gui.btn.scan"))
 
                 elif msg_type == "preview_scan_error":
                     if self._scan_btn:
-                        self._scan_btn.config(state="normal", text="快速掃描 ▶")
+                        self._scan_btn.config(state="normal", text=t("gui.btn.scan"))
                     ticker, exc_name = data
                     if exc_name in ("CompanyNotFoundError", "ValueError"):
-                        msg = f"查無此 Ticker「{ticker}」，請確認代碼是否正確。"
+                        msg = t("gui.msg.ticker_not_found", ticker=ticker)
                     else:
-                        msg = f"快速掃描失敗（{exc_name}），請檢查網路連線後再試一次。"
-                    messagebox.showerror("掃描失敗", msg)
+                        msg = t("gui.msg.scan_failed", reason=exc_name)
+                    messagebox.showerror(t("gui.dlg.scan_failed_title"), msg)
 
         except queue.Empty:
             pass
