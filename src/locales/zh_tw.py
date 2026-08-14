@@ -7,9 +7,6 @@ from __future__ import annotations
 
 STRINGS: dict[str, str] = {
     # ── 三表科目（Excel B 欄）。key 是 A 欄的英文機器鍵 ──────────────
-    "acct.財季 Fiscal Quarter": '公司財年基準的季度',
-    "acct.日曆季 Calendar Quarter": '日曆年基準的季度',
-    "acct.期末結算日 Period End": '該期實際結束日（多為 52/53 週制，不是月底）',
     "acct.Income Statement": '損益表',
     "acct.Revenue": '營業收入',
     "acct.Cost of Revenue": '營業成本',
@@ -378,4 +375,16 @@ STRINGS: dict[str, str] = {
     "gui.wl.lookup_failed": '查詢失敗：{reason}',
     "gui.wl.rename_prompt": '新名稱（原：{old}）：',
     "gui.wl.update_failed": '更新失敗：{reason}',
+
+    # ── 表頭三列、Data_Meta 的值、使用者可見的錯誤訊息 ──────────────
+    "acct.Fiscal Quarter": '公司財年基準的季度',
+    "acct.Calendar Quarter": '日曆年基準的季度',
+    "acct.Period End": '該期實際結束日（多為 52/53 週制，不是月底）',
+    "xls.meta.sep": '、',
+    "xls.meta.none": '無',
+    "xls.meta.fy_span_value": '{start} 月 – {end} 月',
+    "err.output_locked_excel": '輸出檔無法寫入（可能正被 Excel 開啟）：{name}\n請先關閉該檔案再重試。',
+    "err.output_locked_other": '輸出檔正被其他程式鎖定（可能是 Excel）：{name}\n請先關閉該檔案再重試。',
+    "err.output_unwritable": '輸出檔無法寫入：{name}（{exc}）',
+    "err.backup_failed": '[excel_writer] 備份失敗（{exc}），仍會寫入 {name}',
 }

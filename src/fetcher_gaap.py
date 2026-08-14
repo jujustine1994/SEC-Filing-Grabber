@@ -32,6 +32,7 @@ from typing import Any
 import pandas as pd
 from edgar import Company, set_identity as set_identity
 
+from i18n import t
 from override_engine import load_overrides, run_diagnosis, check_key_rows
 
 # 9 個關鍵科目的清單（品質檢查用）。定義在 excel_formatter，避免兩處各記一份。
@@ -1429,11 +1430,11 @@ def _merge_financials(is_tbl: StatementTable,
         labels_col.append("")
         values.append(vals)
 
-    _add_label_row("財季 Fiscal Quarter", [_fiscal_quarter(q) for q in all_qs])
-    _add_label_row("日曆季 Calendar Quarter",
+    _add_label_row("Fiscal Quarter", [_fiscal_quarter(q) for q in all_qs])
+    _add_label_row("Calendar Quarter",
                    [_calendar_quarter(q, fy_end_month, period_ends[i] if i < len(period_ends) else "")
                     for i, q in enumerate(all_qs)])
-    _add_label_row("期末結算日 Period End",
+    _add_label_row("Period End",
                    [(period_ends[i] if i < len(period_ends) and period_ends[i]
                      else _period_end(q, fy_end_month)) for i, q in enumerate(all_qs)])
     _add_blank()
@@ -1747,7 +1748,7 @@ def _build_meta_table(ticker: str, company_name: str,
         from excel_formatter import ALL_KEY_ROWS as _ALL_KEY_ROWS
         total = len(_ALL_KEY_ROWS)
         score = f"{total - len(missing)}/{total}"
-        missing_txt = "、".join(missing) if missing else "無"
+        missing_txt = t("xls.meta.sep").join(missing) if missing else t("xls.meta.none")
 
     # 最新期間：這份檔案的資料抓到哪一季、那一季實際結束在哪天。
     latest_label, latest_end = "", ""
@@ -1758,7 +1759,7 @@ def _build_meta_table(ticker: str, company_name: str,
 
     # 財年起訖：結算月的下個月為起月。AAPL 9 月結算 → 財年 10 月起。
     start_month = fy_end_month % 12 + 1
-    fy_span = f"{start_month} 月 – {fy_end_month} 月"
+    fy_span = t("xls.meta.fy_span_value", start=start_month, end=fy_end_month)
 
     return StatementTable(
         sheet_name="Data_Meta",

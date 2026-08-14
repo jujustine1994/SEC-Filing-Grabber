@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 from config import load_config
+import i18n
 from errsafe import _exc_status
 from excel_writer import check_output_writable, write_statements
 from fiscal_input import fiscal_quarter_of, fy_start_month
@@ -419,6 +420,10 @@ def build_parser() -> argparse.ArgumentParser:
              "放寬一年，再自己用 fiscal_label 篩",
     )
     common.add_argument("--identity", help="SEC EDGAR Identity（預設讀 config.json）")
+    common.add_argument(
+        "--lang", metavar="CODE",
+        help="輸出 Excel 的顯示語言（B 欄譯文、Index 版面）。代號見 i18n.LANGUAGES：zh_tw／zh_cn／en／ja。預設讀 config.json，"
+             "沒設定就 zh_tw。A 欄英文機器鍵與 C 欄公司原文不受影響")
     common.add_argument("--max-filings", type=int, default=80,
                         help="最多處理幾份申報（預設 80，約 20 年）")
     common.add_argument("--json", nargs="?", const="-", metavar="PATH",
@@ -467,6 +472,15 @@ def main(argv: list[str] | None = None) -> int:
     _force_utf8_io()
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # 語言要在任何抓取／寫檔之前設好——Excel 的 B 欄是寫入當下查表的。
+    # 沒給 --lang 就沿用 config.json，跟 GUI 產出的檔案一致。
+    lang = getattr(args, "lang", None) or load_config().get("language")
+    if getattr(args, "lang", None) and not i18n.is_supported(args.lang):
+        parser.error(
+            f"--lang 不認得 {args.lang!r}，可用："
+            + "／".join(c for c, _ in i18n.available_languages()))
+    i18n.set_lang(lang)
 
     if args.command == "gaap" and not args.xlsx and not args.json:
         parser.error("gaap 至少要給 --xlsx 或 --json，否則抓完沒有任何產出")

@@ -25,6 +25,7 @@ from openpyxl.styles import PatternFill
 from fetcher_gaap import StatementTable
 from excel_formatter import format_workbook
 from fiscal_input import apply_fiscal_year_input
+from i18n import t
 from zh_labels import zh_label, axis_label, ratio_label, meta_label
 
 # 版面：A 英文標準名 / B 中文說明 / C 公司原始 XBRL 標籤 / D 起各期數據
@@ -41,7 +42,7 @@ BACKUP_SUFFIX = ".bak.xlsx"
 
 
 def check_output_writable(output_path: str | Path) -> str | None:
-    """檢查輸出檔現在能不能寫。可寫回 None，否則回中文錯誤訊息。
+    """檢查輸出檔現在能不能寫。可寫回 None，否則回當前語言的錯誤訊息。
 
     要在**抓取開始前**呼叫。原本的失敗點在 `wb.save()`——那是所有下載與 AI
     呼叫都跑完的最後一步，檔案被 Excel 開著時使用者白等一分多鐘才看到錯誤。
@@ -53,10 +54,9 @@ def check_output_writable(output_path: str | Path) -> str | None:
     try:
         handle = open(path, "r+b")
     except PermissionError:
-        return (f"輸出檔無法寫入（可能正被 Excel 開啟）：{path.name}\n"
-                f"請先關閉該檔案再重試。")
+        return t("err.output_locked_excel", name=path.name)
     except OSError as exc:
-        return f"輸出檔無法寫入：{path.name}（{type(exc).__name__}）"
+        return t("err.output_unwritable", name=path.name, exc=type(exc).__name__)
 
     try:
         # Excel 開檔時多半在 open() 就擋下來了，但不同版本行為不一，
@@ -67,8 +67,7 @@ def check_output_writable(output_path: str | Path) -> str | None:
                 msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                 msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
             except OSError:
-                return (f"輸出檔正被其他程式鎖定（可能是 Excel）：{path.name}\n"
-                        f"請先關閉該檔案再重試。")
+                return t("err.output_locked_other", name=path.name)
     finally:
         handle.close()
     return None
@@ -163,8 +162,8 @@ def write_statements(tables: list[StatementTable], output_path: str | Path,
                 shutil.copy2(output_path, _backup_path(output_path))
             except OSError as exc:
                 # 備份失敗不該擋住主要輸出，但要讓使用者知道這次沒有後路
-                print(f"[excel_writer] 備份失敗（{type(exc).__name__}），"
-                      f"仍會寫入 {output_path.name}", file=sys.stderr)
+                print(t("err.backup_failed", exc=type(exc).__name__,
+                        name=output_path.name), file=sys.stderr)
 
         os.replace(tmp_path, output_path)
     finally:
