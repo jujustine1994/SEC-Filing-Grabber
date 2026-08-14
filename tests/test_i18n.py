@@ -256,3 +256,76 @@ def test_uncategorized_stored_value_is_still_the_original():
     import main
 
     assert main.UNCATEGORIZED == "未分類"
+
+
+# ── 財年區間公式：譯文帶引號不可以把公式切碎 ──────────────────────────────
+
+def test_fy_span_formula_survives_a_quote_in_the_translation(monkeypatch):
+    """英文譯文出現撇號（`Company's FY`）完全可預期。
+
+    舊寫法是 `repr()` 之後把單引號換成雙引號——字串內含單引號時 repr() 會
+    自己改用雙引號包，那次 replace 就把公式切成 `="Fisc" l "&TEXT(...)`。
+    Excel 開起來是 #NAME? 或乾脆拒絕開檔，而 Python 這邊一點錯都不會報。
+    """
+    import fiscal_input
+
+    monkeypatch.setitem(i18n._cache, "zh_tw",
+                        dict(_strings("zh_tw"),
+                             **{"xls.fy_input.span_prefix": "Fisc'l \"FY\" "}))
+    i18n.set_lang("zh_tw")
+    try:
+        f = fiscal_input._fy_span_formula()
+        # Excel 的字串常值一律雙引號，內部的雙引號寫兩次 → 總數必為偶數
+        assert f.count('"') % 2 == 0, f
+        assert "'" not in f.split("&")[0] or f.startswith('=IF('), f
+        # 撇號原樣留在字串裡，沒被當成語法
+        assert "Fisc'l" in f
+        # 內部的雙引號有被逸出成兩個
+        assert '""FY""' in f
+    finally:
+        i18n._cache.pop("zh_tw", None)
+        i18n.set_lang("zh_tw")
+
+
+def test_fy_span_formula_uses_month_names_in_english():
+    """英文要 `FY Oct – Sep`。`"m"` 只會給你 `FY 10 – 9`——月份格式碼必須
+    跟著語言走，不能寫死在公式裡。"""
+    import fiscal_input
+
+    i18n.set_lang("en")
+    try:
+        assert '"mmm"' in fiscal_input._fy_span_formula()
+    finally:
+        i18n.set_lang("zh_tw")
+
+    i18n.set_lang("zh_tw")
+    assert '"m"' in fiscal_input._fy_span_formula()
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_fy_span_formula_is_balanced_in_every_language(lang):
+    import fiscal_input
+
+    i18n.set_lang(lang)
+    try:
+        f = fiscal_input._fy_span_formula()
+        assert f.startswith("=IF(")
+        assert f.count("(") == f.count(")"), f
+        assert f.count('"') % 2 == 0, f
+    finally:
+        i18n.set_lang("zh_tw")
+
+
+# ── B 欄查表：模板路徑與非模板路徑必須一致 ────────────────────────────────
+
+def test_template_path_uses_the_same_column_b_lookup():
+    """設了 template_path 時走 `_write_sheet_template`，那條路徑一度還在直接
+    呼叫 `zh_label()`——Data_Ratios / Data_Meta 的 A 欄鍵住在 ratio.* / meta.*，
+    用 acct.* 查一定落空，B 欄整欄空白，而且只有設了模板的人才會遇到。"""
+    import inspect
+
+    import excel_writer
+
+    src = inspect.getsource(excel_writer._write_sheet_template)
+    assert "_col_b(" in src, "模板路徑沒走 _col_b，B 欄命名空間會查錯"
+    assert "zh_label(" not in src, "模板路徑還在直接呼叫 zh_label"

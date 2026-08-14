@@ -387,4 +387,7 @@ STRINGS: dict[str, str] = {
     "err.output_locked_other": '輸出檔正被其他程式鎖定（可能是 Excel）：{name}\n請先關閉該檔案再重試。',
     "err.output_unwritable": '輸出檔無法寫入：{name}（{exc}）',
     "err.backup_failed": '[excel_writer] 備份失敗（{exc}），仍會寫入 {name}',
+    # Excel TEXT() 的月份格式碼。"m" 出數字（後面自己接「月」），
+    # "mmm" 出月份簡稱（Oct）。換語言時這格一定要跟著前綴/後綴一起想。
+    "xls.fy_input.span_month_format": 'm',
 }

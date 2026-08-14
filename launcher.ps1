@@ -183,7 +183,14 @@ Write-Host ""
 python src\main.py
 $exitCode = $LASTEXITCODE
 
-if (Test-Path "__pycache__") { Remove-Item -Recurse -Force "__pycache__" }
+# 2026-08-12 的目錄整理把進入點換成 src\main.py，bytecode 從此落在
+# src\__pycache__ 與 src\locales\__pycache__，根目錄那行變成永久空操作。
+foreach ($pc in @("__pycache__", "src\__pycache__", "src\locales\__pycache__")) {
+    if (Test-Path $pc) {
+        # 重啟語言時新行程可能正在用這些 .pyc，刪不掉不是錯誤，別嚇到使用者
+        try { Remove-Item -Recurse -Force $pc -ErrorAction Stop } catch {}
+    }
+}
 
 if ($exitCode -ne 0) {
     Write-Log "主程式異常結束（exit code $exitCode）" "ERROR"

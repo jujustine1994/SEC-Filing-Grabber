@@ -1,6 +1,6 @@
 """locales/zh_cn.py — 简体中文
 
-由 zh_tw.py 经 OpenCC (tw2sp) 生成，见 scratchpad/gen_zh_cn.py。
+由 zh_tw.py 经 OpenCC (tw2sp) 生成，见 scripts/gen_zh_cn.py。
 生成后这就是一个普通的 Python 文件，直接改即可。
 
 key 命名空间见 locales/__init__.py。改这里的译文不影响任何逻辑：
@@ -351,4 +351,7 @@ STRINGS: dict[str, str] = {
     'err.output_locked_other': '输出档正被其他程序锁定（可能是 Excel）：{name}\n请先关闭该文件再重试。',
     'err.output_unwritable': '输出档无法写入：{name}（{exc}）',
     'err.backup_failed': '[excel_writer] 备份失败（{exc}），仍会写入 {name}',
+    # Excel TEXT() 的月份格式碼。"m" 出數字（後面自己接「月」），
+    # "mmm" 出月份簡稱（Oct）。換語言時這格一定要跟著前綴/後綴一起想。
+    "xls.fy_input.span_month_format": 'm',
 }

@@ -230,14 +230,24 @@ def _write_sheet_template(ws: Worksheet, tbl: StatementTable) -> None:
     for row_offset, (concept, row_values) in enumerate(zip(tbl.concepts, tbl.values)):
         row = 3 + row_offset
         ws.cell(row=row, column=1).value = concept
-        ws.cell(row=row, column=2).value = zh_label(concept) or None
-        ws.cell(row=row, column=3).value = tbl.labels[row_offset] if has_labels else None
+        ws.cell(row=row, column=2).value = _col_b(tbl, concept, row_offset) or None
+        ws.cell(row=row, column=3).value = _label_at(tbl, row_offset)
         for i, val in enumerate(row_values):
             col = _DATA_START_COL + i
             cell = ws.cell(row=row, column=col)
             cell.value = val
             if col > template_max_col:
                 _copy_cell_format(ws.cell(row=row, column=last_tpl_data_col), cell)
+
+
+def _label_at(tbl: StatementTable, row_offset: int) -> str | None:
+    """C 欄的公司原始標籤。labels 比 concepts 短時留白，不讓整份匯出掛掉。
+
+    `_col_b` 本來就擋了越界，代表這情況作者認為可能發生；寫 C 欄的地方沒擋，
+    真的發生時是 IndexError 中斷整個 write_statements，而不是少一格文字。
+    """
+    labels = tbl.labels or []
+    return labels[row_offset] if row_offset < len(labels) else None
 
 
 def _col_b(tbl: StatementTable, concept: str, row_offset: int) -> str:
@@ -285,7 +295,6 @@ def _write_sheet(ws: Worksheet, tbl: StatementTable) -> None:
         row = 3 + row_offset
         ws.cell(row=row, column=1, value=concept)
         ws.cell(row=row, column=2, value=_col_b(tbl, concept, row_offset) or None)
-        ws.cell(row=row, column=3,
-                value=tbl.labels[row_offset] if has_labels else None)
+        ws.cell(row=row, column=3, value=_label_at(tbl, row_offset))
         for col_idx, val in enumerate(row_values, start=_DATA_START_COL):
             ws.cell(row=row, column=col_idx, value=val)

@@ -758,7 +758,8 @@ class SECFetcherApp:
             # Group header
             hdr = ttk.Frame(self._tab2_inner)
             hdr.grid(row=grid_row, column=0, columnspan=cols + 1, sticky="ew", pady=(6, 2))
-            ttk.Label(hdr, text=gname, font=("", 11, "bold"), foreground="#333").pack(side="left")
+            ttk.Label(hdr, text=_group_display(gname), font=("", 11, "bold"),
+                      foreground="#333").pack(side="left")
             ttk.Button(hdr, text=t("gui.btn.select_all"), width=5,
                        command=lambda ts=tickers: self._select_group(ts, True)).pack(side="left", padx=(8, 2))
             ttk.Button(hdr, text=t("gui.btn.select_none"), width=6,
@@ -1027,7 +1028,10 @@ class SECFetcherApp:
         if any(g["name"] == name for g in self._wl_draft.get("groups", [])):
             messagebox.showwarning(t("gui.dlg.duplicate_title"), t("gui.wl.group_exists", name=name), parent=container.winfo_toplevel())
             return
-        self._wl_draft.setdefault("groups", []).append({"name": name, "tickers": []})
+        # 過一次 _group_stored：英文介面下有人輸入 "Uncategorized" 的話，
+        # 那就是預設群組本身，不該建出第二個同名（顯示上）的空群組
+        self._wl_draft.setdefault("groups", []).append(
+            {"name": _group_stored(name), "tickers": []})
         self._refresh_group_dropdown()
         self._refresh_wl_popup_list(container)
 
@@ -1178,7 +1182,12 @@ class SECFetcherApp:
         lang_frame.grid(row=0, column=0, sticky="w", **pad)
         ttk.Label(lang_frame, text="Language:").pack(side="left", padx=(0, 8))
         self._lang_choices = i18n.available_languages()
-        self._lang_saved_code = i18n.get_lang()
+        # 讀 config 不讀 i18n.get_lang()：set_lang() 只在 __init__ 跑一次，
+        # 使用者選了新語言但按 Later 不重啟時，runtime 語言還是舊的。
+        # 用 runtime 值當基準，下次開設定按儲存會把選擇默默寫回去。
+        self._lang_saved_code = (self.cfg.get("language")
+                                 if i18n.is_supported(self.cfg.get("language", ""))
+                                 else i18n.DEFAULT_LANG)
         names = [name for _, name in self._lang_choices]
         current_name = next((n for c, n in self._lang_choices if c == self._lang_saved_code),
                             names[0])

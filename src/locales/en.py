@@ -384,4 +384,7 @@ STRINGS: dict[str, str] = {
     'gui.wl.uncategorized': 'Uncategorized',
     'gui.wl.unknown_time': 'unknown',
     'gui.wl.update_failed': 'Update failed: {reason}',
+    # Excel TEXT() 的月份格式碼。"m" 出數字（後面自己接「月」），
+    # "mmm" 出月份簡稱（Oct）。換語言時這格一定要跟著前綴/後綴一起想。
+    "xls.fy_input.span_month_format": 'mmm',
 }

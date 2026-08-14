@@ -400,4 +400,7 @@ STRINGS: dict[str, str] = {
     "gui.wl.uncategorized": '未分類',
     "gui.wl.unknown_time": '不明',
     "gui.wl.update_failed": '更新に失敗しました：{reason}',
+    # Excel TEXT() 的月份格式碼。"m" 出數字（後面自己接「月」），
+    # "mmm" 出月份簡稱（Oct）。換語言時這格一定要跟著前綴/後綴一起想。
+    "xls.fy_input.span_month_format": 'm',
 }

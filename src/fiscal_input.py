@@ -179,14 +179,29 @@ def _note() -> str:
 # 財年區間：唯一「改 1 個月就會變」的即時回饋。沒有它，使用者把 2 改成 3
 # 看到標籤沒動，會以為公式壞了（2026-08-08 CTH 實際回報）。
 # DATE(2000, m+11, 1) 讓月份自己進位，不必寫 MOD。
+def _xl_str(s: str) -> str:
+    """把 Python 字串包成 Excel 公式裡的字串常值。
+
+    不可以用 `repr()` 再把單引號換成雙引號：`repr()` 遇到字串內含單引號時
+    會自己改用雙引號包，那時 replace 會把公式切碎（`="Fisc" l "&TEXT(...)`），
+    Excel 開起來是 #NAME? 或乾脆拒絕開檔。英文譯文出現撇號（`Company's`）
+    完全是可預期的事。Excel 的逸出規則是雙引號寫兩次。
+    """
+    return '"' + s.replace('"', '""') + '"'
+
+
 def _fy_span_formula() -> str:
-    """財年區間的 Excel 公式。三段文字（前綴／分隔／後綴）走 i18n——
-    英文要的是 `FY Oct – Sep`，硬把「財年 X 月 – Y 月」的中文夾在公式裡就出不來。"""
+    """財年區間的 Excel 公式。
+
+    前綴／分隔／後綴／月份格式都走 i18n。月份格式必須可換：中文與日文是
+    `10 月 – 9 月`（`"m"` 出數字，後面自己接「月」），英文要的是
+    `FY Oct – Sep`（`"mmm"` 才會出月份簡稱，`"m"` 只會給你 `FY 10 – 9`）。
+    """
     n = FY_START_DEFINED_NAME
-    return (f'=IF({n}="","",{t("xls.fy_input.span_prefix")!r}'
-            f'&TEXT(DATE(2000,{n},1),"m")&{t("xls.fy_input.span_sep")!r}'
-            f'&TEXT(DATE(2000,{n}+11,1),"m")&{t("xls.fy_input.span_suffix")!r})'
-            ).replace("'", '"')
+    fmt = _xl_str(t("xls.fy_input.span_month_format"))
+    return (f'=IF({n}="","",{_xl_str(t("xls.fy_input.span_prefix"))}'
+            f'&TEXT(DATE(2000,{n},1),{fmt})&{_xl_str(t("xls.fy_input.span_sep"))}'
+            f'&TEXT(DATE(2000,{n}+11,1),{fmt})&{_xl_str(t("xls.fy_input.span_suffix"))})')
 
 
 # 一行的高度（含行距）。10pt 字約 13.5pt，其他字級按比例。
