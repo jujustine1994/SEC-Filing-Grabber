@@ -1,5 +1,3 @@
-import re
-
 import pytest
 import openpyxl
 from pathlib import Path
@@ -266,7 +264,7 @@ def test_write_leaves_no_temp_file_behind(tmp_path):
     p = tmp_path / "out.xlsx"
     write_statements([_tbl()], p)
     leftovers = [f.name for f in tmp_path.iterdir() if f.name != "out.xlsx"
-                 and ".bak-" not in f.name]
+                 and not f.name.endswith(".bak.xlsx")]
     assert leftovers == []
 
 
@@ -291,77 +289,32 @@ def test_existing_file_intact_when_save_fails(tmp_path, monkeypatch):
 
 # ── 覆蓋前備份 ─────────────────────────────────────────────────────────────
 
-def _baks(folder):
-    return sorted(f.name for f in folder.iterdir() if ".bak" in f.name)
-
-
-def _fake_clock(monkeypatch, *stamps):
-    """讓 _backup_path 依序拿到指定時間，才測得到多份備份的輪替。
-
-    真實時鐘一秒內連寫多次會產生同一個時間戳，備份互相覆蓋，
-    「保留 3 份」根本驗不出來。
-    """
-    from datetime import datetime
-    import excel_writer as ew
-    seq = iter([datetime.strptime(s, "%Y%m%d-%H%M%S") for s in stamps])
-    monkeypatch.setattr(ew, "_now", lambda: next(seq))
-
-
 def test_backup_created_when_overwriting(tmp_path):
-    """覆蓋既有檔前先留一份備份——年份範圍變窄時舊季度才救得回來。"""
+    """覆蓋既有檔前先留一份 .bak.xlsx——年份範圍變窄時舊季度才救得回來。"""
     p = tmp_path / "out.xlsx"
     write_statements([_tbl(quarters=("FY2024Q1", "FY2024Q2"))], p)
     write_statements([_tbl(quarters=("FY2024Q2",))], p)
 
-    baks = _baks(tmp_path)
-    assert len(baks) == 1
-    ws = load_workbook(tmp_path / baks[0])["Data_Financials(Q)"]
+    bak = tmp_path / "out.bak.xlsx"
+    assert bak.exists()
+    ws = load_workbook(bak)["Data_Financials(Q)"]
     assert ws["D1"].value == "FY2024Q1"      # 備份裡還有被覆蓋掉的舊季
-
-
-def test_backup_filename_carries_a_timestamp(tmp_path):
-    """檔名要看得出是什麼時候備份的，否則三份長一樣分不出哪份才是要救的。"""
-    p = tmp_path / "out.xlsx"
-    write_statements([_tbl()], p)
-    write_statements([_tbl()], p)
-    assert re.fullmatch(r"out\.bak-\d{8}-\d{6}\.xlsx", _baks(tmp_path)[0])
 
 
 def test_no_backup_for_new_file(tmp_path):
     """第一次寫入沒有東西可備份，不可產生空的 .bak。"""
     p = tmp_path / "out.xlsx"
     write_statements([_tbl()], p)
-    assert _baks(tmp_path) == []
+    assert not (tmp_path / "out.bak.xlsx").exists()
 
 
-def test_backups_are_kept_up_to_three(tmp_path, monkeypatch):
-    """TODO 第 8 項：舊版只留一份滾動備份，第二次抓窄年份範圍時舊季度消失、
-    而唯一那份備份也已經被蓋掉，救不回來。改成保留最近 3 份。"""
-    _fake_clock(monkeypatch, "20260817-100000", "20260817-100100",
-                "20260817-100200", "20260817-100300")
+def test_backup_is_single_rolling_copy(tmp_path):
+    """只保留一份備份，不可每次都堆一個新檔。"""
     p = tmp_path / "out.xlsx"
-    for i in range(5):          # 5 次寫入 = 4 次覆蓋 = 4 份備份，砍到剩 3
+    for i in range(3):
         write_statements([_tbl(value=float(i))], p)
-
-    assert _baks(tmp_path) == [
-        "out.bak-20260817-100100.xlsx",
-        "out.bak-20260817-100200.xlsx",
-        "out.bak-20260817-100300.xlsx",
-    ], "應保留最近 3 份，最舊的那份要被清掉"
-
-
-def test_pruning_only_touches_this_files_backups(tmp_path, monkeypatch):
-    """同一個資料夾放著很多公司的檔，清 AAPL 的備份不可以動到 NVDA 的。"""
-    _fake_clock(monkeypatch, "20260817-100000", "20260817-100100",
-                "20260817-100200", "20260817-100300")
-    aapl, nvda = tmp_path / "AAPL.xlsx", tmp_path / "NVDA.xlsx"
-    write_statements([_tbl()], nvda)
-    write_statements([_tbl()], nvda)          # NVDA 產生 1 份備份
-    for _ in range(4):
-        write_statements([_tbl()], aapl)      # AAPL 產生 3 份備份
-
-    assert len([b for b in _baks(tmp_path) if b.startswith("NVDA")]) == 1
-    assert len([b for b in _baks(tmp_path) if b.startswith("AAPL")]) == 3
+    baks = [f.name for f in tmp_path.iterdir() if ".bak" in f.name]
+    assert len(baks) == 1
 
 
 def test_custom_sheets_still_preserved(tmp_path):

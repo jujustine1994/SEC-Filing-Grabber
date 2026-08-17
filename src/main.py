@@ -26,7 +26,7 @@ import i18n
 from i18n import t
 from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
-from excel_writer import write_statements, check_output_writable, _backup_prefix
+from excel_writer import write_statements, check_output_writable
 from fetcher_gaap import fetch_gaap_statements
 from output_tables import append_ratio_table
 
@@ -155,20 +155,6 @@ def _center_on_parent(child, parent) -> None:
 # =========================================================
 # 覆蓋既有輸出檔
 # =========================================================
-
-def should_warn_overwrite(cfg: dict, output_path) -> bool:
-    """抓取前要不要先問一聲。
-
-    只在「檔案真的存在」且「使用者沒關掉提醒」時才問——第一次抓某家公司
-    沒有東西被蓋掉，不該多一次點擊。
-
-    鍵不存在時視為要提醒：既有使用者的 config.json 沒有這個鍵，
-    不可以把「還沒選過」誤判成「他選了不要提醒」。
-    """
-    if not cfg.get("warn_on_overwrite", True):
-        return False
-    return Path(output_path).exists()
-
 
 def existing_outputs(paths) -> list:
     """挑出真的存在的輸出檔，維持原本順序。
@@ -370,7 +356,6 @@ class SECFetcherApp:
         self.settings_test_label = None
         self.settings_fmt_var = None
         self.settings_max_filings_var = None
-        self.settings_warn_overwrite_var = None
         self.nongaap_warn_label = None
         self.btn_confirm_company = None
         self.tab1_name_label = None
@@ -1395,13 +1380,6 @@ class SECFetcherApp:
         self._tpl_browse_btn.grid(row=1, column=2, pady=(4, 0))
         self._on_template_mode_change()  # set initial enabled/disabled state
 
-        # 覆蓋提醒。使用者在確認框勾過「不再提醒」之後，這裡是唯一打得開回來的地方。
-        self.settings_warn_overwrite_var = tk.BooleanVar(
-            value=bool(self.cfg.get("warn_on_overwrite", True)))
-        ttk.Checkbutton(fetch_frame, text=t("gui.chk.warn_on_overwrite"),
-                        variable=self.settings_warn_overwrite_var).grid(
-            row=2, column=0, columnspan=3, sticky="w", pady=(10, 0))
-
         # Buttons
         btn_row = ttk.Frame(popup)
         btn_row.grid(row=4, column=0, pady=10)
@@ -1489,8 +1467,6 @@ class SECFetcherApp:
                 self.cfg["template_path"] = self.settings_template_var.get().strip()
             else:
                 self.cfg["template_path"] = ""
-        if self.settings_warn_overwrite_var is not None:
-            self.cfg["warn_on_overwrite"] = bool(self.settings_warn_overwrite_var.get())
         new_lang = self._selected_lang_code()
         lang_changed = new_lang != self._lang_saved_code
         self.cfg["language"] = new_lang
@@ -1604,48 +1580,14 @@ class SECFetcherApp:
     # =========================================================
 
     def _confirm_overwrite(self, message: str) -> bool:
-        """覆蓋前的確認視窗。回 True 代表繼續，False 代表取消。
+        """覆蓋前的確認視窗。回 True 代表繼續覆蓋，False 代表取消。
 
-        用 Toplevel 不用 messagebox.askyesno——需要一個「不再提醒」勾選框，
-        messagebox 沒有這個位置。勾了就當場寫進 config，下次不再問。
-
-        必須在主執行緒呼叫（`_run_single` / `_run_batch` 裡，還沒開 worker 前）。
+        必須在主執行緒呼叫（`_run_single` / `_run_batch` 裡，還沒開 worker 前）
+        ——tkinter 不是 thread-safe，在背景執行緒開視窗會當掉。
         """
-        win = tk.Toplevel(self.root)
-        win.title(t("gui.dlg.overwrite_title"))
-        win.resizable(False, False)
-        win.transient(self.root)
-        win.grab_set()
-
-        ttk.Label(win, text=message, justify="left").pack(
-            anchor="w", padx=20, pady=(16, 8))
-
-        dont_warn = tk.BooleanVar(value=False)
-        ttk.Checkbutton(win, text=t("gui.chk.dont_warn_again"),
-                        variable=dont_warn).pack(anchor="w", padx=20)
-
-        decision = {"go": False}
-
-        def _go():
-            decision["go"] = True
-            win.destroy()
-
-        btn_row = ttk.Frame(win)
-        btn_row.pack(pady=(12, 16))
-        ttk.Button(btn_row, text=t("gui.btn.overwrite_continue"),
-                   command=_go).pack(side="left", padx=4)
-        ttk.Button(btn_row, text=t("gui.btn.cancel"),
-                   command=win.destroy).pack(side="left", padx=4)
-
-        _center_on_parent(win, self.root)
-        self.root.wait_window(win)
-
-        # 只在使用者真的按了「覆蓋並繼續」才記住偏好——按取消還把提醒關掉，
-        # 等於用一次反悔換到永久不再提醒，那不是他的意思。
-        if decision["go"] and dont_warn.get():
-            self.cfg["warn_on_overwrite"] = False
-            save_config(self.cfg, CONFIG_PATH)
-        return decision["go"]
+        return messagebox.askokcancel(
+            t("gui.dlg.overwrite_title"), message, parent=self.root, icon="warning"
+        )
 
     def _run_single(self):
         """Validate inputs then launch the single-ticker fetch+write worker in a background thread."""
@@ -1686,10 +1628,8 @@ class SECFetcherApp:
         # 覆蓋確認要在這裡問，不能放進 worker——worker 在背景執行緒，
         # tkinter 不是 thread-safe，在那裡開視窗會當掉。
         out_path = self._build_output_path(ticker)
-        if should_warn_overwrite(self.cfg, out_path):
-            msg = t("gui.msg.overwrite_single", name=out_path.name,
-                    backup=_backup_prefix(out_path) + "*.xlsx")
-            if not self._confirm_overwrite(msg):
+        if out_path.exists():
+            if not self._confirm_overwrite(t("gui.msg.overwrite_single", name=out_path.name)):
                 return
         self._start_worker(lambda: self._worker_single(
             ticker, fetch_gaap, fetch_nongaap, max_filings,
@@ -1722,17 +1662,16 @@ class SECFetcherApp:
             messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.batch_nongaap_need_key"))
             return
         # 批量一次問完，不逐檔跳視窗——12 檔要點 12 次沒人受得了。
-        if self.cfg.get("warn_on_overwrite", True):
-            hits = existing_outputs([self._build_output_path(s) for s in selected])
-            if hits:
-                _SHOWN = 10          # 太長的清單塞不進對話框，其餘用數字帶過
-                names = "\n".join(f"　• {p.name}" for p in hits[:_SHOWN])
-                if len(hits) > _SHOWN:
-                    names += f"\n　… +{len(hits) - _SHOWN}"
-                msg = t("gui.msg.overwrite_batch", total=len(selected),
-                        n=len(hits), names=names)
-                if not self._confirm_overwrite(msg):
-                    return
+        hits = existing_outputs([self._build_output_path(s) for s in selected])
+        if hits:
+            _SHOWN = 10          # 太長的清單塞不進對話框，其餘用數字帶過
+            names = "\n".join(f"　• {p.name}" for p in hits[:_SHOWN])
+            if len(hits) > _SHOWN:
+                names += f"\n　… +{len(hits) - _SHOWN}"
+            msg = t("gui.msg.overwrite_batch", total=len(selected),
+                    n=len(hits), names=names)
+            if not self._confirm_overwrite(msg):
+                return
         self._start_worker(lambda: self._worker_batch(
             selected, fetch_nongaap,
             fetch_q=fetch_q, fetch_k=fetch_k,
