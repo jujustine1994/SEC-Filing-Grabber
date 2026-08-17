@@ -38,6 +38,12 @@ DEFAULT_CONFIG: dict = {
     "filename_custom": "",
     "max_filings": 80,
     "template_path": "",
+    # 輸出檔已存在時，抓取前先跳一次確認。使用者在那個對話框勾「不再提醒」
+    # 會把這裡寫成 False，進階設定可以再打開。
+    #
+    # 預設 True 而不是 False：既有使用者的 config.json 沒有這個鍵，
+    # load_config 會補上預設值，升級後第一次覆蓋要提醒得到。
+    "warn_on_overwrite": True,
     "ai": {
         "provider": "google",
         "model": "gemini-flash-latest",

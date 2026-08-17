@@ -32,13 +32,18 @@ from zh_labels import zh_label, axis_label, ratio_label, meta_label
 # 中文說明表在 zh_labels.py，改那裡不影響任何計算邏輯（程式一律用 A 欄英文名比對）。
 _DATA_START_COL = 4
 
-# ── 覆蓋防護（TODO 第 8 項，2026-08-01）────────────────────────────────────
+# ── 覆蓋防護（TODO 第 8 項，2026-08-01；2026-08-17 改成多份）──────────────
 #
 # 覆蓋既有檔前先留一份備份。整批替換 Data_* 沒有版本控制，第二次抓的年份範圍
 # 較窄時舊季度會直接消失（GAAP 沒有快取，重抓要再等一分鐘）。
-# 只保留一份滾動備份，不堆檔案。不想要就設 False。
+#
+# 原本只留一份滾動備份，那份救不了 TODO 第 8 項真正的情境：使用者抓窄範圍
+# 覆蓋掉舊季度，沒發現，隔天又抓一次——第二次的備份把第一次的蓋掉，舊季度
+# 就永久消失了。改成帶時間戳保留最近 BACKUP_KEEP 份，多幾次機會回頭救。
+#
+# 不想要備份就把 KEEP_BACKUP 設 False；要調份數改 BACKUP_KEEP。
 KEEP_BACKUP   = True
-BACKUP_SUFFIX = ".bak.xlsx"
+BACKUP_KEEP   = 3
 
 
 def check_output_writable(output_path: str | Path) -> str | None:
@@ -73,8 +78,48 @@ def check_output_writable(output_path: str | Path) -> str | None:
     return None
 
 
+def _now():
+    """抽出來只為了讓測試能給定時間——真實時鐘一秒內連寫多次會產生同一個
+    時間戳，備份互相覆蓋，「保留 3 份」就驗不出來。"""
+    from datetime import datetime
+    return datetime.now()
+
+
+def _backup_prefix(output_path: Path) -> str:
+    return f"{output_path.stem}.bak-"
+
+
 def _backup_path(output_path: Path) -> Path:
-    return output_path.with_name(output_path.stem + BACKUP_SUFFIX)
+    return output_path.with_name(
+        f"{_backup_prefix(output_path)}{_now():%Y%m%d-%H%M%S}.xlsx"
+    )
+
+
+def _existing_backups(output_path: Path) -> list[Path]:
+    """這個檔的備份，由舊到新。
+
+    用前綴比對而不是 glob：公司名稱會進檔名（`AAPL Apple Inc data.xlsx`），
+    裡面若出現 `[` `]` 會被 glob 當成字元集，比對就歪了。
+    """
+    prefix = _backup_prefix(output_path)
+    try:
+        found = [p for p in output_path.parent.iterdir()
+                 if p.name.startswith(prefix) and p.name.endswith(".xlsx")]
+    except OSError:
+        return []
+    # 時間戳是零填充的固定寬度，字典序 == 時間序
+    return sorted(found, key=lambda p: p.name)
+
+
+def _prune_backups(output_path: Path, keep: int = BACKUP_KEEP) -> None:
+    """砍掉超出保留份數的舊備份。砍不掉不算錯——備份清理失敗不該擋住主要輸出。"""
+    backups = _existing_backups(output_path)
+    stale = backups if keep <= 0 else backups[:-keep]
+    for old in stale:
+        try:
+            old.unlink()
+        except OSError:
+            pass
 
 
 def _meta_fy_end_month(tables: list[StatementTable]) -> int:
@@ -164,6 +209,9 @@ def write_statements(tables: list[StatementTable], output_path: str | Path,
                 # 備份失敗不該擋住主要輸出，但要讓使用者知道這次沒有後路
                 print(t("err.backup_failed", exc=type(exc).__name__,
                         name=output_path.name), file=sys.stderr)
+            # 清理放在備份成功與否之外——上面失敗時舊備份還在，那是使用者
+            # 僅剩的後路，更不該因為「這次沒新增」就跳過輪替把它留到超量。
+            _prune_backups(output_path)
 
         os.replace(tmp_path, output_path)
     finally:
