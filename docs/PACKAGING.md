@@ -25,7 +25,7 @@
 | 檔名 | `SEC-Financial-Fetcher-YYYYMMDD.zip`（YYYYMMDD＝打包當天，例：`SEC-Financial-Fetcher-20260817.zip`）。**全英數字，不含空白與中文**——經通訊軟體傳送時中文檔名會亂碼 |
 | 放哪 | 專案根目錄的 `dist/`（已在 `.gitignore`，不會被 commit，也不會被下次打包捲進去） |
 | 解壓後的頂層 | zip 內**要有一層資料夾** `SEC-Financial-Fetcher`，不要把檔案裸放在 zip 根。收件人常直接對著 zip 按「解壓縮到這裡」，裸放會把幾十個檔案倒進他的下載資料夾 |
-| 大小 | 正常落在 300–800 KB。**超過 5 MB 一定是排除清單漏了東西**，回頭查 §2 |
+| 大小 | 正常落在 150–400 KB（2026-08-17 排掉 `docs/` 後是 ~200 KB）。**超過 5 MB 一定是排除清單漏了東西**，回頭查 §2 |
 
 ---
 
@@ -44,7 +44,7 @@
 | `requirements.txt` | 套件清單，`launcher.ps1` 從根目錄讀 |
 | `config.example.json` | 範例設定，內容是假值 |
 | `src/` | 全部 `.py` 與 `src/locales/`（**排除 `__pycache__`**） |
-| `docs/` | 文件（`README.md` 內文有連到 `docs/8k-period-off-by-one.md`） |
+| `docs/8k-period-off-by-one.md` | **只這一個 doc**，因為 `README.md` 內文有連到它。其餘 `docs/` 全部排除（見下） |
 | `output/`（空目錄 + `.gitkeep`） | 預設輸出目錄（`src/config.py` 的 `output_dir` 預設值就是 `"output"`）。**只放空目錄，不放任何 `.xlsx`** |
 | `先讀我.txt` | 從 `docs/RECIPIENT-README.txt` 複製過去並改名。給收件人看的那份，UTF-8 **含 BOM**（舊版記事本沒 BOM 會顯示亂碼） |
 
@@ -62,6 +62,7 @@
 | `.pytest_cache/`、`__pycache__/`（所有層級）、`*.pyc` | 快取 |
 | `.claude/`、`.superpowers/` | 開發環境設定 |
 | `tests/`、`conftest.py`、`scripts/` | 對純使用者無用；`scripts/` 另含開發用工具 |
+| `docs/`（除了 `8k-period-off-by-one.md`） | **內部開發紀錄**：`CHANGELOG.md` 一個就 84 KB，還有 `ARCHITECTURE` / `PITFALLS` / `TODO` / `superpowers/plans/` 的設計討論。收件人一個字都用不到，而且是內部資料。排掉之後包從 340 KB 降到約 200 KB（CTH 2026-08-17 決定） |
 
 ### 機敏資訊：天生不在專案內（已查證，不必額外處理）
 
@@ -96,10 +97,11 @@ foreach ($f in @("啟動器.bat","launcher.ps1","README.md","requirements.txt","
     Copy-Item (Join-Path $Root $f) $Pkg
 }
 
-# --- 3.4 白名單複製：src/ 與 docs/，排除 __pycache__ / *.pyc ---
-foreach ($d in @("src","docs")) {
-    Copy-Item (Join-Path $Root $d) $Pkg -Recurse
-}
+# --- 3.4 白名單複製：src/（排除 __pycache__ / *.pyc）---
+Copy-Item (Join-Path $Root "src") $Pkg -Recurse
+# docs/ 只帶 README 有連到的那一份，其餘內部文件不外流
+New-Item -ItemType Directory -Force (Join-Path $Pkg "docs") | Out-Null
+Copy-Item (Join-Path $Root "docs\8k-period-off-by-one.md") (Join-Path $Pkg "docs")
 # ⚠ 一定要寫成 ForEach-Object + -LiteralPath。直接 `| Remove-Item -Recurse -Force`
 # 會被 Claude Code 的沙箱防護判成「刪除系統路徑 /」而整段拒絕執行（管線進來的
 # 路徑它靜態分析不出來）。這不是 PowerShell 的問題，是工具側的保護。
@@ -166,6 +168,7 @@ $V = Join-Path $Verify $Name
 | 9 | Identity 沒外洩 | `Get-ChildItem $V -Recurse -File \| Select-String -Pattern '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -List` | 只該命中文件裡的範例信箱（如 `wangdaming@gmail.com`）。出現 CTH 的真實信箱就是漏了東西 |
 | 10 | 大小合理 | `(Get-Item $Zip).Length/1MB` | < 5 |
 | 11 | 空 `output/` | `Get-ChildItem "$V\output" -Force -Name` | 只有 `.gitkeep` |
+| 12 | **內部文件沒外流** | `Get-ChildItem "$V\docs" -Name` | 只有 `8k-period-off-by-one.md`。出現 `CHANGELOG.md` / `TODO.md` / `superpowers` 就是 §3.4 寫錯了 |
 
 驗證完清掉暫存（同樣避開沙箱防護，一次一個明確路徑）：
 

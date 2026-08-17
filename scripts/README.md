@@ -11,6 +11,7 @@
 | `verify_8k_fiscal_labels.py` | 驗證 `src/cli.py press-release` 的 `fiscal_label`（TODO D4 後半）。15 家 × 8 季，檢查期末日抓取率，並確認新舊標籤的偏移**同一家是常數**且等於 `docs/8k-period-off-by-one.md` 獨立推出的值。**不呼叫 AI**，約 3 分鐘。沒填過進階設定時第一個參數當 identity | 啟用 |
 | `excel_golden.py` | **Excel 輸出的逐格回歸驗收。改 `excel_writer` / `excel_formatter` / `ratios` / `fiscal_input` 之前先 `make` 一份基準，改完再 `make` + `check`。** 把 `output/_final/*.xlsx` 讀回成 StatementTable 走真正的寫檔流程重產，比對值＋數字格式＋字型＋粗體＋底色。不打網路。2026-08-14 多語言遷移就是靠它確認 480 條字串搬完後繁中輸出逐格不變 | 啟用 |
 | `gen_zh_cn.py` | 從 `src/locales/zh_tw.py` 重產 `zh_cn.py`（OpenCC tw2s + 自訂詞彙表）。**一次性工具，平常不跑**，且會覆蓋手改過的用詞。需要 `uv pip install opencc-python-reimplemented`（不在 requirements，執行期用不到） | 啟用 |
+| `打包.bat` + `pack.ps1` | **打包散布用 zip，雙擊 `打包.bat` 即可，不必開 PowerShell、不必叫 AI。** 白名單複製 → 壓成 `dist\SEC-Financial-Fetcher-YYYYMMDD.zip` → 解到暫存目錄跑 **12 項自我驗證**（機敏檔、`.xlsx`、金鑰樣式、非預期 email、內部文件外流…）。**任一項沒過就刪掉 zip 並 exit 1**，不會產出一包不能傳的東西。是 `docs/PACKAGING.md` 的可執行版本，兩邊改動必須同步 | 啟用 |
 | `survey_nongaap_metrics.py` | 調查 32 家（大中小型跨產業）8-K 新聞稿實際使用的 Non-GAAP 指標，統計跨公司覆蓋率，決定 `Data_NonGAAP` 固定模板要收哪些行。**不呼叫 AI**（純文字比對，不吃配額）。原文會存到快取目錄，調整比對規則後可重跑分析不必重新下載 | 啟用 |
 
 ---

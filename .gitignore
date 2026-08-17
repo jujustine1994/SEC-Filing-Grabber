@@ -9,5 +9,6 @@ logs/
 .env
 dist/
 company_cache.json
+*.zip
 
 .superpowers/

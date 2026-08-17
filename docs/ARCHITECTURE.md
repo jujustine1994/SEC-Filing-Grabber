@@ -33,9 +33,13 @@
 | conftest.py | pytest 探索設施（rootdir 定位 + slow/b1/cf_overflow marker 註冊），留根目錄不進 `src/` |
 | config.json | 使用者設定（gitignored） |
 | config.example.json | 範本（committed，留根目錄） |
-| company_cache.json | Ticker → 公司名快取（committed，留根目錄——程式主動讀寫的執行期狀態，非純靜態資料） |
+| company_cache.json | Ticker → 公司名快取，留根目錄。**2026-08-17 起 gitignored**——它是程式主動讀寫、且會自己重建的執行期狀態（405 KB），先前誤入版控 |
 | output/ | 輸出的 Excel 檔（gitignored） |
 | nongaap_cache.json | 各公司輸出資料夾內，Non-GAAP 快取（runtime，非 git） |
+| scripts/打包.bat + pack.ps1 | **打包散布用 zip**：白名單複製 → 壓縮 → 12 項自我驗證，任一項沒過就刪 zip 並 exit 1。雙擊即可，是 `docs/PACKAGING.md` 的可執行版本（兩邊須同步） |
+| docs/PACKAGING.md | 打包作業指示（給 AI 照著做的版本）：包含／排除清單、檔名規則、驗證步驟 |
+| docs/RECIPIENT-README.txt | 給收件人看的說明，打包時改名為 `先讀我.txt` 放進 zip。只講兩件事：填 SEC EDGAR Identity、首次啟動選語言 |
+| dist/ | 打包產物（gitignored） |
 
 ## Data Flow
 

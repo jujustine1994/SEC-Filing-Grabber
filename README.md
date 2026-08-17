@@ -40,6 +40,12 @@
 期末日。非 12 月結算的公司在年份邊界可能差到 3 季，要精確就把範圍放寬一年，
 再自己用 `fiscal_label` 篩。
 
+### 要傳給別人時
+
+雙擊 `scripts\打包.bat`，產出 `dist\SEC-Financial-Fetcher-YYYYMMDD.zip`（約 190 KB），
+跑完 12 項自我驗證才會留下檔案。收件人解壓、雙擊 `啟動器.bat`、一路按 Enter 就能裝好
+（沒裝過 Python 也可以，uv 會自己下載）。細節見 `docs/PACKAGING.md`。
+
 ## 系統需求
 
 - Windows 10/11

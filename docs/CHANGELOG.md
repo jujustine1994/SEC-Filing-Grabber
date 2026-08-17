@@ -10,6 +10,18 @@
 ## 功能清單
 
 ### 已完成
+- [x] **打包改成雙擊自助 + 排掉內部文件（2026-08-17，同日後續）**：新增
+      `scripts\打包.bat`（薄 BAT）+ `scripts\pack.ps1`，CTH 雙擊就能自己壓，
+      不必開 PowerShell 也不必叫 AI。12 項驗證跑在畫面上，**任一項沒過就刪掉 zip
+      並 exit 1**——寧可不產出，也不要產出一包不知道能不能傳的東西（FAIL 路徑
+      有實測：在 `src/` 埋一個 `.log` 進去，第 5 項抓到、zip 被刪、exit 1）。
+      另把 `docs/` 排除出 zip（只留 `README.md` 有連到的 `8k-period-off-by-one.md`）
+      ——`CHANGELOG.md` 一個就 84 KB，全是內部開發紀錄，收件人一個字用不到。
+      包從 340 KB 降到 **187 KB**。
+      順手清掉兩個誤入版控的檔：`company_cache.json`（405 KB，程式會自己重建）與
+      `20260814 sec tool.zip`（124 KB，舊打包產物），`git rm --cached` 停止追蹤、
+      檔案留在磁碟。**`.gitignore` 對已追蹤的檔案無效**，光加規則不夠。
+      追蹤內容從 1906 KB 降到 ~1377 KB
 - [x] **打包散布給非技術使用者（2026-08-17）**：`docs/PACKAGING.md` 是給 AI 照著
       執行的作業指示（白名單複製、產出 `dist/SEC-Financial-Fetcher-YYYYMMDD.zip`、
       解壓到暫存目錄跑 11 項自我驗證）。zip 內附 `先讀我.txt`（來源
