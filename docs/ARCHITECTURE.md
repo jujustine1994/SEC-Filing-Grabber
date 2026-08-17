@@ -9,9 +9,11 @@
 |------|------|
 | 啟動器.bat | 薄 BAT，呼叫 launcher.ps1 |
 | launcher.ps1 | 環境檢查、uv venv、安裝套件、啟動 src/main.py |
-| src/main.py | Tkinter GUI，兩個 tab + 兩個 popup |
+| src/main.py | Tkinter GUI，三個 tab（單一公司／批量更新／進階設定）+ Watchlist popup。另有 `work_area()` / `fit_geometry()`（視窗置中，見「視窗擺放」） |
 | src/cli.py | 指令列介面（給外部 skill）：`gaap` / `press-release` 兩個子指令，薄封裝，零 AI |
-| src/output_tables.py | `append_ratio_table()`：決定最後寫進 Excel 的 sheet 清單。GUI 與 CLI 共用同一份 |
+| src/output_tables.py | `append_ratio_table()`：決定最後寫進 Excel 的 sheet 清單；`has_any_data()`：一期都沒抓到就別寫檔。GUI 與 CLI 共用同一份 |
+| src/net_retry.py | 網路層韌性：`is_network_error()`（沿 `__cause__` 走訪）、`with_retry()`（只對網路類退避重試）、`sec_reachable()`（實際戳一次 SEC）、`configure_timeouts()` |
+| src/fetch_ledger.py | `FetchLedger`：記下哪幾期沒抓到、是網路還是資料造成的，產出給人看的摘要。見「抓取缺漏」 |
 | src/fiscal_input.py | Index 上「財年起始月」可編輯輸入格 + 由它驅動的期間標籤公式（定義名稱 `FY_START_MONTH`） |
 | src/press_release_tables.py | 8-K 新聞稿表格的確定性解析（`pandas.read_html` + Workiva 版面規則），零 AI |
 | src/config.py | load_config() / save_config()。`language` 欄位靠 merge-with-defaults 自動補，舊 config.json 零遷移 |
@@ -373,11 +375,64 @@ key 命名空間：`gui.*`（介面）、`acct.*`（三表科目）、`ratio.*`
 「百分比格式掉了」「字型混到別的」這幾種最常見的排版回歸，值都是對的，
 只有逐格比對抓得到。
 
+## 抓取缺漏（2026-08-17）
+
+**規則：抓不到就留空，但一定要講出來。** 不中止、不寫空殼。
+
+原本九個 `filing.obj()` 迴圈都是 `except Exception: continue`——網路在第 5 份
+掛掉時那一季被當成「這期沒資料」默默跳過，程式照樣顯示完成，使用者拿到少
+一季的 Excel 卻不知道。修正過程走過三版，中間那版「網路斷了就中止不寫檔」
+被 CTH 否決（「不希望抓得太嚴格讓資料永遠抓不出來」），定案是本節。
+
+| 狀況 | 行為 |
+|---|---|
+| 閃斷 | 退避重試 2/4/8 秒，多半救得回來 |
+| 某幾期抓不到 | 那幾期留空，其餘照常產出，**主動報告缺了哪幾期** |
+| 整個網路斷掉 | 連續 3 期失敗後停止重試（`give_up_retrying`），剩下快速跑完，一樣寫檔一樣提示 |
+| 一期都沒抓到 | `has_any_data()` 擋下，**不寫檔**（空殼會蓋掉舊檔，唯一不可逆的傷害） |
+
+**「是網路還是資料」怎麼判斷**：不猜例外類別名稱（那份名單得跟著 httpx 的
+版本走，漏一個就誤判）。每一期本來就是一次 EDGAR API 呼叫，失敗當下直接戳
+一次 SEC——戳得通代表伺服器有回應、問題在這份資料；戳不通就是網路。每趟
+最多戳一次，用 `urllib` 不用 httpx（錯誤處理路徑上不該再依賴可能正是出問題
+那一層的東西）。
+
+> ⚠ **`NetworkDownError` 不可以走探測**。它代表「已退避重試三次都連不上」，
+> 是最強的網路證據；而探測在事後跑，網路可能已恢復，於是斷網被報成「SEC
+> 連得上，是資料問題」，方向完全相反。實機驗收踩過，已釘測試。
+
+**警告顯示三處**：GUI 橘字、`logs/app.log`、Excel 的 `Index!A3`（橘底）。
+Index 那份最重要——GUI 的 log 關掉就沒了，而使用者真正會搞混的時點是三天後
+重開這份 Excel。原始值另存於 `Data_Meta` 的 `Fetch Gaps` 列。
+
+> 缺漏警告刻意**不放進 Index 下方的「品質明細」區塊**：那一區講「這個科目 SEC
+> 沒報」，是資料本身的性質；缺漏講「這次抓取沒拿到」，是這份檔案的狀態，重抓
+> 可能就有了。混在一起使用者分不出哪個該重抓。
+
+帳本用 `ContextVar` 串接（`fetcher_gaap.collect_gaps()`），九個抓取函式不必
+改簽名。想拿到明細就在外面包一層；不包的話 `fetch_gaap_statements` 自己開
+一本，結果寫進 `Data_Meta`。
+
+## 視窗擺放（2026-08-17）
+
+`main.work_area()` 走 Win32 `SPI_GETWORKAREA` 取得**扣掉工作列**的可用矩形，
+`fit_geometry()` 算出保證落在裡面的座標。視窗比工作區大就縮到剛好塞得下——
+寧可矮一點，也不要讓下緣的「開始抓取」按鈕看不到。
+
+> 原本只呼叫 `geometry("700x650")` 不給座標，位置全交給 Windows，它用階梯式
+> 落點（每開一個新視窗往右下挪），開久了下緣就掉到工作列底下。
+
+尺寸固定 `900x720` **永不跳動**。舊版在可選 Sheet 面板展開時把視窗從 650 切到
+800，掃描完成的瞬間視窗自己長高 150px。現在靠寬度 900（Sheet 面板 4 欄）與
+面板容器 60px 把高度需求壓下來。設定頁的可捲動容器高度 `_TAB3_HEIGHT = 342`
+是實測貼齊值——停在這裡 Notebook 維持 393px、log 保有約 10 行；拉到 360 就
+頂到 410px、log 掉一行。**改任何一頁的版面後要重量**。
+
 ## 測試分層
 
 | 指令 | 時間 | 測試數 | 用途 |
 |------|------|--------|------|
-| `python -m pytest -m "not slow"` | ~25 秒 | 725 | Unit tests（每次改 code 後跑） |
+| `python -m pytest -m "not slow"` | ~15 秒 | 841 | Unit tests（每次改 code 後跑） |
 | `pytest -m "slow and b1"` | ~12 分鐘 | 24 | B1 overflow live 驗證（8 tickers） |
 | `pytest -m "slow and cf_overflow"` | ~5 分鐘 | 15 | CF YTD overflow 驗收（COHR/LITE/AAPL/NVDA/GOOGL） |
 | `pytest -m slow` | ~25 分鐘 | 全部 slow | 完整 live 驗收 |
