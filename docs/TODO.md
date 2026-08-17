@@ -74,6 +74,25 @@ E5. **查可用期間偶發網路錯誤，疑似與中途改輸入框有關**（
      要確認的事——`net_retry.is_network_error()` 會沿 `__cause__` 走訪，
      非網路問題也可能被包成網路錯誤顯示
 
+E6. **最下面的進度 log 太扁，看不到東西 → 版面可能要大幅重排**（2026-08-17
+   CTH 提出，先不做）
+   - 症狀：`main.py:425` 的 `log_text` 宣告 `height=10`，但實際只看得到幾行
+   - **這不是 bug，是現行版面設計的必然結果**。`main.py:1790` 的註解寫得很白：
+     「總高度取 720：面板展開時 log 仍有 4~5 行可視，收合時約 9 行」——當初就是
+     用「log 剩幾行」當作可以犧牲的餘裕，去換可選 Sheet 面板展開的空間。所以
+     只調 `height=` 沒有用，要動的是各區塊怎麼分配 720px
+   - 版面現況：`self.root` 用 grid，`rowconfigure(2, weight=1)`（`main.py:438`）
+     讓 `frame_log` 吃掉多餘垂直空間；`frame_log` 內部改用 `pack()`
+   - ⚠ 順手可清的無效程式碼：`main.py:419` 的 `frame_log.rowconfigure(2, weight=1)`
+     **不會有任何作用**——`frame_log` 的子元件全部用 `pack()`，`rowconfigure` 只對
+     grid 生效。留著會誤導下一個人以為版面是 grid 排的
+   - 可能的方向（都沒評估過，動手前要先討論）：拉高視窗、log 區改成可拖曳分隔
+     （`ttk.PanedWindow`）、log 從主畫面移到獨立分頁、或可選 Sheet 面板預設收合
+   - **與 E4 是同一片版面**（視窗寬度亂跳）。CTH 說「可能需要大規模重新調整」，
+     真要重排就把 E4、E6 一起做，不要分兩次動同一份 grid
+   - 動手前先讀 `C:\Users\CTH\.claude\project-rules\windows-tool\tkinter-ui\INDEX.md`
+     看有沒有現成 pattern，不要自己另創版面寫法
+
 ## F. 打包散布給非技術使用者（2026-08-17 CTH 提出）
 
 > ✅ **F1 / F2 / F3 已完成（2026-08-17）**，作法見 `docs/PACKAGING.md`
