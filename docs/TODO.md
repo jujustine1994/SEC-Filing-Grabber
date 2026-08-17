@@ -43,6 +43,30 @@ E2. **Data_NonGAAP 版面的 i18n**（承 E1，等 Non-GAAP 功能恢復再做�
    - **綁定 TODO B**：Non-GAAP 改走 skill 之後這張表的形態可能整個變，
      現在做很可能白做
 
+## F. 打包散布給非技術使用者（2026-08-17 CTH 提出）
+
+F1. **寫一份 `docs/PACKAGING.md`，給 AI 照著執行打包**。情境：GitHub 連不上，要壓一包 zip 直接傳給朋友（不太會用電腦）。說明書要能讓 AI 一步步做完打包並自我檢查，不是給人看的教學。
+
+   **已查明的現況（不用重查）：**
+   - ✅ **機敏資訊天生不在專案內**：`src/config.py:14-18` 的 `_default_config_path()` 把 `config.json` 放在 `%APPDATA%\SEC Financial Tools\`。API Key、SEC Identity、Watchlist、個人輸出路徑**全在專案資料夾外**，壓 zip 碰不到。專案內只有 `config.example.json`（內容是假的範例值）
+   - `.gitignore` 已擋：`config.json` / `output/` / `venv/` / `logs/` / `__pycache__` / `.env`
+   - **要手動排除、但 git 沒擋的**：`company_cache.json`（414KB，程式會自己重建）、`output/_final/*.xlsx`（14 個實測輸出檔）、`20260814 sec tool.zip`、`.git/`（7.4MB）、`.pytest_cache/`、`.claude/`、`.superpowers/`
+   - **不必打包（使用者端自動下載）**：`venv/`（400MB）、所有 pip 套件 — `launcher.ps1` 會自己建
+   - **要打包**：`啟動器.bat`、`launcher.ps1`、`README.md`、`requirements.txt`、`src/`、`config.example.json`。`tests/`、`scripts/`、`docs/` 對純使用者無用，但留著不影響（總共才幾百 KB），是否精簡看當下決定
+
+F2. **`launcher.ps1` 的「一路按 Enter」實際過不了，打包前要修**。逐行審過的三個卡點：
+
+   - **(a) Mark-of-the-Web** ❌ **CTH 決定不處理（2026-08-17）**：zip 經網路或通訊軟體傳送，收件人解壓出來的檔案帶 Zone.Identifier，`.bat` 可能被 SmartScreen 擋。**權限問題由收件人自己解決，會怕就不要用。** 程式端不加 `Unblock-File`，說明書也不必為此寫教學。記在這裡只是為了避免未來有人把它當 bug 重新提出
+   - **(b) `launcher.ps1:84-87`**：winget 裝完 Python 後 PATH 沒刷新，程式印「請關閉視窗後重新點兩下啟動檔」然後 `exit 0`。使用者要**再雙擊一次**，不是一路 Enter。訊息本身夠清楚，可接受，但說明書要先講
+   - **(c) `launcher.ps1:74-78`**：沒有 winget（較舊的 Win10）就叫使用者自己去 python.org。不會用電腦的人到這裡就停了。要不要處理看朋友的 Windows 版本
+   - **另外要實測**：`launcher.ps1:73` 的 `winget install --id Python.Python.3` 這個 package ID 是否還有效（現在通常是 `Python.Python.3.12` / `3.13`），失效的話自動安裝整段等於沒用
+
+F3. **朋友拿到後仍需手動做的兩件事**，說明書要寫進去（給收件人看的那份）：
+   - 進階設定填 SEC EDGAR Identity（姓名 + 信箱），沒填抓不了任何資料
+   - 首次啟動會跳 `Language` 視窗選語言
+
+   Non-GAAP 需要的 AI API Key 不用提——`main.NONGAAP_ENABLED = False`，功能停用中。
+
 ## 執行順序建議
 
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
