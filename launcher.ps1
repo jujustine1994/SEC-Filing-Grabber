@@ -49,65 +49,35 @@ Write-Host "[INFO] Starting SEC Financial Fetcher..." -ForegroundColor Green
 Write-Host ""
 
 # ======================================
-# [1/3] 檢查 Python
+# [1/2] 檢查 uv
+#
+# 2026-08-17：原本這裡是 [1/3] 檢查 Python、用 winget 裝系統 Python。
+# 那條路已經壞了——`winget show --id Python.Python.3` 回 exit 20
+# (No package found)，winget 上只剩 Python.Python.3.10 ~ 3.14。與其追著版號
+# 改，整段拿掉：uv 自己就會下載 Python（python-build-standalone；Windows 版
+# 內含 tkinter，實測 import + 開視窗都正常）。沒有系統 Python 也能跑，連帶
+# 不需要 winget（舊 Win10 沒有）、不需要刷新 PATH、不需要叫使用者關掉視窗
+# 再雙擊一次。真正做得到「一路按 Enter」。
 # ======================================
-Write-Host "[1/3] 檢查 Python 環境..." -ForegroundColor Cyan
-# 全新 Windows 電腦沒裝過 Python 時，PATH 裡常有內建的「App execution alias」
-# python.exe 存根——Get-Command 找得到它、看起來像已安裝，但實際執行只會跳出
-# Microsoft Store 頁面，`python --version` 不會印出版本號。用輸出內容二次確認，
-# 不能只看命令存不存在。
-$pythonReady = $false
-if (Get-Command python -ErrorAction SilentlyContinue) {
-    $verOutput = (python --version 2>&1 | Out-String).Trim()
-    if ($verOutput -match "^Python \d+\.\d+") {
-        $pythonReady = $true
-    }
-}
-if (-not $pythonReady) {
-    Write-Host "[WARNING] 未偵測到可用的 Python（若剛剛跳出 Microsoft Store，代表偵測到的是" -ForegroundColor Yellow
-    Write-Host "          Windows 內建的假別名，不是真的 Python），本程式需要 Python 才能執行。" -ForegroundColor Yellow
-    $ans = Read-Host "是否要立即安裝 Python？[Y/n] - 直接按 Enter 代表同意"
-    if ($ans -eq "" -or $ans -ieq "Y") {
-        if (Get-Command winget -ErrorAction SilentlyContinue) {
-            Write-Host "[INFO] 透過 winget 安裝 Python，請稍候..." -ForegroundColor Gray
-            winget install --id Python.Python.3 -e --silent --accept-source-agreements --accept-package-agreements --override "/quiet PrependPath=1 Include_pip=1"
-        } else {
-            Write-Log "找不到 winget，無法自動安裝 Python" "ERROR"
-            Write-Host "[ERROR] 找不到 winget，請手動至 https://www.python.org/ 下載安裝後重新執行。" -ForegroundColor Red
-            Read-Host "按 Enter 關閉"; exit 1
-        }
-        $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
-        $verOutput = ""
-        if (Get-Command python -ErrorAction SilentlyContinue) {
-            $verOutput = (python --version 2>&1 | Out-String).Trim()
-        }
-        if ($verOutput -notmatch "^Python \d+\.\d+") {
-            Write-Host "[INFO] 安裝完成，請關閉視窗後重新點兩下啟動檔。" -ForegroundColor Yellow
-            Read-Host "按 Enter 關閉"; exit 0
-        }
-        $pyVer = $verOutput
-        Write-Host "[OK] Python 安裝完成。" -ForegroundColor Green
-    } else {
-        Write-Host "已取消。" -ForegroundColor Gray; Read-Host "按 Enter 關閉"; exit 1
-    }
-} else {
-    $pyVer = $verOutput
-    Write-Host "[OK] $pyVer 已安裝。" -ForegroundColor Green
-}
-
-# ======================================
-# [2/3] 檢查 uv
-# ======================================
-Write-Host "[2/3] 檢查 uv 套件管理工具..." -ForegroundColor Cyan
+Write-Host "[1/2] 檢查 uv 套件管理工具..." -ForegroundColor Cyan
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     Write-Host "[WARNING] 找不到 uv，正在安裝..." -ForegroundColor Yellow
-    Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
+    # 較舊的 Win10 上 PowerShell 5.1 可能仍預設 TLS 1.0/1.1，astral.sh 只收 1.2 以上，
+    # 不先指定會在下載那行直接連線失敗
+    try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+    try {
+        Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
+    } catch {
+        Write-Log "uv 下載失敗 -> $($_.Exception.GetType().Name)" "ERROR"
+    }
     $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + $env:PATH
     if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
         Write-Log "uv 安裝失敗" "ERROR"
-        Write-Host "[ERROR] uv 安裝失敗，請關閉視窗後重新點兩下啟動檔再試。" -ForegroundColor Red
+        Write-Host "[ERROR] uv 安裝失敗，多半是連不上網路。請確認網路連線後關閉視窗，" -ForegroundColor Red
+        Write-Host "        重新點兩下啟動檔再試一次。" -ForegroundColor Red
         Read-Host "按 Enter 關閉"; exit 1
     }
+    $uvVer = uv --version
     Write-Host "[OK] uv 安裝完成。" -ForegroundColor Green
 } else {
     $uvVer = uv --version
@@ -115,9 +85,9 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 }
 
 # ======================================
-# [3/3] 檢查虛擬環境
+# [2/2] 檢查虛擬環境
 # ======================================
-Write-Host "[3/3] 檢查虛擬環境..." -ForegroundColor Cyan
+Write-Host "[2/2] 檢查虛擬環境..." -ForegroundColor Cyan
 if (-not (Test-Path "venv")) {
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Cyan
@@ -126,8 +96,9 @@ if (-not (Test-Path "venv")) {
     Write-Host ""
     Write-Host "  接下來程式會自動幫你安裝以下東西：" -ForegroundColor White
     Write-Host ""
-    Write-Host "    1. Python 虛擬環境（venv）" -ForegroundColor Yellow
-    Write-Host "       讓這個工具有獨立乾淨的執行空間，不影響電腦其他程式" -ForegroundColor Gray
+    Write-Host "    1. Python 本體與虛擬環境（venv）" -ForegroundColor Yellow
+    Write-Host "       電腦沒裝過 Python 也沒關係，會自動下載（約 20MB）" -ForegroundColor Gray
+    Write-Host "       虛擬環境讓這個工具有獨立乾淨的執行空間，不影響電腦其他程式" -ForegroundColor Gray
     Write-Host ""
     Write-Host "    2. edgartools" -ForegroundColor Yellow
     Write-Host "       從 SEC EDGAR 抓取上市公司財報的核心套件" -ForegroundColor Gray
@@ -145,8 +116,16 @@ if (-not (Test-Path "venv")) {
     Write-Host ""
     $ans = Read-Host "[WARNING] 找不到虛擬環境，現在建立並安裝套件？[Y/n] - 直接按 Enter 代表同意"
     if ($ans -eq "" -or $ans -ieq "Y") {
-        Write-Host "[INFO] 建立虛擬環境中..." -ForegroundColor Gray
-        uv venv venv
+        Write-Host "[INFO] 建立虛擬環境中（電腦若沒有 Python 會自動下載，約 20MB）..." -ForegroundColor Gray
+        # 指定 3.13：不寫版號時 uv 只會找現成直譯器，找不到就報錯而不會下載。
+        # 寫了版號，本機有 3.13 就用本機的，沒有才下載 uv 自管版本。
+        uv venv venv --python 3.13
+        if ($LASTEXITCODE -ne 0) {
+            Write-Log "建立虛擬環境失敗（uv venv 回傳 $LASTEXITCODE）" "ERROR"
+            Write-Host "[ERROR] 建立虛擬環境失敗，多半是下載 Python 時連不上網路。" -ForegroundColor Red
+            Write-Host "        請確認網路連線後關閉視窗，重新點兩下啟動檔再試一次。" -ForegroundColor Red
+            Read-Host "按 Enter 關閉"; exit 1
+        }
         Write-Host "[INFO] 安裝套件中（首次約需 2-3 分鐘）..." -ForegroundColor Gray
         uv pip install -r requirements.txt --python venv\Scripts\python.exe -q
         if ($LASTEXITCODE -ne 0) {
@@ -173,6 +152,8 @@ if (-not (Test-Path "venv")) {
 
 . ".\venv\Scripts\Activate.ps1"
 
+# $pyVer 改成問 venv 自己（原本問的是系統 Python，現在已經不一定存在）
+$pyVer = (& ".\venv\Scripts\python.exe" --version 2>&1 | Out-String).Trim()
 Write-Log "環境就緒 | $pyVer | $uvVer"
 
 Write-Host ""

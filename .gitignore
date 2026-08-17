@@ -7,5 +7,7 @@ __pycache__/
 *.log
 logs/
 .env
+dist/
+company_cache.json
 
 .superpowers/

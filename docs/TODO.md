@@ -45,6 +45,16 @@ E2. **Data_NonGAAP 版面的 i18n**（承 E1，等 Non-GAAP 功能恢復再做�
 
 ## F. 打包散布給非技術使用者（2026-08-17 CTH 提出）
 
+> ✅ **F1 / F2 / F3 已完成（2026-08-17）**，作法見 `docs/PACKAGING.md`
+> 與 `docs/CHANGELOG.md`。以下原始需求保留備查。
+>
+> - F1 → `docs/PACKAGING.md`（白名單複製 + 11 項自我驗證），已實跑產出
+>   `dist/SEC-Financial-Fetcher-20260817.zip`（343 KB）
+> - F2 → `launcher.ps1` 改成 uv 優先。`winget install --id Python.Python.3`
+>   **實測已失效**（exit 20 No package found），整段 winget 拿掉改由 uv 下載
+>   Python，(b) 與 (c) 兩個卡點連帶消失。(a) MotW 依決議不處理
+> - F3 → `docs/RECIPIENT-README.txt`，打包時改名為 `先讀我.txt` 放進 zip
+
 F1. **寫一份 `docs/PACKAGING.md`，給 AI 照著執行打包**。情境：GitHub 連不上，要壓一包 zip 直接傳給朋友（不太會用電腦）。說明書要能讓 AI 一步步做完打包並自我檢查，不是給人看的教學。
 
    **已查明的現況（不用重查）：**

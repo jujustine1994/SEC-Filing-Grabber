@@ -8,7 +8,7 @@
 | File | Role |
 |------|------|
 | 啟動器.bat | 薄 BAT，呼叫 launcher.ps1 |
-| launcher.ps1 | 環境檢查、uv venv、安裝套件、啟動 src/main.py |
+| launcher.ps1 | 環境檢查、uv venv、安裝套件、啟動 src/main.py。**不依賴系統 Python 也不用 winget**——`uv venv venv --python 3.13` 找不到直譯器時 uv 自己下載（見 docs/CHANGELOG.md 2026-08-17） |
 | src/main.py | Tkinter GUI，三個 tab（單一公司／批量更新／進階設定）+ Watchlist popup。另有 `work_area()` / `fit_geometry()`（視窗置中，見「視窗擺放」） |
 | src/cli.py | 指令列介面（給外部 skill）：`gaap` / `press-release` 兩個子指令，薄封裝，零 AI |
 | src/output_tables.py | `append_ratio_table()`：決定最後寫進 Excel 的 sheet 清單；`has_any_data()`：一期都沒抓到就別寫檔。GUI 與 CLI 共用同一份 |

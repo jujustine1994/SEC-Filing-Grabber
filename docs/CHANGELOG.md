@@ -10,6 +10,22 @@
 ## 功能清單
 
 ### 已完成
+- [x] **打包散布給非技術使用者（2026-08-17）**：`docs/PACKAGING.md` 是給 AI 照著
+      執行的作業指示（白名單複製、產出 `dist/SEC-Financial-Fetcher-YYYYMMDD.zip`、
+      解壓到暫存目錄跑 11 項自我驗證）。zip 內附 `先讀我.txt`（來源
+      `docs/RECIPIENT-README.txt`），只講兩件事：填 SEC EDGAR Identity、
+      首次啟動選語言。機敏資訊天生在專案外（`config.json` 在 `%APPDATA%`），
+      驗證步驟仍實際 grep 一次金鑰與信箱樣式
+- [x] **launcher 改成 uv 優先，不再依賴 winget 與系統 Python（2026-08-17）**：
+      原本 `winget install --id Python.Python.3` **已經失效**（實測 exit 20
+      No package found，winget 上只剩 `Python.Python.3.10`~`3.14`），沒 Python
+      的電腦跑到那裡必定卡死。改成讓 uv 自己下載 Python
+      （`uv venv venv --python 3.13`，python-build-standalone，約 20MB）。
+      連帶消掉三個卡點：死掉的 package ID、裝完 PATH 沒刷新要再雙擊一次、
+      舊 Win10 沒 winget 就叫使用者自己去 python.org。步驟從 3 步變 2 步。
+      另補 TLS 1.2（舊 Win10 的 PS 5.1 可能還預設 1.0/1.1，抓 astral.sh 會直接失敗）。
+      實測：uv 下載的 CPython 3.13.12 上 `tkinter` 開得了視窗，`edgar`／`openpyxl`
+      都裝得起來
 - [x] **抓取缺漏會主動報告（2026-08-17）**：某幾期沒抓到時那幾期留空、其餘照常
       產出，並在三處講明缺了哪幾期——GUI 橘字、`logs/app.log`、**Excel 的
       Index 第一頁橘底那列**（外加 `Data_Meta` 的 `Fetch Gaps`）。GUI 的 log
