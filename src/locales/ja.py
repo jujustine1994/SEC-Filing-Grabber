@@ -299,6 +299,7 @@ STRINGS: dict[str, str] = {
     "gui.frame.watchlist_current": ' 現在のウォッチリスト ',
     "gui.tab.batch": '  一括更新  ',
     "gui.tab.single": '  単一銘柄  ',
+    "gui.tab.settings": '  詳細設定  ',
 
     # ── GUI：クイックスキャンの説明 ─────────────────────────────────────
     "gui.help.scan_title": 'クイックスキャンについて',
@@ -381,6 +382,7 @@ STRINGS: dict[str, str] = {
     "gui.msg.overwrite_batch": 'このバッチの {total} 社のうち、{n} 件の出力ファイルが既に存在し、上書きされます：\n\n{names}\n\nData_* シートは書き換えられますが、ご自身で追加した My_* シートは保持されます。',
     "gui.msg.overwrite_single": '{name} は既に存在し、上書きされます。\n\nData_* シートは書き換えられますが、ご自身で追加した My_* シートは保持されます。',
     "gui.status.scan_hint": 'スキャン中、約 10 秒…',
+    "gui.status.settings_saved": '保存しました',
     "gui.status.scanning": 'スキャン中...',
     "gui.status.testing": 'テスト中...',
     "gui.status.ticker_not_found": '　該当するティッカーがありません。ご確認ください',

@@ -329,6 +329,7 @@ STRINGS: dict[str, str] = {
     "gui.msg.overwrite_batch": '這批 {total} 家公司裡，有 {n} 個輸出檔已存在，將被覆蓋：\n\n{names}\n\nData_* 分頁會重寫，你自己加的 My_* 分析頁保留。',
     "gui.msg.overwrite_single": '{name} 已存在，將被覆蓋。\n\nData_* 分頁會重寫，你自己加的 My_* 分析頁保留。',
     "gui.status.scan_hint": '掃描中，約需 10 秒…',
+    "gui.status.settings_saved": '已儲存',
     "gui.status.scanning": '掃描中...',
     "gui.status.testing": '測試中...',
     "gui.status.ticker_not_found": '\u3000查無此 Ticker，請確認後再試',
@@ -338,6 +339,7 @@ STRINGS: dict[str, str] = {
     # gui.tab.*
     "gui.tab.batch": '  批量更新  ',
     "gui.tab.single": '  單一公司  ',
+    "gui.tab.settings": '  進階設定  ',
 
     # gui.wl.*
     "gui.wl.cache_absent": '名稱庫：尚未建立（建議先點「更新名稱庫」下載完整清單）',

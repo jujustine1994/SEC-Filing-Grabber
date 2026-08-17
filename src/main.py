@@ -356,6 +356,7 @@ class SECFetcherApp:
         self.settings_test_label = None
         self.settings_fmt_var = None
         self.settings_max_filings_var = None
+        self.settings_saved_label = None
         self.nongaap_warn_label = None
         self.btn_confirm_company = None
         self.tab1_name_label = None
@@ -404,12 +405,12 @@ class SECFetcherApp:
         self.notebook.grid(row=0, column=0, sticky="ew", **pad)
         self._build_tab1()
         self._build_tab2()
+        self._build_tab3()
 
         # Persistent buttons
         frame_persist = tk.Frame(self.root)
         frame_persist.grid(row=1, column=0, pady=4)
         ttk.Button(frame_persist, text=t("gui.btn.manage_watchlist"), command=self._open_watchlist_popup, width=18).pack(side="left", padx=6)
-        ttk.Button(frame_persist, text=t("gui.btn.settings"),       command=self._open_settings_popup,  width=14).pack(side="left", padx=6)
 
         # Progress log
         frame_log = ttk.LabelFrame(self.root, text=t("gui.frame.progress"), padding=8)
@@ -1260,22 +1261,34 @@ class SECFetcherApp:
         return t("gui.wl.cache_absent")
 
     # =========================================================
-    # Advanced settings popup
+    # Advanced settings tab
     # =========================================================
 
-    def _open_settings_popup(self):
-        popup = tk.Toplevel(self.root)
-        popup.title(t("gui.btn.settings"))
-        popup.resizable(False, False)
-        popup.grab_set()
-        popup.attributes("-topmost", True)
-        popup.update()
-        popup.attributes("-topmost", False)
-        popup.bind("<Escape>", lambda e: popup.destroy())
-        self._build_settings_popup(popup)
+    def _build_tab3(self):
+        """Build Tab 3 (進階設定). 2026-08-17 CTH 要求從彈出視窗改成頁籤。
 
-    def _build_settings_popup(self, popup: tk.Toplevel):
-        """Build settings popup: SEC identity, AI config, fetch limits, template mode."""
+        內容放進固定高度可捲動容器：Notebook 的高度取所有頁籤中最高的那個，
+        設定內容比另外兩頁高不少，直接塞進去會把整個 Notebook 撐高，而下面
+        「處理進度」的 log 是唯一 weight=1 的列，撐出來的高度全由它吸收。
+        限高之後多的部分用捲的，另外兩頁的版面完全不受影響。
+        """
+        tab = ttk.Frame(self.notebook, padding=(4, 6))
+        self.notebook.add(tab, text=t("gui.tab.settings"))
+        _, inner = _build_fixed_height_scrollable(tab, height=self._TAB3_HEIGHT)
+        self._build_settings_panel(inner)
+
+    # 實測貼齊值：342 時 Notebook 停在 393px、log 保有 177px（約 10 行）；
+    # 拉到 360 就把 Notebook 頂到 410px，log 掉到 160px 少一行。也就是說
+    # 另外兩頁的內容高度落在 343 附近，這一頁只要不超過就是免費的。
+    # 改動任何一頁的版面之後要重量（scratchpad 的 probe_layout.py）。
+    _TAB3_HEIGHT = 342
+
+    def _build_settings_panel(self, popup):
+        """SEC identity、AI 設定、抓取上限、模板模式。
+
+        參數名還叫 popup 是為了讓底下上百行的 .grid(in_=popup) 不用全改；
+        它現在是頁籤裡的可捲動容器，不是 Toplevel。
+        """
         pad = {"padx": 12, "pady": 4}
 
         # Language — 最上方獨立一列。
@@ -1381,10 +1394,14 @@ class SECFetcherApp:
         self._on_template_mode_change()  # set initial enabled/disabled state
 
         # Buttons
+        # 只有「儲存」沒有「取消」——頁籤沒有可以關掉的視窗，取消鍵按了
+        # 什麼都不會發生反而更混淆。改用一句存檔回饋讓使用者知道有生效。
         btn_row = ttk.Frame(popup)
         btn_row.grid(row=4, column=0, pady=10)
-        ttk.Button(btn_row, text=t("gui.btn.save"), command=lambda: self._save_settings(popup), width=10).pack(side="left", padx=6)
-        ttk.Button(btn_row, text=t("gui.btn.cancel"), command=popup.destroy, width=10).pack(side="left", padx=6)
+        ttk.Button(btn_row, text=t("gui.btn.save"),
+                   command=lambda: self._save_settings(), width=10).pack(side="left", padx=6)
+        self.settings_saved_label = ttk.Label(btn_row, text="", foreground="#1a7a34")
+        self.settings_saved_label.pack(side="left", padx=8)
 
     def _on_template_mode_change(self):
         is_custom = getattr(self, "settings_template_mode_var", None) and \
@@ -1453,7 +1470,8 @@ class SECFetcherApp:
         except Exception as e:
             self.msg_queue.put(("ai_test_result", ("error", str(e))))
 
-    def _save_settings(self, popup: tk.Toplevel):
+    def _save_settings(self, popup: tk.Toplevel | None = None):
+        """存下設定頁的內容。popup 保留給還在用彈出視窗的呼叫端（目前沒有）。"""
         self.cfg["identity"]       = self.settings_identity_var.get().strip()
         self.cfg["ai"]["provider"] = self.settings_provider_var.get()
         self.cfg["ai"]["model"]    = self.settings_model_var.get().strip()
@@ -1471,7 +1489,13 @@ class SECFetcherApp:
         lang_changed = new_lang != self._lang_saved_code
         self.cfg["language"] = new_lang
         save_config(self.cfg, CONFIG_PATH)
-        popup.destroy()
+        if popup is not None:
+            popup.destroy()
+        if getattr(self, "settings_saved_label", None) is not None:
+            self.settings_saved_label.config(text=t("gui.status.settings_saved"))
+            # 3 秒後自己消失。留著不動的話下次改完設定會分不出這句是這次的
+            # 還是上次殘留的。
+            self.root.after(3000, lambda: self.settings_saved_label.config(text=""))
         # 只有語言真的變更才打擾使用者——改 API Key 不該跳重啟視窗
         if lang_changed:
             self._prompt_restart_for_language()
