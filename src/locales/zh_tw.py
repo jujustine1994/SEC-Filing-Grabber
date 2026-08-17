@@ -292,6 +292,8 @@ STRINGS: dict[str, str] = {
 
     # gui.log.*
     "gui.log.need_identity": '[ERROR] 請先在進階設定填入 Identity',
+    "gui.log.network_down": '[{ticker}] ✗ 網路中斷（已自動重試 3 次仍連不上 SEC）。已停止，**沒有寫出檔案**，原有的 Excel 完好未動。網路恢復後重跑一次即可。',
+    "gui.log.network_down_batch": '✗ 在 {ticker} 遇到網路中斷（已自動重試 3 次）。已中止整批：{done}/{total} 家完成，其餘未處理。網路恢復後重跑一次即可。',
     "gui.log.need_identity_full": '[ERROR] 請先在進階設定填入 Identity（姓名 + 信箱）',
     "gui.log.nothing_to_write": '[WARNING] 無資料可寫入',
 
@@ -322,6 +324,7 @@ STRINGS: dict[str, str] = {
     "gui.status.fetching_gaap": '抓取 GAAP...',
     "gui.status.fetching_nongaap": '抓取 Non-GAAP...',
     "gui.status.idle": '等待開始...',
+    "gui.status.network_down": '網路中斷，已停止',
     "gui.status.latest_unknown": '最新資料：無法判斷財季',
     "gui.status.looking_up": '查詢中...',
     "gui.status.preparing": '準備中...',

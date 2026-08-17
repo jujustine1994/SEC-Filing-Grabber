@@ -33,6 +33,7 @@ import pandas as pd
 from edgar import Company, set_identity as set_identity
 
 from i18n import t
+from net_retry import NetworkDownError, with_retry
 from override_engine import load_overrides, run_diagnosis, check_key_rows
 
 # 9 個關鍵科目的清單（品質檢查用）。定義在 excel_formatter，避免兩處各記一份。
@@ -70,6 +71,31 @@ META_COLS: set[str] = {
 # Filing lists are returned newest-first, so hitting a pre-cutoff filing means we can
 # break the loop immediately rather than continuing through decades of empty filings.
 _XBRL_CUTOFF: _date = _date(2008, 1, 1)
+
+
+def _filing_obj(filing):
+    """下載並解析一份 filing，網路問題會退避重試（CTH 2026-08-17）。
+
+    這是「斷網」與「這期解不開」的分界點：
+
+    * 網路類例外 → `with_retry` 退避重試 3 次救閃斷；救不回就拋
+      `NetworkDownError`，呼叫端**不攔**，一路往上中止整趟、不寫檔。
+      少一季而使用者不知道，比整趟失敗更糟。
+    * 解析類例外（舊申報沒有 XBRL、報表 role 對不上、10-QT 轉型期報表、
+      edgartools 踩到特殊標記）→ 原樣往外拋，呼叫端照舊跳過該期繼續。
+      這條路是刻意維持現況的（CTH：現在用起來沒問題，不要動）。
+    """
+    return with_retry(lambda: filing.obj())
+
+
+def _financials_of(tenq):
+    """取 filing 物件上的 financials，沒有就回 None。
+
+    舊申報（2009 年前不強制 XBRL）解出來的物件 `financials` 會是 None，
+    再對它取 `.income_statement()` 就是 AttributeError。那不是錯誤而是
+    「這份沒有可解的資料」，明講出來比讓它拋例外再被攔下來清楚。
+    """
+    return getattr(tenq, "financials", None)
 
 
 def _filter_filings_by_year(
@@ -328,8 +354,11 @@ def _detect_fy_end_month(filings_k: list) -> int:
     """
     for filing in filings_k[:3]:
         try:
-            tenq = filing.obj()
-            is_stmt = tenq.financials.income_statement()
+            tenq = _filing_obj(filing)
+            fin = _financials_of(tenq)
+            if fin is None:
+                continue
+            is_stmt = fin.income_statement()
             if is_stmt is None:
                 continue
             df = is_stmt.to_dataframe()
@@ -339,6 +368,8 @@ def _detect_fy_end_month(filings_k: list) -> int:
                 mm = re.search(r"\d{4}-(\d{2})-\d{2}\s+\(FY\)", col)
                 if mm:
                     return int(mm.group(1))
+        except NetworkDownError:
+            raise            # 斷網不是「這份猜不出財年」，往上中止整趟
         except Exception:
             continue
     return 12
@@ -596,11 +627,16 @@ def _build_template_table(filings, template: list[_T], sheet_name: str,
         if len(periods) >= max_filings:
             break
         try:
-            tenq = filing.obj()
-            stmt = getattr(tenq.financials, stmt_method)()
+            tenq = _filing_obj(filing)
+            fin = _financials_of(tenq)
+            if fin is None:
+                continue
+            stmt = getattr(fin, stmt_method)()
             if stmt is None:
                 continue
             df = stmt.to_dataframe()
+        except NetworkDownError:
+            raise            # 斷網要中止整趟，不可以當成「這期沒資料」跳過
         except Exception as exc:
             print(f"[fetcher_gaap] {sheet_name} warning: {exc!r}", file=sys.stderr)
             continue
@@ -685,11 +721,16 @@ def _build_is_table(
         if isinstance(_fd, _date) and _fd < _XBRL_CUTOFF:
             break   # filings are newest-first; everything older is also pre-XBRL
         try:
-            tenq = filing.obj()
-            stmt = tenq.financials.income_statement()
+            tenq = _filing_obj(filing)
+            fin = _financials_of(tenq)
+            if fin is None:
+                continue
+            stmt = fin.income_statement()
             if stmt is None:
                 continue
             df = stmt.to_dataframe()
+        except NetworkDownError:
+            raise
         except Exception as exc:
             print(f"[fetcher_gaap] IS warning: {exc!r}", file=sys.stderr)
             continue
@@ -910,17 +951,22 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
         if isinstance(_fd, _date) and _fd < _XBRL_CUTOFF:
             break   # filings are newest-first; everything older is also pre-XBRL
         try:
-            tenq = filing.obj()
+            tenq = _filing_obj(filing)
+            fin = _financials_of(tenq)
+            if fin is None:
+                continue
 
             # Get quarter label from IS (has "(Q1)"/"(FY)" format)
-            is_stmt = tenq.financials.income_statement()
+            is_stmt = fin.income_statement()
             is_df = is_stmt.to_dataframe() if is_stmt is not None else None
             is_q_col = _current_q_col(is_df) if is_df is not None else None
 
-            bs_stmt = tenq.financials.balance_sheet()
+            bs_stmt = fin.balance_sheet()
             if bs_stmt is None:
                 continue
             df = bs_stmt.to_dataframe()
+        except NetworkDownError:
+            raise
         except Exception as exc:
             print(f"[fetcher_gaap] BS warning: {exc!r}", file=sys.stderr)
             continue
@@ -1073,15 +1119,20 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
         if isinstance(_fd, _date) and _fd < _XBRL_CUTOFF:
             break   # filings are newest-first; everything older is also pre-XBRL
         try:
-            tenq = filing.obj()
-            is_stmt = tenq.financials.income_statement()
+            tenq = _filing_obj(filing)
+            fin = _financials_of(tenq)
+            if fin is None:
+                continue
+            is_stmt = fin.income_statement()
             is_df = is_stmt.to_dataframe() if is_stmt is not None else None
             is_q_col = _current_q_col(is_df) if is_df is not None else None
 
-            cf_stmt = tenq.financials.cashflow_statement()
+            cf_stmt = fin.cashflow_statement()
             if cf_stmt is None:
                 continue
             df = cf_stmt.to_dataframe()
+        except NetworkDownError:
+            raise
         except Exception as exc:
             print(f"[fetcher_gaap] CF warning: {exc!r}", file=sys.stderr)
             continue
@@ -1483,10 +1534,15 @@ def _build_dynamic_table(filings, stmt_method: str, sheet_name: str,
         if len(periods) >= max_filings:
             break
         try:
-            stmt = getattr(filing.obj().financials, stmt_method)()
+            fin = _financials_of(_filing_obj(filing))
+            if fin is None:
+                continue
+            stmt = getattr(fin, stmt_method)()
             if stmt is None:
                 continue
             df = stmt.to_dataframe()
+        except NetworkDownError:
+            raise
         except Exception as exc:
             print(f"[fetcher_gaap] {sheet_name} warning: {exc!r}", file=sys.stderr)
             continue
@@ -1559,10 +1615,15 @@ def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> 
         if isinstance(_fd, _date) and _fd < _XBRL_CUTOFF:
             break   # filings are newest-first; everything older is also pre-XBRL
         try:
-            stmt = filing.obj().financials.income_statement()
+            fin = _financials_of(_filing_obj(filing))
+            if fin is None:
+                continue
+            stmt = fin.income_statement()
             if stmt is None:
                 continue
             df = stmt.to_dataframe()
+        except NetworkDownError:
+            raise
         except Exception as exc:
             print(f"[fetcher_gaap] Seg warning: {exc!r}", file=sys.stderr)
             continue
@@ -1863,10 +1924,12 @@ def fetch_gaap_statements(ticker: str, identity: str,
 
         if missing_is or missing_bs or missing_cf:
             try:
-                tenq_latest = filings_q[0].obj()
+                tenq_latest = _filing_obj(filings_q[0])
                 latest_is_df = tenq_latest.financials.income_statement().to_dataframe()
                 latest_bs_df = tenq_latest.financials.balance_sheet().to_dataframe()
                 latest_cf_df = tenq_latest.financials.cashflow_statement().to_dataframe()
+            except NetworkDownError:
+                raise
             except Exception as exc:
                 print(f"[{ticker}] 診斷：無法取得最新 filing DataFrame — {exc!r}", file=sys.stderr)
                 latest_is_df = latest_bs_df = latest_cf_df = None
@@ -1971,6 +2034,8 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
     try:
         seg_tables = _build_segment_tables([latest], max_filings=1)
         seg_names = [t.sheet_name for t in seg_tables]
+    except NetworkDownError:
+        raise            # 掃描時斷網要讓使用者知道，不可以回報成「這家沒有 segment」
     except Exception as exc:
         print(f"[preview_sheets] Segment scan failed: {exc!r}", file=sys.stderr)
         seg_names = []

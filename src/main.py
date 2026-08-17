@@ -28,6 +28,7 @@ from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
 from excel_writer import write_statements, check_output_writable
 from fetcher_gaap import fetch_gaap_statements
+from net_retry import NetworkDownError, configure_timeouts
 from output_tables import append_ratio_table
 
 def _build_fixed_height_scrollable(parent, height=110):
@@ -1926,6 +1927,18 @@ class SECFetcherApp:
             self.msg_queue.put(("last_output_folder", output_path.parent))
             self._done(True)
 
+        except NetworkDownError as e:
+            # 網路真的斷了（已退避重試三次）。這裡是 write_statements 之前，
+            # 所以檔案沒被動過——舊檔完好，也不會留下一份少幾季的新檔。
+            # 講明「沒有寫出檔案」，使用者才不會去看一份根本沒更新的 Excel。
+            self._log(t("gui.log.network_down", ticker=ticker), "ERROR", to_file=True)
+            try:
+                _elapsed = int(time.time() - task_start)
+                _write_log(f"{ticker} 網路中斷，耗時 {_elapsed // 60}分{_elapsed % 60}秒，未寫出檔案", "FAIL")
+            except Exception:
+                pass
+            self._done(False)
+
         except Exception as e:
             # ---- 錯誤行：只記 type + status，禁止 {e} 全文（會挾帶 URL/response/key）----
             self._log(t("gui.log.fetch_failed", ticker=ticker,
@@ -2004,6 +2017,16 @@ class SECFetcherApp:
                 # ---- 任務結果行：成功 + 耗時 ----
                 _elapsed = int(time.time() - task_start)
                 _write_log(f"{ticker} 成功，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "OK")
+            except NetworkDownError:
+                # 整批中止，不是跳過這一家：網路斷了，剩下 11 家只會用同樣的
+                # 方式一家一家慢慢失敗，讓使用者多等好幾分鐘才看到同一件事。
+                self._log(t("gui.log.network_down_batch", ticker=ticker,
+                            done=i - 1, total=total), "ERROR", to_file=True)
+                _elapsed = int(time.time() - task_start)
+                _write_log(f"批量在 {ticker} ({i}/{total}) 網路中斷，已中止整批", "FAIL")
+                self._set_progress(i - 1, total, t("gui.status.network_down"))
+                self._done(False)
+                return
             except Exception as e:
                 # ---- 錯誤行：只記 type + status，禁止 {e} 全文 ----
                 self._log(t("gui.log.fetch_failed", ticker=ticker,
@@ -2215,6 +2238,9 @@ def _pick_language_on_first_run(root: tk.Tk) -> None:
 def main():
     """Entry point: show banner, create Tk root, launch app, enter event loop."""
     show_cth_banner()
+    # edgartools 預設不設 HTTP 逾時，落到 httpx 自己的 5 秒——抓大份 filing
+    # 時太短，會誤判成逾時再被白白重試三遍。給一個明確的值。
+    configure_timeouts()
     root = tk.Tk()
     root.attributes("-topmost", True)
     root.update()
