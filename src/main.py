@@ -258,6 +258,7 @@ class SECFetcherApp:
         self.nongaap_warn_label = None
         self.btn_confirm_company = None
         self.tab1_name_label = None
+        self._scan_hint_label = None
         self.tab1_outdir_var = None
         self.tab1_fmt_var = None
         self.tab1_custom_var = None
@@ -352,12 +353,18 @@ class SECFetcherApp:
         self.btn_confirm_company = None
         self.tab1_name_label = ttk.Label(row_ticker, text="", foreground="#555555")
         self.tab1_name_label.pack(side="left", padx=(10, 0))
-        self._scan_btn = ttk.Button(row_ticker, text=t("gui.btn.scan"), command=self._run_preview_scan, width=12)
+        self._scan_btn = ttk.Button(row_ticker, text=t("gui.btn.scan"), command=self._run_preview_scan, width=16)
         self._scan_btn.pack(side="left", padx=(12, 0))
         _scan_help_lbl = tk.Label(row_ticker, text="？", foreground="#0078D4", cursor="hand2",
                                    font=("Microsoft JhengHei", 11, "bold"))
         _scan_help_lbl.pack(side="left", padx=(4, 0))
         _scan_help_lbl.bind("<Button-1>", lambda e: self._show_scan_help())
+        # 掃描要打 EDGAR 抓最新一份 10-Q，5~15 秒。公司名稱卻走本機快取幾乎瞬間
+        # 回來——CTH 就是看到名稱跳出來、以為這次點擊只做了名稱，等不到期間便
+        # 再按一次（2026-08-17 回報）。用一個獨立的提示標籤講明「還在跑、要多久」，
+        # 不塞進按鈕文字：按鈕寬度會跟著字數變，一長一短版面會左右跳。
+        self._scan_hint_label = ttk.Label(row_ticker, text="", foreground="#0078D4")
+        self._scan_hint_label.pack(side="left", padx=(8, 0))
 
         # Row 1: Checkboxes
         row_type = ttk.Frame(tab)
@@ -1586,6 +1593,14 @@ class SECFetcherApp:
             return
         if self._scan_btn:
             self._scan_btn.config(state="disabled", text=t("gui.status.scanning"))
+        if self._scan_hint_label:
+            self._scan_hint_label.config(text=t("gui.status.scan_hint"))
+        # 名稱查詢由這裡自己發動，不再只依賴 ticker 欄位的 <FocusOut>。
+        # 使用者若是用 Enter 確認過公司、焦點早就不在欄位上，點掃描不會再觸發
+        # focusout，名稱那格就停在舊值；反過來若焦點還在欄位上，focusout 與這裡
+        # 會各發一次查詢——同一個 ticker 走本機快取，重複一次的成本可忽略，
+        # 換到的是「點一次必定兩件事都做」這個確定性。
+        self._confirm_company()
         if self._sheet_panel_frame:
             self._sheet_panel_frame.grid_remove()
             self._sheet_panel_frame.configure(text=self._SHEET_PANEL_TITLE_BASE)
@@ -1964,10 +1979,14 @@ class SECFetcherApp:
                         self._sheet_panel_frame.configure(text=f"{self._SHEET_PANEL_TITLE_BASE} ｜ {info}")
                     if self._scan_btn:
                         self._scan_btn.config(state="normal", text=t("gui.btn.scan"))
+                    if self._scan_hint_label:
+                        self._scan_hint_label.config(text="")
 
                 elif msg_type == "preview_scan_error":
                     if self._scan_btn:
                         self._scan_btn.config(state="normal", text=t("gui.btn.scan"))
+                    if self._scan_hint_label:
+                        self._scan_hint_label.config(text="")
                     ticker, exc_name = data
                     if exc_name in ("CompanyNotFoundError", "ValueError"):
                         msg = t("gui.msg.ticker_not_found", ticker=ticker)
