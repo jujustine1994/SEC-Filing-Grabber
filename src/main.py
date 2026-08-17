@@ -92,6 +92,75 @@ LOG_DIR = os.path.join(_find_project_root(), "logs")
 LOG_FILE = os.path.join(LOG_DIR, "app.log")
 
 
+# =========================================================
+# 視窗擺放
+# =========================================================
+#
+# CTH 2026-08-17 回報「視窗很高，起始位置往下切到最下面」。成因是 __init__
+# 只給了 geometry("700x650") 沒給座標——位置全交給 Windows，它會用階梯式
+# 落點（每開一個新視窗往右下挪一點），開久了就掉到工作列底下。
+#
+# 解法是自己算座標，而且要對「工作區」算不是對「螢幕」算：螢幕高 1080 但
+# 工作列吃掉 40，對螢幕置中的視窗下緣就會被蓋住。
+
+def work_area() -> tuple[int, int, int, int]:
+    """回傳 (left, top, right, bottom)——螢幕扣掉工作列後的可用矩形。
+
+    走 Win32 的 SPI_GETWORKAREA。本專案是 Windows 專用工具（見
+    README「系統需求」），可以直接用 ctypes，不必為跨平台繞路。
+    拿不到就退回整個螢幕——那時視窗可能被工作列切到一點，但不會比
+    現在（完全不算座標）更糟。
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        SPI_GETWORKAREA = 0x0030
+        rect = wintypes.RECT()
+        ok = ctypes.windll.user32.SystemParametersInfoW(
+            SPI_GETWORKAREA, 0, ctypes.byref(rect), 0
+        )
+        if ok and rect.right > rect.left and rect.bottom > rect.top:
+            return (rect.left, rect.top, rect.right, rect.bottom)
+    except Exception:
+        pass
+
+    # 退路：問 tkinter 要整個螢幕大小。需要一個 root 才問得到，所以只在
+    # 真的走到這裡時才建暫時視窗。
+    try:
+        probe = tk.Tk()
+        probe.withdraw()
+        w, h = probe.winfo_screenwidth(), probe.winfo_screenheight()
+        probe.destroy()
+        return (0, 0, w, h)
+    except Exception:
+        return (0, 0, 1280, 800)
+
+
+# 正中央看起來偏低（人眼的視覺重心比幾何中心高）。往上帶一點比較自然。
+_VERTICAL_BIAS = 0.35
+
+
+def fit_geometry(win_w: int, win_h: int,
+                 area: tuple[int, int, int, int]) -> str:
+    """算出保證落在工作區內的 tkinter geometry 字串。
+
+    視窗比工作區大就縮到剛好塞得下——寧可矮一點也不要下緣看不到，
+    因為看不到的那塊往往正是「執行」按鈕。
+
+    多螢幕時 left/top 可能是負的（副螢幕在主螢幕左邊或上面），
+    所有座標都要相對 area 算，不可以假設從 0 開始。
+    """
+    left, top, right, bottom = area
+    avail_w, avail_h = right - left, bottom - top
+
+    w = min(win_w, avail_w)
+    h = min(win_h, avail_h)
+    x = left + (avail_w - w) // 2
+    y = top + int((avail_h - h) * _VERTICAL_BIAS)
+    return f"{w}x{h}+{x}+{y}"
+
+
 def _write_log(msg: str, level: str = "INFO"):
     """寫一行到 logs/app.log。每次開檔→寫→關檔，不持有 handle（地雷十）。"""
     try:
@@ -218,12 +287,20 @@ class SECFetcherApp:
         """Load config, initialise state, build UI, start the 100ms queue poll."""
         self.root = root
         self.root.title("SEC Financial Fetcher")
-        self.root.minsize(700, 650)
         # 明確呼叫一次 geometry() 就會永久關閉 tkinter 的自動撐高（geometry
         # propagation）——快速掃描跳出的可選 Sheet 清單原本會撐高視窗，改用
         # _build_sheet_panel 裡的固定高度可捲動容器承接，不會再撐開這裡鎖定的尺寸。
         # resizable(True, True) 保留、不衝突：那只管使用者能不能手動拖邊框。
-        self.root.geometry("700x650")
+        #
+        # 座標一定要自己算（見模組頂端 fit_geometry 的註解）：只給大小不給座標時
+        # Windows 會用階梯式落點，視窗越開越低，最後下緣掉到工作列底下。
+        _area = work_area()
+        _geom = fit_geometry(self._WIN_W, self._WIN_H, _area)
+        self.root.geometry(_geom)
+        # minsize 不可以大於實際擺出來的尺寸，否則小螢幕上 fit_geometry 縮好的
+        # 視窗會被 minsize 又頂回去、重新出界。
+        _fitted_w, _fitted_h = (int(v) for v in _geom.split("+")[0].split("x"))
+        self.root.minsize(min(760, _fitted_w), min(560, _fitted_h))
         self.root.resizable(True, True)
 
         _migrate_config_if_needed()
@@ -418,7 +495,7 @@ class SECFetcherApp:
         self._SHEET_PANEL_TITLE_BASE = t("gui.frame.optional_sheets")
         self._sheet_panel_frame = ttk.LabelFrame(tab, text=self._SHEET_PANEL_TITLE_BASE, padding=6)
         self._sheet_panel_frame.grid(row=5, column=0, sticky="ew", pady=(0, 4))
-        _, self._sheet_panel_inner = _build_fixed_height_scrollable(self._sheet_panel_frame, height=90)
+        _, self._sheet_panel_inner = _build_fixed_height_scrollable(self._sheet_panel_frame, height=60)
         self._sheet_panel_frame.grid_remove()
 
         # Row 6: Non-GAAP warning (hidden by default)
@@ -1604,7 +1681,6 @@ class SECFetcherApp:
         if self._sheet_panel_frame:
             self._sheet_panel_frame.grid_remove()
             self._sheet_panel_frame.configure(text=self._SHEET_PANEL_TITLE_BASE)
-            self.root.geometry(self._WIN_HEIGHT_IDLE)
         self._sheet_check_vars = {}
         threading.Thread(
             target=lambda: self._preview_scan_worker(ticker, identity), daemon=True
@@ -1625,13 +1701,21 @@ class SECFetcherApp:
     _FIXED_SHEETS = frozenset({"Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"})
 
     # 視窗高度鎖死不會自動撐大（見 __init__ 的 geometry() 註解）。可選 Sheet 面板
-    # 展開時，Tab 1 實際需要的高度比閒置狀態多了約 160px（面板本身 + 可捲動容器），
-    # 但下面「處理進度」的 log 是唯一 weight=1 的列，硬吃掉這 160px 的後果是 log
-    # 可視高度被壓到只剩 1px、視覺上完全消失——這正是本次要修的症狀。改成面板
-    # 展開/收合時主動切換視窗高度（此處用實測值：800px 讓 log 恢復到約 4~5 行可視），
-    # 而不是靠固定 650px 硬撐。
-    _WIN_HEIGHT_IDLE = "700x650"
-    _WIN_HEIGHT_SCANNED = "700x800"
+    # 展開時 Tab 1 需要的高度比閒置時多，而下面「處理進度」的 log 是唯一 weight=1
+    # 的列，多出來的高度全由它吸收，壓到剩 1px 就等於消失。
+    #
+    # 原本的解法是面板展開/收合時把視窗在 700x650 與 700x800 之間切換。那會讓
+    # 視窗在掃描完成的瞬間自己長高 150px，CTH 回報的「視窗現在很高」就是掃完
+    # 之後的那個狀態。現在改成**單一尺寸、永不跳動**，靠三件事把高度需求壓下來：
+    #
+    #   1. 寬度 700 -> 900，可選 Sheet 面板從 3 欄改 4 欄
+    #   2. 面板的固定高度容器 90px -> 60px（4 欄之後兩列就放得下 8 張 sheet，
+    #      再多還是可以捲，不會撐開視窗）
+    #   3. 總高度取 720：面板展開時 log 仍有 4~5 行可視，收合時約 9 行
+    #
+    # 這兩個值是 fit_geometry 的輸入，實際擺出來的尺寸在小螢幕上會被縮。
+    _WIN_W = 900
+    _WIN_H = 720
 
     def _build_sheet_panel(self, sheet_names: list[str]):
         """Populate sheet selection panel with checkboxes. Fixed sheets are disabled."""
@@ -1639,15 +1723,16 @@ class SECFetcherApp:
             return
         if not sheet_names:
             self._sheet_panel_frame.grid_remove()
-            self.root.geometry(self._WIN_HEIGHT_IDLE)
             return
         for w in self._sheet_panel_inner.winfo_children():
             w.destroy()
         self._sheet_check_vars = {}
 
-        # 3 欄排列而非單欄直排——sheet 數一多（segment 軸拆出多張）減少捲動需求。
-        # 外層 _sheet_panel_inner 是固定高度可捲動容器，超過還是可以捲，不會撐高視窗。
-        _COLS = 3
+        # 4 欄排列而非單欄直排——sheet 數一多（segment 軸拆出多張）減少捲動需求。
+        # 視窗加寬到 900 之後才排得下第 4 欄，這也是高度容器能從 90px 收到 60px
+        # 的前提（見 _WIN_W 的註解）。外層 _sheet_panel_inner 是固定高度可捲動
+        # 容器，超過還是可以捲，不會撐高視窗。
+        _COLS = 4
         for i, name in enumerate(sheet_names):
             var = tk.BooleanVar(value=True)
             self._sheet_check_vars[name] = var
@@ -1659,7 +1744,6 @@ class SECFetcherApp:
             cb.grid(row=i // _COLS, column=i % _COLS, sticky="w", padx=4, pady=1)
 
         self._sheet_panel_frame.grid()
-        self.root.geometry(self._WIN_HEIGHT_SCANNED)
 
     def _start_worker(self, target):
         """Clear log, disable run buttons, and start target as a daemon thread. Guards against double-runs."""
