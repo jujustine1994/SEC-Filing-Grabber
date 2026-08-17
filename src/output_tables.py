@@ -40,3 +40,29 @@ def append_ratio_table(tables: list) -> None:
     ratio_tbl = build_ratio_table(q_tbl)
     if ratio_tbl is not None:
         tables.append(ratio_tbl)
+
+
+# 這幾張表就算三表全空也會有內容或欄位結構，不能拿來當「有抓到資料」的證據：
+# Data_Meta 永遠有 ticker 與抓取日期；Data_Ratios 是從三表算出來的衍生表。
+_NOT_EVIDENCE_OF_DATA = frozenset({"Data_Meta", "Data_Ratios", "Index"})
+
+
+def has_any_data(tables) -> bool:
+    """這一趟到底有沒有抓到東西？
+
+    缺幾期留空可以接受（使用者會看到警告），但**全部**都沒抓到時寫出去
+    就是一份空殼 Excel，而它會蓋掉使用者原本好好的舊檔——那是這整件事裡
+    唯一真正不可逆的傷害。
+
+    不能只檢查 `if not tables`：一期都沒抓到時 _merge_financials 仍會產出
+    空的 Data_Financials(Q) 等結構，list 不是空的。
+    """
+    for tbl in tables:
+        if tbl.sheet_name in _NOT_EVIDENCE_OF_DATA:
+            continue
+        if not tbl.quarter_labels:
+            continue
+        # 欄位標籤在但每一格都是 None——版面在、數字沒有，一樣是空殼
+        if any(v is not None for row in tbl.values for v in row):
+            return True
+    return False

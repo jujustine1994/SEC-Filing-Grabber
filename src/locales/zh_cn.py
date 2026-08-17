@@ -360,6 +360,9 @@ STRINGS: dict[str, str] = {
     'err.output_locked_other': '输出档正被其他程序锁定（可能是 Excel）：{name}\n请先关闭该文件再重试。',
     'err.output_unwritable': '输出档无法写入：{name}（{exc}）',
     'err.backup_failed': '[excel_writer] 备份失败（{exc}），仍会写入 {name}',
+    'fetch.gaps_data': '⚠ 有 {n} 期没抓到（{periods}）。SEC 连得上，是这几期的申报数据本身读不出来，重抓结果会一样。',
+    'fetch.gaps_ellipsis': ' 等',
+    'fetch.gaps_network': '⚠ 有 {n} 期没抓到（{periods}）。抓取期间连不上 SEC，多半是网络问题——网络稳定后重抓一次通常就补得回来。',
     # Excel TEXT() 的月份格式碼。"m" 出數字（後面自己接「月」），
     # "mmm" 出月份簡稱（Oct）。換語言時這格一定要跟著前綴/後綴一起想。
     "xls.fy_input.span_month_format": 'm',

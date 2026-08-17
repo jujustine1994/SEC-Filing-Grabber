@@ -235,6 +235,9 @@ STRINGS: dict[str, str] = {
     "err.output_locked_other": 'The output file is locked by another program (possibly Excel): {name}\nPlease close it and try again.',
     "err.output_unwritable": 'Cannot write the output file: {name} ({exc})',
     "err.backup_failed": '[excel_writer] Backup failed ({exc}); writing {name} anyway',
+    "fetch.gaps_data": '! {n} period(s) could not be fetched ({periods}). SEC was reachable, so the filings themselves could not be read - re-running will give the same result.',
+    "fetch.gaps_ellipsis": ' and more',
+    "fetch.gaps_network": '! {n} period(s) could not be fetched ({periods}). SEC was unreachable during the run, so this is most likely a network problem - re-running once you have a stable connection usually fills them in.',
 
     # ── GUI ─────────────────────────────────────────────────────────────
     'gui.btn.add_group': '＋ New group',

@@ -32,7 +32,7 @@ import i18n
 from errsafe import _exc_status
 from excel_writer import check_output_writable, write_statements
 from fiscal_input import fiscal_quarter_of, fy_start_month
-from output_tables import append_ratio_table
+from output_tables import append_ratio_table, has_any_data
 from press_release_tables import PressTable, filter_nongaap, parse_tables
 
 
@@ -157,18 +157,26 @@ def cmd_gaap(args: argparse.Namespace) -> int:
         if lock_msg:
             raise CliError(lock_msg)
 
-    tables = _gaap_tables(
-        ticker=args.ticker,
-        identity=identity,
-        max_filings=args.max_filings,
-        start_year=start_year,
-        end_year=end_year,
-        fetch_quarterly=not args.annual_only,
-        fetch_annual=not args.quarterly_only,
-    )
-    if not tables:
-        print(f"[{args.ticker}] 沒有抓到任何資料", file=sys.stderr)
+    from fetcher_gaap import collect_gaps
+
+    with collect_gaps() as gaps:
+        tables = _gaap_tables(
+            ticker=args.ticker,
+            identity=identity,
+            max_filings=args.max_filings,
+            start_year=start_year,
+            end_year=end_year,
+            fetch_quarterly=not args.annual_only,
+            fetch_annual=not args.quarterly_only,
+        )
+    # 一期都沒抓到就不寫檔——空殼 Excel 會蓋掉使用者原本好好的舊檔。
+    # tables 本身不會是空 list（結構表仍在），所以要看有沒有實質資料。
+    if not has_any_data(tables):
+        print(f"[{args.ticker}] 沒有抓到任何資料，未寫出檔案", file=sys.stderr)
         return 1
+    # 缺漏走 stderr：stdout 可能是 --json 的資料流，混進去會壞掉 pipeline。
+    if gaps.has_gaps:
+        print(f"[{args.ticker}] {gaps.summary()}", file=sys.stderr)
 
     append_ratio_table(tables)
 

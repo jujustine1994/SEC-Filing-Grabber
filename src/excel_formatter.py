@@ -349,8 +349,24 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     ws["A2"].font = _font(color="FFAABBCC", size=INDEX_META_SIZE)
     ws.merge_cells("A2:E2")
 
-    # Row 3: blank
-    ws.row_dimensions[3].height = 6
+    # Row 3: 抓取缺漏警告，沒缺漏時留白當間隔列。
+    #
+    # 放這裡不放下面的「品質明細」區塊：那一區講的是「這個科目 SEC 沒報」，
+    # 是資料本身的性質；缺漏講的是「這次抓取沒拿到」，是這一份檔案的狀態，
+    # 重抓可能就有了。兩件事混在一起使用者會分不出哪個該重抓。
+    # 擺在第一頁最上方是因為 GUI 的 log 關掉就沒了，而使用者真正會搞混的
+    # 時點是三天後重新打開這份 Excel 的時候。
+    gap_note = _meta_value("Fetch Gaps")
+    if gap_note and gap_note != t("xls.meta.none"):
+        ws["A3"] = gap_note
+        ws["A3"].fill = _fill(QUALITY_MISS_BG)
+        ws["A3"].font = _font(color=QUALITY_MISS_FG, bold=True, size=INDEX_META_SIZE)
+        ws["A3"].alignment = Alignment(vertical="center", wrap_text=True)
+        ws.merge_cells("A3:E3")
+        # 一行約 90 字元；換行後高度要跟著長，否則長訊息會被切掉只看到開頭
+        ws.row_dimensions[3].height = 15 * max(1, (len(gap_note) // 60) + 1)
+    else:
+        ws.row_dimensions[3].height = 6
 
     # Row 4-5 由 fiscal_input.apply_fiscal_year_input() 填「財年起始月」輸入格
     # 與提醒（在 write_statements 最後才寫，因為這裡每次都會重建整張 Index）。

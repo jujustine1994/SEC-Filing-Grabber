@@ -32,6 +32,10 @@ from typing import Any
 import pandas as pd
 from edgar import Company, set_identity as set_identity
 
+from contextlib import contextmanager
+from contextvars import ContextVar
+
+from fetch_ledger import FetchLedger
 from i18n import t
 from net_retry import NetworkDownError, with_retry
 from override_engine import load_overrides, run_diagnosis, check_key_rows
@@ -73,19 +77,72 @@ META_COLS: set[str] = {
 _XBRL_CUTOFF: _date = _date(2008, 1, 1)
 
 
+# ── 缺漏帳本（CTH 2026-08-17 定案）────────────────────────────────────────
+#
+# 抓不到的期數要被記下來並在最後講出來，但**不中止抓取**——「抓得太嚴格
+# 讓資料永遠抓不出來」比缺幾期更糟。完整的演進理由見 fetch_ledger.py。
+#
+# 用 ContextVar 而不是傳參數：帳本要穿過九個抓取函式，全部改簽名會動到
+# 一堆既有測試，而這件事跟那些函式的職責無關。ContextVar 每個執行緒各自
+# 一份，GUI 的背景 worker 與 CLI 都正確。
+_ledger_var: ContextVar[FetchLedger | None] = ContextVar("_fetch_ledger", default=None)
+
+
+@contextmanager
+def collect_gaps(ledger: FetchLedger | None = None):
+    """開一本帳本涵蓋這一趟抓取。`with collect_gaps() as led: ...`"""
+    led = ledger if ledger is not None else FetchLedger()
+    token = _ledger_var.set(led)
+    try:
+        yield led
+    finally:
+        _ledger_var.reset(token)
+
+
+def _ledger() -> FetchLedger | None:
+    return _ledger_var.get()
+
+
+def _note_gap(where, exc: BaseException) -> None:
+    """記一期沒抓到。沒開帳本時（單獨呼叫某個 builder 的測試）靜靜略過。"""
+    led = _ledger()
+    if led is not None:
+        led.record(str(where), exc)
+
+
+def _note_ok() -> None:
+    led = _ledger()
+    if led is not None:
+        led.succeeded()
+
+
+def _filing_ref(filing) -> str:
+    """這份 filing 拿來給人看的稱呼。
+
+    失敗當下還不知道財季標籤——那是從抓下來的 DataFrame 欄名推出來的，
+    而我們正是沒抓到。退而求其次用期末日（`period_of_report`），對使用者
+    來說一樣認得出是哪一期。
+    """
+    for attr in ("period_of_report", "filing_date"):
+        value = getattr(filing, attr, None)
+        if value:
+            return str(value)
+    return "?"
+
+
 def _filing_obj(filing):
     """下載並解析一份 filing，網路問題會退避重試（CTH 2026-08-17）。
 
-    這是「斷網」與「這期解不開」的分界點：
+    重試是為了救閃斷——一次瞬斷不該讓那一季永久消失。救不回來就拋
+    `NetworkDownError`，呼叫端記進帳本後**繼續抓下一期**，不中止。
 
-    * 網路類例外 → `with_retry` 退避重試 3 次救閃斷；救不回就拋
-      `NetworkDownError`，呼叫端**不攔**，一路往上中止整趟、不寫檔。
-      少一季而使用者不知道，比整趟失敗更糟。
-    * 解析類例外（舊申報沒有 XBRL、報表 role 對不上、10-QT 轉型期報表、
-      edgartools 踩到特殊標記）→ 原樣往外拋，呼叫端照舊跳過該期繼續。
-      這條路是刻意維持現況的（CTH：現在用起來沒問題，不要動）。
+    帳本判定網路已經斷掉之後（連續多期失敗）就不再退避重試：整個網路
+    斷掉時 40 份財報各等 2+4 秒等於乾等 4 分鐘，剩下的快速失敗完，
+    照樣寫檔、照樣提示。
     """
-    return with_retry(lambda: filing.obj())
+    led = _ledger()
+    attempts = 1 if (led is not None and led.give_up_retrying) else 3
+    return with_retry(lambda: filing.obj(), attempts=attempts)
 
 
 def _financials_of(tenq):
@@ -368,9 +425,11 @@ def _detect_fy_end_month(filings_k: list) -> int:
                 mm = re.search(r"\d{4}-(\d{2})-\d{2}\s+\(FY\)", col)
                 if mm:
                     return int(mm.group(1))
-        except NetworkDownError:
-            raise            # 斷網不是「這份猜不出財年」，往上中止整趟
-        except Exception:
+        except Exception as exc:
+            # 這一步失敗會退回 12 月（見函式結尾），而財年結束月是所有期間
+            # 標籤的基準——AAPL 退成 12 月的話每個標籤都差一季。所以一定要
+            # 記進帳本讓使用者看到警告，不能安靜地用錯的基準跑完。
+            _note_gap(_filing_ref(filing), exc)
             continue
     return 12
 
@@ -635,10 +694,10 @@ def _build_template_table(filings, template: list[_T], sheet_name: str,
             if stmt is None:
                 continue
             df = stmt.to_dataframe()
-        except NetworkDownError:
-            raise            # 斷網要中止整趟，不可以當成「這期沒資料」跳過
+            _note_ok()
         except Exception as exc:
-            print(f"[fetcher_gaap] {sheet_name} warning: {exc!r}", file=sys.stderr)
+            _note_gap(_filing_ref(filing), exc)
+            print(f"[fetcher_gaap] {sheet_name} warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
         q_col = _current_q_col(df)
@@ -729,10 +788,10 @@ def _build_is_table(
             if stmt is None:
                 continue
             df = stmt.to_dataframe()
-        except NetworkDownError:
-            raise
+            _note_ok()
         except Exception as exc:
-            print(f"[fetcher_gaap] IS warning: {exc!r}", file=sys.stderr)
+            _note_gap(_filing_ref(filing), exc)
+            print(f"[fetcher_gaap] IS warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
         q_col = _current_q_col(df)
@@ -965,10 +1024,10 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
             if bs_stmt is None:
                 continue
             df = bs_stmt.to_dataframe()
-        except NetworkDownError:
-            raise
+            _note_ok()
         except Exception as exc:
-            print(f"[fetcher_gaap] BS warning: {exc!r}", file=sys.stderr)
+            _note_gap(_filing_ref(filing), exc)
+            print(f"[fetcher_gaap] BS warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
         # BS columns are bare dates; pick first non-meta column
@@ -1131,10 +1190,10 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
             if cf_stmt is None:
                 continue
             df = cf_stmt.to_dataframe()
-        except NetworkDownError:
-            raise
+            _note_ok()
         except Exception as exc:
-            print(f"[fetcher_gaap] CF warning: {exc!r}", file=sys.stderr)
+            _note_gap(_filing_ref(filing), exc)
+            print(f"[fetcher_gaap] CF warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
         q_col = _current_q_col(df)
@@ -1541,10 +1600,10 @@ def _build_dynamic_table(filings, stmt_method: str, sheet_name: str,
             if stmt is None:
                 continue
             df = stmt.to_dataframe()
-        except NetworkDownError:
-            raise
+            _note_ok()
         except Exception as exc:
-            print(f"[fetcher_gaap] {sheet_name} warning: {exc!r}", file=sys.stderr)
+            _note_gap(_filing_ref(filing), exc)
+            print(f"[fetcher_gaap] {sheet_name} warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
         q_col = _current_q_col(df)
@@ -1622,10 +1681,10 @@ def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> 
             if stmt is None:
                 continue
             df = stmt.to_dataframe()
-        except NetworkDownError:
-            raise
+            _note_ok()
         except Exception as exc:
-            print(f"[fetcher_gaap] Seg warning: {exc!r}", file=sys.stderr)
+            _note_gap(_filing_ref(filing), exc)
+            print(f"[fetcher_gaap] Seg warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
         q_col = _current_q_col(df)
@@ -1784,7 +1843,8 @@ def _apply_shares_outstanding(tables: list[StatementTable],
 
 def _build_meta_table(ticker: str, company_name: str,
                        tables: list[StatementTable],
-                       fy_end_month: int = 12) -> StatementTable:
+                       fy_end_month: int = 12,
+                       gap_note: str = "") -> StatementTable:
     """Build Data_Meta sheet with filing summary info."""
     n_quarters = 0
     quarter_labels: list[str] = []
@@ -1831,7 +1891,7 @@ def _build_meta_table(ticker: str, company_name: str,
         # 品質檢查（原本在已移除的 Index sheet）也併到這裡。
         concepts=["Ticker", "Company Name", "Fetched Date", "Quarters Available",
                   "Fiscal Year End Month", "Fiscal Year Span", "Latest Period", "Latest Period End",
-                  "Key Rows Complete", "Key Rows Missing"],
+                  "Key Rows Complete", "Key Rows Missing", "Fetch Gaps"],
         values=[
             [ticker]            * n_quarters,
             [company_name]      * n_quarters,
@@ -1843,6 +1903,9 @@ def _build_meta_table(ticker: str, company_name: str,
             [latest_end]        * n_quarters,
             [score]             * n_quarters,
             [missing_txt]       * n_quarters,
+            # 抓取缺漏。GUI 的 log 關掉就沒了，但這份 Excel 三天後再打開
+            # 還在——使用者真正會搞混的時點是那時候。
+            [gap_note or t("xls.meta.none")] * n_quarters,
         ],
     )
 
@@ -1878,6 +1941,17 @@ def fetch_gaap_statements(ticker: str, identity: str,
     Raises:
         ValueError: No filings found for the requested form type(s)
     """
+    # 帳本涵蓋整趟。抓不到的期數記在裡面，最後寫進 Data_Meta 的 Fetch Gaps
+    # 讓 GUI 與 Excel 的 Index 頁都讀得到。呼叫端不必知道它存在；
+    # 想自己拿到明細就在外面包一層 collect_gaps()。
+    if _ledger() is None:
+        with collect_gaps():
+            return fetch_gaap_statements(
+                ticker, identity, max_filings, max_annual_filings, ai_config,
+                start_year, end_year, fetch_quarterly, fetch_annual,
+                excluded_sheets,
+            )
+
     ai_config = ai_config or {}
     excluded_sheets = excluded_sheets or set()
     set_identity(identity)
@@ -1928,10 +2002,11 @@ def fetch_gaap_statements(ticker: str, identity: str,
                 latest_is_df = tenq_latest.financials.income_statement().to_dataframe()
                 latest_bs_df = tenq_latest.financials.balance_sheet().to_dataframe()
                 latest_cf_df = tenq_latest.financials.cashflow_statement().to_dataframe()
-            except NetworkDownError:
-                raise
             except Exception as exc:
-                print(f"[{ticker}] 診斷：無法取得最新 filing DataFrame — {exc!r}", file=sys.stderr)
+                # 這是選用的診斷路徑（補 override），失敗不影響主要資料，
+                # 也不算缺一期，所以不記帳本。
+                print(f"[{ticker}] 診斷：無法取得最新 filing DataFrame — "
+                      f"{type(exc).__name__}", file=sys.stderr)
                 latest_is_df = latest_bs_df = latest_cf_df = None
 
             new_overrides: dict[str, dict] = {}
@@ -1985,7 +2060,9 @@ def fetch_gaap_statements(ticker: str, identity: str,
     # 期末流通股數不在三表裡，走封面頁 dei fact 另外補（見 _fetch_shares_outstanding）
     _apply_shares_outstanding(tables, _fetch_shares_outstanding(company))
 
-    tables.append(_build_meta_table(ticker, company_name, tables, fy_end_month))
+    gap_note = _ledger().summary() if _ledger() is not None else ""
+    tables.append(_build_meta_table(ticker, company_name, tables, fy_end_month,
+                                    gap_note=gap_note))
 
     for tbl in tables:
         tbl.ticker = ticker
@@ -2034,10 +2111,11 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
     try:
         seg_tables = _build_segment_tables([latest], max_filings=1)
         seg_names = [t.sheet_name for t in seg_tables]
-    except NetworkDownError:
-        raise            # 掃描時斷網要讓使用者知道，不可以回報成「這家沒有 segment」
     except Exception as exc:
-        print(f"[preview_sheets] Segment scan failed: {exc!r}", file=sys.stderr)
+        # 掃描是「這家有哪些 sheet」的預覽，缺 segment 不影響後續抓取，
+        # 不記帳本也不中止——真正的抓取會自己再判斷一次。
+        print(f"[preview_sheets] Segment scan failed: {type(exc).__name__}",
+              file=sys.stderr)
         seg_names = []
 
     return {

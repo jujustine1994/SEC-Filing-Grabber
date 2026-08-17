@@ -27,9 +27,9 @@ from i18n import t
 from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
 from excel_writer import write_statements, check_output_writable
-from fetcher_gaap import fetch_gaap_statements
-from net_retry import NetworkDownError, configure_timeouts
-from output_tables import append_ratio_table
+from fetcher_gaap import collect_gaps, fetch_gaap_statements
+from net_retry import configure_timeouts
+from output_tables import append_ratio_table, has_any_data
 
 def _build_fixed_height_scrollable(parent, height=110):
     """固定高度的可捲動容器。回傳 (container, inner_frame)——動態內容（如掃描後的
@@ -1874,15 +1874,21 @@ class SECFetcherApp:
             if fetch_gaap:
                 self._log(t("gui.log.fetching_gaap", ticker=ticker))
                 self._set_progress(step, total_steps, t("gui.status.fetching_gaap"))
-                gaap_tables = fetch_gaap_statements(
-                    ticker, identity, max_filings=max_filings,
-                    ai_config=self.cfg.get("ai", {}),
-                    start_year=start_year, end_year=end_year,
-                    fetch_quarterly=fetch_q, fetch_annual=fetch_k,
-                    excluded_sheets=excluded_sheets or set(),
-                )
+                # 開帳本才拿得到缺漏明細。不開的話 fetch_gaap_statements 會
+                # 自己開一本，但那本在函式回傳後就沒了，這裡讀不到。
+                with collect_gaps() as gaps:
+                    gaap_tables = fetch_gaap_statements(
+                        ticker, identity, max_filings=max_filings,
+                        ai_config=self.cfg.get("ai", {}),
+                        start_year=start_year, end_year=end_year,
+                        fetch_quarterly=fetch_q, fetch_annual=fetch_k,
+                        excluded_sheets=excluded_sheets or set(),
+                    )
                 tables.extend(gaap_tables)
                 self._log(t("gui.log.gaap_got", ticker=ticker, n=len(gaap_tables)))
+                if gaps.has_gaps:
+                    # 橘字警告 + 落檔。使用者不必自己去比對少了哪幾期。
+                    self._log(gaps.summary(), "WARN", to_file=True)
                 if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
                     self._log(t("gui.log.financial_sector_warning", ticker=ticker))
                 step += 1
@@ -1908,8 +1914,10 @@ class SECFetcherApp:
                 self._log(t("gui.log.nongaap_sheets", ticker=ticker, n=len(ng_tables)))
                 step += 1
 
-            if not tables:
-                self._log(t("gui.log.nothing_to_write"))
+            # 一期都沒抓到就不寫——空殼 Excel 會蓋掉使用者原本好好的舊檔。
+            # 缺幾期是可以接受的（上面已經警告過），全空不行。
+            if not has_any_data(tables):
+                self._log(t("gui.log.nothing_to_write"), "ERROR", to_file=True)
                 self._done(False)
                 return
 
@@ -1926,18 +1934,6 @@ class SECFetcherApp:
             _write_log(f"{ticker} 成功，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "OK")
             self.msg_queue.put(("last_output_folder", output_path.parent))
             self._done(True)
-
-        except NetworkDownError as e:
-            # 網路真的斷了（已退避重試三次）。這裡是 write_statements 之前，
-            # 所以檔案沒被動過——舊檔完好，也不會留下一份少幾季的新檔。
-            # 講明「沒有寫出檔案」，使用者才不會去看一份根本沒更新的 Excel。
-            self._log(t("gui.log.network_down", ticker=ticker), "ERROR", to_file=True)
-            try:
-                _elapsed = int(time.time() - task_start)
-                _write_log(f"{ticker} 網路中斷，耗時 {_elapsed // 60}分{_elapsed % 60}秒，未寫出檔案", "FAIL")
-            except Exception:
-                pass
-            self._done(False)
 
         except Exception as e:
             # ---- 錯誤行：只記 type + status，禁止 {e} 全文（會挾帶 URL/response/key）----
@@ -1975,11 +1971,14 @@ class SECFetcherApp:
             task_start = time.time()
             _write_log_header(f"批量抓取 {ticker} ({i}/{total}) | {srcs} | {'/'.join(kinds) or '無'} | {scope}")
             try:
-                tables = fetch_gaap_statements(
-                    ticker, identity, max_filings=max_filings, ai_config=ai_config,
-                    start_year=start_year, end_year=end_year,
-                    fetch_quarterly=fetch_q, fetch_annual=fetch_k,
-                )
+                with collect_gaps() as gaps:
+                    tables = fetch_gaap_statements(
+                        ticker, identity, max_filings=max_filings, ai_config=ai_config,
+                        start_year=start_year, end_year=end_year,
+                        fetch_quarterly=fetch_q, fetch_annual=fetch_k,
+                    )
+                if gaps.has_gaps:
+                    self._log(f"[{ticker}] {gaps.summary()}", "WARN", to_file=True)
 
                 if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
                     self._log(t("gui.log.financial_sector_warning", ticker=ticker))
@@ -2003,6 +2002,13 @@ class SECFetcherApp:
                     tables.extend(ng_tables)
                     self._log(t("gui.log.nongaap_sheets", ticker=ticker, n=len(ng_tables)))
 
+                if not has_any_data(tables):
+                    # 批次不中斷整批，只跳過這一家（跟輸出檔被鎖同樣處理）
+                    self._log(f"[{ticker}] {t('gui.log.nothing_to_write')}",
+                              "ERROR", to_file=True)
+                    _write_log(f"{ticker} 一期都沒抓到，未寫出檔案", "FAIL")
+                    continue
+
                 _append_ratio_table(tables)
                 output_path = self._build_output_path(ticker)
                 lock_msg = check_output_writable(output_path)
@@ -2017,16 +2023,6 @@ class SECFetcherApp:
                 # ---- 任務結果行：成功 + 耗時 ----
                 _elapsed = int(time.time() - task_start)
                 _write_log(f"{ticker} 成功，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "OK")
-            except NetworkDownError:
-                # 整批中止，不是跳過這一家：網路斷了，剩下 11 家只會用同樣的
-                # 方式一家一家慢慢失敗，讓使用者多等好幾分鐘才看到同一件事。
-                self._log(t("gui.log.network_down_batch", ticker=ticker,
-                            done=i - 1, total=total), "ERROR", to_file=True)
-                _elapsed = int(time.time() - task_start)
-                _write_log(f"批量在 {ticker} ({i}/{total}) 網路中斷，已中止整批", "FAIL")
-                self._set_progress(i - 1, total, t("gui.status.network_down"))
-                self._done(False)
-                return
             except Exception as e:
                 # ---- 錯誤行：只記 type + status，禁止 {e} 全文 ----
                 self._log(t("gui.log.fetch_failed", ticker=ticker,

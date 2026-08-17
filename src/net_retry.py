@@ -123,6 +123,51 @@ def with_retry(fn: Callable[[], T], attempts: int = 3,
     ) from last
 
 
+def sec_reachable(timeout: float = 5.0) -> bool:
+    """現在連得上 SEC 嗎？
+
+    抓某一期失敗時用來回答「是網路斷了還是這期資料有問題」。比對照例外
+    類別名單可靠得多——名單要跟著 httpx / requests 的版本走，漏一個就
+    誤判；直接戳一次是當下的事實。
+
+    刻意用 urllib 不用 httpx：這是在錯誤處理路徑上跑的，不該再依賴
+    可能正是出問題那一層的東西。連不上一律回 False，這個函式自己
+    不會拋例外。
+    """
+    import urllib.error
+    import urllib.request
+
+    req = urllib.request.Request(
+        "https://www.sec.gov/",
+        method="HEAD",
+        # SEC 擋沒有 User-Agent 的請求，會回 403——那樣會被誤判成連不上
+        headers={"User-Agent": "SEC Financial Tools connectivity-check"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout):
+            return True
+    except urllib.error.HTTPError:
+        # 有回應就代表網路是通的，即使狀態碼不是 200
+        return True
+    except Exception:
+        return False
+
+
+def classify_failure(exc: BaseException,
+                     probe: Callable[[], bool] = sec_reachable) -> str:
+    """把一次失敗歸類成 `"network"` 或 `"data"`。
+
+    先看例外類型（快，不用等網路）；看不出來就實際戳一次 SEC。
+    戳得通代表伺服器有回應、問題出在這份資料本身；戳不通就是網路。
+
+    這個分類只影響「要跟使用者怎麼講」——網路的重抓有救，資料的重抓
+    一樣沒救。兩種都不會中止抓取。
+    """
+    if isinstance(exc, NetworkDownError) or is_network_error(exc):
+        return "network"
+    return "data" if probe() else "network"
+
+
 def configure_timeouts(seconds: float = 30.0) -> None:
     """給 edgartools 的 HTTP client 一個明確的逾時。
 

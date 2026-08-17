@@ -233,6 +233,9 @@ STRINGS: dict[str, str] = {
     "err.output_locked_other": '出力ファイルが他のプログラムにロックされています（Excel の可能性）：{name}\n閉じてから再実行してください。',
     "err.output_unwritable": '出力ファイルに書き込めません：{name}（{exc}）',
     "err.backup_failed": '[excel_writer] バックアップ失敗（{exc}）。{name} への書き込みは続行します',
+    "fetch.gaps_data": '⚠ {n} 期分を取得できませんでした（{periods}）。SEC には接続できているため、該当期の提出書類自体が読み取れません。再実行しても結果は同じです。',
+    "fetch.gaps_ellipsis": ' ほか',
+    "fetch.gaps_network": '⚠ {n} 期分を取得できませんでした（{periods}）。実行中に SEC へ接続できなかったため、ネットワークの問題と思われます——回線が安定してから再実行すれば通常は補えます。',
 
     # ── GUI：ボタン ─────────────────────────────────────────────────────
     "gui.btn.add_group": '＋ グループ追加',
