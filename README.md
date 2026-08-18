@@ -1,4 +1,12 @@
+/*  ================================  *\
+ *                                    *
+ *          C  T  H                   *
+ *        created by CTH              *
+ *                                    *
+\*  ================================  */
+
 規則檔: windows-tool.md
+類型: Windows 工具
 
 # SEC Financial Fetcher
 
@@ -51,6 +59,12 @@
 - Windows 10/11
 - 需要網路連線（首次安裝 + 每次抓取資料）
 
+## 技術棧
+
+- 語言：Python 3.13（`uv venv` 自動下載，不依賴系統 Python）
+- 核心套件：`edgartools`（SEC EDGAR / XBRL 抓取）、`openpyxl`（Excel 讀寫）、tkinter（GUI）
+- Non-GAAP 解析可選用 `google-generativeai` / `openai` / `anthropic`（僅該功能需要 API Key）
+
 ## 首次設定
 
 1. 雙擊 `啟動器.bat`，按照提示完成套件安裝
@@ -73,6 +87,15 @@
 | `Data_Meta` | 申報資訊（Ticker、公司名、抓取日期、季數、財年結束月、**抓取缺漏**） |
 | `Index` | 第一頁：公司抬頭、**抓取缺漏警告**、**財年起始月輸入格**、sheet 清單、品質明細 |
 
+欄位配置（A 欄機器鍵永遠英文、B 欄跟著介面語言、C 欄永遠公司原文）、固定列位、
+跨公司模板公式怎麼寫，完整規格見 `docs/ARCHITECTURE.md`「Excel Sheet Layout」。
+
+## 財年起始月：程式猜錯時自己改
+
+財年結束月是程式從 10-K 自動判讀的，**會出錯**。`Index!B4`（黃底那格）可以改，
+`Data_Financials(Q)/(Y)` 的期間標籤會**全部自動更新**。核對方式與細節見
+`docs/ARCHITECTURE.md`。
+
 ## 抓不到資料時會怎樣
 
 某幾期沒抓到時**那幾期留空、其餘照常產出**，並主動告訴你缺了哪幾期：
@@ -83,111 +106,16 @@
 最後一個最重要——GUI 關掉就沒了，但三天後重開這份 Excel 警告還在。
 
 網路閃斷會自動退避重試（2/4/8 秒）多半救得回來；**一期都沒抓到才不寫檔**，
-你原本的 Excel 完好不動。訊息會分辨兩種原因：連不上 SEC（重抓有救）與
-申報資料本身讀不出來（重抓結果一樣）。
-
-> **列位跨公司固定**：NVDA／AAPL／PLTR／AVGO 實測（財年結束月分別是 1／9／12／11 月），`Revenue` 都在第 8 列、`Gross Profit` 10、`Operating Income` 17、`Net Income` 24、`Cash` 38、`Total Assets` 51、`Operating Cash Flow` 98、`Capex` 99、`Free Cash Flow` 114。這是因為公司特有科目（overflow）集中在底部，不再插在 section 之間。跨檔案公式可以直接用固定儲存格參照。
-
-**欄位說明（Data_Financials）：**
-
-| 位置 | 內容 |
-|---|---|
-| A 欄 | 標準指標名稱（**永遠英文**，程式一律用這欄比對，跨檔案 `MATCH` 也吃這欄） |
-| B 欄 | 說明（**跟著介面語言走**：繁中／简中／English／日本語） |
-| C 欄 | Original Item（**永遠是公司財報上的英文原文**，如 AAPL 的 `Net sales`。拿它去 10-Q 裡 Ctrl+F 核對用，所以不翻譯） |
-| D 欄起 | 各期數據（舊→新） |
-| 第 1 列 | 期間標籤（`FY2026Q1`）**← 公式** |
-| 第 2 列 | 申報日期 |
-| 第 3 列 | 財季（`FY2026FQ1`，公司財年基準）**← 公式** |
-| 第 4 列 | 日曆季（`2026Q1`，日曆年基準）**← 公式** |
-| 第 5 列 | 期末結算日（XBRL 真實日期）**← 靜態，是上面三列公式的錨** |
-
-## 財年起始月：程式猜錯時自己改
-
-財年結束月是程式從 10-K 自動判讀的，**會出錯**。所以 `Index!B4`（黃底那格）是可以改的：
-
-```
-Index
-  B4  = 10        ← 財年起始月，AAPL 是 10 月
-```
-
-改這一格，`Data_Financials(Q)/(Y)` 第 1、3、4 列的期間標籤會**全部自動更新**（公式引用定義名稱 `FY_START_MONTH`）。
-
-**怎麼核對**：看第 5 列的期末結算日——那是 XBRL 的真實日期，一定正確。拿它對照公司財報上寫的財季。例如 AAPL 的 `2025-12-27` 公司叫它 FY2026 Q1，第 1 列就該顯示 `FY2026Q1`。
-
-換算會先把期末日**往前推 15 天**再取年月。美股多用 52/53 週制，期末日在月底前後浮動最多 6 天（WDC 的 FY2026 Q2 結束在 `2026-01-02`），直接看月份會整整差一季。
-
-> ⚠ 不會跟著變的：`Index` 表格的「最早／最新期間」、`Data_Ratios`、`Data_Meta`。這三個是 Python 算好寫死的。
-
-**Section header 行：**
-`Data_Financials` 內有三段分隔行（`Income Statement` / `Balance Sheet` / `Cash Flow`），資料值全為空。
-
-分析用的自訂 Sheet 請命名為 `My_*`（如 `My_IS`），Python 不會碰這些 Sheet。
-
-## 模板行數
-
-| 報表 | 行數 | 說明 |
-|------|------|------|
-| Income Statement | 22 | 含 D&A/SBC/Minority Interest/Total Non-op |
-| Balance Sheet | 42 | Assets 14 行、Liabilities 17 行、Equity 11 行（含期末流通股數） |
-| Cash Flow | 25 + 1 | Operating/Investing/Financing + FCF 衍生 |
-
-沒有資料的項目顯示空白（None），不影響其他行。
+你原本的 Excel 完好不動。
 
 ## 已知限制
 
-- **`Data_Financials(Q)` 沒有 Q4**：Q4 沒有 10-Q，數字在 10-K 裡。連帶 TTM 類比率（ROE／ROA／FCF per Share／淨負債EBITDA）湊不到連續四季，多半是空的。
-- **多股別公司抓不到流通股數**：PLTR／GOOGL／META 有 Class A/B/C，封面頁的 `dei:EntityCommonStockSharesOutstanding` 按股別分開標，`company.get_facts()` 取不到。連帶 BVPS、FCF per Share、流通股數 YoY 空白。
-- 金融股（GS、JPM 等）：BS/IS 結構與一般公司不同，部分項目會是空白。金融股模板尚未實作（計畫中）。
-- `Investment Proceeds`：XBRL 沒有單一加總行，取第一筆（已知缺陷）。
+見 `docs/ARCHITECTURE.md`「Known Issues」；待決定要不要修的項目見 `docs/TODO.md`。
 
-## 寫跨公司模板
+## .gitignore 必含項目
 
-以前這一段講的是 `Data_Std`——那張 sheet 已經在 2026-08-03 的輸出精簡裡**併回 `Data_Financials(Q)` 並刪除**了。列位固定與期間標籤現在直接長在三表本身，不需要另一張表。
-
-三個保證：
-
-1. **固定 sheet 名稱**：`Data_Financials(Q)` / `Data_Financials(Y)`
-2. **固定列位**：公司特有科目（overflow）全部集中在最底部，不再插在 section 之間，所以 `Revenue` 永遠在第 8 列（見上方對照表）
-3. **三種期間標籤各佔一列**，用途不同（見下）
-
-### 三種期間標籤，用途不同
-
-| 列 | 內容 | 基準 | 什麼時候用 |
-|---|---|---|---|
-| 1 | `FY2026Q1` | **公司財年** | 主要欄位鍵，`MATCH` 用這列 |
-| 3 | `FY2026FQ1` | **公司財年** | 同上，加 `FQ` 標記避免與日曆季混淆 |
-| 4 | `2026Q1` | **日曆年** | 跨產業比同一個日曆期間、對總經數據 |
-| 5 | `2026-03-29` | 實際期末日 | 精確對齊；也是判斷兩家是否真的同期的唯一依據 |
-
-12 月結算的公司三者一致；非 12 月結算的差很多：
-
-| 公司 | 結算月 | 財季（列 1/3） | 日曆季（列 4） | 期末結算日（列 5） |
-|---|---|---|---|---|
-| PLTR | 12 月 | 2026Q2 | 2026Q2 | 2026-06-30 |
-| AAPL | 9 月 | **2026Q1** | **2025Q4** | 2025-12-27 |
-| NVDA | 1 月 | **2027Q1** | **2026Q2** | 2026-04-26 |
-
-**期末結算日是真實日期不是月底**——美股多用 52/53 週制，AVGO 的 FY2026Q2 結束在 05-03 而不是 04-30。這個日期直接來自 XBRL，不是推算的。
-
-### 公式怎麼寫
-
-比財季（同業比較）：
-
-```excel
-=INDEX('[AAPL.xlsx]Data_Financials(Q)'!$D8:$AZ8,
-       MATCH("FY2026Q1",'[AAPL.xlsx]Data_Financials(Q)'!$D$1:$AZ$1,0))
-```
-
-比日曆季（跨產業／對總經）把 `$1` 換成 `$4`（值變成 `2026Q1` 不含 FY）。`$D8:$AZ8` 的 8 是營收列，換 `$D38` 就是現金。
-
-> ⚠ 第 1、3、4 列現在是**公式**（由 `Index!B4` 驅動）。同一個活頁簿內、或來源檔開著時，`MATCH` 照樣比對得到公式算出來的結果。
-
-> ⚠ **跨檔案讀取、而且來源檔關著時，改用第 5 列當 key**。公式沒有快取值（openpyxl 不算公式），來源檔關著時外部參照只讀得到檔案裡的值——第 1、3、4 列在那裡是空的，`MATCH` 會回 `#N/A`。第 5 列（期末結算日）是靜態文字，永遠讀得到：
->
-> ```excel
-> =INDEX('C:\...\output\_final\[AAPL.xlsx]Data_Financials(Q)'!$D8:$AZ8,
->        MATCH("2025-12-27",'C:\...\output\_final\[AAPL.xlsx]Data_Financials(Q)'!$D$5:$AZ$5,0))
-> ```
->
-> 或者把來源檔在 Excel 開一次再存檔，快取值就寫進去了，之後關著也能用 `FY2026Q1` 當 key。
+- `config.json`、`.env`（機敏設定，內含 API Key / SEC Identity）
+- `venv/`、`__pycache__/`、`*.pyc`
+- `output/`（保留 `.gitkeep`）、`dist/`、`*.zip`
+- `*.log`、`logs/`
+- `company_cache.json`（執行期自建快取）

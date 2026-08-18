@@ -140,6 +140,38 @@ excel_writer.py
 > `Total Assets` 52、`Operating Cash Flow` 100、`Capex` 101、`Free Cash Flow` 116。
 > `Total Assets` 之後（含）的列位比 BS 改動前全部 +1～+2，改跨檔案 `MATCH` 公式的人要注意。
 
+#### 跨公司模板公式怎麼寫
+
+三個保證：固定 sheet 名稱、固定列位（overflow 全部集中在最底部）、三種期間標籤各佔一列（用途不同，見下表）。
+
+| 列 | 內容 | 基準 | 什麼時候用 |
+|---|---|---|---|
+| 1 | `FY2026Q1` | 公司財年 | 主要欄位鍵，`MATCH` 用這列 |
+| 3 | `FY2026FQ1` | 公司財年 | 同上，加 `FQ` 標記避免與日曆季混淆 |
+| 4 | `2026Q1` | 日曆年 | 跨產業比同一個日曆期間、對總經數據 |
+| 5 | `2026-03-29` | 實際期末日 | 精確對齊；也是判斷兩家是否真的同期的唯一依據 |
+
+比財季（同業比較）：
+
+```excel
+=INDEX('[AAPL.xlsx]Data_Financials(Q)'!$D8:$AZ8,
+       MATCH("FY2026Q1",'[AAPL.xlsx]Data_Financials(Q)'!$D$1:$AZ$1,0))
+```
+
+比日曆季（跨產業／對總經）把 `$1` 換成 `$4`（值變成 `2026Q1` 不含 FY）。`$D8:$AZ8` 的 8 是營收列，換 `$D38` 就是現金。
+
+> ⚠ **跨檔案讀取、而且來源檔關著時，改用第 5 列當 key**。第 1、3、4 列是公式，
+> openpyxl 不算公式也不寫快取值——來源檔開著時 Excel 會重算沒問題，關著時外部
+> 參照只讀得到檔案裡的值，那三列在那裡是空的，`MATCH` 會回 `#N/A`。第 5 列是
+> 靜態文字，永遠讀得到：
+>
+> ```excel
+> =INDEX('C:\...\output\_final\[AAPL.xlsx]Data_Financials(Q)'!$D8:$AZ8,
+>        MATCH("2025-12-27",'C:\...\output\_final\[AAPL.xlsx]Data_Financials(Q)'!$D$5:$AZ$5,0))
+> ```
+>
+> 或者把來源檔在 Excel 開一次再存檔，快取值就寫進去了，之後關著也能用 `FY2026Q1` 當 key。
+
 ### Data_Financials_NG(Q) / Data_Financials_NG(Y)（有 Non-GAAP overflow 時才產生）
 
 格式與 Data_Financials 完全相同，但每個 section 只含 Non-GAAP overflow 行（無固定模板行）。  
@@ -464,3 +496,5 @@ Index 那份最重要——GUI 的 log 關掉就沒了，而使用者真正會�
 - **金融股（GS/JPM）**：現行模板 BS/IS 部分空白，待獨立模板（已有 UI 警告）
 - **NG 分類誤判**：keyword-based 分類，label 含 "excluding" 的 GAAP 行可能誤進 NG sheet（可接受方向）
 - **Data_EPS_Recon 從未產生**：edgartools `eps_reconciliation` 對 NVDA/AAPL/MSFT 均回傳 None，非 XBRL-tagged 公司無解；待 edgartools 改善或改用 AI 解析方案
+- **`Data_Financials(Q)` 沒有 Q4**：Q4 沒有 10-Q，數字在 10-K 裡。連帶 TTM 類比率（ROE／ROA／FCF per Share／淨負債EBITDA）湊不到連續四季，多半是空的
+- **多股別公司抓不到流通股數**：PLTR／GOOGL／META 有 Class A/B/C，封面頁的 `dei:EntityCommonStockSharesOutstanding` 按股別分開標，`company.get_facts()` 取不到。連帶 BVPS、FCF per Share、流通股數 YoY 空白

@@ -1,6 +1,10 @@
 # 三表固定模板提案（依 49 家實測資料）
 
 > 產生日期：2026-08-03　　資料來源：`scripts/survey_statement_concepts.py`（純 EDGAR，零 API 額度）
+>
+> ⚠ **歷史提案文件，模板行數已過時**：BS 後續於 2026-08-12 新增
+> Total Non-current Assets/Liabilities，現行行數見 `docs/ARCHITECTURE.md`
+> 「Template 行數摘要」（IS 22／BS 44／CF 26）。本檔保留供回溯當初取捨依據。
 
 ## 方法
 
