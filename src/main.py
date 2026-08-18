@@ -27,7 +27,7 @@ from i18n import t
 from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
 from excel_writer import write_statements, check_output_writable
-from fetcher_gaap import collect_gaps, fetch_gaap_statements
+from fetcher_gaap import collect_gaps, fetch_gaap_statements, report_progress
 from net_retry import configure_timeouts
 from output_tables import append_ratio_table, has_any_data
 
@@ -438,10 +438,10 @@ class SECFetcherApp:
         self._build_tab3()
         self._update_identity_warnings()
 
-        # Persistent buttons
-        frame_persist = tk.Frame(self.root)
-        frame_persist.grid(row=1, column=0, pady=4)
-        ttk.Button(frame_persist, text=t("gui.btn.manage_watchlist"), command=self._open_watchlist_popup, width=18).pack(side="left", padx=6)
+        # 「管理 Watchlist」原本放在這裡（root 層級、row=1，跨頁籤都看得到），
+        # TODO E19：這顆只跟批量更新有關，Tab1 單一公司用不到，搬進
+        # `_build_tab2` 最上方了。row=1 空出來不影響版面（沒設 weight，高度
+        # 是 0），`frame_log` 維持在 row=2 不用跟著搬。
 
         # Progress log
         frame_log = ttk.LabelFrame(self.root, text=t("gui.frame.progress"), padding=8)
@@ -687,10 +687,16 @@ class SECFetcherApp:
         """Build Tab 2 (批量更新): scrollable group-organised watchlist + batch run button."""
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text=t("gui.tab.batch"))
+        tab.columnconfigure(0, weight=1)
+
+        # Row 0: 管理 Watchlist（TODO E19：從跨頁籤都看得到的持久按鈕搬進來，
+        # 這顆只跟批量更新有關，Tab1 單一公司用不到，搬到這裡最上方最直覺）
+        ttk.Button(tab, text=t("gui.btn.manage_watchlist"),
+                   command=self._open_watchlist_popup, width=18).grid(
+            row=0, column=0, sticky="w", pady=(0, 4))
 
         self.tab2_list_frame = ttk.LabelFrame(tab, text=" Watchlist ", padding=6)
-        self.tab2_list_frame.grid(row=0, column=0, sticky="ew", pady=4)
-        tab.columnconfigure(0, weight=1)
+        self.tab2_list_frame.grid(row=1, column=0, sticky="ew", pady=4)
         self.tab2_list_frame.columnconfigure(0, weight=1)
 
         tab2_canvas = tk.Canvas(self.tab2_list_frame, height=150, highlightthickness=0)
@@ -711,29 +717,29 @@ class SECFetcherApp:
         self.tab2_check_vars: dict[str, tk.BooleanVar] = {}
         self._refresh_tab2_list()
 
-        # Row 1: SEC Identity warning (hidden unless cfg["identity"] is empty)
+        # Row 2: SEC Identity warning (hidden unless cfg["identity"] is empty)
         self.tab2_identity_warn_label = tk.Label(
             tab, text=t("gui.lbl.identity_missing"),
             foreground="orange", cursor="hand2", font=("", 10)
         )
-        self.tab2_identity_warn_label.grid(row=1, column=0, sticky="w", padx=2, pady=(0, 2))
+        self.tab2_identity_warn_label.grid(row=2, column=0, sticky="w", padx=2, pady=(0, 2))
         self.tab2_identity_warn_label.bind("<Button-1>", lambda e: self._goto_settings_tab())
         self.tab2_identity_warn_label.grid_remove()
 
-        # Row 2: 唯讀顯示目前全域輸出預設——批次抓出來的檔案就是照這個值落地，
+        # Row 3: 唯讀顯示目前全域輸出預設——批次抓出來的檔案就是照這個值落地，
         # Tab1 過去可以悄悄改掉這個全域值卻讓 Tab2 完全看不到，這裡至少讓
         # 批次使用者知道檔案會存去哪
         self.tab2_output_default_label = ttk.Label(tab, text="", foreground="#555555", font=("", 10))
-        self.tab2_output_default_label.grid(row=2, column=0, sticky="w", pady=(0, 4))
+        self.tab2_output_default_label.grid(row=3, column=0, sticky="w", pady=(0, 4))
         self._refresh_output_default_display()
 
         row_sel = ttk.Frame(tab)
-        row_sel.grid(row=3, column=0, sticky="w", pady=4)
+        row_sel.grid(row=4, column=0, sticky="w", pady=4)
         ttk.Button(row_sel, text=t("gui.btn.select_all"),   command=self._select_all,   width=8).pack(side="left", padx=(0, 8))
         ttk.Button(row_sel, text=t("gui.btn.select_none"), command=self._deselect_all, width=8).pack(side="left")
 
         row_opts = ttk.Frame(tab)
-        row_opts.grid(row=4, column=0, sticky="w", pady=(4, 0))
+        row_opts.grid(row=5, column=0, sticky="w", pady=(4, 0))
         self.batch_nongaap_var = tk.BooleanVar(value=False)
         _bng_text = (t("gui.chk.batch_nongaap") if NONGAAP_ENABLED
                      else t("gui.chk.batch_nongaap_paused"))
@@ -748,25 +754,25 @@ class SECFetcherApp:
         self.batch_nongaap_warn.pack_forget()
         self.batch_nongaap_var.trace_add("write", self._on_batch_nongaap_toggle)
 
-        # Row 5: 報表類型 toggle
+        # Row 6: 報表類型 toggle
         adv_toggle_row2 = ttk.Frame(tab)
-        adv_toggle_row2.grid(row=5, column=0, sticky="ew", pady=(4, 0))
+        adv_toggle_row2.grid(row=6, column=0, sticky="ew", pady=(4, 0))
         self._tab2_adv_toggle_btn = ttk.Button(adv_toggle_row2, text=t("gui.btn.report_type_collapsed"),
                                                 command=self._toggle_tab2_adv, width=12)
         self._tab2_adv_toggle_btn.pack(side="left")
 
-        # Row 6: 報表類型 content (hidden by default)
+        # Row 7: 報表類型 content (hidden by default)
         self._tab2_adv_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=(8, 4))
-        self._tab2_adv_frame.grid(row=6, column=0, sticky="ew", pady=(0, 4))
+        self._tab2_adv_frame.grid(row=7, column=0, sticky="ew", pady=(0, 4))
         self.batch_fetch_q_var = tk.BooleanVar(value=True)
         self.batch_fetch_k_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(self._tab2_adv_frame, text=t("gui.chk.quarterly"), variable=self.batch_fetch_q_var).pack(side="left", padx=(0, 16))
         ttk.Checkbutton(self._tab2_adv_frame, text=t("gui.chk.annual"), variable=self.batch_fetch_k_var).pack(side="left")
         self._tab2_adv_frame.grid_remove()
 
-        # Row 7: Date range
+        # Row 8: Date range
         row_date2 = ttk.Frame(tab)
-        row_date2.grid(row=7, column=0, sticky="ew", pady=(2, 0))
+        row_date2.grid(row=8, column=0, sticky="ew", pady=(2, 0))
         ttk.Label(row_date2, text=t("gui.lbl.year_from")).pack(side="left", padx=(0, 4))
         self.batch_start_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date2, from_=1993, to=2099, textvariable=self.batch_start_year_var,
@@ -778,7 +784,7 @@ class SECFetcherApp:
         ttk.Label(row_date2, text=t("gui.lbl.year_hint"), foreground="#555555").pack(side="left", padx=(4, 0))
 
         self.btn_run_batch = ttk.Button(tab, text=t("gui.btn.run_batch"), command=self._run_batch, width=20)
-        self.btn_run_batch.grid(row=8, column=0, pady=(8, 4))
+        self.btn_run_batch.grid(row=9, column=0, pady=(8, 4))
 
     # =========================================================
     # Placeholder helpers
@@ -2075,9 +2081,23 @@ class SECFetcherApp:
             if fetch_gaap:
                 self._log(t("gui.log.fetching_gaap", ticker=ticker))
                 self._set_progress(step, total_steps, t("gui.status.fetching_gaap"))
+
+                # 逐份 filing 推進度（TODO E12）：GAAP 抓取要對每份 10-Q/10-K
+                # 分別建 IS/BS/CF 三張表，幾十份 filing 跑下來可能要幾分鐘，
+                # 中途原本進度條完全不動、看起來像卡死。這裡直接借用進度條，
+                # 抓取這段期間顯示「第幾份/共幾份」，跟 NonGAAP 那段的
+                # `_ng_progress` 是同一個做法——暫時把進度條的刻度換成這段自己
+                # 的 current/total，離開這段之後下一次 `_set_progress` 呼叫
+                # （NonGAAP 開始或寫檔開始）會自然把刻度換回 total_steps 那個
+                # 大尺度，不用特地在這裡復原。不逐行寫 log——幾十次 tick 全部
+                # 寫進畫面上的 log 會洗版，只有進度條本身跟著動就夠了。
+                def _gaap_progress(current, total, _label):
+                    self._set_progress(current, total,
+                                        t("gui.status.fetching_gaap_n", current=current, total=total))
+
                 # 開帳本才拿得到缺漏明細。不開的話 fetch_gaap_statements 會
                 # 自己開一本，但那本在函式回傳後就沒了，這裡讀不到。
-                with collect_gaps() as gaps:
+                with collect_gaps() as gaps, report_progress(_gaap_progress):
                     gaap_tables = fetch_gaap_statements(
                         ticker, identity, max_filings=max_filings,
                         ai_config=self.cfg.get("ai", {}),
@@ -2172,7 +2192,16 @@ class SECFetcherApp:
             task_start = time.time()
             _write_log_header(f"批量抓取 {ticker} ({i}/{total}) | {srcs} | {'/'.join(kinds) or '無'} | {scope}")
             try:
-                with collect_gaps() as gaps:
+                # 批次一樣會卡在單一 ticker 抓很久（TODO E12），同一顆 callback
+                # 沿用單一公司那邊的做法：抓這個 ticker 期間暫時把進度條換成
+                # 「這個 ticker 內第幾份/共幾份」，抓完下一輪迴圈開頭的
+                # `self._set_progress(i-1, total, ...)` 會換回「第幾間公司」
+                # 那個大尺度
+                def _gaap_progress(current, total_n, _label):
+                    self._set_progress(current, total_n,
+                                        t("gui.status.fetching_gaap_n", current=current, total=total_n))
+
+                with collect_gaps() as gaps, report_progress(_gaap_progress):
                     tables = fetch_gaap_statements(
                         ticker, identity, max_filings=max_filings, ai_config=ai_config,
                         start_year=start_year, end_year=end_year,

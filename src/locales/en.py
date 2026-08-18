@@ -371,6 +371,7 @@ STRINGS: dict[str, str] = {
     'gui.status.done': 'Done!',
     'gui.status.error_see_log': 'Something went wrong — see the log above',
     'gui.status.fetching_gaap': 'Fetching GAAP...',
+    'gui.status.fetching_gaap_n': 'Fetching GAAP filings ({current}/{total})',
     'gui.status.fetching_nongaap': 'Fetching Non-GAAP...',
     'gui.status.idle': 'Waiting to start...',
     'gui.status.network_down': 'Network down, stopped',

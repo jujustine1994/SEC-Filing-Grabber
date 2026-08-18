@@ -331,6 +331,7 @@ STRINGS: dict[str, str] = {
     "gui.status.done": '完成！',
     "gui.status.error_see_log": '發生錯誤，請查看上方記錄',
     "gui.status.fetching_gaap": '抓取 GAAP...',
+    "gui.status.fetching_gaap_n": '抓取 GAAP 財報中（{current}/{total}）',
     "gui.status.fetching_nongaap": '抓取 Non-GAAP...',
     "gui.status.idle": '等待開始...',
     "gui.status.network_down": '網路中斷，已停止',

@@ -385,6 +385,7 @@ STRINGS: dict[str, str] = {
     "gui.status.done": '完了！',
     "gui.status.error_see_log": 'エラーが発生しました。上のログをご確認ください',
     "gui.status.fetching_gaap": 'GAAP を取得中...',
+    "gui.status.fetching_gaap_n": 'GAAP 財務データ取得中（{current}/{total}）',
     "gui.status.fetching_nongaap": 'Non-GAAP を取得中...',
     "gui.status.idle": '開始待ち...',
     "gui.status.network_down": 'ネットワーク切断のため停止',

@@ -116,6 +116,66 @@ def _note_ok() -> None:
         led.succeeded()
 
 
+# ── 抓取進度回報（2026-08-18，TODO E12）────────────────────────────────────
+#
+# GAAP 抓取耗時過久時看起來像卡死——`fetch_gaap_statements` 一份 filing 要
+# 分別建 IS/BS/CF 三張表，各自對同一批 filings 各跑一輪、各發一次網路請求，
+# 幾十份 filing 跑下來可能要幾分鐘，中途 GUI 進度條完全不動。
+#
+# 沿用帳本（`collect_gaps`）同一套 ContextVar 手法，不改 `_build_is_table`／
+# `_build_bs_table`／`_build_cf_table` 的函式簽名——這三個函式已經在每份
+# filing 處理完（不管成功失敗）呼叫一次 `_note_ok()`/`_note_gap()`，這裡搭
+# 同一個掛鉤點回報進度，不用另外傳參數穿過呼叫鏈。
+class _ProgressState:
+    __slots__ = ("cb", "total", "current")
+
+    def __init__(self, cb):
+        self.cb = cb
+        self.total = 0
+        self.current = 0
+
+    def tick(self, label: str = "") -> None:
+        self.current += 1
+        if self.cb is None:
+            return
+        try:
+            # current 可能因為早停（`max_filings` 上限、pre-XBRL 篩掉）跑不到
+            # total——夾住上限，不然進度條會顯示超過 100%
+            self.cb(min(self.current, self.total), self.total, label)
+        except Exception:
+            pass  # 進度回報是錦上添花，回呼本身出錯不能拖垮抓取
+
+
+_progress_var: ContextVar[_ProgressState | None] = ContextVar("_fetch_progress", default=None)
+
+
+@contextmanager
+def report_progress(cb):
+    """開一個進度回報範圍。`cb(current, total, label)` 在每處理完一份 filing
+    （建 IS/BS/CF 表其中一步）時被呼叫一次。`cb=None` 時整段是 no-op，呼叫端
+    不用另外判斷要不要包這層。
+    """
+    state = _ProgressState(cb) if cb is not None else None
+    token = _progress_var.set(state)
+    try:
+        yield
+    finally:
+        _progress_var.reset(token)
+
+
+def _set_progress_total(n: int) -> None:
+    """列完 filings、知道實際要處理幾份之後呼叫一次，設定進度條的分母。"""
+    state = _progress_var.get()
+    if state is not None:
+        state.total = max(n, 1)
+
+
+def _tick_progress(label: str = "") -> None:
+    state = _progress_var.get()
+    if state is not None:
+        state.tick(label)
+
+
 def _filing_ref(filing) -> str:
     """這份 filing 拿來給人看的稱呼。
 
@@ -789,8 +849,10 @@ def _build_is_table(
                 continue
             df = stmt.to_dataframe()
             _note_ok()
+            _tick_progress("IS")
         except Exception as exc:
             _note_gap(_filing_ref(filing), exc)
+            _tick_progress("IS")
             print(f"[fetcher_gaap] IS warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
@@ -1025,8 +1087,10 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
                 continue
             df = bs_stmt.to_dataframe()
             _note_ok()
+            _tick_progress("BS")
         except Exception as exc:
             _note_gap(_filing_ref(filing), exc)
+            _tick_progress("BS")
             print(f"[fetcher_gaap] BS warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
@@ -1191,8 +1255,10 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
                 continue
             df = cf_stmt.to_dataframe()
             _note_ok()
+            _tick_progress("CF")
         except Exception as exc:
             _note_gap(_filing_ref(filing), exc)
+            _tick_progress("CF")
             print(f"[fetcher_gaap] CF warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
@@ -1974,6 +2040,14 @@ def fetch_gaap_statements(ticker: str, identity: str,
     # Apply year range filter
     filings_q = _filter_filings_by_year(filings_q, start_year, end_year)
     filings_k = _filter_filings_by_year(filings_k, start_year, end_year)
+
+    # 進度條分母：每份 filing 要建 IS/BS/CF 三張表，各跑一輪 = 3 個 tick。
+    # `min(len, max_filings)` 只是上限估計——`_build_*_table` 內部可能因為
+    # pre-XBRL 篩掉或重複期別提早結束，真正跑到的份數可能更少，屆時
+    # `_tick_progress` 會把顯示值夾在 total 以內，不會超過 100%
+    _n_q = min(len(filings_q), max_filings) if fetch_quarterly else 0
+    _n_k = min(len(filings_k), max_annual_filings) if fetch_annual else 0
+    _set_progress_total((_n_q + _n_k) * 3)
 
     overrides = load_overrides(ticker)
     if filings_k:

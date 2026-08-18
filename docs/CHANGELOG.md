@@ -10,6 +10,34 @@
 ## 功能清單
 
 ### 已完成
+- [x] **輸出設定「設為預設」按鈕說明、SEC Identity 為何要填（2026-08-18，
+      TODO E17/E18）**：Tab1 輸出設定的「設為預設」按鈕原本沒有任何說明，
+      不知道是設定什麼，下方加一行固定顯示的灰字說明（只套用這次執行、按了
+      才會存成下次初始值），不用點/hover 才看得到。Tab3 SEC EDGAR Identity
+      區塊的格式提示上方加一句解釋，講清楚是 SEC EDGAR Fair Access 政策
+      要求、姓名/信箱只當識別用不會挪作他用、沒填會抓不到資料。Tab1/Tab2
+      的未設定警告維持簡短，原因說明集中放在 Tab3，沒有兩處重複寫一樣的話。
+      四語都補了
+- [x] **「管理 Watchlist」按鈕搬到 Tab2（2026-08-18，TODO E19）**：原本是
+      跨頁籤都看得到的持久按鈕（`root` 層級，Tab1/Tab2 都有），但這顆只跟
+      批量更新有關，Tab1 單一公司用不到。搬進 `_build_tab2` 最上方，Tab1
+      不再顯示
+- [x] **GAAP 抓取進度提示（2026-08-18，TODO E12）**：`progress_bar` 元件早就
+      有，但 `fetch_gaap_statements` 抓取期間完全沒回報進度，整個 GAAP 階段
+      進度條停在同一格不動、跟卡死一樣。仿照缺漏帳本（`collect_gaps`）同一套
+      ContextVar 手法新增 `report_progress(cb)`，搭 `_build_is_table`／
+      `_build_bs_table`／`_build_cf_table` 既有的 `_note_ok()`/`_note_gap()`
+      掛鉤點回報「第幾份/共幾份」，不改這三個函式的簽名。GUI 顯示「抓取 GAAP
+      財報中（N/M）」，單一公司／批次都有。範圍不含 segment/dynamic 兩個較
+      小的次要建表流程。實測：COHR 30 次 tick 精確對上算好的分母；CRWV 透過
+      GUI 真的抓一次，進度條從 1/15 跑到 15/15
+- [x] **`launcher.ps1` 安裝進度可見（2026-08-18，TODO E7）**：根因是
+      `uv pip install` 兩處都帶了 `-q`（靜音）旗標，把 uv 預設會印的
+      「正在下載哪個套件＋進度條」關掉了——不是沒寫進度條，是進度條被自己
+      關掉。對照 `windows-tool-templates.md` 範本才發現這條規定，兩處 `-q`
+      都拿掉；補上範本的 `Write-Step`（帶時間戳的進度提示），下載 uv／建
+      虛擬環境／裝套件前都會印一行帶時間的狀態。首次安裝說明（要裝哪些
+      元件）原本就有，不是這次新增的
 - [x] **「查可用期間」掃描補上耗時 log（2026-08-18，TODO E3 查證用）**：
       `_preview_scan_worker`（`main.py`）原本完全沒寫 `logs/app.log`，CTH 回報
       「第一次按只顯示代號、第二次才查到期間」但這個環境三個角度都測不出來
