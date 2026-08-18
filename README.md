@@ -10,112 +10,54 @@
 
 # SEC Financial Fetcher
 
-股票分析師工具：從 SEC EDGAR 抓取美國上市公司 GAAP 財報並存成 Excel。
+股票分析師工具：輸入美股代號，從 SEC EDGAR 自動抓公開財報，整理成 Excel。
 
-## 執行方式
+## 怎麼用
 
-雙擊 `啟動器.bat`
+雙擊 `啟動器.bat`，第一次執行會自動安裝需要的套件（約 3-5 分鐘，需要網路）。
 
-### 指令列（給 skill 用，不經 GUI）
+首次啟動：
 
-```bash
-# GAAP 三表 + 比率 + segment → Excel（與 GUI 產的逐格相同）
-./venv/Scripts/python.exe src/cli.py gaap AAPL --years 2023-2026 --xlsx out.xlsx
+1. 跳出的 `Language` 視窗選一種顯示語言（繁中／简中／English／日本語），選完不會再問
+2. 點「進階設定」，填入 SEC EDGAR Identity（你的名字 + email——SEC 規定任何自動抓取程式都要自報身分，這組字只會送給 SEC）
+3. 要換語言、填 AI API Key（Non-GAAP 功能才需要），也是在「進階設定」
 
-# 8-K 新聞稿的 Non-GAAP 調節表（已解析、已篩過）→ JSON
-./venv/Scripts/python.exe src/cli.py press-release ARLO --years 2025-2026 --tables --json
-```
-
-兩個子指令都**不呼叫任何 AI API**，只打 SEC EDGAR。共通參數：`--years`
-（`2023-2026` 或 `2024`）、`--identity`、`--max-filings`、`--json`（不給路徑
-就印到 stdout）、`--lang`（產出 Excel 的顯示語言：`zh_tw` / `zh_cn` / `en` /
-`ja`，不給就跟 GUI 用同一個設定；只影響 B 欄與 Index 版面，A 欄機器鍵與 C 欄
-公司原文不變）。`gaap` 另有 `--xlsx` / `--quarterly-only` / `--annual-only`，
-`press-release` 另有 `--raw`（改吐新聞稿全文，除錯用）。
-
-`press-release` 吐的是**解析後的表格**不是原文：ARLO 一季原文 450K 字元，
-篩完 4.4K。
-
-⚠ **季度標籤看 `fiscal_label`，不要看 `label`。** `label` 是用 8-K 的
-`period_of_report`（＝發布日）換算的，有系統性 off-by-one（偏 −3 到 +1 季，
-見 `docs/8k-period-off-by-one.md`），為了不破壞既有介面而保留原值並帶著
-`label_warning`。`fiscal_label` 是從新聞稿表格裡的**期末日**（`period_end`）
-加公司財年結束月（`fy_end_month`，payload 頂層）算出來的，與 `Data_Q` 的
-財季同一套慣例，兩邊對得起來。抓不到期末日時 `fiscal_label` 留空，不會用
-發布日硬算。15 家 120 份實測全部抓得到。
-
-⚠ **`--years` 篩的是發布日不是財期**：篩選發生在下載之前，那時還讀不到
-期末日。非 12 月結算的公司在年份邊界可能差到 3 季，要精確就把範圍放寬一年，
-再自己用 `fiscal_label` 篩。
-
-### 要傳給別人時
-
-雙擊 `scripts\打包.bat`，產出 `dist\SEC-Financial-Fetcher-YYYYMMDD.zip`（約 190 KB），
-跑完 12 項自我驗證才會留下檔案。收件人解壓、雙擊 `啟動器.bat`、一路按 Enter 就能裝好
-（沒裝過 Python 也可以，uv 會自己下載）。細節見 `docs/PACKAGING.md`。
+之後輸入股票代號、按執行，Excel 檔會出現在 `output/` 資料夾。
 
 ## 系統需求
 
 - Windows 10/11
-- 需要網路連線（首次安裝 + 每次抓取資料）
+- 網路連線（安裝套件 + 每次抓取資料時）
 
-## 技術棧
+## Excel 長什麼樣子
 
-- 語言：Python 3.13（`uv venv` 自動下載，不依賴系統 Python）
-- 核心套件：`edgartools`（SEC EDGAR / XBRL 抓取）、`openpyxl`（Excel 讀寫）、tkinter（GUI）
-- Non-GAAP 解析可選用 `google-generativeai` / `openai` / `anthropic`（僅該功能需要 API Key）
+每間公司一個 `.xlsx`：
 
-## 首次設定
-
-1. 雙擊 `啟動器.bat`，按照提示完成套件安裝
-2. **第一次啟動會跳一個 `Language` 視窗**，四個按鈕：繁體中文／简体中文／English／日本語。點一下就記住，之後不會再問（直接關掉視窗＝用繁體中文，一樣不再問）
-3. 程式啟動後點「進階設定」，填入 SEC EDGAR Identity（姓名 + 信箱）
-4. 若要使用 Non-GAAP 功能，在進階設定填入 AI API Key
-
-之後要換語言：「進階設定」最上方的 `Language` 選單。選完會跳一個英文視窗問要不要重啟，按 Restart 就直接換好。
-
-## Excel 結構
-
-每間公司一個 `.xlsx`，存於 `output/` 資料夾。
-
-| Sheet | 說明 |
+| Sheet | 內容 |
 |-------|------|
-| `Data_Financials(Q)` | **季報三表**（IS + BS + CF，from 10-Q）。表頭 3 列為期間標籤，三表各有專屬底色，公司特有科目集中在底部 `Other (as reported)` |
-| `Data_Financials(Y)` | **年報三表**（from 10-K），結構同上 |
-| `Data_Ratios` | 37 個常見比率（Python 計算，**零 AI**）。A 欄英文列名（含 `(%)` / `(x)` / `(days)` / `($)` 單位後綴）、B 欄說明、C 欄算法 |
-| `Data_Segments` | 營收／費用分類細項，長格式（各軸合併於一張） |
-| `Data_Meta` | 申報資訊（Ticker、公司名、抓取日期、季數、財年結束月、**抓取缺漏**） |
-| `Index` | 第一頁：公司抬頭、**抓取缺漏警告**、**財年起始月輸入格**、sheet 清單、品質明細 |
+| `Data_Financials(Q)` / `(Y)` | 季報 / 年報三表（損益表、資產負債表、現金流量表） |
+| `Data_Ratios` | 37 個常見財務比率，Python 算好，不靠 AI |
+| `Data_Segments` | 營收／費用分類細項 |
+| `Data_Meta` | 抓取日期、財年結束月、有沒有缺資料 |
+| `Index` | 第一頁總覽：公司抬頭、缺漏警告、可自行修正的財年起始月欄位 |
 
-欄位配置（A 欄機器鍵永遠英文、B 欄跟著介面語言、C 欄永遠公司原文）、固定列位、
-跨公司模板公式怎麼寫，完整規格見 `docs/ARCHITECTURE.md`「Excel Sheet Layout」。
+**財年結束月猜錯了怎麼辦**：程式會自動判讀，但偶爾會錯。`Index` 第一頁的黃底
+欄位可以直接改，改完整本 Excel 的期間標籤會自動跟著更新。
 
-## 財年起始月：程式猜錯時自己改
+**抓不到資料時**：那幾期會留空、其餘照常產出，並且會主動講清楚缺了哪幾期
+（GUI 橘字提示 + Excel 第一頁橘底那列都看得到）。網路只是暫時不穩的話，重抓
+一次通常就補得回來；真的一期都沒抓到，原本的 Excel 檔會維持不動，不會被
+空白蓋掉。
 
-財年結束月是程式從 10-K 自動判讀的，**會出錯**。`Index!B4`（黃底那格）可以改，
-`Data_Financials(Q)/(Y)` 的期間標籤會**全部自動更新**。核對方式與細節見
-`docs/ARCHITECTURE.md`。
+## 要傳給其他人用
 
-## 抓不到資料時會怎樣
+雙擊 `scripts\打包.bat`，會產出一個 zip（`dist\` 資料夾裡），對方解壓、雙擊
+`啟動器.bat`、一路按 Enter 就能裝好，不需要先裝 Python。
 
-某幾期沒抓到時**那幾期留空、其餘照常產出**，並主動告訴你缺了哪幾期：
+## 給開發者 / skill 呼叫
 
-> ⚠ 有 2 期沒抓到（2025-09-27、2025-03-29）。抓取期間連不上 SEC，多半是網路問題——網路穩定後重抓一次通常就補得回來。
-
-三個地方看得到：GUI 橘字、`logs/app.log`、**Excel 第一頁 Index 的橘底那列**。
-最後一個最重要——GUI 關掉就沒了，但三天後重開這份 Excel 警告還在。
-
-網路閃斷會自動退避重試（2/4/8 秒）多半救得回來；**一期都沒抓到才不寫檔**，
-你原本的 Excel 完好不動。
-
-## 已知限制
-
-見 `docs/ARCHITECTURE.md`「Known Issues」；待決定要不要修的項目見 `docs/TODO.md`。
-
-## .gitignore 必含項目
-
-- `config.json`、`.env`（機敏設定，內含 API Key / SEC Identity）
-- `venv/`、`__pycache__/`、`*.pyc`
-- `output/`（保留 `.gitkeep`）、`dist/`、`*.zip`
-- `*.log`、`logs/`
-- `company_cache.json`（執行期自建快取）
+- 架構、Excel 欄位規格、已知限制：`docs/ARCHITECTURE.md`
+- 指令列介面（給外部 skill 用，不經 GUI）：`docs/CLI.md`
+- 待辦事項：`docs/TODO.md`
+- 打包發布流程：`docs/PACKAGING.md`
+- 技術棧：Python 3.13（`uv` 自動管理，不依賴系統 Python）、`edgartools`、`openpyxl`、tkinter
