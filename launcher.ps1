@@ -26,6 +26,14 @@ function Write-LogHeader {
     try { [System.IO.File]::AppendAllText($LogFile, $line, $Utf8NoBom) } catch {}
 }
 
+# 畫面上的「現在正在做什麼」提示，帶時間戳；不寫 log（log 已有自己的時間戳）。
+# 只在會下載東西的步驟前呼叫（TODO E7：CTH 回報安裝過程沒有 timestamp，
+# 不知道是卡住了還是正常在跑）。
+function Write-Step {
+    param([string]$Msg, [string]$Color = "Gray")
+    Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $Msg" -ForegroundColor $Color
+}
+
 Write-LogHeader "啟動"
 
 # 攔截所有未預期例外，防止視窗直接閃退
@@ -61,7 +69,8 @@ Write-Host ""
 # ======================================
 Write-Host "[1/2] 檢查 uv 套件管理工具..." -ForegroundColor Cyan
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Host "[WARNING] 找不到 uv，正在安裝..." -ForegroundColor Yellow
+    Write-Log "找不到 uv，準備安裝" "WARN"
+    Write-Step "找不到 uv，開始下載安裝程式（astral.sh）..." "Yellow"
     # 較舊的 Win10 上 PowerShell 5.1 可能仍預設 TLS 1.0/1.1，astral.sh 只收 1.2 以上，
     # 不先指定會在下載那行直接連線失敗
     try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -116,7 +125,7 @@ if (-not (Test-Path "venv")) {
     Write-Host ""
     $ans = Read-Host "[WARNING] 找不到虛擬環境，現在建立並安裝套件？[Y/n] - 直接按 Enter 代表同意"
     if ($ans -eq "" -or $ans -ieq "Y") {
-        Write-Host "[INFO] 建立虛擬環境中（電腦若沒有 Python 會自動下載，約 20MB）..." -ForegroundColor Gray
+        Write-Step "下載/建立 Python 虛擬環境中（電腦若沒有 Python 會自動下載，約 20MB）..."
         # 指定 3.13：不寫版號時 uv 只會找現成直譯器，找不到就報錯而不會下載。
         # 寫了版號，本機有 3.13 就用本機的，沒有才下載 uv 自管版本。
         uv venv venv --python 3.13
@@ -126,8 +135,12 @@ if (-not (Test-Path "venv")) {
             Write-Host "        請確認網路連線後關閉視窗，重新點兩下啟動檔再試一次。" -ForegroundColor Red
             Read-Host "按 Enter 關閉"; exit 1
         }
-        Write-Host "[INFO] 安裝套件中（首次約需 2-3 分鐘）..." -ForegroundColor Gray
-        uv pip install -r requirements.txt --python venv\Scripts\python.exe -q
+        Write-Step "安裝套件中（以下為 uv 逐一顯示的套件名稱與下載進度，首次約需 2-3 分鐘）..."
+        # ⚠ 不加 -q/--quiet（TODO E7 修正：原本有 -q，這正是 CTH 回報「沒有進度條，
+        #    不知道是卡住還是正常在跑」的根因）——uv 預設會逐一印出「正在下載哪個
+        #    套件＋進度條」，這是使用者唯一看得懂「電腦沒當機、只是在裝東西」的
+        #    畫面，不可靜音。
+        uv pip install -r requirements.txt --python venv\Scripts\python.exe
         if ($LASTEXITCODE -ne 0) {
             Write-Log "套件安裝失敗（uv pip install 回傳 $LASTEXITCODE）" "ERROR"
             Write-Host "[ERROR] 套件安裝失敗，請確認網路連線後重新執行。" -ForegroundColor Red
@@ -147,7 +160,9 @@ if (-not (Test-Path "venv")) {
         Write-Host "[INFO] 清理損壞的套件資訊：$($dir.Name)" -ForegroundColor Yellow
         Remove-Item -Recurse -Force $dir.FullName
     }
-    uv pip install -r requirements.txt --python venv\Scripts\python.exe -q
+    # ⚠ 不加 -q：平時沒有更新時 uv 幾乎瞬間印完「Audited N packages」，代價很小；
+    #    一旦真的有更新要下載，使用者才看得到在裝什麼，不會誤以為卡住。
+    uv pip install -r requirements.txt --python venv\Scripts\python.exe
 }
 
 . ".\venv\Scripts\Activate.ps1"

@@ -59,6 +59,22 @@ def _build_fixed_height_scrollable(parent, height=110):
         lambda e: canvas.itemconfigure(window_id, width=e.width),
     )
 
+    # Windows 滑鼠滾輪：event.delta 是 120 的倍數，除以 120 換成 yview_scroll 的
+    # 「幾格」單位，取負號是因為滾輪往上（delta > 0）要往上捲（scroll 負方向）。
+    # 只在滑鼠停在這個容器上時綁定/解除，避免搶走其他 widget（如外層 Notebook）
+    # 的滾輪事件。
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _bind_wheel(_event):
+        canvas.bind_all("<MouseWheel>", _on_mousewheel)
+
+    def _unbind_wheel(_event):
+        canvas.unbind_all("<MouseWheel>")
+
+    canvas.bind("<Enter>", _bind_wheel)
+    canvas.bind("<Leave>", _unbind_wheel)
+
     return container, inner_frame
 
 _FINANCIAL_SECTOR_TICKERS = frozenset({"GS", "JPM", "BAC", "C", "WFC", "MS", "BLK", "BX", "KKR"})
@@ -319,7 +335,20 @@ class SECFetcherApp:
         #
         # 座標一定要自己算（見模組頂端 fit_geometry 的註解）：只給大小不給座標時
         # Windows 會用階梯式落點，視窗越開越低，最後下緣掉到工作列底下。
+        #
+        # 寬高改成算工作區的比例，不再是寫死的 900x720（2026-08-18，TODO E4/E16
+        # CTH 回報「視窗變寬了，內容卻沒跟著撐開」）。固定像素在不同螢幕上感受
+        # 差很多：CTH 的螢幕上 900px 只佔畫面一小塊，內容再怎麼撐都撐不滿；比例
+        # 才能在任何螢幕上維持「約 2/3 寬度」的觀感。真正讓內容用滿寬度的是
+        # `tab.columnconfigure(0, weight=1)`（見 `_build_tab1`／`_build_settings_panel`）
+        # ——只放大視窗不夠，欄位本身要有 weight 才會跟著撐開，這是原本沒撐開的
+        # 根因。高度一併拉高（TODO E6 決定的方向：拉高視窗＋捲動），給「處理
+        # 進度」log 區更多空間，見 `_TAB3_HEIGHT` 旁的重新量測記錄。
         _area = work_area()
+        _avail_w = _area[2] - _area[0]
+        _avail_h = _area[3] - _area[1]
+        self._WIN_W = min(max(int(_avail_w * self._WIN_W_RATIO), self._WIN_W_MIN), self._WIN_W_MAX)
+        self._WIN_H = min(max(int(_avail_h * self._WIN_H_RATIO), self._WIN_H_MIN), self._WIN_H_MAX)
         _geom = fit_geometry(self._WIN_W, self._WIN_H, _area)
         self.root.geometry(_geom)
         # minsize 不可以大於實際擺出來的尺寸，否則小螢幕上 fit_geometry 縮好的
@@ -407,6 +436,7 @@ class SECFetcherApp:
         self._build_tab1()
         self._build_tab2()
         self._build_tab3()
+        self._update_identity_warnings()
 
         # Persistent buttons
         frame_persist = tk.Frame(self.root)
@@ -416,8 +446,6 @@ class SECFetcherApp:
         # Progress log
         frame_log = ttk.LabelFrame(self.root, text=t("gui.frame.progress"), padding=8)
         frame_log.grid(row=2, column=0, sticky="nsew", padx=14, pady=(0, 4))
-        frame_log.rowconfigure(2, weight=1)
-        frame_log.columnconfigure(0, weight=1)
         self.progress_label = ttk.Label(frame_log, text=t("gui.status.idle"))
         self.progress_label.pack(anchor="w")
         self.progress_bar = ttk.Progressbar(frame_log, mode="determinate", length=440)
@@ -441,13 +469,16 @@ class SECFetcherApp:
         """Build Tab 1 (單一公司): ticker input, GAAP/Non-GAAP toggles, output settings, run button."""
         tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(tab, text=t("gui.tab.single"))
+        # 沒有這行，視窗變寬時這個欄位不會跟著撐開——sticky="ew" 只管子元件
+        # 貼齊欄位邊界，欄位本身要有 weight 才會分到多出來的寬度（TODO E16）。
+        tab.columnconfigure(0, weight=1)
 
         # Row 0: Ticker + inline company name
         row_ticker = ttk.Frame(tab)
         row_ticker.grid(row=0, column=0, sticky="ew", pady=4)
         ttk.Label(row_ticker, text="Ticker:").pack(side="left", padx=(0, 8))
         self.ticker_var = tk.StringVar()
-        self.ticker_entry = ttk.Entry(row_ticker, textvariable=self.ticker_var, width=12, foreground="grey")
+        self.ticker_entry = ttk.Entry(row_ticker, textvariable=self.ticker_var, width=18, foreground="grey")
         self.ticker_entry.pack(side="left")
         self.ticker_var.set(self.TICKER_PH)
         self.ticker_entry.bind("<FocusIn>",  lambda e: self._ph_in(self.ticker_entry, self.ticker_var, self.TICKER_PH))
@@ -469,9 +500,18 @@ class SECFetcherApp:
         self._scan_hint_label = ttk.Label(row_ticker, text="", foreground="#0078D4")
         self._scan_hint_label.pack(side="left", padx=(8, 0))
 
-        # Row 1: Checkboxes
+        # Row 1: SEC Identity warning (hidden unless cfg["identity"] is empty)
+        self.identity_warn_label = tk.Label(
+            tab, text=t("gui.lbl.identity_missing"),
+            foreground="orange", cursor="hand2", font=("", 10)
+        )
+        self.identity_warn_label.grid(row=1, column=0, sticky="w", padx=2)
+        self.identity_warn_label.bind("<Button-1>", lambda e: self._goto_settings_tab())
+        self.identity_warn_label.grid_remove()
+
+        # Row 2: Checkboxes
         row_type = ttk.Frame(tab)
-        row_type.grid(row=1, column=0, sticky="ew", pady=4)
+        row_type.grid(row=2, column=0, sticky="ew", pady=4)
         self.fetch_gaap_var    = tk.BooleanVar(value=True)
         self.fetch_nongaap_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(row_type, text=t("gui.chk.gaap"),               variable=self.fetch_gaap_var).pack(side="left", padx=(0, 16))
@@ -483,25 +523,25 @@ class SECFetcherApp:
         _ng_cb.pack(side="left")
         self.fetch_nongaap_var.trace_add("write", self._on_nongaap_toggle)
 
-        # Row 2: 進階設定 toggle
+        # Row 3: 報表類型 toggle
         adv_toggle_row1 = ttk.Frame(tab)
-        adv_toggle_row1.grid(row=2, column=0, sticky="ew", pady=(4, 0))
-        self._tab1_adv_toggle_btn = ttk.Button(adv_toggle_row1, text=t("gui.btn.adv_collapsed"),
+        adv_toggle_row1.grid(row=3, column=0, sticky="ew", pady=(4, 0))
+        self._tab1_adv_toggle_btn = ttk.Button(adv_toggle_row1, text=t("gui.btn.report_type_collapsed"),
                                                 command=self._toggle_tab1_adv, width=12)
         self._tab1_adv_toggle_btn.pack(side="left")
 
-        # Row 3: 進階設定 content — report type (hidden by default)
+        # Row 4: 報表類型 content (hidden by default)
         self._tab1_adv_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=(8, 4))
-        self._tab1_adv_frame.grid(row=3, column=0, sticky="ew", pady=(0, 4))
+        self._tab1_adv_frame.grid(row=4, column=0, sticky="ew", pady=(0, 4))
         self.tab1_fetch_q_var = tk.BooleanVar(value=True)
         self.tab1_fetch_k_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(self._tab1_adv_frame, text=t("gui.chk.quarterly"), variable=self.tab1_fetch_q_var).pack(side="left", padx=(0, 16))
         ttk.Checkbutton(self._tab1_adv_frame, text=t("gui.chk.annual"), variable=self.tab1_fetch_k_var).pack(side="left")
         self._tab1_adv_frame.grid_remove()
 
-        # Row 4: Date range
+        # Row 5: Date range
         row_date = ttk.Frame(tab)
-        row_date.grid(row=4, column=0, sticky="ew", pady=(2, 4))
+        row_date.grid(row=5, column=0, sticky="ew", pady=(2, 4))
         ttk.Label(row_date, text=t("gui.lbl.year_from")).pack(side="left", padx=(0, 4))
         self.tab1_start_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date, from_=1993, to=2099, textvariable=self.tab1_start_year_var,
@@ -512,7 +552,7 @@ class SECFetcherApp:
                     width=6).pack(side="left")
         ttk.Label(row_date, text=t("gui.lbl.year_hint"), foreground="#555555").pack(side="left", padx=(4, 0))
 
-        # Row 5: Sheet selection panel (hidden until scan completes)
+        # Row 6: Sheet selection panel (hidden until scan completes)
         # 最新季度／送件日不能另開一行 Label——這個視窗鎖死 650px 高、不會自動撐大
         # （見 __init__ 的 geometry() 註解），下面「處理進度」的 log 區已經很緊繃，
         # 實測顯示 sheet 面板一展開，log 可視高度就只剩個位數 px；多加一行 23px
@@ -520,37 +560,40 @@ class SECFetcherApp:
         # 高度成本是 0
         self._SHEET_PANEL_TITLE_BASE = t("gui.frame.optional_sheets")
         self._sheet_panel_frame = ttk.LabelFrame(tab, text=self._SHEET_PANEL_TITLE_BASE, padding=6)
-        self._sheet_panel_frame.grid(row=5, column=0, sticky="ew", pady=(0, 4))
+        self._sheet_panel_frame.grid(row=6, column=0, sticky="ew", pady=(0, 4))
         _, self._sheet_panel_inner = _build_fixed_height_scrollable(self._sheet_panel_frame, height=60)
         self._sheet_panel_frame.grid_remove()
 
-        # Row 6: Non-GAAP warning (hidden by default)
+        # Row 7: Non-GAAP warning (hidden by default)
         self.nongaap_warn_label = ttk.Label(
             tab, text=t("gui.lbl.nongaap_need_key"),
             foreground="orange", font=("", 10)
         )
-        self.nongaap_warn_label.grid(row=6, column=0, sticky="w", padx=2)
+        self.nongaap_warn_label.grid(row=7, column=0, sticky="w", padx=2)
         self.nongaap_warn_label.grid_remove()
 
-        # Row 7: Output settings toggle
+        # Row 8: Output settings toggle
         self._out_collapsed = False
         out_toggle_row = ttk.Frame(tab)
-        out_toggle_row.grid(row=7, column=0, sticky="ew", pady=(8, 0))
+        out_toggle_row.grid(row=8, column=0, sticky="ew", pady=(8, 0))
         self._out_toggle_btn = ttk.Button(out_toggle_row, text=t("gui.btn.output_expanded"),
                                            command=self._toggle_out_settings, width=12)
         self._out_toggle_btn.pack(side="left")
 
-        # Row 8: Output settings content (collapsible)
+        # Row 9: Output settings content (collapsible)
         out_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=8)
-        out_frame.grid(row=8, column=0, sticky="ew", pady=(0, 4))
+        out_frame.grid(row=9, column=0, sticky="ew", pady=(0, 4))
+        out_frame.columnconfigure(0, weight=1)
         self._out_settings_frame = out_frame
 
-        # Storage location row
+        # Storage location row — 路徑欄用 fill/expand 撐滿剩餘寬度，不再是固定
+        # 26 字元寬。路徑常常比 26 字元長（截圖裡 CTH 的路徑就被切掉看不到尾巴），
+        # 視窗變寬時這欄本來就該優先分到多出來的空間
         loc_row = ttk.Frame(out_frame)
         loc_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         ttk.Label(loc_row, text=t("gui.lbl.save_location")).pack(side="left")
         self.tab1_outdir_var = tk.StringVar(value=self.cfg.get("output_dir", "output"))
-        ttk.Entry(loc_row, textvariable=self.tab1_outdir_var, width=26).pack(side="left", padx=(0, 6))
+        ttk.Entry(loc_row, textvariable=self.tab1_outdir_var).pack(side="left", fill="x", expand=True, padx=(6, 6))
         ttk.Button(loc_row, text=t("gui.btn.browse"), width=5, command=self._browse_output_dir).pack(side="left")
 
         # Filename format radios
@@ -582,27 +625,40 @@ class SECFetcherApp:
         self.tab1_preview_label.grid(row=5, column=0, sticky="w", pady=(6, 0))
         self._update_tab1_preview()
 
-        # Row 5: Execute button
+        # 設為預設：這裡改的資料夾/檔名格式只影響這次執行，不再像過去那樣
+        # 一改就悄悄寫回全域 config（Tab2 批次完全看不到那個變化卻共用它）。
+        # 要讓這次的選擇變成下次開程式的預設值，得按這顆按鈕明確存檔。
+        default_row = ttk.Frame(out_frame)
+        default_row.grid(row=6, column=0, sticky="w", pady=(4, 0))
+        ttk.Button(default_row, text=t("gui.btn.set_as_default"), width=10,
+                   command=self._set_tab1_output_as_default).pack(side="left")
+        self.tab1_default_saved_label = ttk.Label(default_row, text="", foreground="#1a7a34")
+        self.tab1_default_saved_label.pack(side="left", padx=8)
+        # 這顆按鈕的意義不會從按鈕文字本身看出來，一律顯示這行小字說明（不用點才看得到）
+        ttk.Label(out_frame, text=t("gui.lbl.set_as_default_hint"),
+                  foreground="#888888", font=("", 9)).grid(row=7, column=0, sticky="w", pady=(0, 2))
+
+        # Row 10: Execute button
         self.btn_run_single = ttk.Button(tab, text=t("gui.btn.run"), command=self._run_single, width=16)
-        self.btn_run_single.grid(row=9, column=0, pady=(8, 4))
+        self.btn_run_single.grid(row=10, column=0, pady=(8, 4))
 
     def _toggle_tab1_adv(self):
         self._tab1_adv_collapsed = not self._tab1_adv_collapsed
         if self._tab1_adv_collapsed:
             self._tab1_adv_frame.grid_remove()
-            self._tab1_adv_toggle_btn.config(text=t("gui.btn.adv_collapsed"))
+            self._tab1_adv_toggle_btn.config(text=t("gui.btn.report_type_collapsed"))
         else:
             self._tab1_adv_frame.grid()
-            self._tab1_adv_toggle_btn.config(text=t("gui.btn.adv_expanded"))
+            self._tab1_adv_toggle_btn.config(text=t("gui.btn.report_type_expanded"))
 
     def _toggle_tab2_adv(self):
         self._tab2_adv_collapsed = not self._tab2_adv_collapsed
         if self._tab2_adv_collapsed:
             self._tab2_adv_frame.grid_remove()
-            self._tab2_adv_toggle_btn.config(text=t("gui.btn.adv_collapsed"))
+            self._tab2_adv_toggle_btn.config(text=t("gui.btn.report_type_collapsed"))
         else:
             self._tab2_adv_frame.grid()
-            self._tab2_adv_toggle_btn.config(text=t("gui.btn.adv_expanded"))
+            self._tab2_adv_toggle_btn.config(text=t("gui.btn.report_type_expanded"))
 
     def _toggle_out_settings(self):
         """Collapse or expand the output-settings section, updating the toggle button arrow."""
@@ -655,13 +711,29 @@ class SECFetcherApp:
         self.tab2_check_vars: dict[str, tk.BooleanVar] = {}
         self._refresh_tab2_list()
 
+        # Row 1: SEC Identity warning (hidden unless cfg["identity"] is empty)
+        self.tab2_identity_warn_label = tk.Label(
+            tab, text=t("gui.lbl.identity_missing"),
+            foreground="orange", cursor="hand2", font=("", 10)
+        )
+        self.tab2_identity_warn_label.grid(row=1, column=0, sticky="w", padx=2, pady=(0, 2))
+        self.tab2_identity_warn_label.bind("<Button-1>", lambda e: self._goto_settings_tab())
+        self.tab2_identity_warn_label.grid_remove()
+
+        # Row 2: 唯讀顯示目前全域輸出預設——批次抓出來的檔案就是照這個值落地，
+        # Tab1 過去可以悄悄改掉這個全域值卻讓 Tab2 完全看不到，這裡至少讓
+        # 批次使用者知道檔案會存去哪
+        self.tab2_output_default_label = ttk.Label(tab, text="", foreground="#555555", font=("", 10))
+        self.tab2_output_default_label.grid(row=2, column=0, sticky="w", pady=(0, 4))
+        self._refresh_output_default_display()
+
         row_sel = ttk.Frame(tab)
-        row_sel.grid(row=1, column=0, sticky="w", pady=4)
+        row_sel.grid(row=3, column=0, sticky="w", pady=4)
         ttk.Button(row_sel, text=t("gui.btn.select_all"),   command=self._select_all,   width=8).pack(side="left", padx=(0, 8))
         ttk.Button(row_sel, text=t("gui.btn.select_none"), command=self._deselect_all, width=8).pack(side="left")
 
         row_opts = ttk.Frame(tab)
-        row_opts.grid(row=2, column=0, sticky="w", pady=(4, 0))
+        row_opts.grid(row=4, column=0, sticky="w", pady=(4, 0))
         self.batch_nongaap_var = tk.BooleanVar(value=False)
         _bng_text = (t("gui.chk.batch_nongaap") if NONGAAP_ENABLED
                      else t("gui.chk.batch_nongaap_paused"))
@@ -676,25 +748,25 @@ class SECFetcherApp:
         self.batch_nongaap_warn.pack_forget()
         self.batch_nongaap_var.trace_add("write", self._on_batch_nongaap_toggle)
 
-        # Row 3: 進階設定 toggle
+        # Row 5: 報表類型 toggle
         adv_toggle_row2 = ttk.Frame(tab)
-        adv_toggle_row2.grid(row=3, column=0, sticky="ew", pady=(4, 0))
-        self._tab2_adv_toggle_btn = ttk.Button(adv_toggle_row2, text=t("gui.btn.adv_collapsed"),
+        adv_toggle_row2.grid(row=5, column=0, sticky="ew", pady=(4, 0))
+        self._tab2_adv_toggle_btn = ttk.Button(adv_toggle_row2, text=t("gui.btn.report_type_collapsed"),
                                                 command=self._toggle_tab2_adv, width=12)
         self._tab2_adv_toggle_btn.pack(side="left")
 
-        # Row 4: 進階設定 content — report type (hidden by default)
+        # Row 6: 報表類型 content (hidden by default)
         self._tab2_adv_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=(8, 4))
-        self._tab2_adv_frame.grid(row=4, column=0, sticky="ew", pady=(0, 4))
+        self._tab2_adv_frame.grid(row=6, column=0, sticky="ew", pady=(0, 4))
         self.batch_fetch_q_var = tk.BooleanVar(value=True)
         self.batch_fetch_k_var = tk.BooleanVar(value=True)
         ttk.Checkbutton(self._tab2_adv_frame, text=t("gui.chk.quarterly"), variable=self.batch_fetch_q_var).pack(side="left", padx=(0, 16))
         ttk.Checkbutton(self._tab2_adv_frame, text=t("gui.chk.annual"), variable=self.batch_fetch_k_var).pack(side="left")
         self._tab2_adv_frame.grid_remove()
 
-        # Row 5: Date range
+        # Row 7: Date range
         row_date2 = ttk.Frame(tab)
-        row_date2.grid(row=5, column=0, sticky="ew", pady=(2, 0))
+        row_date2.grid(row=7, column=0, sticky="ew", pady=(2, 0))
         ttk.Label(row_date2, text=t("gui.lbl.year_from")).pack(side="left", padx=(0, 4))
         self.batch_start_year_var = tk.StringVar(value="")
         ttk.Spinbox(row_date2, from_=1993, to=2099, textvariable=self.batch_start_year_var,
@@ -706,7 +778,7 @@ class SECFetcherApp:
         ttk.Label(row_date2, text=t("gui.lbl.year_hint"), foreground="#555555").pack(side="left", padx=(4, 0))
 
         self.btn_run_batch = ttk.Button(tab, text=t("gui.btn.run_batch"), command=self._run_batch, width=20)
-        self.btn_run_batch.grid(row=6, column=0, pady=(8, 4))
+        self.btn_run_batch.grid(row=8, column=0, pady=(8, 4))
 
     # =========================================================
     # Placeholder helpers
@@ -784,11 +856,14 @@ class SECFetcherApp:
         return "" if v == placeholder else v
 
     def _on_tab1_fmt_change(self):
-        """Enable/disable the custom filename entry and refresh the preview when format radio changes."""
+        """Enable/disable the custom filename entry and refresh the preview when format radio changes.
+
+        只影響這次執行要用的值，不再悄悄寫回全域 config——要存成下次預設得按
+        「設為預設」（`_set_tab1_output_as_default`）。
+        """
         is_custom = self.tab1_fmt_var.get() == "custom"
         if self.tab1_custom_entry:
             self.tab1_custom_entry.config(state="normal" if is_custom else "disabled")
-        self._save_tab1_output_settings()
         self._update_tab1_preview()
 
     def _update_tab1_preview(self):
@@ -812,23 +887,27 @@ class SECFetcherApp:
         self.tab1_preview_label.config(text=t("gui.lbl.preview", name=preview))
 
     def _browse_output_dir(self):
-        """Open folder picker and save selection globally and as a per-ticker path memory."""
+        """Open folder picker; only remembers the folder per-ticker, not as the global default.
+
+        全域預設值只在按「設為預設」（`_set_tab1_output_as_default`）時才會動，
+        這裡挑的資料夾只影響這次執行，跟過去「挑了就悄悄變全域預設」的行為不同。
+        """
         from tkinter import filedialog
         current = self.tab1_outdir_var.get().strip() if self.tab1_outdir_var else "output"
         initial = str(PROJECT_ROOT / current) if not os.path.isabs(current) else current
         folder = filedialog.askdirectory(title=t("gui.dlg.choose_output_dir"), initialdir=initial)
         if folder:
             self.tab1_outdir_var.set(folder)
-            # 記住這個 ticker 的路徑
+            # 記住這個 ticker 的路徑（跟全域預設是兩件事）
             ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
             if ticker:
                 if "ticker_paths" not in self.cfg:
                     self.cfg["ticker_paths"] = {}
                 self.cfg["ticker_paths"][ticker] = folder
-            self._save_tab1_output_settings()
+                save_config(self.cfg, CONFIG_PATH)
 
     def _save_tab1_output_settings(self):
-        """Persist Tab 1 output settings (dir, filename format, custom name) to config.json."""
+        """Persist Tab 1 output settings (dir, filename format, custom name) to config.json as the new global default."""
         if self.tab1_outdir_var:
             self.cfg["output_dir"] = self.tab1_outdir_var.get().strip() or "output"
         if self.tab1_fmt_var:
@@ -836,6 +915,37 @@ class SECFetcherApp:
         if self.tab1_custom_var:
             self.cfg["filename_custom"] = self.tab1_custom_var.get().strip()
         save_config(self.cfg, CONFIG_PATH)
+
+    def _set_tab1_output_as_default(self):
+        """「設為預設」按鈕：把目前輸出資料夾/檔名格式明確存成下次開程式的全域預設值。"""
+        self._save_tab1_output_settings()
+        self._refresh_output_default_display()
+        if getattr(self, "tab1_default_saved_label", None) is not None:
+            self.tab1_default_saved_label.config(text=t("gui.lbl.output_default_saved"))
+            self.root.after(3000, lambda: self.tab1_default_saved_label.config(text=""))
+
+    def _refresh_output_default_display(self):
+        """更新 Tab2 那行唯讀文字，顯示目前全域輸出預設資料夾（Tab1「設為預設」改了要跟著更新）。"""
+        if getattr(self, "tab2_output_default_label", None) is not None:
+            self.tab2_output_default_label.config(
+                text=t("gui.lbl.current_default_output", dir=self.cfg.get("output_dir", "output"))
+            )
+
+    def _goto_settings_tab(self):
+        """SEC Identity 警告文字被點擊時，切到 Tab3（進階設定）。"""
+        self.notebook.select(2)
+
+    def _update_identity_warnings(self):
+        """依 cfg["identity"] 是否已填，切換 Tab1/Tab2 的 SEC Identity 提示顯示。"""
+        missing = not self.cfg.get("identity")
+        for label in (getattr(self, "identity_warn_label", None),
+                      getattr(self, "tab2_identity_warn_label", None)):
+            if label is None:
+                continue
+            if missing:
+                label.grid()
+            else:
+                label.grid_remove()
 
     # =========================================================
     # Tab 2 watchlist list
@@ -933,11 +1043,17 @@ class SECFetcherApp:
         list_frame.grid(row=0, column=0, sticky="ew", **pad)
         list_frame.columnconfigure(0, weight=1)
 
+        # 圖示按鈕的說明寫在清單上方講一次，不要每個公司列都重複一遍（會很擠）——
+        # TODO E13：📁／[x] 原本沒有任何文字說明，看不出是幹嘛用的
+        ttk.Label(list_frame, text=t("gui.wl.icon_legend"),
+                  foreground="#888888", font=("", 9)).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
         wl_canvas = tk.Canvas(list_frame, height=200, highlightthickness=0)
         wl_scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=wl_canvas.yview)
         wl_canvas.configure(yscrollcommand=wl_scrollbar.set)
-        wl_canvas.grid(row=0, column=0, sticky="ew")
-        wl_scrollbar.grid(row=0, column=1, sticky="ns")
+        wl_canvas.grid(row=1, column=0, sticky="ew")
+        wl_scrollbar.grid(row=1, column=1, sticky="ns")
         wl_inner = ttk.Frame(wl_canvas)
         wl_win = wl_canvas.create_window((0, 0), window=wl_inner, anchor="nw")
         wl_inner.bind("<Configure>", lambda e: (
@@ -1013,17 +1129,19 @@ class SECFetcherApp:
             tickers = sorted(t for t in group["tickers"] if t in wl_map)
             is_collapsed = self._wl_group_collapsed.get(gname, False)
 
-            # Group header
+            # Group header — 群組名在左，操作按鈕統一靠右（TODO E13，CTH 建議照
+            # Windows 慣例）。原本重新命名／刪除緊貼在群組名右邊，群組名一長就會
+            # 把按鈕往右推、視覺上像要溢出；靠右對齊後兩者互不影響對方的位置
             hdr = ttk.Frame(container)
             hdr.pack(fill="x", pady=(6, 0))
             arrow = "▶" if is_collapsed else "▼"
             ttk.Button(hdr, text=f"{arrow} {_group_display(gname)}", width=16,
                        command=lambda g=gname, c=container: self._wl_toggle_group(g, c)).pack(side="left")
-            ttk.Button(hdr, text=t("gui.btn.rename"), width=8,
-                       command=lambda g=gname, c=container: self._wl_rename_group(g, c)).pack(side="left", padx=(4, 0))
             if gname != UNCATEGORIZED:
                 ttk.Button(hdr, text=t("gui.btn.delete_group"), width=8,
-                           command=lambda g=gname, c=container: self._wl_delete_group(g, c)).pack(side="left", padx=(4, 0))
+                           command=lambda g=gname, c=container: self._wl_delete_group(g, c)).pack(side="right")
+            ttk.Button(hdr, text=t("gui.btn.rename"), width=8,
+                       command=lambda g=gname, c=container: self._wl_rename_group(g, c)).pack(side="right")
 
             if not is_collapsed:
                 if not tickers:
@@ -1272,17 +1390,43 @@ class SECFetcherApp:
         設定內容比另外兩頁高不少，直接塞進去會把整個 Notebook 撐高，而下面
         「處理進度」的 log 是唯一 weight=1 的列，撐出來的高度全由它吸收。
         限高之後多的部分用捲的，另外兩頁的版面完全不受影響。
+
+        存檔/還原按鈕（`_build_settings_footer`）刻意擺在可捲動容器**外面**，
+        不放進 `popup`——這樣它們永遠貼在頁籤底部可見，不用捲到底才找得到
+        （TODO E11）。`tab` 本身用 pack，容器是固定高度不會被撐大，footer
+        接著 pack 上去自然落在容器下方。
         """
         tab = ttk.Frame(self.notebook, padding=(4, 6))
         self.notebook.add(tab, text=t("gui.tab.settings"))
         _, inner = _build_fixed_height_scrollable(tab, height=self._TAB3_HEIGHT)
         self._build_settings_panel(inner)
+        self._build_settings_footer(tab)
 
-    # 實測貼齊值：342 時 Notebook 停在 393px、log 保有 177px（約 10 行）；
-    # 拉到 360 就把 Notebook 頂到 410px，log 掉到 160px 少一行。也就是說
-    # 另外兩頁的內容高度落在 343 附近，這一頁只要不超過就是免費的。
-    # 改動任何一頁的版面之後要重量（scratchpad 的 probe_layout.py）。
-    _TAB3_HEIGHT = 342
+    # 實測貼齊值（2026-08-18 隨 E16 一起重量）：Tab1 現在的實際內容需要
+    # ~414px（比 2026-08-17 設計時的 343px 高，這段期間陸續加了 SEC Identity
+    # 警告、輸出設定「設為預設」說明等新行）。存檔／還原按鈕搬到可捲動容器
+    # 外面（`_build_settings_footer`）之後，容器本身不用再留空間給按鈕列，
+    # 355 量出來的 Tab3 總高度 (~412px) 跟 Tab1 的 414px 只差 2px，兩頁看起來
+    # 一樣高。改動任何一頁的版面之後要重量（寫一個 Tk 探針腳本：建
+    # `SECFetcherApp`、`update_idletasks()`、讀各分頁 `winfo_reqheight()`）。
+    _TAB3_HEIGHT = 355
+
+    def _build_settings_footer(self, tab):
+        """存檔／還原固定在頁籤最下面（TODO E11）——原本存檔鍵在可捲動內容的
+        最後一列，要捲到底才看得到；搬出來後永遠可見，不用捲。
+
+        「還原」不是「取消並關閉」：Tab3 是頁籤沒有可以關掉的視窗，取消鍵按了
+        什麼都不會發生反而更混淆。「還原」把畫面上的欄位值改回上次 `save_config`
+        存的值（`self.cfg`），讓使用者可以反悔本次還沒存檔的編輯。
+        """
+        footer = ttk.Frame(tab)
+        footer.pack(fill="x", pady=(4, 4))
+        ttk.Button(footer, text=t("gui.btn.save"),
+                   command=self._save_settings, width=10).pack(side="left", padx=6)
+        ttk.Button(footer, text=t("gui.btn.restore"),
+                   command=self._restore_settings, width=10).pack(side="left")
+        self.settings_saved_label = ttk.Label(footer, text="", foreground="#1a7a34")
+        self.settings_saved_label.pack(side="left", padx=8)
 
     def _build_settings_panel(self, popup):
         """SEC identity、AI 設定、抓取上限、模板模式。
@@ -1291,6 +1435,8 @@ class SECFetcherApp:
         它現在是頁籤裡的可捲動容器，不是 Toplevel。
         """
         pad = {"padx": 12, "pady": 4}
+        # 同上：欄位要有 weight 視窗變寬才會撐開（TODO E16）
+        popup.columnconfigure(0, weight=1)
 
         # Language — 最上方獨立一列。
         # 不另開 tab：主視窗高度鎖死 650px（見 __init__ 的 geometry 註解），
@@ -1320,11 +1466,20 @@ class SECFetcherApp:
         # SEC Identity
         id_frame = ttk.LabelFrame(popup, text=" SEC EDGAR Identity ", padding=8)
         id_frame.grid(row=1, column=0, sticky="ew", **pad)
+        id_frame.columnconfigure(1, weight=1)
+        _identity_why_label = ttk.Label(id_frame, text=t("gui.lbl.identity_why"),
+                  foreground="#555555", font=("", 10), justify="left")
+        _identity_why_label.grid(row=0, column=0, columnspan=2, sticky="w")
+        # wraplength 不能寫死一個像素數——視窗寬度是算比例來的（見 __init__），
+        # 寫死的話小螢幕會被截、大螢幕又留一堆早換行的空白（TODO E16 的根因之
+        # 一）。改成跟著 id_frame 實際寬度即時調整
+        id_frame.bind("<Configure>",
+                       lambda e: _identity_why_label.config(wraplength=max(200, e.width - 20)))
         ttk.Label(id_frame, text=t("gui.lbl.identity_hint"),
-                  foreground="#555555", font=("", 10)).grid(row=0, column=0, columnspan=2, sticky="w")
-        ttk.Label(id_frame, text="Identity:").grid(row=1, column=0, sticky="w", pady=4)
+                  foreground="#555555", font=("", 10)).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
+        ttk.Label(id_frame, text="Identity:").grid(row=2, column=0, sticky="w", pady=4)
         self.settings_identity_var = tk.StringVar(value=self.cfg.get("identity", ""))
-        ttk.Entry(id_frame, textvariable=self.settings_identity_var, width=42).grid(row=1, column=1, sticky="ew", padx=(8, 0))
+        ttk.Entry(id_frame, textvariable=self.settings_identity_var, width=42).grid(row=2, column=1, sticky="ew", padx=(8, 0))
 
         # AI Config
         ai_frame = ttk.LabelFrame(popup, text=t("gui.frame.ai_settings"), padding=8)
@@ -1393,16 +1548,8 @@ class SECFetcherApp:
                                            command=self._browse_template)
         self._tpl_browse_btn.grid(row=1, column=2, pady=(4, 0))
         self._on_template_mode_change()  # set initial enabled/disabled state
-
-        # Buttons
-        # 只有「儲存」沒有「取消」——頁籤沒有可以關掉的視窗，取消鍵按了
-        # 什麼都不會發生反而更混淆。改用一句存檔回饋讓使用者知道有生效。
-        btn_row = ttk.Frame(popup)
-        btn_row.grid(row=4, column=0, pady=10)
-        ttk.Button(btn_row, text=t("gui.btn.save"),
-                   command=lambda: self._save_settings(), width=10).pack(side="left", padx=6)
-        self.settings_saved_label = ttk.Label(btn_row, text="", foreground="#1a7a34")
-        self.settings_saved_label.pack(side="left", padx=8)
+        # 存檔／還原按鈕搬到 `_build_settings_footer`（`tab` 層級，固定在頁籤
+        # 最下面，不放在這個可捲動的 `popup` 裡），見 `_build_tab3` 的說明
 
     def _on_template_mode_change(self):
         is_custom = getattr(self, "settings_template_mode_var", None) and \
@@ -1489,7 +1636,12 @@ class SECFetcherApp:
         new_lang = self._selected_lang_code()
         lang_changed = new_lang != self._lang_saved_code
         self.cfg["language"] = new_lang
+        # 存檔後要更新這個基準值，不然「還原」（`_restore_settings`）會把語言
+        # 還原回啟動當下的舊值，而不是這次剛存的新值——兩者現在都代表
+        # 「上次已存檔的值」，必須同步
+        self._lang_saved_code = new_lang
         save_config(self.cfg, CONFIG_PATH)
+        self._update_identity_warnings()
         if popup is not None:
             popup.destroy()
         if getattr(self, "settings_saved_label", None) is not None:
@@ -1500,6 +1652,36 @@ class SECFetcherApp:
         # 只有語言真的變更才打擾使用者——改 API Key 不該跳重啟視窗
         if lang_changed:
             self._prompt_restart_for_language()
+
+    def _restore_settings(self):
+        """「還原」按鈕（TODO E11）：把畫面上的欄位值改回 `self.cfg` 目前存的值
+
+        `self.cfg` 只在 `_save_settings` 呼叫 `save_config` 時才會被改，所以
+        它天生就是「上次已存檔的值」，不用另外記一份備份——把每個
+        `settings_*_var` 重新從 `self.cfg` 讀一次、`.set()` 回填即可，等於把
+        `_build_settings_panel` 裡讀初始值那段邏輯再跑一次。逐一列出要還原
+        的變數，漏一個就是還原不完整：
+          language / identity / ai(provider, model, api_key) / max_filings /
+          template(mode, path)
+        """
+        self.settings_identity_var.set(self.cfg.get("identity", ""))
+        self.settings_provider_var.set(self.cfg["ai"].get("provider", "google"))
+        self.settings_model_var.set(self.cfg["ai"].get("model", "gemini-flash-latest"))
+        self.settings_key_var.set(self.cfg["ai"].get("api_key", ""))
+        self.settings_max_filings_var.set(self.cfg.get("max_filings", 80))
+
+        has_tpl = bool(self.cfg.get("template_path", ""))
+        self.settings_template_mode_var.set("custom" if has_tpl else "default")
+        self.settings_template_var.set(self.cfg.get("template_path", ""))
+        self._on_template_mode_change()  # 重新套用還原後的 mode 到 Entry/Browse 的 enable 狀態
+
+        current_name = next((n for c, n in self._lang_choices if c == self._lang_saved_code),
+                            self._lang_choices[0][1])
+        self.settings_lang_var.set(current_name)
+
+        if getattr(self, "settings_saved_label", None) is not None:
+            self.settings_saved_label.config(text=t("gui.status.settings_restored"))
+            self.root.after(3000, lambda: self.settings_saved_label.config(text=""))
 
     def _selected_lang_code(self) -> str:
         """把下拉選單顯示的語言名稱換回代號。取不到就維持原設定，不亂改。"""
@@ -1741,9 +1923,6 @@ class SECFetcherApp:
         if not identity:
             messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.set_identity"))
             return
-        if self.is_running:
-            messagebox.showwarning(t("gui.dlg.info_title"), t("gui.msg.wait_for_current_run"))
-            return
         if self._scan_btn:
             self._scan_btn.config(state="disabled", text=t("gui.status.scanning"))
         if self._scan_hint_label:
@@ -1763,15 +1942,29 @@ class SECFetcherApp:
         ).start()
 
     def _preview_scan_worker(self, ticker: str, identity: str):
-        """Background thread: call preview_sheets() and push result to queue."""
+        """Background thread: call preview_sheets() and push result to queue.
+
+        2026-08-18 補上耗時 log（TODO E3）：CTH 回報「第一次按只顯示代號，第二
+        次才查到期間」，但實際模擬點擊測試（含真的打 EDGAR）第一次就正常顯示，
+        根因懷疑是 CTH 那台機器上第一次連線特別慢（防火牆/代理偵測之類，這邊
+        環境重現不了）。原本這段完全沒寫 log，出事只能用猜的。現在起訖都記一
+        行，耗時異常長的話 `logs/app.log` 就看得出來，不用再靠使用者口述秒數。
+        """
+        _write_log_header(f"查可用期間 {ticker}")
+        t_start = time.time()
         try:
             from fetcher_gaap import preview_sheets
             result = preview_sheets(ticker, identity)
+            elapsed = time.time() - t_start
+            _write_log(f"{ticker} 查可用期間完成，耗時 {elapsed:.1f} 秒", "OK")
             self.msg_queue.put(("preview_scan_done", result))
         except Exception as e:
+            elapsed = time.time() - t_start
             # 不把 str(e) 原文丟給使用者——edgartools 的 CompanyNotFoundError 訊息
             # 挾帶 "Tip: Search by name with find_company(...)" 這種給開發者看的 API
             # 建議，使用者看了只會更困惑。只留類型名，UI 端自己組使用者看得懂的話。
+            # log 檔不受這個限制，寫完整例外內容方便事後查根因。
+            _write_log(f"{ticker} 查可用期間失敗，耗時 {elapsed:.1f} 秒 -> {type(e).__name__}: {e}", "ERROR")
             self.msg_queue.put(("preview_scan_error", (ticker, type(e).__name__)))
 
     _FIXED_SHEETS = frozenset({"Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"})
@@ -1782,16 +1975,22 @@ class SECFetcherApp:
     #
     # 原本的解法是面板展開/收合時把視窗在 700x650 與 700x800 之間切換。那會讓
     # 視窗在掃描完成的瞬間自己長高 150px，CTH 回報的「視窗現在很高」就是掃完
-    # 之後的那個狀態。現在改成**單一尺寸、永不跳動**，靠三件事把高度需求壓下來：
+    # 之後的那個狀態。改成**單一尺寸、永不跳動**，靠三件事把高度需求壓下來：
     #
-    #   1. 寬度 700 -> 900，可選 Sheet 面板從 3 欄改 4 欄
-    #   2. 面板的固定高度容器 90px -> 60px（4 欄之後兩列就放得下 8 張 sheet，
-    #      再多還是可以捲，不會撐開視窗）
-    #   3. 總高度取 720：面板展開時 log 仍有 4~5 行可視，收合時約 9 行
+    #   1. 寬度改算比例後普遍比舊版 900 寬，可選 Sheet 面板維持 4 欄
+    #   2. 面板的固定高度容器 60px（4 欄排得下 8 張 sheet，再多還是可以捲，
+    #      不會撐開視窗）
+    #   3. 高度改算比例（見 __init__）：2026-08-18 併入 E16 修正後量測，
+    #      Tab1 實際內容需要 ~414px（比舊版設計時的 343px 高，這段期間陸續加了
+    #      SEC Identity 警告、輸出設定「設為預設」說明等新行），拉高視窗才能讓
+    #      log 區不要被壓縮回原本的 4~5 行
     #
-    # 這兩個值是 fit_geometry 的輸入，實際擺出來的尺寸在小螢幕上會被縮。
-    _WIN_W = 900
-    _WIN_H = 720
+    # 下面四個是 __init__ 算 _WIN_W/_WIN_H 用的比例與夾限（clamp），不是視窗本身
+    # 的尺寸——實際尺寸依螢幕大小算，小螢幕會自動縮小，大螢幕不會無限撐大。
+    _WIN_W_RATIO = 2 / 3
+    _WIN_W_MIN, _WIN_W_MAX = 900, 1300
+    _WIN_H_RATIO = 0.8
+    _WIN_H_MIN, _WIN_H_MAX = 780, 900
 
     def _build_sheet_panel(self, sheet_names: list[str]):
         """Populate sheet selection panel with checkboxes. Fixed sheets are disabled."""
@@ -1834,6 +2033,8 @@ class SECFetcherApp:
         self.is_running = True
         self.btn_run_single.config(state="disabled")
         self.btn_run_batch.config(state="disabled")
+        if self._scan_btn:
+            self._scan_btn.config(state="disabled")
         threading.Thread(target=target, daemon=True).start()
 
     def _worker_single(self, ticker: str, fetch_gaap: bool, fetch_nongaap: bool,
@@ -2089,6 +2290,8 @@ class SECFetcherApp:
                     self.is_running = False
                     self.btn_run_single.config(state="normal")
                     self.btn_run_batch.config(state="normal")
+                    if self._scan_btn:
+                        self._scan_btn.config(state="normal")
                     if success:
                         self.btn_open_folder.pack(side="left")
                         self.progress_label.config(text=t("gui.status.done"))
