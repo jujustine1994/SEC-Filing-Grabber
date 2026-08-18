@@ -51,8 +51,12 @@
 
 ## 要傳給其他人用
 
-雙擊 `scripts\打包.bat`，會產出一個 zip（`dist\` 資料夾裡），對方解壓、雙擊
-`啟動器.bat`、一路按 Enter 就能裝好，不需要先裝 Python。
+`git clone` 這個 repo，對方雙擊 `啟動器.bat`、一路按 Enter 就能裝好，不需要
+先裝 Python。
+
+> 舊的 zip 打包方式（`scripts\打包.bat`）**暫停用**——當初是因為對方連不上
+> GitHub才改用 zip 傳送，現在恢復正常，改走 clone 就好。腳本保留著，之後又
+> 連不上再撿回來用，細節見 `docs/PACKAGING.md`。
 
 ## 給開發者 / skill 呼叫
 
