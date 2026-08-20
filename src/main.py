@@ -1703,10 +1703,24 @@ class SECFetcherApp:
 
         self._log(t("gui.compare.log_start", n=len(tickers)))
         self._set_progress(0, len(tickers), t("gui.compare.log_start", n=len(tickers)))
+
+        def _on_company_start(ticker, current, total):
+            self._log(t("gui.compare.log_fetching_ticker", ticker=ticker, current=current, total=total))
+            self._set_progress(current - 1, total, t("gui.compare.log_fetching_ticker",
+                                                      ticker=ticker, current=current, total=total))
+
+        def _on_filing_progress(current, total, label):
+            # 借用進度條顯示單一公司內部的逐份 filing 進度（跟 Tab1 GAAP 抓取
+            # 同一套手法）。離開這段之後 _on_company_start 下一次呼叫會自然把
+            # 刻度換回公司層級的大尺度，不用特地在這裡復原。
+            self._set_progress(current, total, label)
+
         try:
             result = build_comparison(
                 tickers, identity, metrics, frequency=frequency,
                 start_year=start_year, end_year=end_year,
+                on_company_start=_on_company_start,
+                progress_cb=_on_filing_progress,
             )
         except Exception as e:
             self.msg_queue.put(("compare_error", f"{type(e).__name__}{_exc_status(e)}"))

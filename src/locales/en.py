@@ -450,6 +450,7 @@ STRINGS: dict[str, str] = {
     'compare.xls.period_end': 'Period End',
     'compare.xls.timepoint': 'Date',
     'gui.compare.log_start': 'Fetching data for {n} companies...',
+    'gui.compare.log_fetching_ticker': '[{ticker}] fetching... ({current}/{total})',
     'gui.compare.log_company_failed': '[{ticker}] fetch failed, skipped -> {error_type}',
     'gui.compare.nothing_fetched': 'All companies failed to fetch, nothing to output',
     'gui.compare.log_done': 'Comparison Excel produced: {path}',

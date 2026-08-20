@@ -394,6 +394,7 @@ STRINGS: dict[str, str] = {
     "compare.xls.period_end": '期末結算日',
     "compare.xls.timepoint": '時間點',
     "gui.compare.log_start": '開始抓取 {n} 家公司資料...',
+    "gui.compare.log_fetching_ticker": '[{ticker}] 抓取中...（{current}/{total}）',
     "gui.compare.log_company_failed": '[{ticker}] 抓取失敗，跳過 -> {error_type}',
     "gui.compare.nothing_fetched": '所有公司都抓取失敗，沒有可輸出的資料',
     "gui.compare.log_done": '比較 Excel 已產出：{path}',

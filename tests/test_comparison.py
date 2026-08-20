@@ -113,3 +113,51 @@ def test_build_comparison_filters_by_year_range():
         )
 
     assert list(result.metrics["Revenue"]["NVDA"].keys()) == ["FY2023Q1"]
+
+
+def test_build_comparison_calls_on_company_start_for_every_ticker_in_order():
+    """先前抓取跨公司比較時看不到進度像卡死——每家公司開始抓之前要先回報
+    一次，就算後面失敗了也要回報過（使用者才知道正在試哪一家）。"""
+    def fake_fetch(ticker, identity, **kwargs):
+        if ticker == "BADTICKER":
+            raise ValueError("boom")
+        return [_fake_q_table(ticker, [100.0], [50.0], ["2024-03-31"])]
+
+    calls = []
+
+    def on_company_start(ticker, current, total):
+        calls.append((ticker, current, total))
+
+    with patch("comparison.fetch_gaap_statements", side_effect=fake_fetch):
+        build_comparison(
+            ["NVDA", "BADTICKER"], "test@example.com", ["Revenue"],
+            frequency="quarterly", start_year=None, end_year=None,
+            on_company_start=on_company_start,
+        )
+
+    assert calls == [("NVDA", 1, 2), ("BADTICKER", 2, 2)]
+
+
+def test_build_comparison_forwards_filing_level_progress_from_fetcher_gaap():
+    """單一公司抓好幾份 filing 時要看得到細部進度，不是整段空白直到抓完。"""
+    import fetcher_gaap
+
+    def fake_fetch(ticker, identity, **kwargs):
+        fetcher_gaap._set_progress_total(2)
+        fetcher_gaap._tick_progress(f"{ticker} 第一份")
+        fetcher_gaap._tick_progress(f"{ticker} 第二份")
+        return [_fake_q_table(ticker, [100.0], [50.0], ["2024-03-31"])]
+
+    ticks = []
+
+    def progress_cb(current, total, label):
+        ticks.append((current, total, label))
+
+    with patch("comparison.fetch_gaap_statements", side_effect=fake_fetch):
+        build_comparison(
+            ["NVDA"], "test@example.com", ["Revenue"],
+            frequency="quarterly", start_year=None, end_year=None,
+            progress_cb=progress_cb,
+        )
+
+    assert ticks == [(1, 2, "NVDA 第一份"), (2, 2, "NVDA 第二份")]

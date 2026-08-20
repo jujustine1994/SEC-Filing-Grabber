@@ -417,6 +417,7 @@ STRINGS: dict[str, str] = {
     'compare.xls.period_end': '期末结算日',
     'compare.xls.timepoint': '时间点',
     'gui.compare.log_start': '开始抓取 {n} 家公司资料...',
+    'gui.compare.log_fetching_ticker': '[{ticker}] 抓取中...（{current}/{total}）',
     'gui.compare.log_company_failed': '[{ticker}] 抓取失败，跳过 -> {error_type}',
     'gui.compare.nothing_fetched': '所有公司都抓取失败，没有可输出的数据',
     'gui.compare.log_done': '比较 Excel 已产出：{path}',

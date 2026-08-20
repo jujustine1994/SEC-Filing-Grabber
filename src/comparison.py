@@ -10,9 +10,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Callable, Literal
 
-from fetcher_gaap import StatementTable, fetch_gaap_statements
+from fetcher_gaap import StatementTable, fetch_gaap_statements, report_progress
 from ratios import build_ratio_table, RATIO_DEFS
 
 
@@ -80,22 +80,38 @@ def build_comparison(
     end_year: int | None,
     max_filings: int = 80,
     max_annual_filings: int = 20,
+    on_company_start: Callable[[str, int, int], None] | None = None,
+    progress_cb: Callable[[int, int, str], None] | None = None,
 ) -> ComparisonResult:
-    """對每個 ticker 抓資料、抽出選定指標，重組成跨公司比較用的資料結構。"""
+    """對每個 ticker 抓資料、抽出選定指標，重組成跨公司比較用的資料結構。
+
+    `on_company_start(ticker, current, total)` 在每家公司開始抓之前呼叫一次
+    （就算後面失敗了也會呼叫過），讓呼叫端知道現在正在試哪一家，不會整段
+    安靜到看起來像卡死。`progress_cb(current, total, label)` 原樣轉給
+    `fetcher_gaap.report_progress()`，取得單一公司內部逐份 filing 的細部進度
+    （跟 Tab1 GAAP 抓取用的是同一套機制），一家公司要抓很多季時能看到進度
+    在動，不用等整家公司抓完才有畫面反應。
+    """
     result = ComparisonResult(metrics={name: {} for name in metric_names})
     sheet_name = _sheet_name_for(frequency)
 
-    for ticker in tickers:
-        ticker = ticker.strip().upper()
-        if not ticker:
-            continue
+    valid_tickers = [t.strip().upper() for t in tickers if t.strip()]
+    total = len(valid_tickers)
+
+    for i, ticker in enumerate(valid_tickers, start=1):
+        if on_company_start is not None:
+            try:
+                on_company_start(ticker, i, total)
+            except Exception:
+                pass  # 進度回報是錦上添花，回呼本身出錯不能拖垮抓取
         try:
-            tables = fetch_gaap_statements(
-                ticker, identity, max_filings=max_filings,
-                max_annual_filings=max_annual_filings,
-                fetch_quarterly=(frequency == "quarterly"),
-                fetch_annual=(frequency == "annual"),
-            )
+            with report_progress(progress_cb):
+                tables = fetch_gaap_statements(
+                    ticker, identity, max_filings=max_filings,
+                    max_annual_filings=max_annual_filings,
+                    fetch_quarterly=(frequency == "quarterly"),
+                    fetch_annual=(frequency == "annual"),
+                )
         except Exception as e:
             result.failures.append(CompanyFetchError(ticker=ticker, error_type=type(e).__name__))
             continue
@@ -109,8 +125,8 @@ def build_comparison(
         ratio_table = build_ratio_table(raw_table)
 
         period_map: dict[str, str] = {}
-        for i, label in enumerate(raw_table.quarter_labels):
-            end = raw_table.period_ends[i] if i < len(raw_table.period_ends or []) else ""
+        for j, label in enumerate(raw_table.quarter_labels):
+            end = raw_table.period_ends[j] if j < len(raw_table.period_ends or []) else ""
             period_map[label] = end
         result.period_ends[ticker] = period_map
 

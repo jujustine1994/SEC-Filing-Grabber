@@ -466,6 +466,7 @@ STRINGS: dict[str, str] = {
     "compare.xls.period_end": '決算期末日',
     "compare.xls.timepoint": '時点',
     "gui.compare.log_start": '{n} 社のデータを取得中...',
+    "gui.compare.log_fetching_ticker": '[{ticker}] 取得中...（{current}/{total}）',
     "gui.compare.log_company_failed": '[{ticker}] 取得失敗、スキップ -> {error_type}',
     "gui.compare.nothing_fetched": '全社の取得に失敗しました。出力するデータがありません',
     "gui.compare.log_done": '比較 Excel を生成しました：{path}',
