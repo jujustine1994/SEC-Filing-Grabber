@@ -113,31 +113,7 @@ E11. **關閉視窗前沒有未儲存提示**（2026-08-17 CTH 提出，先不�
      通常不算「設定」，多半不用比），也要查主視窗 `WM_DELETE_WINDOW` 現在有沒有
      處理常式，動手前先問清楚再做
 
-## F. 跨公司比較功能（CTH 2026-08-20 提出，設計已定案，**暫緩開發**——等 D0-1 Q4 驗證完成再動手）
-
-F1. **新增一個跨公司財務數據比較的 tag/功能**：讓使用者能同時比較多家公司的財務數據，輸出獨立的新格式 Excel（含表格＋圖表），跟現有單一公司抓取流程完全分開、互不影響。
-
-   - **卡點**：2026-08-20 brainstorming 談完設計後，CTH 決定**先等 D0-1（Q4 推算）完成驗證再開發這邊**——`fetch_gaap_statements()` 已經會自動把 Q4 推算值補進 `Data_Financials(Q)`（見 D0-1），但 TTM 類比率算出來的正確性還沒拿真實股票驗證過。技術上比較功能可以現在就直接吃已包含 Q4 的資料，不需要額外整合工作，純粹是 CTH 想保守一點先確認上游正確再蓋上面的功能。**下一步：等 D0-1 驗證段完成後回來這裡，直接進 `writing-plans` 產出實作計畫**，設計已經談定不用重談。
-
-   - **已定案設計（2026-08-20 brainstorming，多輪細修，未寫成正式 spec 文件）**：
-     - **架構**：新增 `src/comparison.py`（對每個 ticker 呼叫既有 `fetch_gaap_statements()`，取得季/年報表後用 `ratios.py::build_ratio_table()` 算比率，重組成 `{指標:{公司:{期間:值}}}`）+ `src/comparison_writer.py`（用 `openpyxl.chart`——目前專案完全沒用過——寫出新格式 Excel）。不動現有單一公司抓取流程。
-     - **GUI**：新增 Tab4「跨公司比較」，一顆按鈕跳出 `Toplevel` 選擇視窗，視窗分兩段：
-       1. **選公司**：ticker 輸入框，打字時即時比對 `company_cache.json`（Tab1/Watchlist 已在用的同一份 ticker→公司名快取）跳出自動完成建議；也支援一次貼上 `nvda, amd, dell, avgo` 逗號分隔清單，逐一比對快取，查不到的 ticker 標紅提示。選中的公司以「NVDA NVIDIA CORP ✕」這種 chip 形式列在下方，可個別移除。
-       2. **選指標**：期間起訖年＋季度／年度下拉切換（兩者都支援，年度不受 Q4 問題影響，季度沿用 D0-1 的推算值）；指標分類用**下拉選單**切換（損益表/資產負債表/現金流/比率各子分類），下方勾選框只顯示當前分類，勾選結果累加成「已選指標」chip 列表（切換分類不會清掉之前選的）。另外加一個**快照時間點輸入框**（如 `2025/12/31`，供 `Snapshot` sheet 用，見下）。
-     - **輸出格式**：檔名 `比較_A_B_C_YYYYMMDD.xlsx`，另存新輸出資料夾，不覆蓋 Tab1/2 輸出。內含：
-       - `Compare_Data`：唯一一張原始資料表，每個選定指標各一個區塊（列＝公司、欄＝期間標籤）往下疊；**每個區塊多一列「期末結算日」靜態文字**（如 `2023/03/31`，不是公式），供下面 `Snapshot` 的公式比對用（沿用 D0-5 已知限制記錄過的「期間標籤是公式讀不到快取值，要用靜態日期列當 key」pattern）
-       - `Snapshot`：**活的**，頂端一格黃底輸入格（如 `2025/12/31`），下方列＝公司、欄＝所有選定指標，用 `INDEX`/`MATCH` 公式對 `Compare_Data` 各區塊的「期末結算日」列取值，改輸入格 Excel 自動重算。**這份只給人在 Excel 裡看**，用真公式（不是寫死值），跟 `ratios.py` 的「不寫公式」慣例不同——因為這份沒有下游腳本要讀。
-       - `Snapshot_Manual`：跟 `Snapshot` 同樣的欄位結構（公司 × 指標），但**產出時是空白的**，供使用者手動把 `Snapshot` 算出來的值貼上（貼值不貼公式）存成一筆「凍結」記錄，以後如果要讓其他程式/skill 自動讀跨公司比較資料，讀這張，不是讀 `Snapshot`
-       - `Chart_<指標>` × N（每個選定指標各一張，只放圖表不放資料表，資料來源是 `Compare_Data` 對應區塊）：**一張圖，預設折線圖**（一條線一家公司，橫跨期間），使用者要看長條圖就在 Excel 裡對圖表右鍵「變更圖表類型」自己切，工具端不用同時產兩種圖檔
-     - **錯誤處理**：比照現有 `collect_gaps()` 原則——單一公司抓失敗不中斷整體比較，跳過並在 `Compare_Data`/log 標記，其餘公司照常輸出。
-     - **比率目錄擴充**：`RATIO_DEFS` 要加 category 欄位（成長／獲利能力／結構／現金流／營運效率／槓桿償債／報酬率／每股流動性），讓選擇視窗的分類下拉照 category 分組、以後加新比率不用改介面程式碼。確認要新增的比率（在現有 28 個之上）：
-       - 成長性：Gross Profit QoQ(%)、Operating Income QoQ(%)、EPS QoQ(%)、FCF YoY(%)、EBITDA YoY(%)
-       - 槓桿償債：Debt Ratio(%)＝Total Liabilities/Total Assets（CTH 要的「負債比」）、Debt-to-Equity(x)、Equity Multiplier(x)＝Total Assets/Equity、LT Debt to Capital(%)
-       - 現金流：Operating CF Margin(%)、OCF/Net Income(x)
-       - 營運效率：Asset Turnover(x)、Inventory Turnover(x)、Receivables Turnover(x)
-       - 結構／規模：D&A/Revenue(%)（CTH 要的「折舊佔營收比率」）、EBITDA($)、Total Debt($)、Net Debt($)、Working Capital($)、Cash Ratio(x)、COGS Ratio(%)
-       - 報酬率（近似值，公式為業界慣用簡化版非嚴謹版）：ROIC(%) ≈ Operating Income×(1−有效稅率)/(Total Debt+Equity−Cash)
-     - **明確排除**：P/E、EV/EBITDA、P/B 等估值倍數，因為需要股價/市值資料，工具目前完全不抓市場數據。CTH 決定記進 TODO 但不併入這次範圍——見下方 F2。
+## F. 跨公司比較功能的延伸需求
 
 F2. **估值倍數（P/E、EV/EBITDA、P/B 等）**（2026-08-20 CTH 提出，記錄用，未確認方向）
    - 前提：需要先有股價/市值資料來源，工具目前完全沒有市場數據，是比 F1 更大的擴充（要接股價 API/資料源）

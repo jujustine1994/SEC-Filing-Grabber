@@ -10,6 +10,28 @@
 ## 功能清單
 
 ### 已完成
+- [x] **跨公司財務比較功能（2026-08-20，TODO F1，CTH 提出）**：新增 Tab4
+      「跨公司比較」，可同時選多家公司、多個財務指標，輸出獨立的新格式
+      Excel，跟現有單一公司抓取流程完全分開。架構：`src/comparison.py`
+      對每個 ticker 呼叫既有 `fetch_gaap_statements()`，用
+      `ratios.py::build_ratio_table()` 算比率後重組成
+      `{指標:{公司:{期間:值}}}`；`src/comparison_writer.py` 用
+      `openpyxl.chart`（本專案首次使用）寫出 `Compare_Data`（原始資料，
+      每指標一區塊，帶靜態「期末結算日」列）／`Snapshot`（活的，
+      `INDEX`/`MATCH` 公式對日期輸入格即時算快照，黃底提示可編輯）／
+      `Snapshot_Manual`（空白，供人工貼值凍結，給未來程式讀）／
+      `Chart_<指標>`（每指標一張折線圖，長條圖靠 Excel 原生「變更圖表
+      類型」切換，不重複產圖）。Tab4 選擇視窗支援公司 ticker 自動完成
+      （沿用 `company_cache.json`）＋逗號批次貼上、指標分類下拉（跨分類
+      累加勾選）、季度/年度切換。`ratios.py` 的 `RATIO_DEFS` 加上
+      category 欄位（英文機器鍵，供分類下拉分組），新增 21 個比率
+      （Debt Ratio、D&A/Revenue、EBITDA($mm)、ROIC 等）。
+      `excel_formatter.py` 新增 `($mm)` 單位後綴與可共用的
+      `unit_format_for()`。新增測試：`test_comparison.py`（5）、
+      `test_comparison_writer.py`（10）、`ratios.py`/`excel_formatter.py`
+      各自補測試，全數通過；拿 NVDA/AMD 真實資料端對端驗證過。設計文件
+      見 `docs/superpowers/specs/2026-08-20-cross-company-comparison-design.md`，
+      實作計畫見 `docs/superpowers/plans/2026-08-20-cross-company-comparison.md`
 - [x] **`Data_Financials(Q)` 補上 Q4（2026-08-20，TODO D0-1，CTH 提出「Q4
       資料不見」）**：SEC 沒有 Q4 的 10-Q，公司只交 Q1/Q2/Q3，過去
       `Data_Financials(Q)` 因此永遠缺 Q4，連帶 TTM 類比率（ROE／ROA／FCF per
