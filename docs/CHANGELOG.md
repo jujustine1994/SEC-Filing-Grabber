@@ -10,6 +10,18 @@
 ## 功能清單
 
 ### 已完成
+- [x] **`Data_Financials(Q)` 補上 Q4（2026-08-20，TODO D0-1，CTH 提出「Q4
+      資料不見」）**：SEC 沒有 Q4 的 10-Q，公司只交 Q1/Q2/Q3，過去
+      `Data_Financials(Q)` 因此永遠缺 Q4，連帶 TTM 類比率（ROE／ROA／FCF per
+      Share／淨負債EBITDA）湊不到連續四季，多半是空的。`fetcher_gaap.py`
+      新增 `_synthesize_q4()`：有 10-K 年報可用時，IS/CF（流量項）用
+      「年報 − Q1 − Q2 − Q3」反推，BS（存量項）直接取年報值。只補模板列，
+      overflow 列（公司特有科目，季報/年報列序不保證對齊）留空；只抓季報
+      不抓年報時優雅跳過；不處理 NG/segment 表；Excel 上不特別標示 Q4 為
+      推算值。細節見 `docs/ARCHITECTURE.md`「Q4 推算」章節。7 個新測試
+      （`tests/test_fetcher_gaap.py`），156 個 fetcher_gaap 測試、848 個
+      非 live 測試、906 個含真連線 SEC EDGAR 的 live 測試（NVDA/AVGO/PLTR/
+      ARLO 等）全過，0 failed
 - [x] **輸出設定「設為預設」按鈕說明、SEC Identity 為何要填（2026-08-18，
       TODO E17/E18）**：Tab1 輸出設定的「設為預設」按鈕原本沒有任何說明，
       不知道是設定什麼，下方加一行固定顯示的灰字說明（只套用這次執行、按了

@@ -22,6 +22,7 @@ from fetcher_gaap import (
     _build_bs_table,
     _build_cf_table,
     _merge_financials,
+    _synthesize_q4,
     _ytd_col,
     _prev_quarter_label,
     _is_nongaap_label,
@@ -535,6 +536,122 @@ def test_merge_financials_section_headers_have_none_values():
     header_idx = merged.concepts.index("Income Statement")
     assert merged.values[header_idx] == [None]
     assert merged.labels[header_idx] == ""
+
+
+# ── _synthesize_q4 ────────────────────────────────────────────────────────────
+
+def test_synthesize_q4_flow_derives_annual_minus_q1q2q3():
+    """IS/CF (flow) rows: Q4 = annual − Q1 − Q2 − Q3."""
+    q_tbl = StatementTable(
+        sheet_name="Data_IS",
+        quarter_labels=["FY2024Q1", "FY2024Q2", "FY2024Q3"],
+        filing_dates=["2024-05-01", "2024-08-01", "2024-11-01"],
+        concepts=["Revenue"], values=[[100.0, 110.0, 120.0]],
+    )
+    ann_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024"], filing_dates=["2025-02-01"],
+        concepts=["Revenue"], values=[[500.0]],
+    )
+    result = _synthesize_q4(q_tbl, ann_tbl, n_template_rows=1, is_balance=False)
+    assert "FY2024Q4" in result.quarter_labels
+    idx = result.quarter_labels.index("FY2024Q4")
+    assert result.values[0][idx] == 500.0 - 100.0 - 110.0 - 120.0
+
+
+def test_synthesize_q4_balance_uses_annual_value_directly():
+    """BS (point-in-time) rows: Q4 = annual value as-is, no subtraction."""
+    q_tbl = StatementTable(
+        sheet_name="Data_BS", quarter_labels=["FY2024Q1"], filing_dates=["2024-05-01"],
+        concepts=["Total Assets"], values=[[1000.0]],
+    )
+    ann_tbl = StatementTable(
+        sheet_name="Data_BS", quarter_labels=["FY2024"], filing_dates=["2025-02-01"],
+        concepts=["Total Assets"], values=[[5000.0]],
+    )
+    result = _synthesize_q4(q_tbl, ann_tbl, n_template_rows=1, is_balance=True)
+    idx = result.quarter_labels.index("FY2024Q4")
+    assert result.values[0][idx] == 5000.0
+
+
+def test_synthesize_q4_skipped_when_quarters_incomplete():
+    """Missing Q3 (or any of Q1-Q3) means Q4 can't be derived for flow statements."""
+    q_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024Q1", "FY2024Q2"],
+        filing_dates=["2024-05-01", "2024-08-01"],
+        concepts=["Revenue"], values=[[100.0, 110.0]],
+    )
+    ann_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024"], filing_dates=["2025-02-01"],
+        concepts=["Revenue"], values=[[500.0]],
+    )
+    result = _synthesize_q4(q_tbl, ann_tbl, n_template_rows=1, is_balance=False)
+    assert "FY2024Q4" not in result.quarter_labels
+
+
+def test_synthesize_q4_does_not_overwrite_existing_q4():
+    """If a Q4 column somehow already exists, leave it untouched."""
+    q_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024Q4"], filing_dates=["2025-01-15"],
+        concepts=["Revenue"], values=[[999.0]],
+    )
+    ann_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024"], filing_dates=["2025-02-01"],
+        concepts=["Revenue"], values=[[500.0]],
+    )
+    result = _synthesize_q4(q_tbl, ann_tbl, n_template_rows=1, is_balance=True)
+    idx = result.quarter_labels.index("FY2024Q4")
+    assert result.values[0][idx] == 999.0
+    assert result.quarter_labels.count("FY2024Q4") == 1
+
+
+def test_synthesize_q4_no_annual_data_returns_unchanged():
+    q_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024Q1"], filing_dates=["2024-05-01"],
+        concepts=["Revenue"], values=[[100.0]],
+    )
+    ann_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=[], filing_dates=[],
+        concepts=[], values=[],
+    )
+    result = _synthesize_q4(q_tbl, ann_tbl, n_template_rows=1, is_balance=False)
+    assert result.quarter_labels == ["FY2024Q1"]
+
+
+def test_synthesize_q4_overflow_rows_get_none():
+    """Rows beyond n_template_rows (overflow) are extended with None, not derived."""
+    q_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024Q1", "FY2024Q2", "FY2024Q3"],
+        filing_dates=["2024-05-01", "2024-08-01", "2024-11-01"],
+        concepts=["Revenue", "SomeOverflowConcept"],
+        values=[[100.0, 110.0, 120.0], [1.0, 2.0, 3.0]],
+    )
+    ann_tbl = StatementTable(
+        sheet_name="Data_IS", quarter_labels=["FY2024"], filing_dates=["2025-02-01"],
+        concepts=["Revenue"], values=[[500.0]],
+    )
+    result = _synthesize_q4(q_tbl, ann_tbl, n_template_rows=1, is_balance=False)
+    idx = result.quarter_labels.index("FY2024Q4")
+    assert result.values[1][idx] is None
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+@patch("fetcher_gaap.load_overrides", return_value={})
+def test_fetch_gaap_synthesizes_q4_in_quarterly_sheet(mock_ov, mock_id, mock_co):
+    """Data_Financials(Q) should gain a Q4 column derived from the 10-K annual filing."""
+    q1 = _make_filing(period_col="2025-03-29 (Q1)", val=100.0, filing_date="2025-04-30")
+    q2 = _make_filing(period_col="2025-06-28 (Q2)", val=110.0, filing_date="2025-07-30")
+    q3 = _make_filing(period_col="2025-09-27 (Q3)", val=120.0, filing_date="2025-10-30")
+    k = _make_filing(period_col="2025-12-27 (FY)", val=500.0, filing_date="2026-02-01")
+    mock_co.return_value = _make_mock_company_fgs(q_filings=[q1, q2, q3], k_filings=[k])
+
+    tables = fetch_gaap_statements("TEST", "Test test@test.com")
+    fin_tbl = next(t for t in tables if t.sheet_name == "Data_Financials(Q)")
+
+    assert "FY2025Q4" in fin_tbl.quarter_labels
+    idx = fin_tbl.quarter_labels.index("FY2025Q4")
+    rev_row = fin_tbl.concepts.index("Revenue")
+    assert fin_tbl.values[rev_row][idx] == 500.0 * 10 - 100.0 * 10 - 110.0 * 10 - 120.0 * 10
 
 
 def test_build_is_table_populates_labels():

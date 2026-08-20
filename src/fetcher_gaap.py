@@ -1646,6 +1646,90 @@ def _merge_financials(is_tbl: StatementTable,
     )
 
 
+# ── Q4 synthesis (D0-1, 2026-08-20 CTH 決定要修) ─────────────────────────────
+#
+# SEC 沒有 Q4 的 10-Q——公司只交 Q1/Q2/Q3，Q4 數字要嘛在 10-K 年報裡，要嘛靠推算。
+# 有年報（10-K）可用時，用年度值反推單季 Q4：
+#   IS/CF（流量項）：Q4 = 年報 FY 值 − Q1 − Q2 − Q3
+#   BS（存量項，資產負債表本來就是年底時點數字）：Q4 = 年報 FY 值直接取用，不相減
+#
+# 只處理模板列（`n_template_rows` 以內）——overflow 列（公司特有科目）在季報
+# 與年報兩邊出現的順序不保證對齊，沒有可靠的列對應，Q4 一律留 None。
+def _synthesize_q4(q_tbl: StatementTable, ann_tbl: StatementTable,
+                    n_template_rows: int, is_balance: bool) -> StatementTable:
+    """Insert a synthesized Q4 column into q_tbl for each fiscal year covered by ann_tbl.
+
+    Skips a fiscal year when:
+      - Q4 already exists in q_tbl (never overwrite real data)
+      - is_balance=False and Q1/Q2/Q3 aren't all present in q_tbl
+      - the derived column would be entirely None
+
+    Returns q_tbl unchanged (same object) if ann_tbl has no annual periods.
+    """
+    if not ann_tbl.quarter_labels:
+        return q_tbl
+
+    q_idx = {q: i for i, q in enumerate(q_tbl.quarter_labels)}
+    new_labels = list(q_tbl.quarter_labels)
+    new_dates = list(q_tbl.filing_dates)
+    new_ends = list(q_tbl.period_ends) if q_tbl.period_ends else [""] * len(new_labels)
+    new_values = [list(row) for row in q_tbl.values]
+    added = False
+
+    for fy_i, fy_label in enumerate(ann_tbl.quarter_labels):
+        if "Q" in fy_label:
+            continue   # not a pure FY label (shouldn't normally happen for an annual table)
+        q4_label = f"{fy_label}Q4"
+        if q4_label in q_idx:
+            continue
+
+        if is_balance:
+            col_vals = [ann_tbl.values[r][fy_i] if r < len(ann_tbl.values) else None
+                        for r in range(n_template_rows)]
+        else:
+            q1, q2, q3 = f"{fy_label}Q1", f"{fy_label}Q2", f"{fy_label}Q3"
+            if not (q1 in q_idx and q2 in q_idx and q3 in q_idx):
+                continue
+            i1, i2, i3 = q_idx[q1], q_idx[q2], q_idx[q3]
+            col_vals = []
+            for r in range(n_template_rows):
+                fy_val = ann_tbl.values[r][fy_i] if r < len(ann_tbl.values) else None
+                v1 = q_tbl.values[r][i1] if r < len(q_tbl.values) else None
+                v2 = q_tbl.values[r][i2] if r < len(q_tbl.values) else None
+                v3 = q_tbl.values[r][i3] if r < len(q_tbl.values) else None
+                if fy_val is None or v1 is None or v2 is None or v3 is None:
+                    col_vals.append(None)
+                else:
+                    col_vals.append(fy_val - v1 - v2 - v3)
+
+        if all(v is None for v in col_vals):
+            continue
+
+        new_labels.append(q4_label)
+        new_dates.append(ann_tbl.filing_dates[fy_i] if fy_i < len(ann_tbl.filing_dates) else "")
+        ann_end = (ann_tbl.period_ends[fy_i]
+                   if ann_tbl.period_ends and fy_i < len(ann_tbl.period_ends) else "")
+        new_ends.append(ann_end)
+        for r in range(len(new_values)):
+            new_values[r].append(col_vals[r] if r < len(col_vals) else None)
+        added = True
+
+    if not added:
+        return q_tbl
+
+    order = sorted(range(len(new_labels)), key=lambda i: new_labels[i])
+    return StatementTable(
+        sheet_name=q_tbl.sheet_name,
+        quarter_labels=[new_labels[i] for i in order],
+        filing_dates=[new_dates[i] for i in order],
+        period_ends=[new_ends[i] for i in order],
+        concepts=q_tbl.concepts,
+        values=[[row[i] for i in order] for row in new_values],
+        ticker=q_tbl.ticker,
+        labels=q_tbl.labels,
+    )
+
+
 # ── BS/CF: dynamic row-union fetch (kept for reference / fallback) ──────────
 
 def _build_dynamic_table(filings, stmt_method: str, sheet_name: str,
@@ -2060,6 +2144,14 @@ def fetch_gaap_statements(ticker: str, identity: str,
 
     tables: list[StatementTable] = []
 
+    # 年報表要先建好——季報表要用它反推 Q4（見 _synthesize_q4）。
+    is_ann = bs_ann = cf_ann = None
+    is_ann_ng = bs_ann_ng = cf_ann_ng = None
+    if fetch_annual and filings_k:
+        is_ann, is_ann_ng = _build_is_table(filings_k, max_annual_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
+        bs_ann, bs_ann_ng = _build_bs_table(filings_k, max_annual_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
+        cf_ann, cf_ann_ng = _build_cf_table(filings_k, max_annual_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
+
     if fetch_quarterly and filings_q:
         is_tbl, is_ng = _build_is_table(filings_q, max_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
         bs_tbl, bs_ng = _build_bs_table(filings_q, max_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
@@ -2110,6 +2202,12 @@ def fetch_gaap_statements(ticker: str, identity: str,
                     no_key = "" if ai_config.get("api_key") else "（未設 AI API key，E2 診斷已跳過）"
                     print(f"[{ticker}] 警告：{remaining} 在 EDGAR 中無對應概念{no_key}。", file=sys.stderr)
 
+        # Q4 補值（D0-1）：有年報可用時，用年度值反推單季 Q4。
+        if is_ann is not None:
+            is_tbl = _synthesize_q4(is_tbl, is_ann, len(IS_TEMPLATE), is_balance=False)
+            bs_tbl = _synthesize_q4(bs_tbl, bs_ann, len(BS_TEMPLATE), is_balance=True)
+            cf_tbl = _synthesize_q4(cf_tbl, cf_ann, len(CF_TEMPLATE), is_balance=False)
+
         quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)", fy_end_month=fy_end_month)
         tables.append(quarterly_tbl)
         if any(tbl.concepts for tbl in [is_ng, bs_ng, cf_ng]):
@@ -2117,9 +2215,6 @@ def fetch_gaap_statements(ticker: str, identity: str,
             tables.append(ng_q_tbl)
 
     if fetch_annual and filings_k:
-        is_ann, is_ann_ng = _build_is_table(filings_k, max_annual_filings, is_overrides=overrides.get("IS", {}), fy_end_month=fy_end_month)
-        bs_ann, bs_ann_ng = _build_bs_table(filings_k, max_annual_filings, bs_overrides=overrides.get("BS", {}), fy_end_month=fy_end_month)
-        cf_ann, cf_ann_ng = _build_cf_table(filings_k, max_annual_filings, cf_overrides=overrides.get("CF", {}), fy_end_month=fy_end_month)
         annual_tbl = _merge_financials(is_ann, bs_ann, cf_ann, sheet_name="Data_Financials(Y)", fy_end_month=fy_end_month)
         tables.append(annual_tbl)
         if any(tbl.concepts for tbl in [is_ann_ng, bs_ann_ng, cf_ann_ng]):

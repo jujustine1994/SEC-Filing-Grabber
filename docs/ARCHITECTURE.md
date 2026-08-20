@@ -47,17 +47,25 @@
 使用者輸入 Ticker（Tab 1）或從 Watchlist 選取（Tab 2）
     ↓
 fetcher_gaap.py
-    ├─ _build_is_table()  → (gaap_tbl, ng_tbl)  IS 22-row 模板 + GAAP/NG overflow
-    ├─ _build_bs_table()  → (gaap_tbl, ng_tbl)  BS 41-row 模板 + GAAP/NG overflow
-    ├─ _build_cf_table()  → (gaap_tbl, ng_tbl)  CF 26-row 模板 + GAAP/NG overflow
+    ├─ _build_is_table(filings_k)  → is_ann（年報，10-K，先建——季報 Q4 要用它反推）
+    ├─ _build_bs_table(filings_k)  → bs_ann
+    ├─ _build_cf_table(filings_k)  → cf_ann
+    │
+    ├─ _build_is_table(filings_q)  → (gaap_tbl, ng_tbl)  IS 22-row 模板 + GAAP/NG overflow
+    ├─ _build_bs_table(filings_q)  → (gaap_tbl, ng_tbl)  BS 41-row 模板 + GAAP/NG overflow
+    ├─ _build_cf_table(filings_q)  → (gaap_tbl, ng_tbl)  CF 26-row 模板 + GAAP/NG overflow
     │
     ├─ override_engine.check_key_rows()  → 找全 None 的 key rows
     ├─ override_engine.run_diagnosis()   → E1 fuzzy + E2 LLM → save_overrides()
     │   （有新 override 時重跑三個 build 函式）
     │
-    ├─ _merge_financials(is, bs, cf)    → Data_Financials(Q)    ← 主輸出
+    ├─ _synthesize_q4(is_tbl, is_ann, …)  → 補季報表的 Q4 欄（見下方「Q4 推算」）
+    ├─ _synthesize_q4(bs_tbl, bs_ann, …)
+    ├─ _synthesize_q4(cf_tbl, cf_ann, …)
+    │
+    ├─ _merge_financials(is, bs, cf)    → Data_Financials(Q)    ← 主輸出，含推算的 Q4
     ├─ _merge_financials(ng_is, ng_bs, ng_cf) → Data_Financials_NG(Q)  ← 有 NG overflow 時
-    ├─ _merge_financials(annual...)     → Data_Financials(Y)    ← 10-K
+    ├─ _merge_financials(is_ann, bs_ann, cf_ann) → Data_Financials(Y) ← 10-K
     ├─ _merge_financials(ng annual...)  → Data_Financials_NG(Y) ← 有 NG overflow 時
     ├─ _build_segment_tables()          → Data_Seg_* (多個)
     └─ _build_meta_table()              → Data_Meta
@@ -489,6 +497,43 @@ Index 那份最重要——GUI 的 log 關掉就沒了，而使用者真正會�
 - **日期區間 / 報表類型 / 快速掃描 UI（Session 16，2026-04-29）**：Tab 1 / Tab 2 加入起始年、結束年、報表類型（Q/Y/Both）、快速掃描下拉選單，inline 進階設定
 - **start_year > end_year 驗證（Session 17，2026-05-03）**：Tab 1 + Tab 2 各加 guard，避免區間反轉
 - **Index Sheet 品質檢測（Session 18，2026-05-05）**：`_compute_quality()` + `ALL_KEY_ROWS`；Index 新增 E 欄完成度分數（`9/9 ✓` / `N/9 ⚠`）與表格下方品質明細區塊
+- **Q4 推算（D0-1，2026-08-20）**：`Data_Financials(Q)` 補上原本永遠缺的 Q4 欄。細節見下方「Q4 推算」獨立章節
+
+## Q4 推算（D0-1，2026-08-20）
+
+**模組位置**：`src/fetcher_gaap.py` 的 `_synthesize_q4()` 函式（`_merge_financials()` 定義之後），
+由 `fetch_gaap_statements()` 呼叫，是 GAAP fetcher 內部的一步，**不是獨立模組、沒有對外的
+CLI 子指令**——外部想拿到含 Q4 的季度資料，一樣走既有的 `fetch_gaap_statements()` /
+`cli.py gaap` 路徑即可，Q4 欄位會自動包含在 `Data_Financials(Q)` 裡，不需要另外呼叫。
+
+**背景**：SEC 沒有 Q4 的 10-Q——公司只交 Q1/Q2/Q3，Q4 數字本來要嘛在 10-K 年報裡、要嘛
+沒有。`Data_Financials(Q)` 過去因此永遠沒有 Q4 欄，連帶 TTM 類比率（ROE／ROA／FCF per
+Share／淨負債EBITDA）湊不到連續四季，多半是空的。
+
+**做法**：有年報（10-K）可用時，用年度值反推單季 Q4：
+- IS/CF（流量項）：`Q4 = 年報 FY 值 − Q1 − Q2 − Q3`
+- BS（存量項，資產負債表本來就是年底時點數字）：`Q4 = 年報 FY 值`，直接取用不相減
+
+只處理模板列（`IS_TEMPLATE`／`BS_TEMPLATE`／`CF_TEMPLATE` 涵蓋的固定科目），overflow 列
+（公司特有科目）Q4 一律留 `None`——季報與年報兩邊 overflow 列的出現順序不保證對齊，沒有
+可靠的列對應。`fetch_annual=False`（只抓季報不抓年報）時優雅跳過，不影響既有行為；
+NG／segment 表不處理。Excel 上不特別標示 Q4 為推算值（跟既有 Q2/Q3 YTD 拆算的處理方式
+一致，見 `Data_CF` 的 YTD 相減邏輯）。
+
+**呼叫順序**（`fetch_gaap_statements()` 內）：年報 IS/BS/CF 表要先建好（`is_ann`／`bs_ann`／
+`cf_ann`），季報表才能用它們反推 Q4，所以年報的 build 呼叫被移到季報之前，但輸出到
+`tables` 列表的順序不變（`Data_Financials(Q)` 仍先於 `Data_Financials(Y)`）。
+
+**測試**：`tests/test_fetcher_gaap.py` 的 `_synthesize_q4` 單元測試（6 個，涵蓋相減/直接取值/
+季度不齊全跳過/不覆蓋既有值/無年報時原樣返回/overflow 留空）+ 1 個 `fetch_gaap_statements`
+整合測試。全套 156 個 fetcher_gaap 測試、848 個非 live 測試、906 個含真連線 SEC EDGAR 的
+live 測試（NVDA/AVGO/PLTR/ARLO 等）皆通過，0 failed。
+
+**已驗證（2026-08-20）**：實測 NVDA/AVGO/PLTR 真連線 SEC EDGAR，`ratios.py::build_ratio_table()`
+算出的 ROE (%)／ROA (%) 從第一個補上的 Q4 期開始正常出現非 None 值（三家皆 10~11/16 期），
+不再是原本 D0-1 記錄的「整列全空」。附帶發現 FCF per Share 三家仍有缺口，但根因是
+`Shares Outstanding` 資料本身缺期（PLTR 屬於下方「多股別公司抓不到流通股數」已知限制；
+NVDA/AVGO 缺口原因待查），與本次 Q4 修復無關，不在本次範圍內處理。
 
 ## Known Issues（已知限制，暫不修）
 
@@ -496,5 +541,4 @@ Index 那份最重要——GUI 的 log 關掉就沒了，而使用者真正會�
 - **金融股（GS/JPM）**：現行模板 BS/IS 部分空白，待獨立模板（已有 UI 警告）
 - **NG 分類誤判**：keyword-based 分類，label 含 "excluding" 的 GAAP 行可能誤進 NG sheet（可接受方向）
 - **Data_EPS_Recon 從未產生**：edgartools `eps_reconciliation` 對 NVDA/AAPL/MSFT 均回傳 None，非 XBRL-tagged 公司無解；待 edgartools 改善或改用 AI 解析方案
-- **`Data_Financials(Q)` 沒有 Q4**：Q4 沒有 10-Q，數字在 10-K 裡。連帶 TTM 類比率（ROE／ROA／FCF per Share／淨負債EBITDA）湊不到連續四季，多半是空的
 - **多股別公司抓不到流通股數**：PLTR／GOOGL／META 有 Class A/B/C，封面頁的 `dei:EntityCommonStockSharesOutstanding` 按股別分開標，`company.get_facts()` 取不到。連帶 BVPS、FCF per Share、流通股數 YoY 空白
