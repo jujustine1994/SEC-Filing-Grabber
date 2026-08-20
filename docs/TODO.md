@@ -3,6 +3,11 @@
 > **專案定位（2026-08-03 確立）**：這個程式只做一件事——**把 SEC EDGAR 的原始財務資料抓好**。
 > 後續的判讀、分析、報告一律交給外部 skill。任何「幫使用者判斷」的功能都不屬於本專案範圍。
 
+## 0. 最優先
+
+0-1. **`Data_Financials(Q)` 沒有 Q4** → 已移到 D0-1 決定要做，2026-08-20 CTH 確認做法並開始修復。
+   詳見 D0-1。
+
 ## B. Non-GAAP 改走 skill（下一階段，另開對話處理）
 
 B2. **skill 端由 Claude Code 抽取**，寫回 `nongaap_cache.json`（沿用現有格式）。下游的固定模板、殘差檢查、`Data_Ratios` 一行都不用改，只是把「誰來抽取」從 Gemini 換成 Claude
@@ -108,6 +113,36 @@ E11. **關閉視窗前沒有未儲存提示**（2026-08-17 CTH 提出，先不�
      通常不算「設定」，多半不用比），也要查主視窗 `WM_DELETE_WINDOW` 現在有沒有
      處理常式，動手前先問清楚再做
 
+## F. 跨公司比較功能（CTH 2026-08-20 提出，設計已定案，**暫緩開發**——等 D0-1 Q4 驗證完成再動手）
+
+F1. **新增一個跨公司財務數據比較的 tag/功能**：讓使用者能同時比較多家公司的財務數據，輸出獨立的新格式 Excel（含表格＋圖表），跟現有單一公司抓取流程完全分開、互不影響。
+
+   - **卡點**：2026-08-20 brainstorming 談完設計後，CTH 決定**先等 D0-1（Q4 推算）完成驗證再開發這邊**——`fetch_gaap_statements()` 已經會自動把 Q4 推算值補進 `Data_Financials(Q)`（見 D0-1），但 TTM 類比率算出來的正確性還沒拿真實股票驗證過。技術上比較功能可以現在就直接吃已包含 Q4 的資料，不需要額外整合工作，純粹是 CTH 想保守一點先確認上游正確再蓋上面的功能。**下一步：等 D0-1 驗證段完成後回來這裡，直接進 `writing-plans` 產出實作計畫**，設計已經談定不用重談。
+
+   - **已定案設計（2026-08-20 brainstorming，多輪細修，未寫成正式 spec 文件）**：
+     - **架構**：新增 `src/comparison.py`（對每個 ticker 呼叫既有 `fetch_gaap_statements()`，取得季/年報表後用 `ratios.py::build_ratio_table()` 算比率，重組成 `{指標:{公司:{期間:值}}}`）+ `src/comparison_writer.py`（用 `openpyxl.chart`——目前專案完全沒用過——寫出新格式 Excel）。不動現有單一公司抓取流程。
+     - **GUI**：新增 Tab4「跨公司比較」，一顆按鈕跳出 `Toplevel` 選擇視窗，視窗分兩段：
+       1. **選公司**：ticker 輸入框，打字時即時比對 `company_cache.json`（Tab1/Watchlist 已在用的同一份 ticker→公司名快取）跳出自動完成建議；也支援一次貼上 `nvda, amd, dell, avgo` 逗號分隔清單，逐一比對快取，查不到的 ticker 標紅提示。選中的公司以「NVDA NVIDIA CORP ✕」這種 chip 形式列在下方，可個別移除。
+       2. **選指標**：期間起訖年＋季度／年度下拉切換（兩者都支援，年度不受 Q4 問題影響，季度沿用 D0-1 的推算值）；指標分類用**下拉選單**切換（損益表/資產負債表/現金流/比率各子分類），下方勾選框只顯示當前分類，勾選結果累加成「已選指標」chip 列表（切換分類不會清掉之前選的）。另外加一個**快照時間點輸入框**（如 `2025/12/31`，供 `Snapshot` sheet 用，見下）。
+     - **輸出格式**：檔名 `比較_A_B_C_YYYYMMDD.xlsx`，另存新輸出資料夾，不覆蓋 Tab1/2 輸出。內含：
+       - `Compare_Data`：唯一一張原始資料表，每個選定指標各一個區塊（列＝公司、欄＝期間標籤）往下疊；**每個區塊多一列「期末結算日」靜態文字**（如 `2023/03/31`，不是公式），供下面 `Snapshot` 的公式比對用（沿用 D0-5 已知限制記錄過的「期間標籤是公式讀不到快取值，要用靜態日期列當 key」pattern）
+       - `Snapshot`：**活的**，頂端一格黃底輸入格（如 `2025/12/31`），下方列＝公司、欄＝所有選定指標，用 `INDEX`/`MATCH` 公式對 `Compare_Data` 各區塊的「期末結算日」列取值，改輸入格 Excel 自動重算。**這份只給人在 Excel 裡看**，用真公式（不是寫死值），跟 `ratios.py` 的「不寫公式」慣例不同——因為這份沒有下游腳本要讀。
+       - `Snapshot_Manual`：跟 `Snapshot` 同樣的欄位結構（公司 × 指標），但**產出時是空白的**，供使用者手動把 `Snapshot` 算出來的值貼上（貼值不貼公式）存成一筆「凍結」記錄，以後如果要讓其他程式/skill 自動讀跨公司比較資料，讀這張，不是讀 `Snapshot`
+       - `Chart_<指標>` × N（每個選定指標各一張，只放圖表不放資料表，資料來源是 `Compare_Data` 對應區塊）：**一張圖，預設折線圖**（一條線一家公司，橫跨期間），使用者要看長條圖就在 Excel 裡對圖表右鍵「變更圖表類型」自己切，工具端不用同時產兩種圖檔
+     - **錯誤處理**：比照現有 `collect_gaps()` 原則——單一公司抓失敗不中斷整體比較，跳過並在 `Compare_Data`/log 標記，其餘公司照常輸出。
+     - **比率目錄擴充**：`RATIO_DEFS` 要加 category 欄位（成長／獲利能力／結構／現金流／營運效率／槓桿償債／報酬率／每股流動性），讓選擇視窗的分類下拉照 category 分組、以後加新比率不用改介面程式碼。確認要新增的比率（在現有 28 個之上）：
+       - 成長性：Gross Profit QoQ(%)、Operating Income QoQ(%)、EPS QoQ(%)、FCF YoY(%)、EBITDA YoY(%)
+       - 槓桿償債：Debt Ratio(%)＝Total Liabilities/Total Assets（CTH 要的「負債比」）、Debt-to-Equity(x)、Equity Multiplier(x)＝Total Assets/Equity、LT Debt to Capital(%)
+       - 現金流：Operating CF Margin(%)、OCF/Net Income(x)
+       - 營運效率：Asset Turnover(x)、Inventory Turnover(x)、Receivables Turnover(x)
+       - 結構／規模：D&A/Revenue(%)（CTH 要的「折舊佔營收比率」）、EBITDA($)、Total Debt($)、Net Debt($)、Working Capital($)、Cash Ratio(x)、COGS Ratio(%)
+       - 報酬率（近似值，公式為業界慣用簡化版非嚴謹版）：ROIC(%) ≈ Operating Income×(1−有效稅率)/(Total Debt+Equity−Cash)
+     - **明確排除**：P/E、EV/EBITDA、P/B 等估值倍數，因為需要股價/市值資料，工具目前完全不抓市場數據。CTH 決定記進 TODO 但不併入這次範圍——見下方 F2。
+
+F2. **估值倍數（P/E、EV/EBITDA、P/B 等）**（2026-08-20 CTH 提出，記錄用，未確認方向）
+   - 前提：需要先有股價/市值資料來源，工具目前完全沒有市場數據，是比 F1 更大的擴充（要接股價 API/資料源）
+   - **待研究，未動手**，等 F1 做完再說
+
 ## 執行順序建議
 
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
@@ -122,6 +157,9 @@ D0-1. **`Data_Financials(Q)` 永遠沒有 Q4** → TTM 類比率算不出來。Q
    - 實測：NVDA/AVGO/PLTR 的 ROE／ROA／FCF per Share／淨負債EBITDA **整列全空**
    - 修法：Q4 = 年報 − Q1 − Q2 − Q3（流量項）＋ 資產負債表直接取 10-K。**要 CTH 決定做不做**
    - **研究記錄（2026-08-12）**：`fetcher_gaap.py` 目前只抓 `form="10-Q"`，Q4 標籤結構上就不存在；`ratios.py::_ttm()` 缺任一季就回 `None`（設計如此，不當 0 加總），窗口一跨到 Q4 就整列空。修法可仿照既有 Q2/Q3 YTD 拆算的 pattern，在 `_merge_financials` 後補一欄合成 Q4。**風險：中**——會碰核心合併流程；要處理「只抓季報沒抓年報」時優雅跳過、Non-GAAP/segment 不適用、override 套用順序。附帶好處：算出的 Q4 跟真實 10-K 的差額可以順便當資料品質檢查
+   - **2026-08-20 CTH 決定：要做**。做法確認：IS/CF 用「年報 − Q1 − Q2 − Q3」相減，BS 直接取年報值；Excel 上不特別標示 Q4 為推算值。
+   - **實作（2026-08-20）**：`fetcher_gaap.py` 新增 `_synthesize_q4()`，在 `fetch_gaap_statements()` 裡改成先建年報 IS/BS/CF 表（`is_ann`/`bs_ann`/`cf_ann`），再用它們反推季報表的 Q4 欄，最後才 merge 進 `Data_Financials(Q)`／`Data_Financials(Y)`。只補模板列，overflow 列（公司特有科目，季報/年報兩邊列序不保證對齊）留空。`fetch_annual=False`（只抓季報不抓年報）時優雅跳過，不影響既有行為。NG/segment 表不處理。7 個新測試見 `tests/test_fetcher_gaap.py`（`_synthesize_q4` 單元測試 + 一個 `fetch_gaap_statements` 整合測試），156 個既有測試全過。
+   - **待辦**：`ratios.py::_ttm()` 目前設計是「缺任一季就回 None」——Q4 補上後理論上 TTM 類比率應該能算出來了，但還沒針對這條路徑補測試驗證，也還沒拿真實股票（NVDA/AVGO/PLTR）實測 Excel 輸出確認 TTM 欄位真的填上了。**下一步要做這個驗證**。
 
 D0-2. **多股別公司抓不到期末流通股數**：PLTR／GOOGL／META `company.get_facts()` 裡 `dei:EntityCommonStockSharesOutstanding` **0 筆**（只有 `EntityPublicFloat`），因為 Class A/B/C 是分開標的。TSLA 61 筆、COHR 62 筆、BRK.B 7 筆正常。連帶 BVPS／FCF per Share／流通股數 YoY 空白。`output/_final/META.xlsx` 現在就有這個洞。
    - **研究記錄（2026-08-12）**：`fetcher_gaap.py` 只查單一 XBRL concept，多股別公司這欄位本來就是空的（各股別分開報）。修法要改成按股別分別抓再加總，但程式碼裡已有註解記錄過「連單一股別公司這欄位都不乾淨」的踩坑史（抓到的是財報日後幾週的股數，非期末當天）——多股別可能根本沒有乾淨來源。**風險：中偏大**，搞不好要接受「這幾家就是空」當已知限制，或退而求其次抓 `EntityPublicFloat` 換算（精確度打折）
@@ -139,3 +177,8 @@ D7. 套件汰換：`google-generativeai` 官方已終止支援（不再更新與
 
 D8. 金融股（GS/JPM 等）獨立模板：現行 IS/BS 模板對金融股部分欄位空白，需另建模板。低優先。
    - **研究記錄（2026-08-12）**：程式碼裡目前除了印一行警告訊息，**完全沒有任何金融股特殊處理**——現有科目對照表直接套用，對不上的欄位就是空，不是 bug 是模板天生沒設計給銀行股。真要做要重新研究銀行/券商專屬 US-GAAP 科目（存款、放款、備抵呆帳...），等於另建一整套模板。**風險：大**。這其實是「要不要用這工具抓銀行股」的產品決定，不是技術問題，建議先想清楚要不要再談技術
+
+D9. **外國私人發行人（Foreign Private Issuer）抓不到財報**（2026-08-20 CTH 回報）
+   - 現象：抓 NBIS（Nebius Group）出現 `[NBIS] 抓取失敗 -> ValueError`，GUI 只顯示例外類型不顯示訊息（避免洩漏 URL/key），看不出原因
+   - **研究記錄（2026-08-20）**：實際重現拿到完整訊息是 `fetcher_gaap.py:2030` 丟出的 `No 10-Q filings found for ticker 'NBIS'`。根因是 NBIS 這類外國私人發行人不申報 10-Q/10-K，改申報 **20-F**（年報）與 **6-K**（相當於季報/重大訊息），現有程式只查 `form="10-Q"` / `form="10-K"`，架構上就抓不到。不是 bug，是已知限制
+   - 要支援的話得另外解析 20-F/6-K 的 XBRL 結構（跟現有 10-Q/10-K 的科目對照、期間切分邏輯不保證通用），工程量不小。**有空再做，先記錄**
