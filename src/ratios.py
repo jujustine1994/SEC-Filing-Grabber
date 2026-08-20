@@ -169,130 +169,186 @@ def _avg(a: Any, b: Any) -> float | None:
 
 # ── 比率定義 ────────────────────────────────────────────────────────────────
 #
-# 每筆 = (顯示名稱含單位後綴, B 欄算法文字, 計算函式)
+# 每筆 = (顯示名稱含單位後綴, B 欄算法文字, category, 計算函式)
 # 計算函式簽名 fn(ctx, i) -> float | None，i 是欄索引（0 = 最舊一季）。
+# category 給跨公司比較的選擇視窗分組用（見 RATIO_CATEGORIES）。
 #
 # 要新增比率就加一行；順序即 sheet 上的列序。
 
-RatioDef = tuple[str, str, Callable[[Ctx, int], Any]]
+RatioDef = tuple[str, str, str, Callable[[Ctx, int], Any]]
+
+RATIO_CATEGORIES: list[str] = [
+    "成長性", "獲利能力", "結構", "現金流", "營運效率", "槓桿償債", "報酬率", "每股",
+]
 
 _DAYS_PER_QUARTER = 365.0 / 4.0
 
 RATIO_DEFS: list[RatioDef] = [
     # ── 成長 ────────────────────────────────────────────────────────────
-    ("Revenue YoY (%)", "Revenue[t] / Revenue[t-4] - 1",
+    ("Revenue YoY (%)", "Revenue[t] / Revenue[t-4] - 1", "成長性",
      lambda c, i: _growth(c, "Revenue", i, 4)),
-    ("Revenue QoQ (%)", "Revenue[t] / Revenue[t-1] - 1",
+    ("Revenue QoQ (%)", "Revenue[t] / Revenue[t-1] - 1", "成長性",
      lambda c, i: _growth(c, "Revenue", i, 1)),
-    ("Gross Profit YoY (%)", "Gross Profit[t] / Gross Profit[t-4] - 1",
+    ("Gross Profit YoY (%)", "Gross Profit[t] / Gross Profit[t-4] - 1", "成長性",
      lambda c, i: _growth(c, "Gross Profit", i, 4)),
-    ("Operating Income YoY (%)", "Operating Income[t] / Operating Income[t-4] - 1",
+    ("Operating Income YoY (%)", "Operating Income[t] / Operating Income[t-4] - 1", "成長性",
      lambda c, i: _growth(c, "Operating Income", i, 4)),
-    ("Net Income YoY (%)", "Net Income[t] / Net Income[t-4] - 1",
+    ("Net Income YoY (%)", "Net Income[t] / Net Income[t-4] - 1", "成長性",
      lambda c, i: _growth(c, "Net Income", i, 4)),
-    ("Net Income QoQ (%)", "Net Income[t] / Net Income[t-1] - 1",
+    ("Net Income QoQ (%)", "Net Income[t] / Net Income[t-1] - 1", "成長性",
      lambda c, i: _growth(c, "Net Income", i, 1)),
-    ("EPS YoY (%)", "Diluted EPS[t] / Diluted EPS[t-4] - 1",
+    ("EPS YoY (%)", "Diluted EPS[t] / Diluted EPS[t-4] - 1", "成長性",
      lambda c, i: _growth(c, "Diluted EPS", i, 4)),
-    ("Shares Outstanding YoY (%)", "Shares Outstanding[t] / Shares Outstanding[t-4] - 1",
+    ("Shares Outstanding YoY (%)", "Shares Outstanding[t] / Shares Outstanding[t-4] - 1", "成長性",
      lambda c, i: _growth(c, "Shares Outstanding", i, 4)),
+    ("Gross Profit QoQ (%)", "Gross Profit[t] / Gross Profit[t-1] - 1", "成長性",
+     lambda c, i: _growth(c, "Gross Profit", i, 1)),
+    ("Operating Income QoQ (%)", "Operating Income[t] / Operating Income[t-1] - 1", "成長性",
+     lambda c, i: _growth(c, "Operating Income", i, 1)),
+    ("EPS QoQ (%)", "Diluted EPS[t] / Diluted EPS[t-1] - 1", "成長性",
+     lambda c, i: _growth(c, "Diluted EPS", i, 1)),
+    ("FCF YoY (%)", "Free Cash Flow[t] / Free Cash Flow[t-4] - 1", "成長性",
+     lambda c, i: _growth(c, "Free Cash Flow", i, 4)),
+    ("EBITDA YoY (%)", "EBITDA[t] / EBITDA[t-4] - 1", "成長性",
+     lambda c, i: _ebitda_growth(c, i, 4)),
 
     # ── 利潤率 ──────────────────────────────────────────────────────────
-    ("Gross Margin (%)", "Gross Profit / Revenue",
+    ("Gross Margin (%)", "Gross Profit / Revenue", "獲利能力",
      lambda c, i: _pct(_safe_div(_at(c, "Gross Profit", i), _at(c, "Revenue", i)))),
-    ("Opex Ratio (%)", "Total Operating Expense / Revenue",
+    ("Opex Ratio (%)", "Total Operating Expense / Revenue", "獲利能力",
      lambda c, i: _pct(_safe_div(_at(c, "Total Operating Expense", i), _at(c, "Revenue", i)))),
-    ("R&D Ratio (%)", "R&D Expense / Revenue",
+    ("R&D Ratio (%)", "R&D Expense / Revenue", "獲利能力",
      lambda c, i: _pct(_safe_div(_at(c, "R&D Expense", i), _at(c, "Revenue", i)))),
-    ("SG&A Ratio (%)", "SG&A Expense / Revenue",
+    ("SG&A Ratio (%)", "SG&A Expense / Revenue", "獲利能力",
      lambda c, i: _pct(_safe_div(_at(c, "SG&A Expense", i), _at(c, "Revenue", i)))),
-    ("Operating Margin (%)", "Operating Income / Revenue",
+    ("Operating Margin (%)", "Operating Income / Revenue", "獲利能力",
      lambda c, i: _pct(_safe_div(_at(c, "Operating Income", i), _at(c, "Revenue", i)))),
-    ("EBITDA Margin (%)", "(Operating Income + D&A) / Revenue",
+    ("EBITDA Margin (%)", "(Operating Income + D&A) / Revenue", "獲利能力",
      lambda c, i: _pct(_safe_div(
          None if _at(c, "Operating Income", i) is None or _at(c, "D&A", i) is None
          else float(_at(c, "Operating Income", i)) + float(_at(c, "D&A", i)),
          _at(c, "Revenue", i)))),
-    ("Pre-tax Margin (%)", "Pre-tax Income / Revenue",
+    ("Pre-tax Margin (%)", "Pre-tax Income / Revenue", "獲利能力",
      lambda c, i: _pct(_safe_div(_at(c, "Pre-tax Income", i), _at(c, "Revenue", i)))),
-    ("Net Margin (%)", "Net Income / Revenue",
+    ("Net Margin (%)", "Net Income / Revenue", "獲利能力",
      lambda c, i: _pct(_safe_div(_at(c, "Net Income", i), _at(c, "Revenue", i)))),
 
     # ── 結構 ────────────────────────────────────────────────────────────
-    ("D&A / (COGS + Opex) (%)", "D&A / (Cost of Revenue + Total Operating Expense)",
+    ("D&A / (COGS + Opex) (%)", "D&A / (Cost of Revenue + Total Operating Expense)", "結構",
      lambda c, i: _pct(_safe_div(
          _at(c, "D&A", i),
          None if _at(c, "Cost of Revenue", i) is None or _at(c, "Total Operating Expense", i) is None
          else float(_at(c, "Cost of Revenue", i)) + float(_at(c, "Total Operating Expense", i))))),
-    ("Non-op / Pre-tax (%)", "Total Non-op Income/(Loss) / Pre-tax Income",
+    ("Non-op / Pre-tax (%)", "Total Non-op Income/(Loss) / Pre-tax Income", "結構",
      lambda c, i: _pct(_safe_div(_at(c, "Total Non-op Income/(Loss)", i),
                                  _at(c, "Pre-tax Income", i)))),
-    ("Effective Tax Rate (%)", "Income Tax / Pre-tax Income",
+    ("Effective Tax Rate (%)", "Income Tax / Pre-tax Income", "結構",
      lambda c, i: _pct(_safe_div(_at(c, "Income Tax", i), _at(c, "Pre-tax Income", i)))),
-    ("SBC / Revenue (%)", "SBC / Revenue",
+    ("SBC / Revenue (%)", "SBC / Revenue", "結構",
      lambda c, i: _pct(_safe_div(_at(c, "SBC", i), _at(c, "Revenue", i)))),
-    ("SBC / Operating Cash Flow (%)", "SBC / Operating Cash Flow",
+    ("SBC / Operating Cash Flow (%)", "SBC / Operating Cash Flow", "結構",
      lambda c, i: _pct(_safe_div(_at(c, "SBC", i), _at(c, "Operating Cash Flow", i)))),
+    ("D&A / Revenue (%)", "D&A / Revenue", "結構",
+     lambda c, i: _pct(_safe_div(_at(c, "D&A", i), _at(c, "Revenue", i)))),
+    ("EBITDA ($mm)", "Operating Income + D&A", "結構",
+     lambda c, i: _ebitda(c, i)),
+    ("Total Debt ($mm)", "Short-term Debt + Current Portion of LT Debt + Long-term Debt", "結構",
+     lambda c, i: _total_debt(c, i)),
+    ("Net Debt ($mm)", "Total Debt - Cash", "結構",
+     lambda c, i: _net_debt(c, i)),
+    ("Working Capital ($mm)", "Total Current Assets - Total Current Liabilities", "結構",
+     lambda c, i: None if _at(c, "Total Current Assets", i) is None or _at(c, "Total Current Liabilities", i) is None
+     else float(_at(c, "Total Current Assets", i)) - float(_at(c, "Total Current Liabilities", i))),
+    ("Cash Ratio (x)", "Cash / Total Current Liabilities", "結構",
+     lambda c, i: _safe_div(_at(c, "Cash", i), _at(c, "Total Current Liabilities", i))),
+    ("COGS Ratio (%)", "Cost of Revenue / Revenue", "結構",
+     lambda c, i: _pct(_safe_div(_at(c, "Cost of Revenue", i), _at(c, "Revenue", i)))),
 
     # ── 現金流 ──────────────────────────────────────────────────────────
-    ("FCF Margin (%)", "Free Cash Flow / Revenue",
+    ("FCF Margin (%)", "Free Cash Flow / Revenue", "現金流",
      lambda c, i: _pct(_safe_div(_at(c, "Free Cash Flow", i), _at(c, "Revenue", i)))),
-    ("FCF / Net Income (x)", "Free Cash Flow / Net Income (cash conversion)",
+    ("FCF / Net Income (x)", "Free Cash Flow / Net Income (cash conversion)", "現金流",
      lambda c, i: _safe_div(_at(c, "Free Cash Flow", i), _at(c, "Net Income", i))),
-    ("Capex / Revenue (%)", "abs(Capex) / Revenue",
+    ("Capex / Revenue (%)", "abs(Capex) / Revenue", "現金流",
      lambda c, i: _pct(_safe_div(
          None if _at(c, "Capex", i) is None else abs(float(_at(c, "Capex", i))),
          _at(c, "Revenue", i)))),
-    ("Capex / D&A (x)", "abs(Capex) / D&A (reinvestment intensity)",
+    ("Capex / D&A (x)", "abs(Capex) / D&A (reinvestment intensity)", "現金流",
      lambda c, i: _safe_div(
          None if _at(c, "Capex", i) is None else abs(float(_at(c, "Capex", i))),
          _at(c, "D&A", i))),
+    ("Operating CF Margin (%)", "Operating Cash Flow / Revenue", "現金流",
+     lambda c, i: _pct(_safe_div(_at(c, "Operating Cash Flow", i), _at(c, "Revenue", i)))),
+    ("OCF / Net Income (x)", "Operating Cash Flow / Net Income", "現金流",
+     lambda c, i: _safe_div(_at(c, "Operating Cash Flow", i), _at(c, "Net Income", i))),
 
     # ── 營運效率（單季數字年化後換算天數）─────────────────────────────────
-    ("DSO (days)", "Accounts Receivable / (Revenue x 4) x 365",
+    ("DSO (days)", "Accounts Receivable / (Revenue x 4) x 365", "營運效率",
      lambda c, i: _scale(_safe_div(_at(c, "Accounts Receivable", i),
                                    _mul(_at(c, "Revenue", i), 4)), 365.0)),
-    ("DIO (days)", "Inventories / (Cost of Revenue x 4) x 365",
+    ("DIO (days)", "Inventories / (Cost of Revenue x 4) x 365", "營運效率",
      lambda c, i: _scale(_safe_div(_at(c, "Inventories", i),
                                    _mul(_at(c, "Cost of Revenue", i), 4)), 365.0)),
-    ("DPO (days)", "Accounts Payable / (Cost of Revenue x 4) x 365",
+    ("DPO (days)", "Accounts Payable / (Cost of Revenue x 4) x 365", "營運效率",
      lambda c, i: _scale(_safe_div(_at(c, "Accounts Payable", i),
                                    _mul(_at(c, "Cost of Revenue", i), 4)), 365.0)),
-    ("Cash Conversion Cycle (days)", "DSO + DIO - DPO",
+    ("Cash Conversion Cycle (days)", "DSO + DIO - DPO", "營運效率",
      lambda c, i: _ccc(c, i)),
+    ("Asset Turnover (x)", "TTM Revenue / avg Total Assets", "營運效率",
+     lambda c, i: _safe_div(_ttm(c.get("Revenue"), i, _labels(c)),
+                            _avg(_at_lag(c, "Total Assets", i, 3), _at(c, "Total Assets", i)))),
+    ("Inventory Turnover (x)", "TTM Cost of Revenue / avg Inventories", "營運效率",
+     lambda c, i: _safe_div(_ttm(c.get("Cost of Revenue"), i, _labels(c)),
+                            _avg(_at_lag(c, "Inventories", i, 3), _at(c, "Inventories", i)))),
+    ("Receivables Turnover (x)", "TTM Revenue / avg Accounts Receivable", "營運效率",
+     lambda c, i: _safe_div(_ttm(c.get("Revenue"), i, _labels(c)),
+                            _avg(_at_lag(c, "Accounts Receivable", i, 3), _at(c, "Accounts Receivable", i)))),
 
     # ── 資產負債 ────────────────────────────────────────────────────────
-    ("Current Ratio (x)", "Total Current Assets / Total Current Liabilities",
+    ("Current Ratio (x)", "Total Current Assets / Total Current Liabilities", "槓桿償債",
      lambda c, i: _safe_div(_at(c, "Total Current Assets", i),
                             _at(c, "Total Current Liabilities", i))),
-    ("Quick Ratio (x)", "(Total Current Assets - Inventories) / Total Current Liabilities",
+    ("Quick Ratio (x)", "(Total Current Assets - Inventories) / Total Current Liabilities", "槓桿償債",
      lambda c, i: _safe_div(
          None if _at(c, "Total Current Assets", i) is None or _at(c, "Inventories", i) is None
          else float(_at(c, "Total Current Assets", i)) - float(_at(c, "Inventories", i)),
          _at(c, "Total Current Liabilities", i))),
-    ("Net Debt / EBITDA (x)", "(Debt - Cash) / TTM EBITDA",
+    ("Net Debt / EBITDA (x)", "(Debt - Cash) / TTM EBITDA", "槓桿償債",
      lambda c, i: _net_debt_to_ebitda(c, i)),
-    ("Interest Coverage (x)", "Operating Income / abs(Interest Expense)",
+    ("Interest Coverage (x)", "Operating Income / abs(Interest Expense)", "槓桿償債",
      lambda c, i: _safe_div(
          _at(c, "Operating Income", i),
          None if _at(c, "Interest Expense", i) is None
          else abs(float(_at(c, "Interest Expense", i))))),
+    ("Debt Ratio (%)", "Total Liabilities / Total Assets", "槓桿償債",
+     lambda c, i: _pct(_safe_div(_at(c, "Total Liabilities", i), _at(c, "Total Assets", i)))),
+    ("Debt-to-Equity (x)", "Total Liabilities / Total Equity — Parent", "槓桿償債",
+     lambda c, i: _safe_div(_at(c, "Total Liabilities", i), _at(c, "Total Equity — Parent", i))),
+    ("Equity Multiplier (x)", "Total Assets / Total Equity — Parent", "槓桿償債",
+     lambda c, i: _safe_div(_at(c, "Total Assets", i), _at(c, "Total Equity — Parent", i))),
+    ("LT Debt to Capital (%)", "Long-term Debt / (Long-term Debt + Total Equity — Parent)", "槓桿償債",
+     lambda c, i: _pct(_safe_div(
+         _at(c, "Long-term Debt", i),
+         None if _at(c, "Long-term Debt", i) is None or _at(c, "Total Equity — Parent", i) is None
+         else float(_at(c, "Long-term Debt", i)) + float(_at(c, "Total Equity — Parent", i))))),
 
     # ── 報酬率（TTM 淨利 ÷ 期初期末平均）──────────────────────────────────
-    ("ROE (%)", "TTM Net Income / avg Total Equity — Parent",
+    ("ROE (%)", "TTM Net Income / avg Total Equity — Parent", "報酬率",
      lambda c, i: _pct(_safe_div(_ttm(c.get("Net Income"), i, _labels(c)),
                                  _avg(_at_lag(c, "Total Equity — Parent", i, 3),
                                       _at(c, "Total Equity — Parent", i))))),
-    ("ROA (%)", "TTM Net Income / avg Total Assets",
+    ("ROA (%)", "TTM Net Income / avg Total Assets", "報酬率",
      lambda c, i: _pct(_safe_div(_ttm(c.get("Net Income"), i, _labels(c)),
                                  _avg(_at_lag(c, "Total Assets", i, 3),
                                       _at(c, "Total Assets", i))))),
+    ("ROIC (%)", "Operating Income x (1 - Effective Tax Rate) / (Total Debt + Equity - Cash) [approx.]", "報酬率",
+     lambda c, i: _roic(c, i)),
 
     # ── 每股 ────────────────────────────────────────────────────────────
-    ("BVPS ($)", "Total Equity — Parent / Shares Outstanding",
+    ("BVPS ($)", "Total Equity — Parent / Shares Outstanding", "每股",
      lambda c, i: _safe_div(_at(c, "Total Equity — Parent", i),
                             _at(c, "Shares Outstanding", i))),
-    ("FCF per Share ($)", "TTM Free Cash Flow / Shares Outstanding",
+    ("FCF per Share ($)", "TTM Free Cash Flow / Shares Outstanding", "每股",
      lambda c, i: _safe_div(_ttm(c.get("Free Cash Flow"), i, _labels(c)),
                             _at(c, "Shares Outstanding", i))),
 ]
@@ -348,6 +404,79 @@ def _net_debt_to_ebitda(ctx: Ctx, i: int) -> float | None:
     return _safe_div(debt - float(cash), ttm_op + ttm_da)
 
 
+def _total_debt(ctx: Ctx, i: int) -> float | None:
+    """短期借款＋一年內到期長期負債＋長期借款。三段全缺才回 None，缺一段當 0 補。"""
+    parts = [_at(ctx, "Short-term Debt", i),
+             _at(ctx, "Current Portion of LT Debt", i),
+             _at(ctx, "Long-term Debt", i)]
+    if all(p is None for p in parts):
+        return None
+    return sum(float(p) for p in parts if p is not None)
+
+
+def _net_debt(ctx: Ctx, i: int) -> float | None:
+    debt = _total_debt(ctx, i)
+    cash = _at(ctx, "Cash", i)
+    if debt is None or cash is None:
+        return None
+    return debt - float(cash)
+
+
+def _ebitda(ctx: Ctx, i: int) -> float | None:
+    """單季 EBITDA＝Operating Income + D&A。跟 _net_debt_to_ebitda() 用的 TTM 版本不同，
+    這是給規模型指標（EBITDA($mm)）與 EBITDA YoY 用的單季值。"""
+    op = _at(ctx, "Operating Income", i)
+    da = _at(ctx, "D&A", i)
+    if op is None or da is None:
+        return None
+    return float(op) + float(da)
+
+
+def _ebitda_growth(ctx: Ctx, i: int, lag: int) -> float | None:
+    """比照 _growth() 的邏輯（依季度標籤回推基期、基期 <= 0 回 None），
+    只是分子分母換成算出來的 EBITDA，不是 ctx 裡的原始科目。"""
+    j = _lag_index(_labels(ctx), i, lag)
+    if j is None:
+        return None
+    now = _ebitda(ctx, i)
+    base = _ebitda(ctx, j)
+    if now is None or base is None or base <= 0:
+        return None
+    return (now / base - 1.0) * 100.0
+
+
+def _nopat(ctx: Ctx, i: int) -> float | None:
+    """稅後淨營業利潤（近似值）＝Operating Income × (1 − 有效稅率)。
+    有效稅率缺任一項或 Pre-tax Income 為 0 時回 None。"""
+    op = _at(ctx, "Operating Income", i)
+    tax = _at(ctx, "Income Tax", i)
+    pretax = _at(ctx, "Pre-tax Income", i)
+    if op is None or tax is None or pretax is None:
+        return None
+    try:
+        if float(pretax) == 0:
+            return None
+        tax_rate = float(tax) / float(pretax)
+        return float(op) * (1.0 - tax_rate)
+    except (TypeError, ValueError):
+        return None
+
+
+def _invested_capital(ctx: Ctx, i: int) -> float | None:
+    """投入資本（近似值）＝Total Debt + Total Equity — Parent − Cash。"""
+    debt = _total_debt(ctx, i)
+    equity = _at(ctx, "Total Equity — Parent", i)
+    cash = _at(ctx, "Cash", i)
+    if debt is None or equity is None or cash is None:
+        return None
+    return debt + float(equity) - float(cash)
+
+
+def _roic(ctx: Ctx, i: int) -> float | None:
+    """ROIC 近似值（業界慣用簡化版，未拆一次性項目）＝NOPAT / Invested Capital。"""
+    return _pct(_safe_div(_nopat(ctx, i), _invested_capital(ctx, i)))
+
+
 # ── Public API ──────────────────────────────────────────────────────────────
 
 def build_ratio_table(q_table: StatementTable | None) -> StatementTable | None:
@@ -367,7 +496,7 @@ def build_ratio_table(q_table: StatementTable | None) -> StatementTable | None:
     labels: list[str] = []
     values: list[list[Any]] = []
 
-    for name, formula, fn in RATIO_DEFS:
+    for name, formula, category, fn in RATIO_DEFS:
         row: list[Any] = []
         for i in range(n):
             try:

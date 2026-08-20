@@ -1,7 +1,7 @@
 """Tests for ratios.py — Data_Ratios sheet."""
 import pytest
 from fetcher_gaap import StatementTable
-from ratios import build_ratio_table, RATIO_DEFS, _safe_div, _ttm, _quarter_ordinal, _lag_index
+from ratios import build_ratio_table, RATIO_DEFS, RATIO_CATEGORIES, _safe_div, _ttm, _quarter_ordinal, _lag_index
 
 
 def _consecutive_labels(n, start_year=2024, start_q=1):
@@ -227,7 +227,7 @@ def test_every_row_name_carries_a_unit_suffix():
     """單位後綴是 excel_formatter 判斷格式的依據，不可漏。"""
     tbl = build_ratio_table(_q_table(Revenue=[100.0]))
     for name in tbl.concepts:
-        assert name.endswith(("(%)", "(x)", "(days)", "($)")), name
+        assert name.endswith(("(%)", "(x)", "(days)", "($)", "($mm)")), name
 
 def test_every_row_has_formula_text():
     tbl = build_ratio_table(_q_table(Revenue=[100.0]))
@@ -341,3 +341,143 @@ def test_ttm_works_when_contiguous():
            "Total Equity — Parent": [1000.0, 1000.0, 1000.0, 1000.0]},
     ))
     assert _find(tbl, "ROE")[3] == pytest.approx(10.0)
+
+
+# ── category 欄位（跨公司比較的選擇視窗要照 category 分組）────────────────
+
+def test_every_ratio_def_has_a_category():
+    for name, formula, category, fn in RATIO_DEFS:
+        assert category, f"{name} 缺 category"
+
+
+def test_ratio_categories_lists_every_distinct_category_used():
+    used = {category for _, _, category, _ in RATIO_DEFS}
+    assert used == set(RATIO_CATEGORIES)
+
+
+# ── 新增比率（跨公司比較用）─────────────────────────────────────────────────
+
+def test_debt_ratio():
+    tbl = _q_table(**{
+        "Total Liabilities": [600.0],
+        "Total Assets": [1000.0],
+    })
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "Debt Ratio")[0] == pytest.approx(60.0)
+
+
+def test_debt_to_equity():
+    tbl = _q_table(**{
+        "Total Liabilities": [600.0],
+        "Total Equity — Parent": [400.0],
+    })
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "Debt-to-Equity")[0] == pytest.approx(1.5)
+
+
+def test_da_over_revenue():
+    tbl = _q_table(**{"D&A": [50.0], "Revenue": [1000.0]})
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "D&A / Revenue")[0] == pytest.approx(5.0)
+
+
+def test_ebitda_dollar_amount():
+    tbl = _q_table(**{"Operating Income": [100.0], "D&A": [20.0]})
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "EBITDA ($mm)")[0] == pytest.approx(120.0)
+
+
+def test_ebitda_missing_da_returns_none():
+    tbl = _q_table(**{"Operating Income": [100.0]})
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "EBITDA ($mm)")[0] is None
+
+
+def test_total_debt_sums_available_parts_only():
+    tbl = _q_table(**{
+        "Short-term Debt": [10.0],
+        "Long-term Debt": [90.0],
+        # Current Portion of LT Debt 缺，應視為 0 不影響其他兩段
+    })
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "Total Debt")[0] == pytest.approx(100.0)
+
+
+def test_net_debt():
+    tbl = _q_table(**{
+        "Short-term Debt": [10.0],
+        "Long-term Debt": [90.0],
+        "Cash": [30.0],
+    })
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "Net Debt")[0] == pytest.approx(70.0)
+
+
+def test_working_capital():
+    tbl = _q_table(**{
+        "Total Current Assets": [500.0],
+        "Total Current Liabilities": [300.0],
+    })
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "Working Capital")[0] == pytest.approx(200.0)
+
+
+def test_equity_multiplier():
+    tbl = _q_table(**{"Total Assets": [1000.0], "Total Equity — Parent": [250.0]})
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "Equity Multiplier")[0] == pytest.approx(4.0)
+
+
+def test_cash_ratio():
+    tbl = _q_table(**{"Cash": [50.0], "Total Current Liabilities": [200.0]})
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "Cash Ratio")[0] == pytest.approx(0.25)
+
+
+def test_cogs_ratio():
+    tbl = _q_table(**{"Cost of Revenue": [600.0], "Revenue": [1000.0]})
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "COGS Ratio")[0] == pytest.approx(60.0)
+
+
+def test_operating_cf_margin():
+    tbl = _q_table(**{"Operating Cash Flow": [200.0], "Revenue": [1000.0]})
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "Operating CF Margin")[0] == pytest.approx(20.0)
+
+
+def test_roic_approx():
+    tbl = _q_table(**{
+        "Operating Income": [200.0],
+        "Income Tax": [40.0],
+        "Pre-tax Income": [200.0],
+        "Short-term Debt": [100.0],
+        "Long-term Debt": [400.0],
+        "Total Equity — Parent": [500.0],
+        "Cash": [100.0],
+    })
+    rt = build_ratio_table(tbl)
+    # NOPAT = 200 * (1 - 40/200) = 160；Invested Capital = 100+400+500-100 = 900
+    assert _find(rt, "ROIC")[0] == pytest.approx(160.0 / 900.0 * 100.0)
+
+
+def test_roic_none_when_pretax_zero():
+    tbl = _q_table(**{
+        "Operating Income": [200.0], "Income Tax": [0.0], "Pre-tax Income": [0.0],
+        "Long-term Debt": [400.0], "Total Equity — Parent": [500.0], "Cash": [100.0],
+    })
+    rt = build_ratio_table(tbl)
+    assert _find(rt, "ROIC")[0] is None
+
+
+def test_ebitda_yoy_growth():
+    labels = _consecutive_labels(5)
+    tbl = StatementTable(
+        sheet_name="Data_Financials(Q)", quarter_labels=labels, filing_dates=[""] * 5,
+        concepts=["Operating Income", "D&A"],
+        values=[[100.0, 100.0, 100.0, 100.0, 150.0], [10.0, 10.0, 10.0, 10.0, 20.0]],
+        ticker="TEST", labels=["", ""],
+    )
+    rt = build_ratio_table(tbl)
+    # base(第0欄) EBITDA=110，第4欄 EBITDA=170 → (170/110-1)*100
+    assert _find(rt, "EBITDA YoY")[4] == pytest.approx((170.0 / 110.0 - 1.0) * 100.0)
