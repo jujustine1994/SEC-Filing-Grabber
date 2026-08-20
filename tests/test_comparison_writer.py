@@ -49,8 +49,10 @@ def test_compare_data_sheet_has_static_period_end_row():
     write_compare_data_sheet(wb, result, ["Revenue"])
     ws = wb["Compare_Data"]
 
+    # 原始 period_ends 是 "2024-03-31" 這種帶連字號格式，寫進表裡要轉成
+    # 不帶分隔符的 "YYYYMMDD"，跟 Snapshot 輸入格要求的格式一致
     row3 = [c.value for c in ws[3]]
-    assert "2024-03-31" in row3
+    assert "20240331" in row3
     for cell in ws[3]:
         if cell.value:
             assert not str(cell.value).startswith("=")
@@ -92,10 +94,10 @@ def test_snapshot_sheet_has_yellow_input_cell_and_formulas():
     wb = Workbook()
     result = _sample_result()
     block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
-    write_snapshot_sheets(wb, result, ["Revenue"], block_ranges, default_date="2024-03-31")
+    write_snapshot_sheets(wb, result, ["Revenue"], block_ranges, default_date="20240331")
 
     ws = wb["Snapshot"]
-    assert ws["B1"].value == "2024-03-31"
+    assert ws["B1"].value == "20240331"
     assert ws["B1"].fill.fgColor.rgb in ("00FFFF00", "FFFFFF00")
 
     body = [[c.value for c in row] for row in ws.iter_rows(min_row=3)]
@@ -104,11 +106,24 @@ def test_snapshot_sheet_has_yellow_input_cell_and_formulas():
     assert any("INDEX" in f and "MATCH" in f for f in formula_cells)
 
 
+def test_snapshot_input_format_matches_period_end_row_format():
+    """Snapshot 黃底輸入格要求打 YYYYMMDD，跟 Compare_Data 的期末結算日列
+    （已從 "2024-03-31" 轉成 "20240331"）格式一致，MATCH 才對得起來。"""
+    wb = Workbook()
+    result = _sample_result()
+    block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    write_snapshot_sheets(wb, result, ["Revenue"], block_ranges, default_date="20240331")
+
+    data_ws = wb["Compare_Data"]
+    period_end_row = [c.value for c in data_ws[3]]
+    assert wb["Snapshot"]["B1"].value in period_end_row
+
+
 def test_snapshot_manual_sheet_is_blank_with_same_headers():
     wb = Workbook()
     result = _sample_result()
     block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
-    write_snapshot_sheets(wb, result, ["Revenue"], block_ranges, default_date="2024-03-31")
+    write_snapshot_sheets(wb, result, ["Revenue"], block_ranges, default_date="20240331")
 
     ws = wb["Snapshot_Manual"]
     header_row = [c.value for c in ws[1]]
@@ -150,7 +165,7 @@ def test_write_comparison_workbook_produces_all_expected_sheets():
     result = _sample_result()
     with tempfile.TemporaryDirectory() as tmp:
         out_path = Path(tmp) / "compare_test.xlsx"
-        write_comparison_workbook(result, ["Revenue"], out_path, snapshot_date="2024-03-31")
+        write_comparison_workbook(result, ["Revenue"], out_path, snapshot_date="20240331")
 
         assert out_path.exists()
         wb = load_workbook(out_path)

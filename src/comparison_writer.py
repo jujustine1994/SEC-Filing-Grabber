@@ -58,7 +58,9 @@ def write_compare_data_sheet(
         for col, period in enumerate(periods, start=2):
             ws.cell(row=header_row, column=col, value=period)
 
-        # 期末結算日列（靜態文字，供 Snapshot 用）
+        # 期末結算日列（靜態文字，供 Snapshot 用）。fetcher_gaap 給的原始格式是
+        # "YYYY-MM-DD"，這裡去掉分隔符轉成 "YYYYMMDD"——跟 Snapshot 黃底輸入格
+        # 要求使用者打的格式一致，MATCH 才對得起來，不用在公式裡另外做轉換。
         end_date_row = header_row + 1
         ws.cell(row=end_date_row, column=1, value=t("compare.xls.period_end"))
         for col, period in enumerate(periods, start=2):
@@ -67,7 +69,7 @@ def write_compare_data_sheet(
                 end_date = result.period_ends.get(company, {}).get(period, "")
                 if end_date:
                     break
-            ws.cell(row=end_date_row, column=col, value=end_date)
+            ws.cell(row=end_date_row, column=col, value=end_date.replace("-", ""))
 
         # 公司資料列
         data_start = end_date_row + 1

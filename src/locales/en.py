@@ -432,7 +432,7 @@ STRINGS: dict[str, str] = {
     'gui.compare.end_year': 'End year',
     'gui.compare.frequency': 'Frequency',
     'gui.compare.metric_category': 'Metric category',
-    'gui.compare.snapshot_date': 'Snapshot date (e.g. 2025/12/31):',
+    'gui.compare.snapshot_date': 'Snapshot date, enter as YYYYMMDD (e.g. 20251231):',
     'gui.compare.no_company_warn': 'Please select at least one company',
     'gui.compare.no_metric_warn': 'Please select at least one metric',
     'gui.compare.cat_is': 'Income Statement',

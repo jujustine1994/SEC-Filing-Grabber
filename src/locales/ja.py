@@ -448,7 +448,7 @@ STRINGS: dict[str, str] = {
     "gui.compare.end_year": '終了年',
     "gui.compare.frequency": '頻度',
     "gui.compare.metric_category": '指標カテゴリ',
-    "gui.compare.snapshot_date": 'スナップショット日付（例：2025/12/31）：',
+    "gui.compare.snapshot_date": 'スナップショット日付、YYYYMMDD形式で入力（例：20251231）：',
     "gui.compare.no_company_warn": '少なくとも1社選択してください',
     "gui.compare.no_metric_warn": '少なくとも1つの指標を選択してください',
     "gui.compare.cat_is": '損益計算書',

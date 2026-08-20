@@ -399,7 +399,7 @@ STRINGS: dict[str, str] = {
     'gui.compare.end_year': '结束年',
     'gui.compare.frequency': '频率',
     'gui.compare.metric_category': '指标分类',
-    'gui.compare.snapshot_date': '快照时间点（如 2025/12/31）：',
+    'gui.compare.snapshot_date': '快照时间点，请输入 YYYYMMDD（如 20251231）：',
     'gui.compare.no_company_warn': '请先选择至少一家公司',
     'gui.compare.no_metric_warn': '请先选择至少一个指标',
     'gui.compare.cat_is': '损益表',
