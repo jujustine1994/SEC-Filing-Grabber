@@ -435,8 +435,8 @@ class SECFetcherApp:
         self.notebook.grid(row=0, column=0, sticky="ew", **pad)
         self._build_tab1()
         self._build_tab2()
-        self._build_tab3()
         self._build_tab4()
+        self._build_tab3()
         self._update_identity_warnings()
 
         # 「管理 Watchlist」原本放在這裡（root 層級、row=1，跨頁籤都看得到），
