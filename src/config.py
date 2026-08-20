@@ -36,6 +36,7 @@ DEFAULT_CONFIG: dict = {
     "watchlist": [],
     "filename_format": "ticker_name",
     "filename_custom": "",
+    "compare_filename_prefix": "Compare",
     "max_filings": 80,
     "template_path": "",
     "ai": {

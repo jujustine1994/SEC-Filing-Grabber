@@ -119,6 +119,33 @@ def test_snapshot_input_format_matches_period_end_row_format():
     assert wb["Snapshot"]["B1"].value in period_end_row
 
 
+def test_snapshot_sheet_hints_the_expected_date_format():
+    """CTH 回報 Snapshot 的黃格不知道要填什麼——A1 標籤跟旁邊的提示文字要
+    明確講清楚格式是 YYYYMMDD，不能只寫「時間點」三個字。"""
+    wb = Workbook()
+    result = _sample_result()
+    block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    write_snapshot_sheets(wb, result, ["Revenue"], block_ranges, default_date="")
+
+    ws = wb["Snapshot"]
+    all_text = " ".join(str(c.value) for row in ws.iter_rows() for c in row if c.value)
+    assert "YYYYMMDD" in all_text
+
+
+def test_snapshot_sheet_lists_available_dates_for_reference():
+    """光講格式還不夠，使用者不知道「有哪些日期可以填」——列出 Compare_Data
+    裡實際存在的期末結算日，照現有資料範圍給選項，不用自己去翻 Compare_Data。"""
+    wb = Workbook()
+    result = _sample_result()
+    block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    write_snapshot_sheets(wb, result, ["Revenue"], block_ranges, default_date="")
+
+    ws = wb["Snapshot"]
+    all_text = " ".join(str(c.value) for row in ws.iter_rows() for c in row if c.value)
+    assert "20240331" in all_text
+    assert "20240630" in all_text
+
+
 def test_snapshot_manual_sheet_is_blank_with_same_headers():
     wb = Workbook()
     result = _sample_result()

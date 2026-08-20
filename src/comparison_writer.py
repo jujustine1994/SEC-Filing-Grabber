@@ -117,6 +117,20 @@ def write_snapshot_sheets(
     snap["B1"] = default_date
     snap["B1"].fill = _YELLOW_FILL
 
+    # CTH 回報過黃格不知道要填什麼——A1 標籤只寫「時間點」看不出格式，旁邊
+    # 補一句話講清楚格式，再把 Compare_Data 裡實際存在的期末結算日列出來，
+    # 使用者不用自己去翻 Compare_Data 猜有哪些日期可以填。
+    available_dates = sorted({
+        end.replace("-", "")
+        for company_map in result.period_ends.values()
+        for end in company_map.values()
+        if end
+    })
+    snap.cell(row=1, column=3,
+              value=t("compare.xls.snapshot_format_hint"))
+    snap.cell(row=1, column=4,
+              value=t("compare.xls.snapshot_available_dates", dates="、".join(available_dates)))
+
     header_row = 2
     snap.cell(row=header_row, column=1, value=t("compare.xls.company"))
     for col, metric_name in enumerate(metric_names, start=2):

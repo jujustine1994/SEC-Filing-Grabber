@@ -1443,9 +1443,25 @@ class SECFetcherApp:
         ttk.Button(out_row, text=t("gui.btn.browse"), width=5,
                    command=self._browse_compare_output_dir).pack(side="left")
 
+        # 檔名前綴：預設 "Compare"（純英文，不像先前寫死的「比較」會在檔案
+        # 總管／跨系統環境偶爾出現亂碼或排序問題）。CTH 可以改成自己想要的
+        # 前綴，按「設為預設」才會存進 config.json 成為下次開程式的預設值
+        # ——跟 Tab1 輸出設定「這次選的只影響這次執行」是同一套慣例。
+        prefix_row = ttk.Frame(tab)
+        prefix_row.grid(row=3, column=0, sticky="ew", pady=4)
+        ttk.Label(prefix_row, text=t("gui.compare.filename_prefix")).pack(side="left")
+        self.compare_filename_prefix_var = tk.StringVar(
+            value=self.cfg.get("compare_filename_prefix", "Compare"))
+        ttk.Entry(prefix_row, textvariable=self.compare_filename_prefix_var, width=16).pack(
+            side="left", padx=(6, 6))
+        ttk.Button(prefix_row, text=t("gui.btn.set_as_default"), width=10,
+                   command=self._set_compare_filename_prefix_as_default).pack(side="left")
+        self.compare_prefix_saved_label = ttk.Label(prefix_row, text="", foreground="#1a7a34")
+        self.compare_prefix_saved_label.pack(side="left", padx=8)
+
         self.compare_run_btn = ttk.Button(tab, text=t("gui.btn.compare_run"),
                                            command=self._run_comparison)
-        self.compare_run_btn.grid(row=3, column=0, pady=8)
+        self.compare_run_btn.grid(row=4, column=0, pady=8)
 
     def _browse_compare_output_dir(self):
         from tkinter import filedialog
@@ -1453,6 +1469,13 @@ class SECFetcherApp:
         folder = filedialog.askdirectory(title=t("gui.dlg.choose_output_dir"), initialdir=current)
         if folder:
             self.compare_outdir_var.set(folder)
+
+    def _set_compare_filename_prefix_as_default(self):
+        """「設為預設」按鈕：把目前輸出檔名前綴存成下次開程式的全域預設值。"""
+        self.cfg["compare_filename_prefix"] = self.compare_filename_prefix_var.get().strip() or "Compare"
+        save_config(self.cfg, CONFIG_PATH)
+        self.compare_prefix_saved_label.config(text=t("gui.lbl.output_default_saved"))
+        self.root.after(3000, lambda: self.compare_prefix_saved_label.config(text=""))
 
     def _update_compare_summary(self):
         if not self.compare_selected_tickers or not self.compare_selected_metrics:
@@ -1740,7 +1763,8 @@ class SECFetcherApp:
 
         out_dir = Path(self.compare_outdir_var.get().strip() or str(PROJECT_ROOT / "output" / "compare"))
         names = "_".join(tickers[:3])
-        filename = f"比較_{names}_{date.today().strftime('%Y%m%d')}.xlsx"
+        prefix = self.compare_filename_prefix_var.get().strip() or "Compare"
+        filename = f"{prefix}_{names}_{date.today().strftime('%Y%m%d')}.xlsx"
         out_path = out_dir / filename
 
         try:
