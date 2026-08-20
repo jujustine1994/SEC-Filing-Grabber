@@ -18,6 +18,7 @@ from openpyxl.utils import get_column_letter
 
 from comparison import ComparisonResult
 from excel_formatter import unit_format_for
+from i18n import t
 
 _HEADER_FONT = Font(bold=True)
 _BLOCK_GAP = 1  # 區塊之間空幾列
@@ -53,13 +54,13 @@ def write_compare_data_sheet(
         title_cell = ws.cell(row=row, column=1, value=metric_name)
         title_cell.font = _HEADER_FONT
         header_row = row + 1
-        ws.cell(row=header_row, column=1, value="公司")
+        ws.cell(row=header_row, column=1, value=t("compare.xls.company"))
         for col, period in enumerate(periods, start=2):
             ws.cell(row=header_row, column=col, value=period)
 
         # 期末結算日列（靜態文字，供 Snapshot 用）
         end_date_row = header_row + 1
-        ws.cell(row=end_date_row, column=1, value="期末結算日")
+        ws.cell(row=end_date_row, column=1, value=t("compare.xls.period_end"))
         for col, period in enumerate(periods, start=2):
             end_date = ""
             for company in all_companies:
@@ -110,12 +111,12 @@ def write_snapshot_sheets(
     data_ws = wb["Compare_Data"]
 
     snap = wb.create_sheet("Snapshot")
-    snap["A1"] = "時間點"
+    snap["A1"] = t("compare.xls.timepoint")
     snap["B1"] = default_date
     snap["B1"].fill = _YELLOW_FILL
 
     header_row = 2
-    snap.cell(row=header_row, column=1, value="公司")
+    snap.cell(row=header_row, column=1, value=t("compare.xls.company"))
     for col, metric_name in enumerate(metric_names, start=2):
         snap.cell(row=header_row, column=col, value=metric_name)
 
@@ -148,7 +149,7 @@ def write_snapshot_sheets(
 
     # Snapshot_Manual：同樣的表頭，資料格留空供人工貼值
     manual = wb.create_sheet("Snapshot_Manual")
-    manual.cell(row=1, column=1, value="公司")
+    manual.cell(row=1, column=1, value=t("compare.xls.company"))
     for col, metric_name in enumerate(metric_names, start=2):
         manual.cell(row=1, column=col, value=metric_name)
     for r_offset, company in enumerate(all_companies):
@@ -182,7 +183,7 @@ def write_chart_sheets(
         chart.title = metric_name
         chart.style = 2
         chart.y_axis.title = metric_name
-        chart.x_axis.title = "期間"
+        chart.x_axis.title = t("gui.compare.period")
 
         data_ref = Reference(
             data_ws, min_col=1, max_col=last_col, min_row=data_start, max_row=data_end

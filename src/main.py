@@ -436,6 +436,7 @@ class SECFetcherApp:
         self._build_tab1()
         self._build_tab2()
         self._build_tab3()
+        self._build_tab4()
         self._update_identity_warnings()
 
         # 「管理 Watchlist」原本放在這裡（root 層級、row=1，跨頁籤都看得到），
@@ -1384,6 +1385,355 @@ class SECFetcherApp:
             except (json.JSONDecodeError, OSError):
                 return t("gui.wl.cache_corrupt")
         return t("gui.wl.cache_absent")
+
+    # =========================================================
+    # Cross-company comparison tab
+    # =========================================================
+
+    def _load_company_cache(self) -> dict[str, str]:
+        """讀 company_cache.json，回傳 {ticker: 公司名}。讀不到就回空字典，
+        不要讓自動完成功能因為快取檔案缺失而整個掛掉。"""
+        if not CACHE_PATH.exists():
+            return {}
+        try:
+            with open(CACHE_PATH, encoding="utf-8") as f:
+                data = json.load(f)
+            return data.get("companies", {})
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    def _build_tab4(self):
+        """Build Tab 4 (跨公司比較): 選擇視窗按鈕、輸出設定、執行按鈕。
+
+        進度條／log 沿用 Tab1/Tab2 共用的根層級元件（`self.progress_bar`／
+        `self.log_text`，透過 `self._log()`／`self._set_progress()` 更新），
+        不另外做一份 Tab4 專用的，這樣跟現有分頁的行為一致。
+        """
+        tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(tab, text=t("gui.tab.compare"))
+        tab.columnconfigure(0, weight=1)
+
+        self.compare_selected_tickers: list[tuple[str, str]] = []
+        self.compare_selected_metrics: list[str] = []
+        self.compare_start_year = tk.StringVar(value="")
+        self.compare_end_year = tk.StringVar(value="")
+        self.compare_frequency = tk.StringVar(value="quarterly")
+        self.compare_snapshot_date = tk.StringVar(value="")
+
+        summary_frame = ttk.Frame(tab, relief="groove", borderwidth=1, padding=8)
+        summary_frame.grid(row=0, column=0, sticky="ew", pady=4)
+        summary_frame.columnconfigure(0, weight=1)
+        self.compare_summary_label = ttk.Label(summary_frame, text=t("gui.compare.no_selection"),
+                                                justify="left")
+        self.compare_summary_label.grid(row=0, column=0, sticky="w")
+
+        ttk.Button(tab, text=t("gui.btn.compare_select"),
+                   command=self._open_compare_selection_window).grid(row=1, column=0, pady=8)
+
+        out_row = ttk.Frame(tab)
+        out_row.grid(row=2, column=0, sticky="ew", pady=4)
+        ttk.Label(out_row, text=t("gui.lbl.save_location")).pack(side="left")
+        self.compare_outdir_var = tk.StringVar(value=str(PROJECT_ROOT / "output" / "compare"))
+        ttk.Entry(out_row, textvariable=self.compare_outdir_var).pack(
+            side="left", fill="x", expand=True, padx=(6, 6))
+        ttk.Button(out_row, text=t("gui.btn.browse"), width=5,
+                   command=self._browse_compare_output_dir).pack(side="left")
+
+        self.compare_run_btn = ttk.Button(tab, text=t("gui.btn.compare_run"),
+                                           command=self._run_comparison)
+        self.compare_run_btn.grid(row=3, column=0, pady=8)
+
+    def _browse_compare_output_dir(self):
+        from tkinter import filedialog
+        current = self.compare_outdir_var.get().strip() or str(PROJECT_ROOT / "output" / "compare")
+        folder = filedialog.askdirectory(title=t("gui.dlg.choose_output_dir"), initialdir=current)
+        if folder:
+            self.compare_outdir_var.set(folder)
+
+    def _update_compare_summary(self):
+        if not self.compare_selected_tickers or not self.compare_selected_metrics:
+            self.compare_summary_label.config(text=t("gui.compare.no_selection"))
+            return
+        tickers_str = "、".join(tk_ for tk_, _ in self.compare_selected_tickers)
+        metrics_str = "、".join(self.compare_selected_metrics[:5])
+        if len(self.compare_selected_metrics) > 5:
+            metrics_str += f" ...({len(self.compare_selected_metrics)})"
+        freq_label = (t("gui.compare.freq_quarterly") if self.compare_frequency.get() == "quarterly"
+                      else t("gui.compare.freq_annual"))
+        text = (f"{t('gui.compare.companies')}: {tickers_str}\n"
+                f"{t('gui.compare.period')}: {self.compare_start_year.get()}"
+                f"~{self.compare_end_year.get()} ({freq_label})\n"
+                f"{t('gui.compare.metrics')}: {metrics_str}")
+        self.compare_summary_label.config(text=text)
+
+    def _open_compare_selection_window(self):
+        win = tk.Toplevel(self.root)
+        win.title(t("gui.compare.select_title"))
+        win.geometry("560x640")
+
+        # ── ① 選公司 ──────────────────────────────────────────────
+        ttk.Label(win, text=t("gui.compare.step1_company"), font=("", 11, "bold")).pack(
+            anchor="w", padx=10, pady=(10, 2))
+
+        ticker_row = ttk.Frame(win)
+        ticker_row.pack(fill="x", padx=10)
+        ttk.Label(ticker_row, text=t("gui.compare.ticker_input")).pack(side="left")
+        ticker_var = tk.StringVar()
+        ticker_entry = ttk.Entry(ticker_row, textvariable=ticker_var, width=30)
+        ticker_entry.pack(side="left", padx=(6, 0), fill="x", expand=True)
+
+        suggest_listbox = tk.Listbox(win, height=4)
+        cache = self._load_company_cache()
+
+        def _on_ticker_type(*_):
+            text = ticker_var.get().strip().upper()
+            suggest_listbox.delete(0, "end")
+            if not text or "," in text:
+                return
+            matches = [(tk_, name) for tk_, name in cache.items() if tk_.startswith(text)][:8]
+            for tk_, name in matches:
+                suggest_listbox.insert("end", f"{tk_}  {name}")
+
+        ticker_var.trace_add("write", _on_ticker_type)
+
+        chips_frame = ttk.Frame(win)
+        chips_frame.pack(fill="x", padx=10, pady=(4, 0))
+
+        def _refresh_company_chips():
+            for child in chips_frame.winfo_children():
+                child.destroy()
+            for tk_, name in self.compare_selected_tickers:
+                chip = ttk.Frame(chips_frame, relief="raised", borderwidth=1)
+                chip.pack(side="left", padx=2, pady=2)
+                ttk.Label(chip, text=f"{tk_} {name}").pack(side="left", padx=(4, 0))
+                ttk.Button(chip, text="✕", width=2,
+                           command=lambda t_=tk_: _remove_company(t_)).pack(side="left")
+
+        def _add_company(ticker: str):
+            ticker = ticker.strip().upper()
+            if not ticker or any(t_ == ticker for t_, _ in self.compare_selected_tickers):
+                return
+            name = cache.get(ticker, "")
+            if not name:
+                messagebox.showwarning(
+                    t("gui.compare.unknown_ticker_title"),
+                    t("gui.compare.unknown_ticker_msg").format(ticker=ticker))
+                return
+            self.compare_selected_tickers.append((ticker, name))
+            _refresh_company_chips()
+
+        def _remove_company(ticker: str):
+            self.compare_selected_tickers = [
+                (t_, n) for t_, n in self.compare_selected_tickers if t_ != ticker
+            ]
+            _refresh_company_chips()
+
+        def _on_ticker_submit(event=None):
+            text = ticker_var.get().strip()
+            if "," in text:
+                for part in text.split(","):
+                    _add_company(part)
+            else:
+                _add_company(text)
+            ticker_var.set("")
+            suggest_listbox.delete(0, "end")
+
+        ticker_entry.bind("<Return>", _on_ticker_submit)
+
+        def _on_suggest_pick(event):
+            selection = suggest_listbox.curselection()
+            if not selection:
+                return
+            picked = suggest_listbox.get(selection[0]).split()[0]
+            _add_company(picked)
+            ticker_var.set("")
+            suggest_listbox.delete(0, "end")
+
+        suggest_listbox.bind("<<ListboxSelect>>", _on_suggest_pick)
+        suggest_listbox.pack(fill="x", padx=10)
+
+        _refresh_company_chips()
+
+        ttk.Separator(win, orient="horizontal").pack(fill="x", padx=10, pady=8)
+
+        # ── ② 選指標 ──────────────────────────────────────────────
+        ttk.Label(win, text=t("gui.compare.step2_metrics"), font=("", 11, "bold")).pack(
+            anchor="w", padx=10)
+
+        period_row = ttk.Frame(win)
+        period_row.pack(fill="x", padx=10, pady=4)
+        ttk.Label(period_row, text=t("gui.compare.start_year")).pack(side="left")
+        ttk.Entry(period_row, textvariable=self.compare_start_year, width=6).pack(
+            side="left", padx=(2, 8))
+        ttk.Label(period_row, text=t("gui.compare.end_year")).pack(side="left")
+        ttk.Entry(period_row, textvariable=self.compare_end_year, width=6).pack(
+            side="left", padx=(2, 8))
+        ttk.Label(period_row, text=t("gui.compare.frequency")).pack(side="left")
+        freq_combo = ttk.Combobox(period_row, textvariable=self.compare_frequency,
+                                   values=["quarterly", "annual"], state="readonly", width=10)
+        freq_combo.pack(side="left", padx=(2, 0))
+
+        category_row = ttk.Frame(win)
+        category_row.pack(fill="x", padx=10, pady=4)
+        ttk.Label(category_row, text=t("gui.compare.metric_category")).pack(side="left")
+
+        from ratios import RATIO_CATEGORIES, RATIO_DEFS
+        # 內部分類鍵一律英文（IS/BS/CF 是既有的科目分類標籤，RATIO_CATEGORIES
+        # 是 ratios.py 的比率分類），下拉選單顯示的文字另外透過 t() 翻譯，
+        # 不要把中文寫死進分類鍵本身。
+        category_keys = ["IS", "BS", "CF"] + RATIO_CATEGORIES
+        category_labels = {
+            key: t(f"gui.compare.cat_{key.lower().replace(' ', '_')}") for key in category_keys
+        }
+        category_var = tk.StringVar(value=category_labels[category_keys[0]])
+        category_combo = ttk.Combobox(category_row, textvariable=category_var,
+                                       values=list(category_labels.values()),
+                                       state="readonly", width=16)
+        category_combo.pack(side="left", padx=(4, 0))
+
+        metric_check_frame = ttk.Frame(win)
+        metric_check_frame.pack(fill="x", padx=10)
+        metric_vars: dict[str, tk.BooleanVar] = {}
+
+        def _selected_category_key() -> str:
+            label = category_var.get()
+            return next((k for k, v in category_labels.items() if v == label), category_keys[0])
+
+        def _metrics_for_category(category_key: str) -> list[str]:
+            if category_key in ("IS", "BS", "CF"):
+                return self._raw_concepts_for_tag(category_key)
+            return [name for name, _, cat, _ in RATIO_DEFS if cat == category_key]
+
+        def _refresh_metric_checkboxes(*_):
+            for child in metric_check_frame.winfo_children():
+                child.destroy()
+            names = _metrics_for_category(_selected_category_key())
+            for idx, name in enumerate(names):
+                var = metric_vars.setdefault(name, tk.BooleanVar(
+                    value=name in self.compare_selected_metrics))
+
+                def _on_toggle(name_=name, var_=var):
+                    if var_.get() and name_ not in self.compare_selected_metrics:
+                        self.compare_selected_metrics.append(name_)
+                    elif not var_.get() and name_ in self.compare_selected_metrics:
+                        self.compare_selected_metrics.remove(name_)
+                    _refresh_metric_chips()
+
+                ttk.Checkbutton(metric_check_frame, text=name, variable=var,
+                                command=_on_toggle).grid(
+                    row=idx // 2, column=idx % 2, sticky="w", padx=4)
+
+        category_combo.bind("<<ComboboxSelected>>", _refresh_metric_checkboxes)
+
+        metric_chips_frame = ttk.Frame(win)
+        metric_chips_frame.pack(fill="x", padx=10, pady=(4, 0))
+
+        def _refresh_metric_chips():
+            for child in metric_chips_frame.winfo_children():
+                child.destroy()
+            for name in self.compare_selected_metrics:
+                chip = ttk.Frame(metric_chips_frame, relief="raised", borderwidth=1)
+                chip.pack(side="left", padx=2, pady=2)
+                ttk.Label(chip, text=name).pack(side="left", padx=(4, 0))
+
+                def _remove(name_=name):
+                    self.compare_selected_metrics.remove(name_)
+                    if name_ in metric_vars:
+                        metric_vars[name_].set(False)
+                    _refresh_metric_chips()
+
+                ttk.Button(chip, text="✕", width=2, command=_remove).pack(side="left")
+
+        _refresh_metric_checkboxes()
+        _refresh_metric_chips()
+
+        snapshot_row = ttk.Frame(win)
+        snapshot_row.pack(fill="x", padx=10, pady=6)
+        ttk.Label(snapshot_row, text=t("gui.compare.snapshot_date")).pack(side="left")
+        ttk.Entry(snapshot_row, textvariable=self.compare_snapshot_date, width=14).pack(
+            side="left", padx=(4, 0))
+
+        btn_row = ttk.Frame(win)
+        btn_row.pack(fill="x", padx=10, pady=10)
+        ttk.Button(btn_row, text=t("gui.btn.cancel"), command=win.destroy).pack(
+            side="right", padx=4)
+
+        def _confirm():
+            self._update_compare_summary()
+            win.destroy()
+
+        ttk.Button(btn_row, text=t("gui.btn.confirm"), command=_confirm).pack(
+            side="right", padx=4)
+
+    def _raw_concepts_for_tag(self, tag: str) -> list[str]:
+        """從 fetcher_gaap 的科目定義表取某一類（IS/BS/CF）的欄位名稱清單。
+
+        `IS_TEMPLATE`／`BS_TEMPLATE`／`CF_TEMPLATE` 是 fetcher_gaap.py 裡已經
+        依報表類型分開的 module-level 清單，每筆 tuple 的第 0 欄就是顯示名稱。
+        """
+        from fetcher_gaap import IS_TEMPLATE, BS_TEMPLATE, CF_TEMPLATE
+        source = {"IS": IS_TEMPLATE, "BS": BS_TEMPLATE, "CF": CF_TEMPLATE}[tag]
+        return [row[0] for row in source]
+
+    def _run_comparison(self):
+        if not self.compare_selected_tickers:
+            messagebox.showwarning(t("gui.compare.select_title"), t("gui.compare.no_company_warn"))
+            return
+        if not self.compare_selected_metrics:
+            messagebox.showwarning(t("gui.compare.select_title"), t("gui.compare.no_metric_warn"))
+            return
+        identity = self.cfg.get("identity", "")
+        if not identity:
+            messagebox.showwarning(t("gui.compare.select_title"), t("gui.lbl.identity_missing"))
+            return
+
+        self.compare_run_btn.config(state="disabled")
+        threading.Thread(target=self._compare_worker, daemon=True).start()
+
+    def _compare_worker(self):
+        from comparison import build_comparison
+        from comparison_writer import write_comparison_workbook
+
+        identity = self.cfg.get("identity", "")
+        tickers = [t_ for t_, _ in self.compare_selected_tickers]
+        metrics = list(self.compare_selected_metrics)
+        start_year = int(self.compare_start_year.get()) if self.compare_start_year.get().strip() else None
+        end_year = int(self.compare_end_year.get()) if self.compare_end_year.get().strip() else None
+        frequency = self.compare_frequency.get()
+
+        self._log(t("gui.compare.log_start", n=len(tickers)))
+        self._set_progress(0, len(tickers), t("gui.compare.log_start", n=len(tickers)))
+        try:
+            result = build_comparison(
+                tickers, identity, metrics, frequency=frequency,
+                start_year=start_year, end_year=end_year,
+            )
+        except Exception as e:
+            self.msg_queue.put(("compare_error", f"{type(e).__name__}{_exc_status(e)}"))
+            return
+
+        for failure in result.failures:
+            self._log(t("gui.compare.log_company_failed",
+                         ticker=failure.ticker, error_type=failure.error_type), "WARN")
+
+        if not any(result.metrics.get(m) for m in metrics):
+            self.msg_queue.put(("compare_error", t("gui.compare.nothing_fetched")))
+            return
+
+        out_dir = Path(self.compare_outdir_var.get().strip() or str(PROJECT_ROOT / "output" / "compare"))
+        names = "_".join(tickers[:3])
+        filename = f"比較_{names}_{date.today().strftime('%Y%m%d')}.xlsx"
+        out_path = out_dir / filename
+
+        try:
+            write_comparison_workbook(
+                result, metrics, out_path, snapshot_date=self.compare_snapshot_date.get().strip()
+            )
+        except Exception as e:
+            self.msg_queue.put(("compare_error", f"{type(e).__name__}{_exc_status(e)}"))
+            return
+
+        self.msg_queue.put(("compare_done", str(out_path)))
 
     # =========================================================
     # Advanced settings tab
@@ -2403,6 +2753,16 @@ class SECFetcherApp:
                     else:
                         msg = t("gui.msg.scan_failed", reason=exc_name)
                     messagebox.showerror(t("gui.dlg.scan_failed_title"), msg)
+
+                elif msg_type == "compare_error":
+                    self._log(f"{t('gui.compare.select_title')}: {data}", "ERROR")
+                    self.progress_label.config(text=t("gui.status.error_see_log"))
+                    self.compare_run_btn.config(state="normal")
+
+                elif msg_type == "compare_done":
+                    self._log(t("gui.compare.log_done", path=data))
+                    self.progress_label.config(text=t("gui.status.done"))
+                    self.compare_run_btn.config(state="normal")
 
         except queue.Empty:
             pass
