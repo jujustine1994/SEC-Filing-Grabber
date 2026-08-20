@@ -185,6 +185,7 @@ _UNIT_SUFFIX_FORMATS = {
     "(x)":     (FMT_MULTIPLE, 1),
     "(days)":  (FMT_DAYS,     1),
     "($)":     (FMT_EPS,      1),
+    "($mm)":   (FMT_FINANCIAL, 1_000_000),
 }
 
 
@@ -194,6 +195,23 @@ def _unit_suffix_rule(concept: str) -> tuple[str, int] | None:
         if concept.endswith(suffix):
             return rule
     return None
+
+
+def unit_format_for(concept: str) -> tuple[str, int]:
+    """回傳 (Excel 數字格式, 除數)。判斷順序：單位後綴 → 每股 → 百分比 →
+    股數 → 預設金額（÷1,000,000）。跟 format_workbook() 內的判斷順序完全一致，
+    給 Data_Ratios 以外的表（如跨公司比較）共用同一套規則，不要各寫一份。
+    """
+    rule = _unit_suffix_rule(concept)
+    if rule is not None:
+        return rule
+    if _is_eps_concept(concept):
+        return FMT_EPS, 1
+    if _is_percent_concept(concept):
+        return FMT_PERCENT, 100 if PERCENT_AS_EXCEL_RATIO else 1
+    if _is_shares_concept(concept):
+        return FMT_SHARES, 1_000_000
+    return FMT_FINANCIAL, 1_000_000
 
 
 def _apply_row_styles(ws) -> None:
@@ -244,23 +262,8 @@ def _apply_number_formats(ws) -> None:
         if concept in SECTION_HEADERS or concept == "":
             continue
 
-        # 單位後綴優先於一切關鍵字判斷（Data_Ratios 用）
-        suffix_rule = _unit_suffix_rule(concept)
-        if suffix_rule is not None:
-            fmt, divisor = suffix_rule
-        # 順序即優先級：每股 → 百分比 → 股數 → 金額（見 metric_rules.py 第 5 節）
-        elif _is_eps_concept(concept):
-            fmt = FMT_EPS
-            divisor = 1
-        elif _is_percent_concept(concept):
-            fmt = FMT_PERCENT
-            divisor = 100 if PERCENT_AS_EXCEL_RATIO else 1
-        elif _is_shares_concept(concept):
-            fmt = FMT_SHARES
-            divisor = 1_000_000
-        else:
-            fmt = FMT_FINANCIAL
-            divisor = 1_000_000
+        # 單位後綴優先於一切關鍵字判斷（Data_Ratios 用）；判斷順序見 unit_format_for()
+        fmt, divisor = unit_format_for(concept)
 
         for col_idx in range(_DATA_START_COL, ws.max_column + 1):
             cell = ws.cell(row=row_idx, column=col_idx)

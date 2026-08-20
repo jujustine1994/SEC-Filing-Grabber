@@ -2,7 +2,7 @@
 import pytest
 from openpyxl import Workbook
 from fetcher_gaap import StatementTable
-from excel_formatter import format_workbook, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, FMT_PERCENT, FMT_MULTIPLE, FMT_DAYS, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE, QUALITY_MISS_BG, FY_INPUT_ROWS
+from excel_formatter import format_workbook, unit_format_for, FMT_FINANCIAL, FMT_EPS, FMT_SHARES, FMT_PERCENT, FMT_MULTIPLE, FMT_DAYS, _compute_quality, ALL_KEY_ROWS as _ALL_KEY_ROWS, QUALITY_GREEN, QUALITY_ORANGE, QUALITY_MISS_BG, FY_INPUT_ROWS
 
 
 def _make_wb(sheet_name="Data_Financials(Q)"):
@@ -886,3 +886,44 @@ def test_index_quality_block_size():
     sizes = {c.font.size for row in ws.iter_rows(min_col=1, max_col=2) for c in row
              if c.value and str(c.value).startswith(("✓", "✗", "品質明細"))}
     assert sizes == {INDEX_TABLE_SIZE}, sizes
+
+
+# ── unit_format_for（跨公司比較 comparison_writer.py 共用這個函式）──────────
+
+def test_unit_format_for_mm_suffix_uses_financial_format_and_million_divisor():
+    fmt, divisor = unit_format_for("EBITDA ($mm)")
+    assert fmt == FMT_FINANCIAL
+    assert divisor == 1_000_000
+
+
+def test_unit_format_for_dollar_suffix_uses_eps_format_no_divisor():
+    fmt, divisor = unit_format_for("BVPS ($)")
+    assert fmt == FMT_EPS
+    assert divisor == 1
+
+
+def test_unit_format_for_percent_suffix():
+    fmt, _ = unit_format_for("Revenue YoY (%)")
+    assert fmt == FMT_PERCENT
+
+
+def test_unit_format_for_multiple_suffix():
+    fmt, _ = unit_format_for("Current Ratio (x)")
+    assert fmt == FMT_MULTIPLE
+
+
+def test_unit_format_for_days_suffix():
+    fmt, _ = unit_format_for("DSO (days)")
+    assert fmt == FMT_DAYS
+
+
+def test_unit_format_for_no_suffix_defaults_to_financial_million():
+    fmt, divisor = unit_format_for("Revenue")
+    assert fmt == FMT_FINANCIAL
+    assert divisor == 1_000_000
+
+
+def test_unit_format_for_shares_concept():
+    fmt, divisor = unit_format_for("Shares Outstanding")
+    assert fmt == FMT_SHARES
+    assert divisor == 1_000_000
