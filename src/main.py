@@ -939,8 +939,12 @@ class SECFetcherApp:
             )
 
     def _goto_settings_tab(self):
-        """SEC Identity 警告文字被點擊時，切到 Tab3（進階設定）。"""
-        self.notebook.select(2)
+        """SEC Identity 警告文字被點擊時，切到「進階設定」。
+
+        用 index("end") - 1 而不是寫死數字——「進階設定」規定永遠是最後一個
+        分頁（見 Tab4 加入時的調整），寫死索引在分頁數量再變動時會選錯頁。
+        """
+        self.notebook.select(self.notebook.index("end") - 1)
 
     def _update_identity_warnings(self):
         """依 cfg["identity"] 是否已填，切換 Tab1/Tab2 的 SEC Identity 提示顯示。"""
