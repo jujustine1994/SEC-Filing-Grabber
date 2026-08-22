@@ -331,3 +331,74 @@ def test_resolve_row_honours_taxonomy_in_spec():
     spec = {"concepts": ["EntityCommonStockSharesOutstanding"], "kind": "instant",
             "unit": "shares", "taxonomy": "dei"}
     assert ff.resolve_row(_RAW_DEI, spec, prefer="as_reported") == {"2025-06-28": 2450.0}
+
+
+# ── YTD 拆算：現金流量表的流量項（2026-08-22，TODO H1）─────────────────────
+#
+# 公司在 XBRL 裡把現金流量表 tag 成 YTD 累計，不是單季。只篩「80~100 天」的話
+# 一年四季只撈得到 Q1（Q1 的 YTD 剛好等於單季），實測 CF 流量列的填滿率只有 25%。
+#
+# YTD 系列的結構特徵非常明確：**同一個 `start`、`end` 遞增**。實測 AAPL Capex：
+#     start=2024-09-29  end=2024-12-28( 90天) 2,940M
+#                       end=2025-03-29(181天) 6,011M
+#                       end=2025-06-28(272天) 9,473M
+#                       end=2025-09-27(363天) 12,715M
+# 相鄰相減就是單季，不用猜哪一欄是 YTD（現行路徑是靠欄名猜的）。
+
+_YTD_RAW = {"facts": {"us-gaap": {"Capex": {"units": {"USD": [
+    _fact("2024-09-29", "2024-12-28", 2940.0),
+    _fact("2024-09-29", "2025-03-29", 6011.0),
+    _fact("2024-09-29", "2025-06-28", 9473.0),
+    _fact("2024-09-29", "2025-09-27", 12715.0),
+]}}}}}
+
+
+def test_quarterly_from_ytd_subtracts_consecutive_periods():
+    out = ff.quarterly_from_ytd(_YTD_RAW, "Capex", prefer="as_reported")
+    assert out == {"2024-12-28": 2940.0, "2025-03-29": 3071.0,
+                   "2025-06-28": 3462.0, "2025-09-27": 3242.0}
+
+
+def test_quarterly_from_ytd_keeps_first_period_as_is():
+    """一個財年的第一季，YTD 就等於單季，不需要減。"""
+    out = ff.quarterly_from_ytd(_YTD_RAW, "Capex", prefer="as_reported")
+    assert out["2024-12-28"] == 2940.0
+
+
+def test_quarterly_from_ytd_separates_fiscal_years_by_start():
+    """不同財年（不同 start）不可以互相相減。"""
+    raw = {"facts": {"us-gaap": {"Capex": {"units": {"USD": [
+        _fact("2023-10-01", "2024-06-29", 6539.0),
+        _fact("2024-09-29", "2024-12-28", 2940.0),
+    ]}}}}}
+    out = ff.quarterly_from_ytd(raw, "Capex", prefer="as_reported")
+    # 後者是新財年的第一季，不可以拿去減前一個財年的累計
+    assert out["2024-12-28"] == 2940.0
+
+
+def test_quarterly_from_ytd_ignores_lone_annual_period():
+    """同一個 start 底下只有一筆、而且長度是一整年 → 那是年度值不是單季，
+    不可以當成 Q1 收進來（實測 AAPL 2013-09-28 就是這樣被誤收）。"""
+    raw = {"facts": {"us-gaap": {"Capex": {"units": {"USD": [
+        _fact("2012-09-30", "2013-09-28", 8165.0),
+    ]}}}}}
+    assert ff.quarterly_from_ytd(raw, "Capex", prefer="as_reported") == {}
+
+
+def test_quarterly_from_ytd_missing_concept_returns_empty():
+    assert ff.quarterly_from_ytd(_YTD_RAW, "Nope", prefer="as_reported") == {}
+
+
+def test_resolve_row_uses_ytd_when_spec_says_so():
+    spec = {"concepts": ["Capex"], "kind": "quarter", "from_ytd": True}
+    out = ff.resolve_row(_YTD_RAW, spec, prefer="as_reported")
+    assert out["2025-03-29"] == 3071.0
+
+
+def test_resolve_row_ytd_falls_back_to_direct_single_quarter_facts():
+    """有些公司真的有 tag 單季。`from_ytd` 的列要兩種都收，單季優先。"""
+    raw = {"facts": {"us-gaap": {"Capex": {"units": {"USD": [
+        _fact("2025-01-01", "2025-03-31", 500.0),      # 真正的單季 tag
+    ]}}}}}
+    spec = {"concepts": ["Capex"], "kind": "quarter", "from_ytd": True}
+    assert ff.resolve_row(raw, spec, prefer="as_reported") == {"2025-03-31": 500.0}

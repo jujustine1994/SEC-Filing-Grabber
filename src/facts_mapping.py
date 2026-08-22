@@ -41,7 +41,8 @@ IS_MAPPING: dict[str, dict] = {
     'R&D Expense': {"concepts": ['ResearchAndDevelopmentExpense', 'ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost'], "kind": 'quarter'},  # 31/37 家（覆蓋 84%、命中 1.00）
     'SG&A Expense': {"concepts": ['SellingGeneralAndAdministrativeExpense', 'SellingAndMarketingExpense', 'GeneralAndAdministrativeExpense'], "kind": 'quarter'},  # 28/47 家（覆蓋 60%、命中 1.00）
     'D&A (CF memo)': {"concepts": ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'Depreciation', 'DepreciationAmortizationAndAccretionNet'], "kind": 'quarter'},  # 24/51 家（覆蓋 47%、命中 0.97）
-    # 'Other Operating Expense'：51 家裡現行路徑一家都沒抓到（答案卷家數 0），facts 這邊也沒有對應 concept。無證據可判，保留列但不對應
+    # ↓ 人工補：52 家裡現行路徑一家都沒抓到——因為模板猜的 `OtherOperatingExpenses`/`OtherOperatingExpense` 根本沒有公司在用。實際 tag 的是這兩個（各 11 家）。反推不到候選是因為沒有答案卷可比，不是這個科目不存在（跟 G10 同一類問題）
+    'Other Operating Expense': {"concepts": ['OtherCostAndExpenseOperating', 'OtherOperatingIncomeExpenseNet'], "kind": 'quarter'},
     'Total Operating Expense': {"concepts": ['OperatingExpenses'], "kind": 'quarter'},  # 23/25 家（覆蓋 92%、命中 1.00）
     'Total Costs and Expenses': {"concepts": ['CostsAndExpenses'], "kind": 'quarter'},  # 14/14 家（覆蓋 100%、命中 1.00）
     'Operating Income': {"concepts": ['OperatingIncomeLoss'], "kind": 'quarter'},  # 39/47 家（覆蓋 83%、命中 1.00）
@@ -112,36 +113,36 @@ BS_MAPPING: dict[str, dict] = {
 
 
 CF_MAPPING: dict[str, dict] = {
-    'Net Income': {"concepts": ['NetIncomeLoss', 'NetIncomeLossAvailableToCommonStockholdersBasic', 'NetIncomeLossAttributableToParentDiluted'], "kind": 'quarter'},  # 47/51 家（覆蓋 92%、命中 0.99）
-    'D&A': {"concepts": ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'Depreciation', 'DepreciationAmortizationAndAccretionNet'], "kind": 'quarter'},  # 24/48 家（覆蓋 50%、命中 0.97）
-    'SBC': {"concepts": ['ShareBasedCompensation'], "kind": 'quarter'},  # 43/44 家（覆蓋 98%、命中 0.99）
+    'Net Income': {"concepts": ['NetIncomeLoss', 'NetIncomeLossAvailableToCommonStockholdersBasic', 'NetIncomeLossAttributableToParentDiluted'], "kind": 'quarter', "from_ytd": True},  # 47/51 家（覆蓋 92%、命中 0.99）
+    'D&A': {"concepts": ['DepreciationDepletionAndAmortization', 'DepreciationAndAmortization', 'Depreciation', 'DepreciationAmortizationAndAccretionNet'], "kind": 'quarter', "from_ytd": True},  # 24/48 家（覆蓋 50%、命中 0.97）
+    'SBC': {"concepts": ['ShareBasedCompensation'], "kind": 'quarter', "from_ytd": True},  # 43/44 家（覆蓋 98%、命中 0.99）
     # ↓ 人工補：9 家命中、平均 0.89，差 0.01 沒過自動門檻。concept 名稱與語意一對一對應，且沒有第二個候選
-    'Amortization of Intangibles': {"concepts": ['AmortizationOfIntangibleAssets'], "kind": 'quarter'},
-    'Change in Receivables': {"concepts": ['IncreaseDecreaseInAccountsReceivable', 'IncreaseDecreaseInReceivables'], "kind": 'quarter', "negate": True},  # 23/35 家（覆蓋 66%、命中 0.97）
-    'Change in Inventories': {"concepts": ['IncreaseDecreaseInInventories'], "kind": 'quarter', "negate": True},  # 24/24 家（覆蓋 100%、命中 0.95）
-    'Change in Accounts Payable': {"concepts": ['IncreaseDecreaseInAccountsPayable', 'IncreaseDecreaseInAccountsPayableAndAccruedLiabilities'], "kind": 'quarter'},  # 26/38 家（覆蓋 68%、命中 0.99）
-    'Change in Prepaid & Other Assets': {"concepts": ['IncreaseDecreaseInPrepaidDeferredExpenseAndOtherAssets'], "kind": 'quarter', "negate": True},  # 16/16 家（覆蓋 100%、命中 0.98）
-    'Change in Other Operating Assets': {"concepts": ['IncreaseDecreaseInOtherOperatingAssets'], "kind": 'quarter', "negate": True},  # 16/18 家（覆蓋 89%、命中 0.98）
-    'Change in Deferred Revenue': {"concepts": ['IncreaseDecreaseInContractWithCustomerLiability', 'IncreaseDecreaseInDeferredRevenue'], "kind": 'quarter'},  # 16/21 家（覆蓋 76%、命中 0.99）
-    'Other Working Capital': {"concepts": ['IncreaseDecreaseInOtherOperatingCapitalNet', 'IncreaseDecreaseInOperatingCapital'], "kind": 'quarter', "negate": True},  # 9/25 家（覆蓋 36%、命中 0.97）
-    'Other Non-cash Items': {"concepts": ['OtherNoncashIncomeExpense'], "kind": 'quarter', "negate": True},  # 29/31 家（覆蓋 94%、命中 0.98）
-    'Operating Cash Flow': {"concepts": ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'], "kind": 'quarter'},  # 51/51 家（覆蓋 100%、命中 1.00）
-    'Capex': {"concepts": ['PaymentsToAcquirePropertyPlantAndEquipment', 'SegmentExpenditureAdditionToLongLivedAssets'], "kind": 'quarter', "negate": True},  # 31/39 家（覆蓋 79%、命中 0.98）
-    'Acquisitions': {"concepts": ['PaymentsToAcquireBusinessesNetOfCashAcquired'], "kind": 'quarter'},  # 17/40 家（覆蓋 42%、命中 0.97）
-    'Investment Purchases': {"concepts": ['PaymentsToAcquireInvestments', 'PaymentsToAcquireMarketableSecurities', 'PaymentsToAcquireShortTermInvestments'], "kind": 'quarter', "negate": True},  # 9/36 家（覆蓋 25%、命中 0.98）
-    'Investment Proceeds': {"concepts": ['ProceedsFromSaleAndMaturityOfMarketableSecurities', 'ProceedsFromMaturitiesPrepaymentsAndCallsOfAvailableForSaleSecurities', 'ProceedsFromSaleMaturityAndCollectionOfShorttermInvestments', 'ProceedsFromSaleOfAvailableForSaleSecuritiesDebt'], "kind": 'quarter'},  # 7/36 家（覆蓋 19%、命中 0.97）
-    'Investing Cash Flow': {"concepts": ['NetCashProvidedByUsedInInvestingActivities', 'NetCashProvidedByUsedInInvestingActivitiesContinuingOperations'], "kind": 'quarter'},  # 49/50 家（覆蓋 98%、命中 1.00）
-    'Debt Proceeds': {"concepts": ['ProceedsFromIssuanceOfLongTermDebt'], "kind": 'quarter'},  # 14/37 家（覆蓋 38%、命中 0.99）
-    'Debt Repayments': {"concepts": ['RepaymentsOfLongTermDebt'], "kind": 'quarter', "negate": True},  # 10/46 家（覆蓋 22%、命中 0.95）
-    'Share Repurchases': {"concepts": ['PaymentsForRepurchaseOfCommonStock'], "kind": 'quarter', "negate": True},  # 31/37 家（覆蓋 84%、命中 0.98）
-    'Dividends Paid': {"concepts": ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock', 'PaymentsOfOrdinaryDividends'], "kind": 'quarter', "negate": True},  # 17/40 家（覆蓋 42%、命中 0.96）
-    'Financing Cash Flow': {"concepts": ['NetCashProvidedByUsedInFinancingActivities', 'NetCashProvidedByUsedInFinancingActivitiesContinuingOperations'], "kind": 'quarter'},  # 50/50 家（覆蓋 100%、命中 1.00）
-    'FX Effect on Cash': {"concepts": ['EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsIncludingDisposalGroupAndDiscontinuedOperations', 'EffectOfExchangeRateOnCashAndCashEquivalents'], "kind": 'quarter'},  # 28/39 家（覆蓋 72%、命中 1.00）
-    'Net Change in Cash': {"concepts": ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect', 'CashAndCashEquivalentsPeriodIncreaseDecrease'], "kind": 'quarter'},  # 51/51 家（覆蓋 100%、命中 1.00）
+    'Amortization of Intangibles': {"concepts": ['AmortizationOfIntangibleAssets'], "kind": 'quarter', "from_ytd": True},
+    'Change in Receivables': {"concepts": ['IncreaseDecreaseInAccountsReceivable', 'IncreaseDecreaseInReceivables'], "kind": 'quarter', "from_ytd": True},  # 23/35 家（覆蓋 66%、命中 0.97）
+    'Change in Inventories': {"concepts": ['IncreaseDecreaseInInventories'], "kind": 'quarter', "from_ytd": True},  # 24/24 家（覆蓋 100%、命中 0.95）
+    'Change in Accounts Payable': {"concepts": ['IncreaseDecreaseInAccountsPayable', 'IncreaseDecreaseInAccountsPayableAndAccruedLiabilities'], "kind": 'quarter', "from_ytd": True},  # 26/38 家（覆蓋 68%、命中 0.99）
+    'Change in Prepaid & Other Assets': {"concepts": ['IncreaseDecreaseInPrepaidDeferredExpenseAndOtherAssets'], "kind": 'quarter', "from_ytd": True},  # 16/16 家（覆蓋 100%、命中 0.98）
+    'Change in Other Operating Assets': {"concepts": ['IncreaseDecreaseInOtherOperatingAssets'], "kind": 'quarter', "from_ytd": True},  # 16/18 家（覆蓋 89%、命中 0.98）
+    'Change in Deferred Revenue': {"concepts": ['IncreaseDecreaseInContractWithCustomerLiability', 'IncreaseDecreaseInDeferredRevenue'], "kind": 'quarter', "from_ytd": True},  # 16/21 家（覆蓋 76%、命中 0.99）
+    'Other Working Capital': {"concepts": ['IncreaseDecreaseInOtherOperatingCapitalNet', 'IncreaseDecreaseInOperatingCapital'], "kind": 'quarter', "from_ytd": True},  # 9/25 家（覆蓋 36%、命中 0.97）
+    'Other Non-cash Items': {"concepts": ['OtherNoncashIncomeExpense'], "kind": 'quarter', "from_ytd": True},  # 29/31 家（覆蓋 94%、命中 0.98）
+    'Operating Cash Flow': {"concepts": ['NetCashProvidedByUsedInOperatingActivities', 'NetCashProvidedByUsedInOperatingActivitiesContinuingOperations'], "kind": 'quarter', "from_ytd": True},  # 51/51 家（覆蓋 100%、命中 1.00）
+    'Capex': {"concepts": ['PaymentsToAcquirePropertyPlantAndEquipment', 'SegmentExpenditureAdditionToLongLivedAssets'], "kind": 'quarter', "from_ytd": True},  # 31/39 家（覆蓋 79%、命中 0.98）
+    'Acquisitions': {"concepts": ['PaymentsToAcquireBusinessesNetOfCashAcquired'], "kind": 'quarter', "from_ytd": True},  # 17/40 家（覆蓋 42%、命中 0.97）
+    'Investment Purchases': {"concepts": ['PaymentsToAcquireInvestments', 'PaymentsToAcquireMarketableSecurities', 'PaymentsToAcquireShortTermInvestments'], "kind": 'quarter', "from_ytd": True},  # 9/36 家（覆蓋 25%、命中 0.98）
+    'Investment Proceeds': {"concepts": ['ProceedsFromSaleAndMaturityOfMarketableSecurities', 'ProceedsFromMaturitiesPrepaymentsAndCallsOfAvailableForSaleSecurities', 'ProceedsFromSaleMaturityAndCollectionOfShorttermInvestments', 'ProceedsFromSaleOfAvailableForSaleSecuritiesDebt'], "kind": 'quarter', "from_ytd": True},  # 7/36 家（覆蓋 19%、命中 0.97）
+    'Investing Cash Flow': {"concepts": ['NetCashProvidedByUsedInInvestingActivities', 'NetCashProvidedByUsedInInvestingActivitiesContinuingOperations'], "kind": 'quarter', "from_ytd": True},  # 49/50 家（覆蓋 98%、命中 1.00）
+    'Debt Proceeds': {"concepts": ['ProceedsFromIssuanceOfLongTermDebt'], "kind": 'quarter', "from_ytd": True},  # 14/37 家（覆蓋 38%、命中 0.99）
+    'Debt Repayments': {"concepts": ['RepaymentsOfLongTermDebt'], "kind": 'quarter', "from_ytd": True},  # 10/46 家（覆蓋 22%、命中 0.95）
+    'Share Repurchases': {"concepts": ['PaymentsForRepurchaseOfCommonStock'], "kind": 'quarter', "from_ytd": True},  # 31/37 家（覆蓋 84%、命中 0.98）
+    'Dividends Paid': {"concepts": ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock', 'PaymentsOfOrdinaryDividends'], "kind": 'quarter', "from_ytd": True},  # 17/40 家（覆蓋 42%、命中 0.96）
+    'Financing Cash Flow': {"concepts": ['NetCashProvidedByUsedInFinancingActivities', 'NetCashProvidedByUsedInFinancingActivitiesContinuingOperations'], "kind": 'quarter', "from_ytd": True},  # 50/50 家（覆蓋 100%、命中 1.00）
+    'FX Effect on Cash': {"concepts": ['EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'EffectOfExchangeRateOnCashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsIncludingDisposalGroupAndDiscontinuedOperations', 'EffectOfExchangeRateOnCashAndCashEquivalents'], "kind": 'quarter', "from_ytd": True},  # 28/39 家（覆蓋 72%、命中 1.00）
+    'Net Change in Cash': {"concepts": ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsPeriodIncreaseDecreaseIncludingExchangeRateEffect', 'CashAndCashEquivalentsPeriodIncreaseDecrease'], "kind": 'quarter', "from_ytd": True},  # 51/51 家（覆蓋 100%、命中 1.00）
     # ↓ 人工補：期末現金是時點值不是期間值。覆蓋率低是因為各家「含不含受限現金」口徑不同，兩個 concept 排成 fallback
     'Ending Cash': {"concepts": ['CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents', 'CashAndCashEquivalentsAtCarryingValue'], "kind": 'instant'},
-    'Cash Taxes Paid': {"concepts": ['IncomeTaxesPaidNet'], "kind": 'quarter'},  # 10/17 家（覆蓋 59%、命中 1.00）
-    'Cash Interest Paid': {"concepts": ['InterestPaidNet'], "kind": 'quarter'},  # 13/16 家（覆蓋 81%、命中 0.98）
+    'Cash Taxes Paid': {"concepts": ['IncomeTaxesPaidNet'], "kind": 'quarter', "from_ytd": True},  # 10/17 家（覆蓋 59%、命中 1.00）
+    'Cash Interest Paid': {"concepts": ['InterestPaidNet'], "kind": 'quarter', "from_ytd": True},  # 13/16 家（覆蓋 81%、命中 0.98）
     # 'Free Cash Flow'：OCF − Capex。XBRL 沒有這個 tag，必須用算的（模板本來就標 source=DERIVED）
 }
 

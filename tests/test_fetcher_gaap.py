@@ -2194,3 +2194,162 @@ def test_backfill_cf_sourced_rows_survives_missing_rows():
     is_tbl = _tbl("Data_IS", ["FY2025Q1"], ["Revenue"], [[10.0]])
     cf_tbl = _tbl("Data_CF", ["FY2025Q1"], ["Operating Cash Flow"], [[5.0]])
     assert _backfill_cf_sourced_rows(is_tbl, cf_tbl).values == [[10.0]]
+
+
+# ── G12：現金流量表裡的時點值不可以做 YTD 相減（2026-08-22）────────────────
+#
+# `Ending Cash`（期末現金餘額）排在 CF_TEMPLATE 裡，但它是**餘額**不是本期
+# 發生額。`_build_cf_table()` 對整張表做「本季 YTD − 上季 YTD」，減出來變成
+# 「現金變動額」。實測 AAPL：
+#     2026-03-28   現行     255,000,000   正確 45,572,000,000
+#     2026-06-27   現行  -6,028,000,000   正確 39,544,000,000
+# 52 家裡 50 家中招（逐格命中率只有 32.8%）。
+
+def _make_cf_df_with_cash(period_col, ni, ocf, ending_cash):
+    df = _make_cf_df_minimal(period_col, ni, ocf)
+    extra = pd.DataFrame({
+        "concept": ["us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents"],
+        "label": ["Cash and cash equivalents, end of period"],
+        "standard_concept": ["CashAndCashEquivalents"],
+        "abstract": [False], "is_breakdown": [False], "level": [3],
+        "dimension_member_label": [None],
+        period_col: [ending_cash],
+    })
+    return pd.concat([df, extra], ignore_index=True)
+
+
+def _make_cf_filing_with_cash(is_col, cf_col, ni, ocf, cash, filing_date):
+    is_df = _make_is_df_minimal(is_col)
+    cf_df = _make_cf_df_with_cash(cf_col, ni, ocf, cash)
+    mock_is = MagicMock(); mock_is.to_dataframe.return_value = is_df
+    mock_cf = MagicMock(); mock_cf.to_dataframe.return_value = cf_df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_is
+    mock_fin.cashflow_statement.return_value = mock_cf
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    mock_filing = MagicMock()
+    mock_filing.obj.return_value = mock_tenq
+    mock_filing.filing_date = filing_date
+    return mock_filing
+
+
+def test_ending_cash_is_a_balance_and_must_not_be_ytd_subtracted():
+    """Q2 的期末現金餘額就是那個餘額，不是「Q2 餘額 − Q1 餘額」。"""
+    q1 = _make_cf_filing_with_cash("2025-03-31 (Q1)", "2025-03-31 (Q1)",
+                                    ni=100.0, ocf=150.0, cash=900.0,
+                                    filing_date="2025-04-30")
+    q2 = _make_cf_filing_with_cash("2025-06-30 (Q2)", "2025-06-30 (YTD)",
+                                    ni=230.0, ocf=330.0, cash=950.0,
+                                    filing_date="2025-07-30")
+    gaap_tbl, _ = _build_cf_table([q2, q1], max_filings=80)
+
+    cash_idx = gaap_tbl.concepts.index("Ending Cash")
+    q2_pos = gaap_tbl.quarter_labels.index("FY2025Q2")
+    # 錯誤行為會給 950 − 900 = 50
+    assert gaap_tbl.values[cash_idx][q2_pos] == pytest.approx(950.0)
+
+
+def test_flow_rows_are_still_ytd_subtracted_after_the_fix():
+    """修時點值不可以順手把流量項的 YTD 拆算也關掉。"""
+    q1 = _make_cf_filing_with_cash("2025-03-31 (Q1)", "2025-03-31 (Q1)",
+                                    ni=100.0, ocf=150.0, cash=900.0,
+                                    filing_date="2025-04-30")
+    q2 = _make_cf_filing_with_cash("2025-06-30 (Q2)", "2025-06-30 (YTD)",
+                                    ni=230.0, ocf=330.0, cash=950.0,
+                                    filing_date="2025-07-30")
+    gaap_tbl, _ = _build_cf_table([q2, q1], max_filings=80)
+
+    q2_pos = gaap_tbl.quarter_labels.index("FY2025Q2")
+    ocf_idx = gaap_tbl.concepts.index("Operating Cash Flow")
+    assert gaap_tbl.values[ocf_idx][q2_pos] == pytest.approx(180.0)   # 330 − 150
+
+
+def test_synthesize_q4_takes_balance_rows_from_annual_not_subtraction():
+    """同一個 bug 的第二個實例：合成 Q4 也不可以對餘額做「年報 − Q1 − Q2 − Q3」。
+
+    實測 AAPL 2025-09-27 修完第一處後仍是 -58,796,000,000（那是合成 Q4 欄）。
+    餘額的 Q4 就是年報上的期末餘額，直接取用。
+    """
+    from fetcher_gaap import _CF_IDX, _CF_POINT_IN_TIME_IDX, CF_TEMPLATE
+    n = len(CF_TEMPLATE)
+    cash_i, ocf_i = _CF_IDX["Ending Cash"], _CF_IDX["Operating Cash Flow"]
+
+    q = StatementTable(
+        sheet_name="Data_CF",
+        quarter_labels=["FY2025Q1", "FY2025Q2", "FY2025Q3"],
+        filing_dates=[""] * 3,
+        concepts=[r[0] for r in CF_TEMPLATE],
+        values=[[10.0, 20.0, 30.0] if i == ocf_i else
+                [100.0, 200.0, 300.0] if i == cash_i else [None] * 3
+                for i in range(n)],
+        ticker="T", labels=[""] * n, period_ends=["2025-03-31", "2025-06-30", "2025-09-30"],
+    )
+    ann = StatementTable(
+        sheet_name="Data_CF", quarter_labels=["FY2025"], filing_dates=[""],
+        concepts=[r[0] for r in CF_TEMPLATE],
+        values=[[100.0] if i == ocf_i else [400.0] if i == cash_i else [None]
+                for i in range(n)],
+        ticker="T", labels=[""] * n, period_ends=["2025-12-31"],
+    )
+    out = _synthesize_q4(q, ann, n, is_balance=False,
+                         point_in_time_idx=_CF_POINT_IN_TIME_IDX)
+    p = out.quarter_labels.index("FY2025Q4")
+    # 流量項照減：100 − 10 − 20 − 30 = 40
+    assert out.values[ocf_i][p] == pytest.approx(40.0)
+    # 餘額直接取年報值 400，不是 400 − 100 − 200 − 300 = −200
+    assert out.values[cash_i][p] == pytest.approx(400.0)
+
+
+# ── G9：一次執行內同一份 filing 只解析一次（2026-08-22）─────────────────────
+#
+# 實測 ARLO（25 份 filing，66 秒）：`_filing_obj` 被呼叫 96 次（每份 3.8 次），
+# `financials`（XBRL 解析）花 19.9s、`to_dataframe` 花 28.4s。IS/BS/CF/segments
+# 四個 build pass 各自對同一批 filing 重解析一次。edgartools 不會跨呼叫快取
+# （同一支 ticker 連跑兩次：64.5s vs 67.3s，完全沒有變快）。
+
+def test_filing_obj_parses_each_accession_only_once_per_run():
+    from fetcher_gaap import _filing_obj, _parse_cache_scope
+    calls = {"n": 0}
+
+    def _obj():
+        calls["n"] += 1
+        return MagicMock()
+
+    f = MagicMock()
+    f.obj.side_effect = _obj
+    f.accession_no = "0001045810-25-000116"
+
+    with _parse_cache_scope():
+        a = _filing_obj(f)
+        b = _filing_obj(f)
+    assert a is b
+    assert calls["n"] == 1
+
+
+def test_parse_cache_does_not_leak_between_runs():
+    """快取只能活在一次抓取內——跨 ticker 或跨執行殘留會拿到過期資料。"""
+    from fetcher_gaap import _filing_obj, _parse_cache_scope
+    calls = {"n": 0}
+
+    def _obj():
+        calls["n"] += 1
+        return MagicMock()
+
+    f = MagicMock()
+    f.obj.side_effect = _obj
+    f.accession_no = "0001045810-25-000116"
+
+    with _parse_cache_scope():
+        _filing_obj(f)
+    with _parse_cache_scope():
+        _filing_obj(f)
+    assert calls["n"] == 2
+
+
+def test_filing_obj_still_works_without_a_cache_scope():
+    """沒有開快取範圍時要照常運作（cli.py 之類的路徑可能直接呼叫）。"""
+    from fetcher_gaap import _filing_obj
+    f = MagicMock()
+    f.obj.return_value = "X"
+    f.accession_no = "acc-1"
+    assert _filing_obj(f) == "X"

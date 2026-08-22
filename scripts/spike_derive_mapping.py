@@ -278,6 +278,7 @@ def emit_mapping(ranked, row_kind, answer_counts,
             if owner.get((c["taxonomy"], c["concept"], c["unit"]), (row_name,))[0] == row_name
             # 備援的符號慣例必須跟首選一致，否則單一 negate 表達不了，
             # 落到那個備援時就會靜默生出正負相反的數字
+            # 備援的符號慣例必須跟首選一致，否則同一列會時正時負
             and c["negate"] == good[0]["negate"]
         ]
         good = [c for c in good
@@ -291,11 +292,15 @@ def emit_mapping(ranked, row_kind, answer_counts,
             "kind": good[0]["kind"],
             "unit": good[0]["unit"],
             "taxonomy": good[0]["taxonomy"],
-            # negate 跟隨**首選** concept，不是 all()。2026-08-22 實測踩到：
-            # Capex 的首選要反號、某個備援不用，all() 就變成 False，
-            # 結果 31 家公司的 Capex 全部正負相反（命中率 7%）。
-            # 符號是「這個 concept 跟我們慣例的關係」，本來就該逐 concept 認定。
-            "negate": good[0]["negate"],
+            # **符號一律照公司原始申報，不做正規化**（CTH 2026-08-22 決定：
+            # 「尊重公司原始資料，使用者要查找時會自己處理」）。所以這裡永遠
+            # 是 False。`negate` 欄位保留是因為 `fetcher_facts.resolve_row()`
+            # 支援它、也有測試釘住，日後若改政策不必重寫機制。
+            #
+            # 附帶說明：反推出來的 `negate` 旗標仍然有診斷價值——它揭露了
+            # 現行路徑的符號本身就不一致（同一家公司的 Capex 早年正、近年負），
+            # 那份分析留在 docs/superpowers/report-2026-08-22-g11-companyfacts.md
+            "negate": False,
             "_evidence": {
                 "answer_companies": answer_counts.get(row_name, 0),
                 "won": {c["concept"]: c["companies"] for c in good},

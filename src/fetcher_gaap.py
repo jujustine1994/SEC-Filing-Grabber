@@ -190,6 +190,39 @@ def _filing_ref(filing) -> str:
     return "?"
 
 
+# ── 解析快取（G9）─────────────────────────────────────────────────────────
+#
+# IS/BS/CF/segments 四個 build pass 各自對**同一批 filing** 重新解析一次。
+# 實測 ARLO（25 份 filing、66 秒）：`_filing_obj` 被呼叫 96 次（每份 3.8 次），
+# 其中 `financials`（真正的 XBRL 解析）花 19.9 秒、`to_dataframe` 花 28.4 秒。
+#
+# edgartools **不會跨呼叫快取解析結果**——同一支 ticker 在同一個 process 連跑
+# 兩次是 64.5s vs 67.3s，完全沒變快。所以這個重複成本是真的。
+#
+# 快取的生命週期**只能是一次抓取**（`_parse_cache_scope()`）：跨 ticker 殘留會
+# 吃掉別家的資料，跨執行殘留會拿到過期的申報。沒開範圍時照常運作、不快取。
+_parse_cache: dict | None = None
+
+
+@contextmanager
+def _parse_cache_scope():
+    """一次抓取的解析快取範圍。離開時清空，不讓資料跨 ticker／跨執行殘留。"""
+    global _parse_cache
+    outer = _parse_cache
+    _parse_cache = {} if outer is None else outer
+    try:
+        yield
+    finally:
+        if outer is None:
+            _parse_cache = None
+
+
+def _cache_key(filing) -> str | None:
+    """filing 的快取鍵。拿不到 accession 就不快取（回 None）——寧可慢也不要錯拿。"""
+    acc = getattr(filing, "accession_no", None)
+    return str(acc) if acc else None
+
+
 def _filing_obj(filing):
     """下載並解析一份 filing，網路問題會退避重試（CTH 2026-08-17）。
 
@@ -200,9 +233,15 @@ def _filing_obj(filing):
     斷掉時 40 份財報各等 2+4 秒等於乾等 4 分鐘，剩下的快速失敗完，
     照樣寫檔、照樣提示。
     """
+    key = _cache_key(filing)
+    if _parse_cache is not None and key is not None and key in _parse_cache:
+        return _parse_cache[key]
     led = _ledger()
     attempts = 1 if (led is not None and led.give_up_retrying) else 3
-    return with_retry(lambda: filing.obj(), attempts=attempts)
+    obj = with_retry(lambda: filing.obj(), attempts=attempts)
+    if _parse_cache is not None and key is not None:
+        _parse_cache[key] = obj
+    return obj
 
 
 def _financials_of(tenq):
@@ -394,6 +433,19 @@ _CF_DA_IDX              = _CF_IDX["D&A"]
 _CF_OP_CASH_IDX         = _CF_IDX["Operating Cash Flow"]
 _CF_CAPEX_IDX           = _CF_IDX["Capex"]
 _CF_FCF_IDX             = _CF_IDX["Free Cash Flow"]
+
+# 現金流量表裡混著**時點值**：`Ending Cash` 是期末現金「餘額」，不是本期發生額。
+# `_build_cf_table()` 對 YTD 欄做「本季 YTD − 上季 YTD」還原單季，那對流量項
+# 是對的，對餘額就完全錯了——減出來是「現金變動額」不是「餘額」。
+#
+# 實測 AAPL（2026-08-22 做 companyfacts 逐格比對時發現）：
+#     2026-03-28   錯誤     255,000,000   正確 45,572,000,000
+#     2026-06-27   錯誤  -6,028,000,000   正確 39,544,000,000
+# 52 家裡 50 家中招。
+#
+# 期初現金沒有獨立列（`Net Change in Cash` 是流量、是對的），所以目前只有這一列。
+# 日後在 CF_TEMPLATE 加時點值列時**要記得加進來**。
+_CF_POINT_IN_TIME_IDX = frozenset({_CF_IDX["Ending Cash"]})
 
 _CF_INV_PURCHASES_IDX  = _CF_IDX["Investment Purchases"]
 _CF_INV_PROCEEDS_IDX   = _CF_IDX["Investment Proceeds"]
@@ -1373,9 +1425,12 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
             if prev_label and prev_label in ytd_raw:
                 prev = ytd_raw[prev_label]
                 standalone[label] = {
-                    i: (row_vals.get(i) - prev.get(i)
-                        if row_vals.get(i) is not None and prev.get(i) is not None
-                        else None)
+                    # 時點值（期末餘額）直接採用，不參與相減——見
+                    # `_CF_POINT_IN_TIME_IDX` 的說明
+                    i: (row_vals.get(i) if i in _CF_POINT_IN_TIME_IDX else
+                        (row_vals.get(i) - prev.get(i)
+                         if row_vals.get(i) is not None and prev.get(i) is not None
+                         else None))
                     for i in range(len(CF_TEMPLATE))
                 }
             else:
@@ -1721,7 +1776,8 @@ def _backfill_cf_sourced_rows(is_tbl: StatementTable,
 
 
 def _synthesize_q4(q_tbl: StatementTable, ann_tbl: StatementTable,
-                    n_template_rows: int, is_balance: bool) -> StatementTable:
+                    n_template_rows: int, is_balance: bool,
+                    point_in_time_idx: frozenset[int] = frozenset()) -> StatementTable:
     """Insert a synthesized Q4 column into q_tbl for each fiscal year covered by ann_tbl.
 
     Skips a fiscal year when:
@@ -1730,6 +1786,11 @@ def _synthesize_q4(q_tbl: StatementTable, ann_tbl: StatementTable,
       - the derived column would be entirely None
 
     Returns q_tbl unchanged (same object) if ann_tbl has no annual periods.
+
+    `point_in_time_idx`：**流量表裡混著的餘額列**。整張表 `is_balance=False`
+    時這些列仍然要直接取年報值，不可以做「年報 − Q1 − Q2 − Q3」。
+    現金流量表的 `Ending Cash` 就是這種——2026-08-22 實測 AAPL 的 Q4 欄位算出
+    −58,796,000,000（正確是 +45,317,000,000）。見 `_CF_POINT_IN_TIME_IDX`。
     """
     if not ann_tbl.quarter_labels:
         return q_tbl
@@ -1759,6 +1820,9 @@ def _synthesize_q4(q_tbl: StatementTable, ann_tbl: StatementTable,
             col_vals = []
             for r in range(n_template_rows):
                 fy_val = ann_tbl.values[r][fy_i] if r < len(ann_tbl.values) else None
+                if r in point_in_time_idx:
+                    col_vals.append(fy_val)      # 餘額：年報上的期末值就是 Q4 的值
+                    continue
                 v1 = q_tbl.values[r][i1] if r < len(q_tbl.values) else None
                 v2 = q_tbl.values[r][i2] if r < len(q_tbl.values) else None
                 v3 = q_tbl.values[r][i3] if r < len(q_tbl.values) else None
@@ -2167,6 +2231,24 @@ def fetch_gaap_statements(ticker: str, identity: str,
                 excluded_sheets,
             )
 
+    # 解析快取涵蓋整趟（G9）。開在這裡而不是上面那個 `_ledger() is None` 分支
+    # 裡面——`main.py` 與 `cli.py` 會自己先開 `collect_gaps()`，那條路不會走到
+    # 上面的遞迴，快取就不會生效。`_parse_cache_scope()` 可以巢狀，重複開無害。
+    with _parse_cache_scope():
+        return _fetch_gaap_impl(
+            ticker, identity, max_filings, max_annual_filings, ai_config,
+            start_year, end_year, fetch_quarterly, fetch_annual, excluded_sheets,
+        )
+
+
+def _fetch_gaap_impl(ticker: str, identity: str,
+                     max_filings: int, max_annual_filings: int,
+                     ai_config: dict | None,
+                     start_year: int | None, end_year: int | None,
+                     fetch_quarterly: bool, fetch_annual: bool,
+                     excluded_sheets: set | None) -> list[StatementTable]:
+    """`fetch_gaap_statements()` 的本體。拆出來只是為了讓帳本與解析快取
+    這兩個 context manager 包在外面，不用把 120 行本體整段重新縮排。"""
     ai_config = ai_config or {}
     excluded_sheets = excluded_sheets or set()
     set_identity(identity)
@@ -2271,7 +2353,8 @@ def fetch_gaap_statements(ticker: str, identity: str,
         if is_ann is not None:
             is_tbl = _synthesize_q4(is_tbl, is_ann, len(IS_TEMPLATE), is_balance=False)
             bs_tbl = _synthesize_q4(bs_tbl, bs_ann, len(BS_TEMPLATE), is_balance=True)
-            cf_tbl = _synthesize_q4(cf_tbl, cf_ann, len(CF_TEMPLATE), is_balance=False)
+            cf_tbl = _synthesize_q4(cf_tbl, cf_ann, len(CF_TEMPLATE), is_balance=False,
+                                    point_in_time_idx=_CF_POINT_IN_TIME_IDX)
 
         # IS 的 CF-sourced 列（SBC / D&A (CF memo)）改用 CF 表已經拆算好的單季值。
         # **一定要放在 _synthesize_q4() 之後**：CF 表的 Q4 是在那一步才補上的，

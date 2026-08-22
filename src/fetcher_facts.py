@@ -142,6 +142,57 @@ def series_for_concept(
     return {}
 
 
+# ── YTD 拆算（現金流量表的流量項）────────────────────────────────────────
+#
+# 公司在 XBRL 裡把現金流量表 tag 成 **YTD 累計**，不是單季。只篩「80~100 天」的話
+# 一年四季只撈得到 Q1（Q1 的 YTD 剛好等於單季），實測 CF 流量列的填滿率只有 25%。
+#
+# YTD 系列的結構特徵非常明確——**同一個 `start`、`end` 遞增**。實測 AAPL Capex：
+#
+#     start=2024-09-29  end=2024-12-28( 90 天)   2,940M
+#                       end=2025-03-29(181 天)   6,011M
+#                       end=2025-06-28(272 天)   9,473M
+#                       end=2025-09-27(363 天)  12,715M
+#
+# 相鄰相減就是單季。**這比現行路徑可靠**：現行是靠 edgartools 的欄名判斷哪一欄
+# 是 YTD（`_ytd_col()` 找 "(YTD)" 字樣），這裡看的是起訖日這個結構事實。
+#
+# 實測 AAPL Capex 52 期，相減結果跟現行路徑對 51 錯 1，那 1 個是同一個 start
+# 底下只有一筆的年度值——所以下面要擋掉「孤單的年度長度」。
+
+
+def quarterly_from_ytd(raw: dict, concept: str, *, prefer: str,
+                       unit: str = "USD", taxonomy: str = "us-gaap") -> dict[str, Any]:
+    """YTD 累計 → 單季。`{期末日: 單季值}`。
+
+    依 `start` 分組（不同財年不可互相相減），組內依 `end` 排序後相鄰相減。
+    每組第一筆直接採用（財年第一季的 YTD 就等於單季）。
+
+    **孤單的年度長度要擋掉**：同一個 `start` 底下只有一筆、而且長度落在年度區間，
+    那是年度值不是 Q1，收進來會變成一個假的單季（實測 AAPL 2013-09-28 就是這樣）。
+    """
+    groups: dict[str, dict[str, list[dict]]] = {}
+    for fact in _unit_facts(raw, concept, unit, taxonomy):
+        start, end = fact.get("start"), fact.get("end")
+        if not start or not end:
+            continue
+        groups.setdefault(start, {}).setdefault(end, []).append(fact)
+
+    out: dict[str, Any] = {}
+    for start, by_end in groups.items():
+        ends = sorted(by_end)
+        if len(ends) == 1:
+            only = pick_fact(by_end[ends[0]], prefer=prefer)
+            if classify_period(only) != "quarter":
+                continue          # 孤單的年度／半年，不是單季
+        prev = 0.0
+        for end in ends:
+            val = pick_fact(by_end[end], prefer=prefer)["val"]
+            out[end] = val - prev
+            prev = val
+    return out
+
+
 # ── 套用 mapping 組表 ───────────────────────────────────────────────────────
 #
 # mapping 的形狀（見 `facts_mapping.py`）：
@@ -150,6 +201,7 @@ def series_for_concept(
 #               "kind": "quarter" | "annual" | "instant",
 #               "unit": "USD" | "USD/shares" | "shares",   # 可省略，預設 USD
 #               "taxonomy": "us-gaap" | "dei",             # 可省略，預設 us-gaap
+#               "from_ytd": True,   # 現金流量表的流量項：公司只 tag YTD 累計，要相減還原單季
 #               "negate": True}}          # 可省略，預設 False
 #
 # **`unit` 為什麼需要**：EPS 是 `USD/shares`、股數是 `shares`。2026-08-22 跑
@@ -167,10 +219,21 @@ def resolve_row(raw: dict, spec: dict, *, prefer: str) -> dict[str, Any]:
     concepts = spec.get("concepts") or []
     if not concepts:
         return {}
+    unit = spec.get("unit", "USD")
+    taxonomy = spec.get("taxonomy", "us-gaap")
     series = series_for_concept(raw, concepts[0], kind=spec["kind"], prefer=prefer,
                                 fallbacks=list(concepts[1:]),
-                                unit=spec.get("unit", "USD"),
-                                taxonomy=spec.get("taxonomy", "us-gaap"))
+                                unit=unit, taxonomy=taxonomy)
+    # `from_ytd` 的列（現金流量表的流量項）：公司多半只 tag YTD 累計。
+    # **單季 tag 優先**——有些公司真的有 tag，那比相減出來的可靠。
+    # 兩邊都收、單季覆蓋不到的期間才用相減補。
+    if spec.get("from_ytd"):
+        for name in concepts:
+            derived = quarterly_from_ytd(raw, name, prefer=prefer,
+                                         unit=unit, taxonomy=taxonomy)
+            if derived:
+                series = {**derived, **series}
+                break
     if spec.get("negate"):
         return {k: -v for k, v in series.items()}
     return series
