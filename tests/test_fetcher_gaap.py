@@ -322,9 +322,11 @@ def test_build_is_table_has_all_template_concept_rows():
     assert len(gaap_tbl.concepts) == len(IS_TEMPLATE) == 24
 
 def test_build_is_table_quarter_labels_format():
+    # fy_end_month 預設 12，期末日 2025-12-27 就是 Q4——季編號由日期反推，
+    # 不採信欄名裡的 (Q1)（見 _col_to_quarter_label 的說明）
     filing = _make_filing(period_col="2025-12-27 (Q1)")
     gaap_tbl, _ = _build_is_table([filing], max_filings=1)
-    assert gaap_tbl.quarter_labels == ["FY2025Q1"]
+    assert gaap_tbl.quarter_labels == ["FY2025Q4"]
 
 def test_build_is_table_filing_dates():
     filing = _make_filing(filing_date="2026-01-30")
@@ -425,8 +427,8 @@ def test_build_is_table_two_filings_oldest_to_newest():
     f2 = _make_filing(period_col="2024-12-28 (Q1)", val=90.0, filing_date="2025-01-31",
                        prior_col="2023-12-30 (Q1)", prior_val=80.0)
     gaap_tbl, _ = _build_is_table([f1, f2], max_filings=2)
-    assert gaap_tbl.quarter_labels[0] == "FY2024Q1"
-    assert gaap_tbl.quarter_labels[1] == "FY2025Q1"
+    assert gaap_tbl.quarter_labels[0] == "FY2024Q4"
+    assert gaap_tbl.quarter_labels[1] == "FY2025Q4"
 
 def test_build_is_table_deduplicates_same_period():
     f1 = _make_filing(period_col="2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30",
@@ -1384,8 +1386,13 @@ def test_debt_repayments_sums_lt_and_st():
 # ── Task 8: FY label fiscal year alignment ────────────────────────────────────
 
 def test_col_to_quarter_label_default_december_fy_unchanged():
-    """Default fy_end_month=12 must produce identical output to current behaviour."""
-    assert _col_to_quarter_label("2023-12-30 (Q1)") == "FY2023Q1"
+    """Default fy_end_month=12：財年不進位，季編號跟日曆季一致。
+
+    2023-12-30 這個期末日對 12 月結算的公司就是 Q4——舊版採信 edgartools 的
+    `(Q1)` 標記所以回 FY2023Q1，現在一律由日期反推，回 FY2023Q4。
+    """
+    assert _col_to_quarter_label("2023-03-31 (Q1)") == "FY2023Q1"
+    assert _col_to_quarter_label("2023-12-30 (Q1)") == "FY2023Q4"
     assert _col_to_quarter_label("2023-09-30 (FY)") == "FY2023"
 
 
@@ -2061,3 +2068,129 @@ def test_meta_latest_period_blank_without_quarterly_table():
     from fetcher_gaap import _build_meta_table
     m = _build_meta_table("T", "Test Inc", [])
     assert all(not v for v in m.values[m.concepts.index("Latest Period")]) or            m.values[m.concepts.index("Latest Period")] == []
+
+
+# ── 財季編號改用期末日反推（2026-08-22）─────────────────────────────────────
+#
+# edgartools 欄名裡的 `(Qn)` 對 52/53 週財年制的公司會標錯（實測 NVDA、INTC），
+# 兩份不同期間的 10-Q 因此算出同一個 label，`_build_*_table` 的 dedup
+# （`if label in periods: continue`）就把舊的那一季靜默丟掉，連帶讓
+# `_synthesize_q4()` 缺 Q1/Q2/Q3 而合成不出 Q4。
+# 這幾個測試釘住「財季編號一律由期末日 + 財年結束月反推，不採信 `(Qn)`」。
+
+def test_col_to_quarter_label_ignores_wrong_edgartools_q_marker():
+    """NVDA 2016-05-01（FY2017 Q1）被 edgartools 標成 (Q2)，必須以日期為準。"""
+    assert _col_to_quarter_label("2016-05-01 (Q2)", fy_end_month=1) == "FY2017Q1"
+
+
+def test_col_to_quarter_label_nvda_q2_not_collapsed_into_q1():
+    """同一財年的下一季（2016-07-31，也被標成 (Q2)）必須算出 FY2017Q2。"""
+    assert _col_to_quarter_label("2016-07-31 (Q2)", fy_end_month=1) == "FY2017Q2"
+
+
+def test_col_to_quarter_label_intc_q1_ending_in_april():
+    """INTC 2023-04-01 是 2023 Q1（13 週制溢出到 4 月），edgartools 標 (Q2)。"""
+    assert _col_to_quarter_label("2023-04-01 (Q2)", fy_end_month=12) == "FY2023Q1"
+
+
+def test_col_to_quarter_label_no_collision_across_one_fiscal_year():
+    """NVDA FY2011 三季各自算出不同 label——這正是資料被丟棄的根因。"""
+    labels = [
+        _col_to_quarter_label("2010-05-02 (Q2)", fy_end_month=1),
+        _col_to_quarter_label("2010-08-01 (Q3)", fy_end_month=1),
+        _col_to_quarter_label("2010-10-31 (Q3)", fy_end_month=1),
+    ]
+    assert labels == ["FY2011Q1", "FY2011Q2", "FY2011Q3"]
+
+
+# ── G1：第 4 列的日曆季不可以自己算一套（2026-08-22）──────────────────────
+#
+# `_calendar_quarter()` 原本直接取期末日的月份，完全不內縮——INTC 結束在
+# 2023-04-01 的那一季（實際涵蓋 1~3 月）會被算成 2023Q2。平常這個值會被
+# `fiscal_input._apply_to_sheet()` 的公式蓋掉看不到，但第 5 列不是完整 ISO
+# 日期的殘留格（合成 Q4 的年報期末日有時只有 `2010-01`）會保留它，那就是錯值。
+# 改成一律委派給 fiscal_input 的 `basis="end"`，不要有第二套實作。
+
+def test_calendar_quarter_row_uses_the_shared_end_basis():
+    """52/53 週制溢出到 4 月初的季，要算 Q1 不是 Q2。"""
+    from fetcher_gaap import _calendar_quarter
+    assert _calendar_quarter("FY2023Q1", 12, "2023-04-01") == "2023Q1"
+
+
+def test_calendar_quarter_row_matches_fiscal_input_exactly():
+    """釘住「只有一份實作」——逐格比對，不可以各自演化。"""
+    from fetcher_gaap import _calendar_quarter
+    from fiscal_input import calendar_quarter_of
+    for pe in ["2023-04-01", "2025-07-27", "2026-01-25", "2025-06-28", "2026-01-02"]:
+        assert _calendar_quarter("FY2025Q1", 12, pe) == calendar_quarter_of(pe, basis="end")
+
+
+def test_calendar_quarter_row_falls_back_to_label_when_no_period_end():
+    """抓不到期末日時仍走財季標籤反推的退路，不可以因為改實作就退化成空字串。"""
+    from fetcher_gaap import _calendar_quarter
+    assert _calendar_quarter("FY2026Q1", 12, "") == "2026Q1"
+    assert _calendar_quarter("FY2026", 12, "") == ""
+
+
+# ── G3：IS 的 CF-sourced 列改成從 cf_tbl 回填（2026-08-22）─────────────────
+#
+# IS_TEMPLATE 裡 source=="CF" 的兩列（`SBC`、`D&A (CF memo)`）原本在
+# _build_is_table() 走 `_current_q_col(cf_df)` 直接找現金流量表的單季欄。但
+# 10-Q 的現金流量表是 YTD 累計，Q2/Q3 的 filing 根本沒有單季欄，那兩列就整片
+# 空白（實測 NVDA 缺 51/68），連帶 _synthesize_q4() 也算不出 Q4。
+# _build_cf_table() 已經做了 YTD 拆算（本季 YTD − 上季 YTD），所以 CF 區同名
+# 兩列是好的（缺 1/68）。修法是**共用 CF 已經算好的單季值**，不要在 IS 再寫
+# 一份 YTD 拆算——那就是第二份會漂移的實作。
+
+def _tbl(sheet, labels, concepts, values):
+    return StatementTable(
+        sheet_name=sheet, quarter_labels=labels,
+        filing_dates=[""] * len(labels), concepts=concepts, values=values,
+        ticker="T", labels=[""] * len(concepts),
+        period_ends=[""] * len(labels),
+    )
+
+
+def test_backfill_cf_sourced_rows_fills_is_from_cf():
+    from fetcher_gaap import _backfill_cf_sourced_rows
+    is_tbl = _tbl("Data_IS", ["FY2025Q1", "FY2025Q2", "FY2025Q3"],
+                  ["Revenue", "SBC", "D&A (CF memo)"],
+                  [[10.0, 20.0, 30.0], [1.0, None, None], [2.0, None, None]])
+    cf_tbl = _tbl("Data_CF", ["FY2025Q1", "FY2025Q2", "FY2025Q3"],
+                  ["SBC", "D&A"],
+                  [[1.0, 1.5, 1.8], [2.0, 2.5, 2.8]])
+
+    out = _backfill_cf_sourced_rows(is_tbl, cf_tbl)
+
+    assert out.values[out.concepts.index("SBC")] == [1.0, 1.5, 1.8]
+    assert out.values[out.concepts.index("D&A (CF memo)")] == [2.0, 2.5, 2.8]
+    assert out.values[out.concepts.index("Revenue")] == [10.0, 20.0, 30.0]
+
+
+def test_backfill_cf_sourced_rows_matches_by_label_not_position():
+    """兩張表的欄位順序/期數不保證一樣，一定要依 quarter_labels 對照。"""
+    from fetcher_gaap import _backfill_cf_sourced_rows
+    is_tbl = _tbl("Data_IS", ["FY2025Q1", "FY2025Q2", "FY2025Q3"],
+                  ["SBC"], [[None, None, None]])
+    cf_tbl = _tbl("Data_CF", ["FY2025Q2", "FY2025Q3"], ["SBC"], [[1.5, 1.8]])
+
+    out = _backfill_cf_sourced_rows(is_tbl, cf_tbl)
+    assert out.values[0] == [None, 1.5, 1.8]
+
+
+def test_backfill_cf_sourced_rows_keeps_is_value_when_cf_has_none():
+    """CF 那格沒值就別動 IS 已有的值，不要用 None 蓋掉真資料。"""
+    from fetcher_gaap import _backfill_cf_sourced_rows
+    is_tbl = _tbl("Data_IS", ["FY2025Q1"], ["SBC"], [[9.9]])
+    cf_tbl = _tbl("Data_CF", ["FY2025Q1"], ["SBC"], [[None]])
+
+    out = _backfill_cf_sourced_rows(is_tbl, cf_tbl)
+    assert out.values[0] == [9.9]
+
+
+def test_backfill_cf_sourced_rows_survives_missing_rows():
+    """CF 表沒有那一列（或 IS 沒有）時安靜跳過，不可以拋例外。"""
+    from fetcher_gaap import _backfill_cf_sourced_rows
+    is_tbl = _tbl("Data_IS", ["FY2025Q1"], ["Revenue"], [[10.0]])
+    cf_tbl = _tbl("Data_CF", ["FY2025Q1"], ["Operating Cash Flow"], [[5.0]])
+    assert _backfill_cf_sourced_rows(is_tbl, cf_tbl).values == [[10.0]]

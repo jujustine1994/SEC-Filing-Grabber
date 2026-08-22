@@ -3,10 +3,9 @@
 > **專案定位（2026-08-03 確立）**：這個程式只做一件事——**把 SEC EDGAR 的原始財務資料抓好**。
 > 後續的判讀、分析、報告一律交給外部 skill。任何「幫使用者判斷」的功能都不屬於本專案範圍。
 
-## 0. 最優先
-
-0-1. **`Data_Financials(Q)` 沒有 Q4** → 已移到 D0-1 決定要做，2026-08-20 CTH 確認做法並開始修復。
-   詳見 D0-1。
+> **本檔維護規則（2026-08-22 CTH 指示）**：**做完的條目直接刪掉**，內容搬進
+> `docs/CHANGELOG.md`。這份只留「還沒做」與「還沒決定」的事，不累積已完成清單。
+> 想查歷史看 CHANGELOG 或 git log。
 
 ## B. Non-GAAP 改走 skill（下一階段，另開對話處理）
 
@@ -118,33 +117,150 @@ E11. **關閉視窗前沒有未儲存提示**（2026-08-17 CTH 提出，先不�
 F2. **估值倍數（P/E、EV/EBITDA、P/B 等）**（2026-08-20 CTH 提出，記錄用，未確認方向）
    - 前提：需要先有股價/市值資料來源，工具目前完全沒有市場數據，是比 F1 更大的擴充（要接股價 API/資料源）
    - **待研究，未動手**，等 F1 做完再說
+## G. 2026-08-22 期間對齊／缺值／效能系列（G1、G3 已完成並移入 CHANGELOG）
 
-F3. **跨公司比較 `Chart_<指標>` 圖表排版問題**（2026-08-20 CTH 截圖回報 5 項，先記錄不動手，有空再處理）
-   - **共同根因**：`src/comparison_writer.py::write_chart_sheets()` 目前完全沒做任何版面調校——`LineChart()` 沒設 `width`／`height`／`legend.position`／`x_axis.numFmt`／`y_axis.numFmt`／`dispBlanksAs`，全部吃 openpyxl 預設值。以下逐項對應：
-   1. **圖表太小**：沒設 `chart.width`／`chart.height`，openpyxl 預設 15cm×7.5cm 偏小。CTH 要求長寬各拉長一倍（約 30cm×15cm）
-   2. **座標文字被切掉**：同樣沒設圖表尺寸與 margin，標籤被小圖擠壓
-   3. **中央資料莫名消失（本次已診斷出原因，非未知）**：跟下面「X 軸期間對不齊」是**同一個根因**——`categories_ref` 用的是各公司自己的財季標籤（如 `FY2024Q3`），不是真實日曆時間。AAPL 財年 9 月結束、NVDA 財年 1 月結束、AMD 用日曆年，同一欄「FY2024Q3」對三家公司代表不同月份。`write_compare_data_sheet()` 把所有公司出現過的期間標籤取聯集（`sorted({...})`）當共用欄位，某公司在別家公司獨有的期間欄位是空的；Excel 畫折線圖對空值的預設處理會直接連到下一個有值的點（不留斷點），造成線段跳接／中斷，就是「中央資料消失」的視覺表現。**修法方向**：X 軸類別改用 `Compare_Data` 已有的「期末結算日」列（絕對日期，如 `2024-06-29`）取代財季標籤，真實時間本來就有序，三家公司自然對齊；或設 `chart.dispBlanksAs = "gap"` 讓斷點明顯化（只解決亂連線，財季仍未對齊，效果有限，建議兩者一起做）
-   4. **座標軸沒有標示單位**：沒設 `y_axis.numFmt`（金額該顯示如 `$#,##0,,"M"` 百萬美元格式）、`x_axis` 也沒特別處理期間顯示格式，兩軸都是裸數字/裸標籤
-   5. **圖例（公司名稱）被切進圖表內**：沒有明確設 `chart.legend.position` 或足夠的圖表寬度，legend 預設貼右邊，圖表太窄時被畫面邊界擠進繪圖區內部，跟資料線重疊
-   - **建議處理順序**：先修 3（X 軸對齊，影響資料正確性，不只是美觀）+ 1（放大尺寸，順帶讓 5 的擠壓問題緩解），再補 4（座標軸單位）與 2（margin）
+> **⚠ 動手前必讀：`docs/superpowers/design-2026-08-22-period-alignment-and-gaps.md`**
+> 那份是 CTH 逐項確認過的**完整規格**（每項含：為什麼、規格、動哪些檔案、測試要釘什麼、
+> 怎麼驗收、風險、最容易踩的坑）。下面 G1~G8 只是索引與決策結論，細節不重複寫，
+> 兩邊有出入時**以設計書為準**。
 
-## 執行順序建議
+G0. **執行順序與相依性**（2026-08-22 定案）
+   - 順序：**G1 → G3 → G2+G7 → G6 → G8 → G4/G5**
+   - 相依：G6（缺季留空白欄）會走到「第 5 列不是完整 ISO 日期」那條路徑，而那正是 G1 要收掉的殘留錯值來源，所以 **G1 必須先做**
+   - G2 與 G7 都改跨公司輸出版面，一起做，不要分兩次動 `comparison_writer.py`
+   - **不要開平行 subagent**：G2/G6/G7 都改 `comparison_writer.py`（會衝突），而且每項都要跑全套測試（含真連 SEC 的 live 測試，實測併發會互相搶 SEC 頻寬，兩份 20 分鐘的測試併著跑變成 40 分鐘）。單一 worker 循序做最快
+
+G2. **跨公司 `Compare_Data` 最上方加「日曆季 ↔ 財季」對應表** ← **CTH 已決策，可直接做**（規格見設計書 G2，與 G7 綁一起做）
+   - **決策**：用對應表而不是「只寫財年開始月份」——對應表逐期從實際期末日算，公司改過財年自己就對，不需要例外處理
+   - **決策**：下面的財務指標區塊只給日曆季，不重複財季
+   - ⚠ 最容易壞的地方：插入區塊會把列號往下推，`write_snapshot_sheets()` 也吃 `block_ranges`，要有測試釘住 Snapshot 公式仍指到正確的列
+   - 現在 `Compare_Data` 只有日曆季欄位標題（`2025Q2`）與期末結算日列。CTH 要能在原始 sheet 上看到各公司自己的財季（如 NVDA 的 `FY2026Q2`），**只在資料表上呈現，不用進圖表**
+   - 設計要點：同一個日曆季欄位下，各公司的財季不同（NVDA 是 FY2026Q2、AMD 是 FY2025Q2），所以不能只加一列——要嘛每家公司一列財季備註，要嘛跟公司資料列並排成兩欄。動手前先跟 CTH 確認要哪一種版面
+   - `comparison.ComparisonResult` 目前只留 `period_ends`，沒有留原本的財季標籤（`_aligned_labels()` 轉換後就丟了），要先多帶一個 `fiscal_labels: dict[ticker, dict[日曆季, 財季]]`
+
+G4. **`Other (as reported)` overflow 區天生就會斷斷續續**（2026-08-22 查 G3 時一併確認，**可能不是 bug，是設計取捨，要 CTH 決定要不要處理**）
+   - overflow 列的 key 是 XBRL concept name。公司隔幾年換一個 concept 或改標籤，同一個經濟意義的科目就會長出**第二列**，舊列從此整片空白。實測 NVDA 檔案裡 `Deferred income taxes` 出現兩列（一列缺 48 期、一列缺 18 期，兩列互補）、`Tax benefits from stock-based compensation` 也重複兩列
+   - 另外 `_synthesize_q4()` 明講**只補模板列、overflow 列留空**（D0-1 就記錄過），所以每個合成 Q4 欄位在 overflow 區整片是空的
+   - 要處理的話有兩條路：① 用 synonym 把同義 concept 合併成一列（風險：合錯就是把兩個不同科目加在一起）；② 維持現狀但在 Excel 上把 overflow 區標示成「原樣呈現、不保證跨期連續」。**建議先做 ②**
+
+G5. **Index 的「完成度」評分標準要重新定義**（2026-08-22 CTH 回報「很多東西沒出現也是滿分，而且這標準不是我設的」）
+   - 現行邏輯（`excel_formatter.py:281` `ALL_KEY_ROWS` + `override_engine.py:115` `check_key_rows()`）：只看 9 個關鍵列 —— Revenue／Operating Income／Net Income／Diluted EPS／Total Assets／Total Liabilities／Total Equity — Parent／Operating Cash Flow／Capex
+   - 判準極寬：**只有「最近 4 期全部是 None」才算缺**。中間缺 50 期、只要最後 4 期有值就算通過；SBC、D&A、無形攤銷等等根本不在這 9 列裡，全空也不扣分。這就是 NVDA 顯示 `9/9 ✓` 的原因
+   - **這 9 列與「最近 4 期」的判準是開發時 AI 自訂的，沒有經過 CTH 確認**
+   - 要 CTH 決定的：① 要看哪些列（維持 9 列？擴到全模板？分權重？）② 判準要不要改成看覆蓋率（有值期數 / 應有期數）而不是只看最近 4 期 ③ 要不要把「整列全空」跟「中間有洞」分開顯示 ④ 分數要不要拆成 IS/BS/CF 三塊分別給
+   - 動手前先把現行標準的實際效果講給 CTH 看（例如同一份檔案在新舊標準下分別得幾分），再定新標準
+
+G6. **抓不到的季度不要跳過，留一整欄空白** ← **CTH 已決策，但要等 G1**（規格見設計書 G6）
+   - **決策**：補到「**最早抓到的那一季**」為止，不往更早補
+   - ⚠ 跟現有的「全空期間整欄拿掉」邏輯直接衝突，要靠 label 形態分辨「殘骸欄（`FY2009Q4`）」與「該有但沒資料的空白欄（`2025Q3`）」
+   - ⚠ 尾端插空白欄會拉低 Index 完成度（`check_key_rows()` 只看最後 4 欄）。**先確認會不會誤傷，會的話回報 CTH，不要自己改評分標準**
+   - ⚠ 會讓更多 TTM 比率變 `None`。這是正確的（本來就缺，以前看不出來），但要寫進 CHANGELOG 免得被當成回歸
+   - 現況：欄位清單是「成功抓到什麼就放什麼」，某一季掛掉就整欄消失，畫面上 25Q3 直接跳到 26Q1，使用者與 AI 都看不出中間漏了一季
+   - CTH 要的：缺的那一季**保留欄位、內容全空**，讓「有漏」這件事看得見
+   - 要動的地方：① `fetcher_gaap._merge_financials()` 建 `all_qs` 時改成產生完整季序列 ② 跨公司 `comparison_writer.write_compare_data_sheet()` 同理 ③ 第 5 列期末日——缺的那格沒有真實日期，只能用 `_fiscal_period_end()` 反推年月（`2025-10`），但那不是完整 ISO，`fiscal_input._apply_to_sheet()` 會跳過該欄的公式，落回靜態值
+   - **相依 G1**：上一點正是 G1 要收掉的殘留錯值路徑，G1 沒先做的話這裡會直接生出一堆錯的日曆季
+   - **動手前要問 CTH**：往前補到哪裡為止？補到「最早抓到的那一季」還是使用者指定的起始年？不設界線會一路補到 2000 年生出幾十欄空白
+   - 順帶檢查：`override_engine.check_key_rows()` 只看最後 4 欄，尾端插入空白欄會影響 Index 完成度分數（跟 G5 有關聯）
+
+G7. **跨公司比較加一張「說明」sheet** ← **CTH 已決策，可直接做**（規格與 9 條初版條目見設計書 G7，與 G2 綁一起做）
+   - **決策**：CTH 明講這張表未來會擴充（開發中發現新的定義問題就往裡加），所以**要做成資料驅動**（一個 list of (標題鍵, 內文鍵)），新增一條只要加一行 + 四個 locale 各加兩條，不可把文字寫死在版面程式裡
+   - **CTH 的總結**：「重點就是一些定義問題要標在 sheet 讓使用者了解即可」——這張表是這一輪的核心交付物之一，不是附屬品
+   - 目的：把這份檔案用到的定義一次講清楚，不要讓使用者自己猜
+   - 要寫的條目（草稿，動手前跟 CTH 過一次）：
+     1. 時間軸＝日曆季，判準「該季天數多數落在哪一季」
+     2. 為什麼不用財季當共同欄位（各公司財年結束月不同）
+     3. 為什麼不用期末日判準（13 週季末日會漂到下一季）
+     4. 期末結算日列取同欄**最晚**的日期，以及它給 Snapshot 用的意義
+     5. Q4 是「年報 − Q1 − Q2 − Q3」推算的，`Other (as reported)` 區不補
+     6. 空白＝該期沒抓到，圖上顯示斷點、不假造連線
+     7. 資料來源 SEC EDGAR XBRL；2009-2011 分階段上路，更早期間沒有結構化數字
+     8. 單位（金額 $mm、比率 %）
+     9. **這份的日曆季定義只適用跨公司比較**，單一公司輸出第 4 列用的是另一套（期末日判準），刻意不同
+   - 跟 G2 一起做（同一次改 `comparison_writer.py`）
+
+G8. **用「比較欄」當 fallback 補洞** ← **CTH 已決策，放最後做**（規格見設計書 G8）
+   - **決策**：做成**通用的補洞機制**，不要寫死成「只補 pre-XBRL」（CTH：「看能不能套用到其他狀況」）
+   - **決策（鐵則）**：**當期申報優先，比較欄只補洞，永遠不覆蓋已有的值**。重編造成兩版不同時以當期那版為準
+   - ⚠ 驗收時除了看缺漏數下降，**還要比對「原本有值的期間數字有沒有變」——一格都不該變**
+   - ⏸ 要不要在 Excel 上標示「這一格是從比較欄補的」——動手前問 CTH
+   - 2009Q4 全空的直接原因：合成 Q4 需要 Q1/Q2/Q3，而 2009Q1 那份 10-Q 是純 HTML 沒有 XBRL（SEC 強制申報 2009-06 才對大型申報人上路）
+   - **但那一期的數字其實拿得到**：10-Q 的 XBRL 除了當期還帶去年同期的比較欄。實測 NVDA 2010-05-02 那份 10-Q 的欄位是 `['2010-05-02 (Q2)', '2009-04-26 (Q2)']`——2009 那一季就在第二欄。我們的 `_current_q_col()` 只取第一欄，**比較欄整個丟掉**
+   - 撿回來大約可以往前多補一年，也能讓 2009 的 Q4 合成成立
+   - 要處理的問題：① 同一期間會在多份 filing 出現（當期一次、隔年比較欄一次），取哪一版？當期優先、比較欄只補洞 ② 公司重編（restatement）時兩版數字不同，要不要標示 ③ 比較欄的欄名同樣不能採信 `(Qn)`，要走跟 D0-6 一樣的日期反推
+   - 另一條路（成本較高，列為備案）：SEC Company Facts API（`data.sec.gov/api/xbrl/companyfacts/CIK##########.json`），一次拿回該公司歷來所有 XBRL fact。edgartools 的 `company.get_facts()` 已經在用來抓流通股數。交叉補洞能力更強，但 restatement 取版本的問題更嚴重
+
+G9. **同一份 filing 被解析 4~7 次，抓取時間可以快約 4 倍**（2026-08-22 CTH 問「為何跑這麼久」，實測定位）
+   - **實測數字**（NVDA 三份 10-Q）：下載 0.43s（之後被 edgartools 的 `~/.edgar/_tcache` 快取成 0s），**XBRL 解析每次 1.3~2.1 秒且完全沒有快取**
+   - `_build_is_table()` / `_build_bs_table()` / `_build_cf_table()` / `_build_segment_tables()` 各自對**同一批 filing** 呼叫一次 `_filing_obj(filing)`（`fetcher_gaap.py:759/853/1085/1255/1756/1837`），等於同一份 filing 解析 4 次。override 觸發時 IS/BS/CF 還會再跑第二輪（`fetcher_gaap.py:2206-2208`），變成 7 次
+   - 六家公司 × (55 份 10-Q + 20 份 10-K) × 4 次 ≈ **1,800 次解析 × 1.5 秒 ≈ 45 分鐘**，跟實際觀察到的時間吻合
+   - **修法**：一次執行內用 accession number 當 key memoize。**建議快取三張 dataframe（IS/BS/CF）而不是整個 filing 物件**，記憶體才控制得住
+   - 要注意：快取的生命週期只能是「一次抓取」，不可跨 ticker 或跨執行殘留；`report_progress()` 的計數要跟著調整（現在是每個 build pass 各 tick 一次）
+   - 獨立於 G1~G8，可以最後做，但要單獨測記憶體用量（一家公司 75 份 × 3 張 dataframe）
+
+G10. **`D&A` 與 `Capex` 的 concept 對照對某些公司完全失效**（2026-08-22 產六家比較檔時發現）
+   - 實測 `output/_compare/Semis_6co_2020_2025.xlsx`（AMD/NVDA/AVGO/INTC/MRVL/LITE，2020-2025 共 24 期）：
+     ```
+     Revenue / Gross Margin / Operating Margin   六家都 24/24   ✓
+     D&A     AMD 2/24、MRVL 0/24（其餘四家 24/24）  ✗
+     Capex   NVDA 13/24（其餘五家 24/24）           ✗
+     ```
+   - **跟 G3 是不同問題**：G3 是 IS 區的 `D&A (CF memo)` 走錯路徑；這裡 CF 區的 `D&A` 對 NVDA 是滿的，對 AMD/MRVL 幾乎全空 → 是那兩家的現金流量表用了 `CF_TEMPLATE` 沒收錄的 XBRL concept
+   - **2026-08-22 已排查完，根因跟原本推測的不一樣**：不是「公司用了我們沒收錄的 concept」，是 **edgartools 把 `standard_concept` 標錯了**。實測 AMD 2026-06-27 與 MRVL 2026-05-02 的 10-Q 現金流量表：
+     ```
+     AMD   standard_concept = NonoperatingIncomeExpense   label = "Depreciation and amortization"
+     MRVL  standard_concept = NonoperatingIncomeExpense   label = "Depreciation and amortization"
+     兩家的 Capex   standard_concept = CapitalExpenses    label = "Purchases of property and equipment"
+     ```
+     `NonoperatingIncomeExpense` 跟折舊攤銷毫無關係，但 `label` 寫得清清楚楚。`_match_is_row()` 優先比對 `std_concept`，比不中就漏掉
+   - 另外看到 AMD 有兩列 `standard_concept` 是 `nan`（`Purchases of property and equipment`、`Stock repurchases for tax withholding...`），以及 `CapitalExpenses` 在 AMD 出現兩次（第二次是 "accrued but not paid"，**不可以加總，會重複計算**）
+   - **修法選項**：① 幫 `D&A` 在 `CF_TEMPLATE` 補 `label_hint`，讓 std_concept 比不中時退回 label 比對（成本最低）；② 走 `SYNONYM_MAP`。**注意 ①/② 都要處理「同一個 concept 出現兩次」的去重**
+   - **這一類問題在 G11（改用 companyfacts）之後會整個消失**——companyfacts 直接給原始 us-gaap concept 名稱，沒有 edgartools 的 `standard_concept` 轉譯層。所以動手前先確認 G11 的決策，不然大概率白做
+
+G11. **改用 SEC companyfacts API 取數** ← **平行路徑已建好並驗證完成，等 CTH 決定切不切換**
+   - **完整報告：`docs/superpowers/report-2026-08-22-g11-companyfacts.md`**（52 家逐格比對、所有決定與理由）
+   - 現況：`src/fetcher_facts.py` + `src/facts_mapping.py` 已完成，40 個測試。**現有程式一行都沒動**
+   - 實測：每家 0.34 秒 vs 現行 7.5 分鐘（**215 倍**）；最早涵蓋 2008-07（現行 2009-07）
+   - 逐格比對 **92.8% 相同，符號對齊後 95.4%**。剩下的差異分三類，全部有解釋（符號慣例、現行路徑會加總而 facts 是單一 concept、現行路徑本身算錯）
+   - **切換前要先做完的兩件事**：
+     1. **符號慣例定案**——現行輸出自己就不一致（`Income Tax` 有 15% 的格子符號相反）。要定義「每列一個明確慣例」並在兩條路強制執行。**這是行為改變，要 CTH 拍板**
+     2. **加總型的列**（`Investment Proceeds`／`Debt Proceeds`／`Debt Repayments`／`Total Non-op`）要在 facts 這邊補上跟 `_sum_matching_rows()` 一樣的加總邏輯
+   - 做完再跑 `scripts/spike_verify_mapping.py`，目標 99% 再談切換
+   - **限制（不是待辦）**：companyfacts 沒有維度資料 → `Data_Segments` 非走解 filing 不可；沒有 presentation linkbase → 公司自報標籤與 `Other (as reported)` 的語意會改變。建議混合架構
+   - **模板列建議**（未自行更動）：`Other Operating Expense` 在 52 家裡現行路徑一家都沒抓到、facts 也沒有對應 concept，**建議刪除但要 CTH 決定**；`Free Cash Flow` 本來就是 DERIVED，不動；其餘 93 列都有對應
+
+G12. **`Ending Cash` 算錯：期末餘額被當成期間值做 YTD 拆算**（2026-08-22 做 G11 逐格比對時發現，**跟 G11 無關，現行路徑就該修**）
+   - 實測 AAPL：
+     ```
+     2026-03-28   現行     255,000,000   正確 45,572,000,000
+     2026-06-27   現行  -6,028,000,000   正確 39,544,000,000
+     ```
+     Apple 的現金是 450 億，現行路徑給 2.55 億甚至負數
+   - **根因**：`Ending Cash` 是期末餘額（時點值），但它排在 `CF_TEMPLATE` 裡，`_build_cf_table()` 對整張 CF 表做 YTD 拆算（本季 YTD − 上季 YTD），減出來是「現金變動額」不是「餘額」
+   - 影響：52 家裡有 50 家的這一列都受影響（逐格命中率只有 32.8%）
+   - **修法方向**：`CF_TEMPLATE` 要能標記「這一列是時點值，不參與 YTD 拆算」。同一張表裡混時點值與期間值是 CF 的常態（期初/期末現金餘額都是），所以這是結構性補強不是個案 hack
+   - 順帶檢查 `CF_TEMPLATE` 裡還有沒有別的時點值列被同樣處理（至少要看期初現金）
+
+## 執行順序建議（2026-08-22 更新）
+
+> **維護規則**：做完的條目**直接從本檔刪除**，內容搬進 `docs/CHANGELOG.md`。
+> TODO 只留「還沒做的」與「還沒決定的」，不累積已完成清單，否則會無限變長、
+> 接手的人分不出哪些還有效。歷史紀錄查 CHANGELOG 或 git log。
 
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
 |---|---|---|---|---|
-| 1 | B2 skill 端抽取 | 否 | 是 | 介面是 `cli.py press-release --json` |
-| 2 | D8 金融股模板 | 否 | 是 | 51 家調查已有資料；但要不要另開模板是判斷題 |
-| 3 | D7 `google-genai` 汰換 | 是 | 否 | 要真呼叫才驗得了，等 B 段定案後再說 |
+| 1 | **G11 切換決策** | 否（spike 已做完） | 是 | 平行路徑已驗證完成（92.8%／符號對齊後 95.4%）。要 CTH 決定符號慣例與是否切換。做完會讓 G8／G9／G10 全部不需要 |
+| 2 | **G12 `Ending Cash` 算錯** | 否 | 否 | 現行路徑的真 bug，跟 G11 無關，改動小、影響 50/52 家 |
+| 3 | G2 + G7（對應表 + 說明 sheet） | 否 | 是（說明條目的措辭要 CTH 過） | 跨公司輸出改版，兩項一起做 |
+| 3 | G6（缺季留空白欄） | 否 | 是（補到哪為止已決定，但要確認不誤傷 Index 完成度） | G1 已完成，相依已解除 |
+| 4 | B2 skill 端抽取 | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
+| 5 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
+| 6 | G5 Index 完成度標準 | 否 | 是 | 動手前要先給 CTH 看新舊標準的分數對照 |
+| 7 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
+| — | G4 overflow 標示 | 否 | 是 | 建議只做標示，不做 synonym 合併 |
+| — | G8／G9／G10 | — | — | **等 G11 決策，做了大概率白做** |
+| — | F2 估值倍數 | 是（要股價來源） | 是 | 待研究，未確認方向 |
 
 ## D. 待 CTH 決定的已知限制
-
-D0-1. **`Data_Financials(Q)` 永遠沒有 Q4** → TTM 類比率算不出來。Q4 沒有 10-Q，數字在 10-K。
-   - 實測：NVDA/AVGO/PLTR 的 ROE／ROA／FCF per Share／淨負債EBITDA **整列全空**
-   - 修法：Q4 = 年報 − Q1 − Q2 − Q3（流量項）＋ 資產負債表直接取 10-K。**要 CTH 決定做不做**
-   - **研究記錄（2026-08-12）**：`fetcher_gaap.py` 目前只抓 `form="10-Q"`，Q4 標籤結構上就不存在；`ratios.py::_ttm()` 缺任一季就回 `None`（設計如此，不當 0 加總），窗口一跨到 Q4 就整列空。修法可仿照既有 Q2/Q3 YTD 拆算的 pattern，在 `_merge_financials` 後補一欄合成 Q4。**風險：中**——會碰核心合併流程；要處理「只抓季報沒抓年報」時優雅跳過、Non-GAAP/segment 不適用、override 套用順序。附帶好處：算出的 Q4 跟真實 10-K 的差額可以順便當資料品質檢查
-   - **2026-08-20 CTH 決定：要做**。做法確認：IS/CF 用「年報 − Q1 − Q2 − Q3」相減，BS 直接取年報值；Excel 上不特別標示 Q4 為推算值。
-   - **實作（2026-08-20）**：`fetcher_gaap.py` 新增 `_synthesize_q4()`，在 `fetch_gaap_statements()` 裡改成先建年報 IS/BS/CF 表（`is_ann`/`bs_ann`/`cf_ann`），再用它們反推季報表的 Q4 欄，最後才 merge 進 `Data_Financials(Q)`／`Data_Financials(Y)`。只補模板列，overflow 列（公司特有科目，季報/年報兩邊列序不保證對齊）留空。`fetch_annual=False`（只抓季報不抓年報）時優雅跳過，不影響既有行為。NG/segment 表不處理。7 個新測試見 `tests/test_fetcher_gaap.py`（`_synthesize_q4` 單元測試 + 一個 `fetch_gaap_statements` 整合測試），156 個既有測試全過。
-   - **驗證完成（2026-08-20）**：實測 NVDA/AVGO/PLTR 真連線 SEC EDGAR，ROE (%)／ROA (%) 從第一個補上的 Q4 期開始正常出現非 None 值（三家皆 10~11/16 期），不再整列全空。**D0-1 到此全部完成**。附帶發現 FCF per Share 三家仍有缺口，根因是 `Shares Outstanding` 資料本身缺期（PLTR 屬於 D0-2 已知限制；NVDA/AVGO 缺口原因待查），與 Q4 修復無關，未展開處理，有需要另開條目追。
 
 D0-2. **多股別公司抓不到期末流通股數**：PLTR／GOOGL／META `company.get_facts()` 裡 `dei:EntityCommonStockSharesOutstanding` **0 筆**（只有 `EntityPublicFloat`），因為 Class A/B/C 是分開標的。TSLA 61 筆、COHR 62 筆、BRK.B 7 筆正常。連帶 BVPS／FCF per Share／流通股數 YoY 空白。`output/_final/META.xlsx` 現在就有這個洞。
    - **研究記錄（2026-08-12）**：`fetcher_gaap.py` 只查單一 XBRL concept，多股別公司這欄位本來就是空的（各股別分開報）。修法要改成按股別分別抓再加總，但程式碼裡已有註解記錄過「連單一股別公司這欄位都不乾淨」的踩坑史（抓到的是財報日後幾週的股數，非期末當天）——多股別可能根本沒有乾淨來源。**風險：中偏大**，搞不好要接受「這幾家就是空」當已知限制，或退而求其次抓 `EntityPublicFloat` 換算（精確度打折）
@@ -157,9 +273,6 @@ D0-5. **期間標籤是公式、沒有快取值 → 來源檔關著時跨檔案 
    - **要 CTH 決定做不做**：不做就是文件講清楚用第 5 列；做了才能直接用 `FY2026Q1` 當 key
    - **研究記錄（2026-08-12）**：兩條路——(a) 存檔後直接改 xlsx 內部 XML 把快取值塞進公式旁邊，**風險中**，動底層 XML 較脆弱；(b) 乾脆改成純值不用公式，**風險小**，但會犧牲「改 Index B4 財年起始月即時連動 1/3/4 列」這個功能（而且 B4 本來就只能在 Excel 裡改，程式端本來就抓不到那個編輯動作去重算，這個「即時連動」的價值本身也可以重新評估）。這項是取捨題不是純技術題
 
-D7. 套件汰換：`google-generativeai` 官方已終止支援（不再更新與修 bug），需改用 `google-genai`。影響 `fetcher_nongaap.py:_call_ai()` 與 `override_engine.py:_llm_call()` 的 google 分支，以及 `requirements.txt`。現行版本仍可運作，非緊急。
-   - **研究記錄（2026-08-12）**：實際有**三處**要換，不是兩處——`main.py::_test_ai_worker()`（設定面板的「測試連線」按鈕）也用同一套舊 SDK，漏掉會出現「測試連線過了但實際抓取失敗」的詭異情況。三處都是同樣 3 行 pattern，機械式替換。**風險：小**，但一定要真的呼叫 API 才驗得出來（金鑰/模型名稱格式可能有差），沒法只靠看程式碼確認
-
 D8. 金融股（GS/JPM 等）獨立模板：現行 IS/BS 模板對金融股部分欄位空白，需另建模板。低優先。
    - **研究記錄（2026-08-12）**：程式碼裡目前除了印一行警告訊息，**完全沒有任何金融股特殊處理**——現有科目對照表直接套用，對不上的欄位就是空，不是 bug 是模板天生沒設計給銀行股。真要做要重新研究銀行/券商專屬 US-GAAP 科目（存款、放款、備抵呆帳...），等於另建一整套模板。**風險：大**。這其實是「要不要用這工具抓銀行股」的產品決定，不是技術問題，建議先想清楚要不要再談技術
 
@@ -167,3 +280,9 @@ D9. **外國私人發行人（Foreign Private Issuer）抓不到財報**（2026-
    - 現象：抓 NBIS（Nebius Group）出現 `[NBIS] 抓取失敗 -> ValueError`，GUI 只顯示例外類型不顯示訊息（避免洩漏 URL/key），看不出原因
    - **研究記錄（2026-08-20）**：實際重現拿到完整訊息是 `fetcher_gaap.py:2030` 丟出的 `No 10-Q filings found for ticker 'NBIS'`。根因是 NBIS 這類外國私人發行人不申報 10-Q/10-K，改申報 **20-F**（年報）與 **6-K**（相當於季報/重大訊息），現有程式只查 `form="10-Q"` / `form="10-K"`，架構上就抓不到。不是 bug，是已知限制
    - 要支援的話得另外解析 20-F/6-K 的 XBRL 結構（跟現有 10-Q/10-K 的科目對照、期間切分邏輯不保證通用），工程量不小。**有空再做，先記錄**
+   - **第二個實際個案（2026-08-21）**：跨公司比較測試 INTC/NVDA/AMD/TSM 時，TSM（台積電 ADR）同樣抓取失敗（`ValueError`），根因跟 NBIS 一致——TSM 也是外國私人發行人，只交 20-F/6-K。**CTH 問：20-F/6-K 有沒有機會補進去？**
+   - **研究結果（2026-08-21，實測 TSM／UMC／NBIS 三家）**：
+     1. **20-F 有 XBRL，6-K 沒有——確認，不是猜測**。直接呼叫 `filing.xbrl()` 實測：TSM／UMC／NBIS 三家最新一份 20-F 的 `xbrl()` 都回傳有效物件（`True`）；三家最新一份 6-K 都印出 `No XBRL attachments found`，`xbrl()` 拿不到資料。這代表 **6-K（季報等效）這條路線基本不可行**——不是「格式不固定，有些公司才有結構化數字」的機率問題，是這三家的最新 6-K 全部只有 PDF/文字附件，沒有 XBRL 可解析，符合原本「6-K 常只是包法說會新聞稿附件」的猜測
+     2. **20-F 用 IFRS 命名空間，不是 US-GAAP——這是最大的工程量落點**。實際拉 TSM 20-F 的 XBRL `element_catalog`，1114 個科目**全部**是 `ifrs-full_` 前綴（如 `ifrs-full_Revenue`），一個 `us-gaap_` 都沒有。現有 `fetcher_gaap.py` 的 `IS_TEMPLATE`／`BS_TEMPLATE`／`CF_TEMPLATE` 整套科目對照表是針對 `us-gaap:` concept 建的，對 IFRS 科目**完全不適用**——不是換個 `form="20-F"` 參數就抓得到，是要另外設計一套 IFRS 科目對照表、可能還要處理 IFRS 特有的報表結構差異（例如 IFRS 允許的資產負債表排列、揭露顆粒度跟 US-GAAP 不完全一樣）
+     3. **結論：只做 20-F 年報支援，範圍與工程量都不小，6-K 季報這條路線目前看起來不可行（沒有結構化資料源）**。原本設想的「先做 20-F 再看要不要做 6-K」變成「6-K 這步大概率做不了，只剩 20-F 值不值得單獨做」的判斷——年報頻率能不能滿足需求是 CTH 要考慮的重點（只有年報、沒有季報的比較功能，對分析師的用途打了折扣）
+   - **風險：中偏大**，本質上是另建一套 IFRS 科目對照表與解析邏輯，工程量與現有 10-Q/10-K US-GAAP 模板相當，不是小改。值不值得做要看 CTH 覆蓋的外國發行人數量多不多，以及「只有年報沒有季報」能不能接受

@@ -2,7 +2,7 @@
 
 為什麼要獨立一支檔案：main.py 會 import fetcher_*，所以 fetcher_* 不能反過來
 import main。這個函式原本只住在 main.py 裡，fetcher_nongaap 拿不到，只好自己
-print(f"...{exc!r}")，把完整例外（含 google-generativeai URL 上的 ?key=）印到
+print(f"...{exc!r}")，把完整例外（含 google-genai URL 上的 ?key=）印到
 stderr。兩份拷貝必然漂移，這裡收成一份讓雙方都 import。
 """
 

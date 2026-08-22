@@ -115,7 +115,7 @@ if (-not (Test-Path "venv")) {
     Write-Host "    3. openpyxl" -ForegroundColor Yellow
     Write-Host "       讀寫 Excel 檔案" -ForegroundColor Gray
     Write-Host ""
-    Write-Host "    4. AI 套件（google-generativeai / openai / anthropic）" -ForegroundColor Yellow
+    Write-Host "    4. AI 套件（google-genai / openai / anthropic）" -ForegroundColor Yellow
     Write-Host "       Non-GAAP 功能用，未設定 API Key 不影響 GAAP 功能" -ForegroundColor Gray
     Write-Host ""
     Write-Host "  全程只需要一直按 Enter 同意即可。" -ForegroundColor Green

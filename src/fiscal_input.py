@@ -113,10 +113,77 @@ def fiscal_year_of(period_end: str | None, start_month: int) -> str:
     return f"FY{_fiscal_year(d, start_month)}" if d else ""
 
 
-def calendar_quarter_of(period_end: str | None) -> str:
-    """期末日 → 日曆季 `2026Q2`。與財年無關。"""
-    d = _anchor(period_end)
+# ── 日曆季：一份實作、兩個具名基準點 ────────────────────────────────────────
+#
+# 「這一季算哪個日曆季」有兩種問法，而且**兩種都要**：
+#
+#   basis="end"   結算季 —— 這一季**結束**在哪個日曆季。單一公司 Data_* 第 4 列
+#                 用這個，因為它正下方第 5 列就是期末日，兩列必須自洽。
+#   basis="span"  對齊季 —— 這一季的**多數天數**落在哪個日曆季。跨公司比較用
+#                 這個：NVDA 7 月底結束那季要跟 AMD/INTC 6 月底那季擺同一欄
+#                 （同一波財報，分析師就是這樣比），不是跟 AMD 9 月那季。
+#
+# 2026-08-22 之前這兩件事有三套算法散在三個檔案（其中一套還忘了內縮，
+# 直接把 INTC 結束在 2023-04-01 的 Q1 算成 2023Q2）。合併成一份實作之後，
+# **`basis` 刻意不給預設值**——強迫每個呼叫端表態要哪種語意，這就是「統一」
+# 的實質保障：以後只有一個地方會算錯，而且每個使用點都看得出它要什麼。
+#
+# 兩個基準點都先把期末日往前推再取月份，差別只在推多遠：
+#   15 天 → 回到該季**最後一個月**（吃掉 52/53 週制的月底漂移）
+#   45 天 → 回到該季**中點**（13 週季的一半）
+# 期中點是離日曆季邊界最遠的位置，所以最穩；期初日反而最不穩（13 週季的
+# 起訖日都剛好落在邊界附近，AMD 6 月季的期初日在 3/30，會翻到前一季）。
+
+_BASIS_DAYS = {"end": 15, "span": 45}
+_HALF_YEAR_END_MONTH = 5   # 財年結束在 1-5 月 → 主要落在前一個日曆年
+
+
+def _shifted(period_end: str | None, days: int) -> date | None:
+    """期末日往前推 `days` 天。不是 ISO 日期回 None。"""
+    m = _ISO_RE.match((period_end or "").strip())
+    if m is None:
+        return None
+    try:
+        return date(int(m.group(1)), int(m.group(2)), int(m.group(3))) - timedelta(days=days)
+    except ValueError:
+        return None
+
+
+def calendar_quarter_of(period_end: str | None, *, basis: str) -> str:
+    """期末日 → 日曆季 `2026Q2`。與財年無關。算不出來回空字串。
+
+    `basis` 沒有預設值，一定要明講要哪一種（理由見上方區塊註解）：
+        "end"   結算季——這一季結束在哪個日曆季
+        "span"  對齊季——這一季的多數天數落在哪個日曆季
+    """
+    if basis not in _BASIS_DAYS:
+        raise ValueError(f"basis must be one of {sorted(_BASIS_DAYS)}, got {basis!r}")
+    d = _shifted(period_end, _BASIS_DAYS[basis])
     return f"{d.year}Q{(d.month - 1) // 3 + 1}" if d else ""
+
+
+# ── 跨公司對齊（calendarization）────────────────────────────────────────────
+#
+# 這兩個是 basis="span" 的薄包裝。存在的理由是讓 comparison.py 的呼叫端讀起來
+# 是「取對齊季」而不是「取日曆季，基準點傳 span」——語意寫在名字裡，不要讓
+# 呼叫端自己記字串。不可以在這裡加任何額外邏輯，測試釘住它們與 span 等價。
+
+
+def calendarized_quarter_of(period_end: str | None) -> str:
+    """期末日 → 跨公司對齊用的日曆季 `2025Q2`。算不出來回空字串。"""
+    return calendar_quarter_of(period_end, basis="span")
+
+
+def calendarized_year_of(period_end: str | None) -> str:
+    """財年結束日 → 跨公司對齊用的日曆年 `2025`。算不出來回空字串。
+
+    慣例：財年結束在 1-5 月掛前一年（NVDA FY2026 結束在 2026-01，內容其實
+    是日曆 2025 年），6-12 月掛當年（MSFT 6 月結束的 FY2025 就叫 2025）。
+    """
+    d = _anchor(period_end)
+    if d is None:
+        return ""
+    return str(d.year - 1 if d.month <= _HALF_YEAR_END_MONTH else d.year)
 
 
 # ── Excel 公式 ──────────────────────────────────────────────────────────────

@@ -446,9 +446,9 @@ def _ai_request(prompt: str, ai_config: dict) -> str | None:
     api_key  = ai_config.get("api_key", "")
 
     if provider == "google":
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        return genai.GenerativeModel(model).generate_content(prompt).text
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        return client.models.generate_content(model=model, contents=prompt).text
     if provider == "openai":
         from openai import OpenAI
         response = OpenAI(api_key=api_key).chat.completions.create(
@@ -501,7 +501,7 @@ def _call_ai(text: str, ai_config: dict) -> dict[str, Any] | None:
 
         except Exception as exc:
             # 只印類型 + status code。不可用 {exc!r} / {exc}：三家 LLM SDK 的例外訊息
-            # 天生挾帶 URL（google-generativeai 走 REST 時帶 ?key=），而 launcher.ps1
+            # 天生挾帶 URL（google-genai 走 REST 時帶 ?key=），而 launcher.ps1
             # 刻意留著主控台視窗，等於把金鑰印在畫面上。
             print(
                 f"[fetcher_nongaap] AI call failed: {type(exc).__name__}"

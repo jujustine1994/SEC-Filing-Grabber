@@ -202,6 +202,108 @@ def fit_geometry(win_w: int, win_h: int,
     return f"{w}x{h}+{x}+{y}"
 
 
+def match_company_cache(text: str, cache: dict[str, str], limit: int = 8) -> list[tuple[str, str]]:
+    """跨公司比較「選公司」自動完成的比對邏輯（2026-08-21 TODO F4 第 1 項）。
+
+    CTH 回報：打公司全名（如「Intel」）搜不到，要打 `INTC` 才行。原本只比對
+    ticker 開頭字串，`cache`（`company_cache.json`，`{ticker: 公司名}`）裡
+    其實已經有公司名稱資料，只是沒拿來比對。這裡兩邊都比：ticker 開頭
+    **或**公司名稱裡含有輸入字串，符合其一就收進結果。純函式，不碰 Tk，
+    方便直接測（沿用 `fit_geometry` 同一套「抽出去成模組層級函式」的作法）。
+    """
+    text = text.strip().upper()
+    if not text:
+        return []
+    matches = [
+        (ticker, name) for ticker, name in cache.items()
+        if ticker.startswith(text) or text in name.upper()
+    ]
+    return matches[:limit]
+
+
+def pack_wrapped_chips(
+    container: tk.Widget,
+    entries: list[tuple[str, str]],
+    remove_cmd,
+    max_width: int | None = None,
+) -> int:
+    """把一串 chip（跨公司比較「已選公司/指標」的小標籤）依容器目前寬度排成
+    多行，超寬自動換到下一行（2026-08-21 TODO F4 第 2 項：原本全部用
+    `pack(side="left")` 排一整排，選超過一定數量後總寬度超出視窗，`pack`
+    不會自動換行，超出範圍的 chip 就被裁在看不到的地方）。
+
+    `entries`：[(顯示文字, 移除用的 key)]。`remove_cmd(key)` 是使用者按
+    chip 上的 ✕ 時呼叫的回呼。`max_width` 給測試用——不傳的話用容器目前
+    實際寬度（`winfo_width()`），量不到（例如視窗還沒 render）就退回
+    `winfo_reqwidth()`。回傳建立了幾行，方便測試斷言有沒有真的換行。
+    """
+    for child in container.winfo_children():
+        child.destroy()
+    if max_width is None:
+        container.update_idletasks()
+        max_width = container.winfo_width()
+        if max_width <= 1:
+            max_width = container.winfo_reqwidth() or 540
+
+    rows = [ttk.Frame(container)]
+    rows[0].pack(fill="x", anchor="w")
+    used_width = 0
+    for text, key in entries:
+        chip = ttk.Frame(container, relief="raised", borderwidth=1)
+        ttk.Label(chip, text=text).pack(side="left", padx=(4, 0))
+        ttk.Button(chip, text="✕", width=2,
+                   command=lambda k=key: remove_cmd(k)).pack(side="left")
+        chip.update_idletasks()
+        chip_width = chip.winfo_reqwidth() + 4  # +4 約略估 padx
+        if used_width + chip_width > max_width and used_width > 0:
+            new_row = ttk.Frame(container)
+            new_row.pack(fill="x", anchor="w")
+            rows.append(new_row)
+            used_width = 0
+        chip.pack(in_=rows[-1], side="left", padx=2, pady=2)
+        used_width += chip_width
+    return len(rows)
+
+
+def make_scrollable_frame(parent: tk.Widget) -> tuple[tk.Canvas, ttk.Frame]:
+    """把 `parent` 包成可垂直捲動的容器，回傳 `(canvas, content_frame)`——
+    呼叫端把原本要塞進 `parent` 的元件改塞進 `content_frame`。
+
+    2026-08-21 TODO F4 第 3 項：跨公司比較「選擇比較內容」視窗原本
+    `geometry("560x640")` 寫死固定尺寸、內容不能捲動，選的公司/指標一多，
+    確認/取消按鈕會被擠出視窗看不到。呼叫端要記得把「永遠要看得到」的元件
+    （例如確認/取消按鈕列）直接 pack 在 `parent` 上、放在呼叫這個函式**之前**
+    （用 `side="bottom"`），這樣它會被排在 canvas 外面，不會被捲動吃掉。
+    """
+    canvas = tk.Canvas(parent, highlightthickness=0)
+    scrollbar = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+    content = ttk.Frame(canvas)
+
+    content.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+    )
+    canvas_window = canvas.create_window((0, 0), window=content, anchor="nw")
+    canvas.bind(
+        "<Configure>",
+        lambda e: canvas.itemconfigure(canvas_window, width=e.width),
+    )
+    canvas.configure(yscrollcommand=scrollbar.set)
+
+    canvas.pack(side="left", fill="both", expand=True)
+    scrollbar.pack(side="right", fill="y")
+
+    # 滑鼠滾輪：只在游標在這個 canvas 上時才捲動這個 canvas，不要綁到
+    # bind_all 搶走其他視窗/元件的滾輪事件。
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+    canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+    return canvas, content
+
+
 def _write_log(msg: str, level: str = "INFO"):
     """寫一行到 logs/app.log。每次開檔→寫→關檔，不持有 handle（地雷十）。"""
     try:
@@ -225,7 +327,7 @@ def _write_log_header(msg: str):
 # _exc_status 已移至 errsafe.py（從這裡 import）。原因：main 會 import fetcher_*，
 # fetcher_* 無法反向 import main，函式只住在這裡的話 fetcher 側拿不到、只能自己
 # 複製一份，必然漂移——而且已經發生過：fetcher_nongaap 一度直接 print {exc!r}，
-# 把 google-generativeai URL 上的 ?key= 印上主控台。
+# 把 google-genai URL 上的 ?key= 印上主控台。
 
 
 def _migrate_config_if_needed():
@@ -1497,44 +1599,62 @@ class SECFetcherApp:
         win = tk.Toplevel(self.root)
         win.title(t("gui.compare.select_title"))
         win.geometry("560x640")
+        win.minsize(420, 320)
+
+        # 確認/取消按鈕列先 pack 在最外層、side="bottom"——這樣它永遠貼在
+        # 視窗底部看得到，不會被下面可捲動區塊的內容擠出視窗（TODO F4 第 3
+        # 項）。內容本身（① 選公司／② 選指標）改包進可捲動容器，選的公司/
+        # 指標再多也是在容器內部捲動，不會撐爆整個視窗。btn_row 掛在 `win`
+        # （真正的 Toplevel）上，`content` 只是內容容器，兩者不能共用同一個
+        # 變數名，否則 `_confirm`/`command=win.destroy` 這種閉包在按鈕真正
+        # 被按下時（那時整個函式早就跑完，變數已經是最後一次賦值）會抓到
+        # `content` 而不是 `win`，關不掉真正的視窗。
+        btn_row = ttk.Frame(win)
+        btn_row.pack(side="bottom", fill="x", padx=10, pady=10)
+        ttk.Button(btn_row, text=t("gui.btn.cancel"), command=win.destroy).pack(
+            side="right", padx=4)
+
+        def _confirm():
+            self._update_compare_summary()
+            win.destroy()
+
+        ttk.Button(btn_row, text=t("gui.btn.confirm"), command=_confirm).pack(
+            side="right", padx=4)
+
+        scroll_outer = ttk.Frame(win)
+        scroll_outer.pack(side="top", fill="both", expand=True)
+        _canvas, content = make_scrollable_frame(scroll_outer)
 
         # ── ① 選公司 ──────────────────────────────────────────────
-        ttk.Label(win, text=t("gui.compare.step1_company"), font=("", 11, "bold")).pack(
+        ttk.Label(content, text=t("gui.compare.step1_company"), font=("", 11, "bold")).pack(
             anchor="w", padx=10, pady=(10, 2))
 
-        ticker_row = ttk.Frame(win)
+        ticker_row = ttk.Frame(content)
         ticker_row.pack(fill="x", padx=10)
         ttk.Label(ticker_row, text=t("gui.compare.ticker_input")).pack(side="left")
         ticker_var = tk.StringVar()
         ticker_entry = ttk.Entry(ticker_row, textvariable=ticker_var, width=30)
         ticker_entry.pack(side="left", padx=(6, 0), fill="x", expand=True)
 
-        suggest_listbox = tk.Listbox(win, height=4)
+        suggest_listbox = tk.Listbox(content, height=4)
         cache = self._load_company_cache()
 
         def _on_ticker_type(*_):
-            text = ticker_var.get().strip().upper()
+            text = ticker_var.get().strip()
             suggest_listbox.delete(0, "end")
             if not text or "," in text:
                 return
-            matches = [(tk_, name) for tk_, name in cache.items() if tk_.startswith(text)][:8]
-            for tk_, name in matches:
+            for tk_, name in match_company_cache(text, cache):
                 suggest_listbox.insert("end", f"{tk_}  {name}")
 
         ticker_var.trace_add("write", _on_ticker_type)
 
-        chips_frame = ttk.Frame(win)
+        chips_frame = ttk.Frame(content)
         chips_frame.pack(fill="x", padx=10, pady=(4, 0))
 
         def _refresh_company_chips():
-            for child in chips_frame.winfo_children():
-                child.destroy()
-            for tk_, name in self.compare_selected_tickers:
-                chip = ttk.Frame(chips_frame, relief="raised", borderwidth=1)
-                chip.pack(side="left", padx=2, pady=2)
-                ttk.Label(chip, text=f"{tk_} {name}").pack(side="left", padx=(4, 0))
-                ttk.Button(chip, text="✕", width=2,
-                           command=lambda t_=tk_: _remove_company(t_)).pack(side="left")
+            entries = [(f"{tk_} {name}", tk_) for tk_, name in self.compare_selected_tickers]
+            pack_wrapped_chips(chips_frame, entries, _remove_company)
 
         def _add_company(ticker: str):
             ticker = ticker.strip().upper()
@@ -1581,13 +1701,13 @@ class SECFetcherApp:
 
         _refresh_company_chips()
 
-        ttk.Separator(win, orient="horizontal").pack(fill="x", padx=10, pady=8)
+        ttk.Separator(content, orient="horizontal").pack(fill="x", padx=10, pady=8)
 
         # ── ② 選指標 ──────────────────────────────────────────────
-        ttk.Label(win, text=t("gui.compare.step2_metrics"), font=("", 11, "bold")).pack(
+        ttk.Label(content, text=t("gui.compare.step2_metrics"), font=("", 11, "bold")).pack(
             anchor="w", padx=10)
 
-        period_row = ttk.Frame(win)
+        period_row = ttk.Frame(content)
         period_row.pack(fill="x", padx=10, pady=4)
         ttk.Label(period_row, text=t("gui.compare.start_year")).pack(side="left")
         ttk.Entry(period_row, textvariable=self.compare_start_year, width=6).pack(
@@ -1600,7 +1720,7 @@ class SECFetcherApp:
                                    values=["quarterly", "annual"], state="readonly", width=10)
         freq_combo.pack(side="left", padx=(2, 0))
 
-        category_row = ttk.Frame(win)
+        category_row = ttk.Frame(content)
         category_row.pack(fill="x", padx=10, pady=4)
         ttk.Label(category_row, text=t("gui.compare.metric_category")).pack(side="left")
 
@@ -1618,7 +1738,7 @@ class SECFetcherApp:
                                        state="readonly", width=16)
         category_combo.pack(side="left", padx=(4, 0))
 
-        metric_check_frame = ttk.Frame(win)
+        metric_check_frame = ttk.Frame(content)
         metric_check_frame.pack(fill="x", padx=10)
         metric_vars: dict[str, tk.BooleanVar] = {}
 
@@ -1652,45 +1772,27 @@ class SECFetcherApp:
 
         category_combo.bind("<<ComboboxSelected>>", _refresh_metric_checkboxes)
 
-        metric_chips_frame = ttk.Frame(win)
+        metric_chips_frame = ttk.Frame(content)
         metric_chips_frame.pack(fill="x", padx=10, pady=(4, 0))
 
+        def _remove_metric(name: str):
+            self.compare_selected_metrics.remove(name)
+            if name in metric_vars:
+                metric_vars[name].set(False)
+            _refresh_metric_chips()
+
         def _refresh_metric_chips():
-            for child in metric_chips_frame.winfo_children():
-                child.destroy()
-            for name in self.compare_selected_metrics:
-                chip = ttk.Frame(metric_chips_frame, relief="raised", borderwidth=1)
-                chip.pack(side="left", padx=2, pady=2)
-                ttk.Label(chip, text=name).pack(side="left", padx=(4, 0))
-
-                def _remove(name_=name):
-                    self.compare_selected_metrics.remove(name_)
-                    if name_ in metric_vars:
-                        metric_vars[name_].set(False)
-                    _refresh_metric_chips()
-
-                ttk.Button(chip, text="✕", width=2, command=_remove).pack(side="left")
+            entries = [(name, name) for name in self.compare_selected_metrics]
+            pack_wrapped_chips(metric_chips_frame, entries, _remove_metric)
 
         _refresh_metric_checkboxes()
         _refresh_metric_chips()
 
-        snapshot_row = ttk.Frame(win)
+        snapshot_row = ttk.Frame(content)
         snapshot_row.pack(fill="x", padx=10, pady=6)
         ttk.Label(snapshot_row, text=t("gui.compare.snapshot_date")).pack(side="left")
         ttk.Entry(snapshot_row, textvariable=self.compare_snapshot_date, width=14).pack(
             side="left", padx=(4, 0))
-
-        btn_row = ttk.Frame(win)
-        btn_row.pack(fill="x", padx=10, pady=10)
-        ttk.Button(btn_row, text=t("gui.btn.cancel"), command=win.destroy).pack(
-            side="right", padx=4)
-
-        def _confirm():
-            self._update_compare_summary()
-            win.destroy()
-
-        ttk.Button(btn_row, text=t("gui.btn.confirm"), command=_confirm).pack(
-            side="right", padx=4)
 
     def _raw_concepts_for_tag(self, tag: str) -> list[str]:
         """從 fetcher_gaap 的科目定義表取某一類（IS/BS/CF）的欄位名稱清單。
@@ -1775,6 +1877,12 @@ class SECFetcherApp:
             self.msg_queue.put(("compare_error", f"{type(e).__name__}{_exc_status(e)}"))
             return
 
+        # 2026-08-21 TODO F5：_on_company_start 只在「開始抓下一家」時把進度
+        # 設成 current-1，最後一家永遠停在 total-1，不會自然到滿格；最後兩家
+        # 一開抓就失敗時連 filing 級進度都沒機會回報。收尾補一次跟單一公司
+        # （main.py 2647 附近）／批次抓取（2758 附近）一致的「全部做完」更新，
+        # 不然「Excel 已產出」訊息會在進度條視覺上還沒跑完時就先跳出來。
+        self._set_progress(len(tickers), len(tickers), t("gui.status.done"))
         self.msg_queue.put(("compare_done", str(out_path)))
 
     # =========================================================
@@ -1995,10 +2103,11 @@ class SECFetcherApp:
         """Background thread: send a trivial prompt to verify AI API connectivity."""
         try:
             if provider == "google":
-                import google.generativeai as genai
-                genai.configure(api_key=api_key)
-                m = genai.GenerativeModel(model)
-                m.generate_content("Reply with one word: OK")
+                from google import genai
+                client = genai.Client(api_key=api_key)
+                client.models.generate_content(
+                    model=model, contents="Reply with one word: OK"
+                )
             elif provider == "openai":
                 from openai import OpenAI
                 OpenAI(api_key=api_key).chat.completions.create(

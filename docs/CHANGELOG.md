@@ -10,6 +10,267 @@
 ## 功能清單
 
 ### 已完成
+- [x] **G11 spike：SEC companyfacts 取數路徑建好並驗證（2026-08-22，CTH 指示
+      「完整跑 G11，讓資訊來源更穩定一點」）**：現行路徑對每份 filing 解析 4~7 次
+      （IS/BS/CF/segments 各一次），實測每家 7.5 分鐘；companyfacts 一家一個
+      request，**0.34 秒，快 215 倍**，而且涵蓋範圍還更早（NVDA 2008-07 vs 2009-07）。
+      - **新增 `src/fetcher_facts.py`（40 個測試）與 `src/facts_mapping.py`**。
+        現有程式**一行都沒動**，這是平行路徑
+      - **對照表是反推出來的，不是手填**：模板的 `std_concept` 欄是 edgartools
+        正規化過的名字（`NetIncome`），不是原始 us-gaap element name
+        （`NetIncomeLoss`）。拿現行路徑已知正確的數字當答案卷，對 52 家 ×
+        每個 concept 算命中率，最高的就是正確對應。95 列中 90 列自動對上、
+        3 列人工補、2 列合理沒有對應。每列的證據寫在行末註解
+      - **驗收（52 家逐格）**：61,069 格中 56,686 格數字相同（**92.82%**），
+        其中 1,543 格只差正負號 → **符號對齊後 95.35%**
+      - **獨立驗證（24 家，不看現行路徑）**：資產=負債+權益 95%、四季加總=年度 95%、
+        **SEC 官方 `frame` vs 我們的期中點判準 59,564/59,564 零例外全數一致**
+        （這是對 F6 跨公司對齊決策的官方背書）、實質重編佔 5.4%
+      - **四個踩到的坑**（都寫進程式註解）：① 一個 concept 只能當一列的主人
+        （`OtherNonoperatingIncomeExpense` 差點變成 `Operating Income` 的備援）；
+        ② `negate` 要跟隨首選不能用 `all()`（否則 31 家的 Capex 全部正負相反）；
+        ③ 備援的符號慣例必須與首選一致否則要剔除；④ `unit`/`taxonomy` 指錯一律
+        回空不可退回預設（EPS 是 `USD/shares`、流通股數在 `dei`，退回 USD 會讓
+        每股盈餘抓到金額且看起來很合理）
+      - **尚未切換**。完整報告與待決事項見
+        `docs/superpowers/report-2026-08-22-g11-companyfacts.md`
+      - 四支 spike 腳本登記於 `scripts/README.md`
+- [x] **G1：日曆季判準統一成「一份實作、兩個具名基準點」（2026-08-22）**：同一件事
+      原本有三套算法散在三個檔案——① `fetcher_gaap._calendar_quarter()` 完全不內縮
+      （把 INTC 結束在 2023-04-01、實際涵蓋 1~3 月的那一季算成 `2023Q2`）；
+      ② `fiscal_input` 的 −15 天；③ 跨公司用的 −45 天期中點。
+      - **不是併成一個數字**：「這季結束在哪一季」與「這季主要落在哪一季」是兩個
+        問題，全改 −15 會讓跨公司對齊偏一格，全改 −45 會讓第 4 列對一個 7 月結束
+        的季說「2025Q2」、跟正下方第 5 列的 `2025-07-27` 自相矛盾
+      - **改法**：①直接刪掉（改成委派）；②③ 合併成
+        `calendar_quarter_of(period_end, *, basis)`，`basis="end"`／`"span"`。
+        **`basis` 刻意不給預設值**，不給就噴 `TypeError`——強迫每個呼叫端表態，
+        這才是「統一」的實質保障
+      - `calendarized_quarter_of()` 保留成 `basis="span"` 的薄包裝，讓
+        `comparison.py` 讀起來是「取對齊季」而不是「傳個字串參數」；
+        測試釘住薄包裝與 `span` 逐格等價，不可各自演化
+      - 機器鍵 `Calendar Quarter` **沒有動**（改了會打斷下游腳本，見 TODO D0-5），
+        只改四個 locale 的 B 欄說明，寫明「該期**結束**在哪個日曆季（跨公司比較
+        用的是另一套判準）」
+      - 12 個新測試於 `test_fiscal_input.py` / `test_fetcher_gaap.py`
+- [x] **G3：IS 區的 SBC 與 D&A 只有 Q1 有值，改用 CF 表已拆算好的單季值（2026-08-22，
+      CTH 回報「有些財務項目有時出現有時不出現」）**：
+      - **根因**：`IS_TEMPLATE` 裡 `source == "CF"` 的兩列走
+        `_current_q_col(cf_df)` 直接找現金流量表的單季欄，但 **10-Q 的現金流量表是
+        YTD 累計**，Q2/Q3 的 filing 根本沒有單季欄 → 整片空白。實測 NVDA 缺 51/68，
+        缺的全是 Q2/Q3（Q1 有值，因為 Q1 的 YTD 就等於單季），連帶
+        `_synthesize_q4()` 也算不出那兩列的 Q4
+      - `_build_cf_table()` 早就做了 YTD 拆算（本季 YTD − 上季 YTD），所以 CF 區
+        同名兩列一直是好的（缺 1/68）——**問題只在 IS 這條路沒走那段**
+      - **改法**：新增 `_backfill_cf_sourced_rows()`，用 CF 表依 `quarter_labels`
+        回填 IS 的 `SBC` 與 `D&A (CF memo)`。**不在 IS 再寫一份 YTD 拆算**——
+        那就是第二份會漂移的實作
+      - **一定要放在 `_synthesize_q4()` 之後**：CF 表的 Q4 是那一步才補上的
+      - 保留 IS 原本讀 `cf_df` 那段（提供 B 欄的公司自報標籤），回填只在 CF 有值
+        時覆蓋——比設計書原本寫的「整段拿掉」嚴格更好
+      - **驗收（真實 NVDA 資料）**：IS `SBC`／`D&A (CF memo)` 從缺 51/68 降到 1/68，
+        與 CF 區的 `SBC`／`D&A` 完全一致。剩下那 1 期是最早的合成 Q4，材料是
+        pre-XBRL 申報
+      - 4 個新測試（依 label 對照不靠位置、CF 是 None 不蓋掉 IS 已有的值、
+        缺列不拋例外）
+- [x] **圖表三個標題壓在別的東西上面（2026-08-22，F3 第三輪）**：CTH 截圖回報
+      Y 軸標題「Revenue ($mm)」壓在「50,000.0」刻度數字上、X 軸標題「期間」
+      掉進日期標籤那一排裡面。**跟前一輪圖例那個 bug 完全同一類**：openpyxl 的
+      `Title` 沒有 `overlay` / `layout` 屬性時完全不寫這兩個元素，Excel 拿到
+      「沒寫」的標題會直接畫在既有內容上面，而不是另外撥一條專屬空間。
+      實測存檔後的 `xl/charts/chart1.xml`：`<legend>` 有
+      `<overlay val="0"/>`（上一輪補的），三個 `<title>` 一個都沒有，也都沒有
+      `<layout/>`。原生 Excel 輸出的每個標題一定帶 `<c:layout/>`（空元素＝
+      明講用自動版面）加 `<c:overlay val="0"/>`。
+      - **修法**：新增 `_pin_title_layout()`，對 `chart.title`／`x_axis.title`／
+        `y_axis.title` 三個都設 `overlay = False` + `layout = Layout()`。
+        **必須放在三個 title 都指派完之後**——openpyxl 每次指派 `title` 都會
+        重新造一個 `Title` 物件，先設屬性會被後面的指派蓋掉
+      - **驗證**：PowerShell 呼叫 Excel COM 把同一組資料的圖表匯出成 PNG
+        前後對照。修復前 Y 軸標題確實疊在 50,000.0 上、「期間」浮在繪圖區
+        中間偏下（20171029 附近）、圖表標題壓進頂端格線；修復後三個標題
+        各自佔一條專屬空間，都不重疊。附帶把「圖表標題壓進繪圖區」這個
+        沒被回報但同樣存在的問題一起修掉
+      - 2 個新測試於 `test_comparison_writer.py`，其中一個直接解開存檔後的
+        `.xlsx` 讀 `xl/charts/chart1.xml`，數 `<overlay val="0"/>` 有 4 個
+        （三標題 + 圖例）、`<layout/>` 有 3 個——**Excel 讀的是檔案不是
+        Python 物件，只斷言物件屬性不算驗證**
+- [x] **財季編號改由期末日反推，修掉「季度資料被靜默丟棄」與連鎖的 Q4 缺洞
+      （2026-08-22，D0-6）**：`_col_to_quarter_label()`（`fetcher_gaap.py:431`）
+      原本直接採信 edgartools 欄名裡的 `(Qn)` 標記。實測那個標記對 52/53 週
+      財年制的公司會標錯，而且**同一家公司相鄰兩季會標到同一個號碼**：
+      ```
+      NVDA 2010-05-02 → (Q2)   實際 FY2011Q1
+      NVDA 2010-08-01 → (Q3)   實際 FY2011Q2   ← 跟下一行撞號
+      NVDA 2010-10-31 → (Q3)   實際 FY2011Q3
+      INTC 2023-04-01 → (Q2)   實際 2023Q1
+      INTC 2023-07-01 → (Q3)   實際 2023Q2     ← 跟下一行撞號
+      INTC 2023-09-30 → (Q3)   實際 2023Q3
+      ```
+      filings 是新到舊排序，`_build_*_table()` 的 dedup（`if label in periods:
+      continue`）於是把**舊的那一季靜默丟掉**，沒有任何 log 或警告。少了 Q1，
+      `_synthesize_q4()` 的「Q1/Q2/Q3 都要有」判斷式自然跳過該年 Q4 合成——
+      這才是「Q4 常常抓不到」的真正根因，不是 SEC 端缺資料（實測那幾份
+      10-Q 的 `filing.xbrl()` 都拿得到）。
+      - **更嚴重的是沒被丟掉的那些也貼錯格**：`Compare_Data` 的
+        `INTC / FY2016Q2 = 13,702` 其實是 INTC **2016 Q1** 的營收，整條線
+        往後平移一季，而同一欄的 AMD 是真正的 Q1——兩家在圖上根本沒對齊
+      - **修法**：`(Qn)` 現在只用來分辨「季度欄 vs 年度欄」，編號一律用
+        `_col_to_period_end()` 解析出的實際日期，交給
+        `fiscal_input.fiscal_quarter_of()`（既有的參考實作，先把期末日內縮
+        15 天再取月份，剛好吃掉 52/53 週制的漂移）反推。沒有另外發明仲裁
+        規則——edgartools 的標記不再參與計算
+      - 4 個新測試於 `tests/test_fetcher_gaap.py`（NVDA/INTC 實際踩到的欄名，
+        以及「同一財年三季必須算出三個不同 label」的碰撞回歸測試）。兩個既有
+        測試的期望值跟著改：它們的 fixture 是 `2025-12-27 (Q1)` 配預設
+        `fy_end_month=12`，那個組合在現實不存在（12 月結算的公司 Q1 不會在
+        12 月底結束），改成 `FY2025Q4`
+- [x] **跨公司比較改用日曆季／日曆年對齊（2026-08-22）**：`comparison.py`
+      原本直接拿各公司自己的財季標籤當共同欄位鍵。財年結束月不同的公司，
+      同一個標籤指的不是同一段時間——NVDA 一月結算，它的 FY2026Q2 實際結束
+      在 2025-07-27，卻跟 AMD 結束在 2026-06-27 的 FY2026Q2 疊在同一欄，
+      **整條 NVDA 線在日曆時間上偏移約一年**。
+      - **對齊判準用期中點**（期末日往前推 45 天，即「這一期的多數天數落在
+        哪個日曆季」），不是期末日落在哪一季。理由：NVDA 7 月底那一季要跟
+        AMD/INTC 6 月底那一季擺同一欄（同一波財報、分析師就是這樣比），
+        用期末日會把它推到跟 AMD 9 月那一季同欄，錯一格
+      - 年度模式同理：財年結束在 1-5 月掛前一個日曆年（NVDA FY2026 結束在
+        2026-01，內容是日曆 2025 年），6-12 月掛當年（MSFT FY2025 就是 2025）
+      - 新增 `fiscal_input.calendarized_quarter_of()` / `calendarized_year_of()`，
+        **刻意不動既有的 `calendar_quarter_of()`**——後者是單一公司
+        `Data_Financials(Q)` 第 4 列在用的，語意是「期末日落在哪一季」，
+        跟跨公司對齊是兩件事，共用一個函式以後改哪邊都會誤傷另一邊
+      - `Compare_Data` 的期末結算日列改取同欄各公司**最晚**的那個日期
+        （同一日曆季各家期末日不再相同）：Snapshot 拿它做「不晚於 B1」的
+        判斷，取早的那個會讓使用者把 B1 設在 7/1 就看到 NVDA 還沒結算完的
+        那一季數字
+      - 期末日抓不到時退回原本的財季標籤，不因為算不出日曆季就整季丟掉
+      - 11 個新測試（`test_fiscal_input.py` 8、`test_comparison.py` 3、
+        `test_comparison_writer.py` 1），5 個既有 `test_comparison.py` 測試的
+        期間鍵跟著從 `FY2024Q1` 改成 `2024Q1`
+- [x] **跨公司比較 `Chart_<指標>` 圖表三個隱藏渲染 bug（2026-08-22，CTH
+      截圖回報「中間斷線＋圖例被吃＋沒有單位」，F3 完成後才發現的殘留問題）**：
+      前一版 F3 只調了尺寸/圖例位置/numFmt 這些「看得到的屬性」，實際存進
+      Excel 檔案的圖表卻完全沒有座標軸文字（Y 軸數字、X 軸日期都不見），
+      圖例整條疊在 X 軸標籤上——**這三個 bug 光看 openpyxl 文件或程式碼猜
+      不到，是因為本機剛好有裝 Office，改用 PowerShell 呼叫 Excel COM
+      自動化，把「openpyxl 產出的圖表」跟「Excel 原生 `ChartObjects.Add()`
+      建出來的圖表」兩份 XML 逐項比對，才抓出三處 openpyxl 完全不寫、但
+      Excel 原生輸出一定會寫的屬性**：
+      1. `chart.set_categories()` 不管儲存格內容永遠寫成 `<c:numRef>`，但
+         期末結算日是文字（"20240331"），Excel 拿數值參照指向文字儲存格
+         解析不出來，類別軸整個讀不到值。改成手動把每個 series 的
+         `cat` 換成 `AxDataSource(strRef=StrRef(f=...))`
+      2. openpyxl 完全不寫 `<c:delete>` 元素（regardless大小寫都沒有）。
+         OOXML 規格上沒寫預設是 `false`，但 Excel 實際渲染時對「沒寫」跟
+         「明講 `delete=0`」待遇不同——沒寫會保守地整排不畫刻度標籤。兩軸
+         都要 `chart.x_axis.delete = False`／`chart.y_axis.delete = False`
+      3. `Legend` 沒有 `overlay` 屬性時完全不寫該欄位，Excel 拿到「沒寫」
+         會讓圖例跟 X 軸標題/刻度標籤擠在同一條窄帶、直接疊在一起（畫面上
+         看起來像圖例文字蓋在日期上）。原生 Excel 輸出一定帶
+         `overlay="0"`，這裡明講 `chart.legend.overlay = False`
+      - 同時補上 `axPos`（catAx 該是 `"b"` 不是 openpyxl 預設的 `"l"`）、
+        `tickLblPos="nextTo"`、`crosses="autoZero"`，都是原生 Excel 輸出
+        必有、openpyxl 不會主動寫的欄位，一次補齊不留模糊地帶
+      - **驗證方式**：`PowerShell` 呼叫 Excel COM，用真實 Excel（不是
+        LibreOffice 或其他工具）開啟並匯出圖表成 PNG 圖片，肉眼比對前後
+        差異；並用二分法（一次拿掉一個自訂屬性）排除誤判，找到真正觸發
+        問題的屬性。最後用 INTC/NVDA/AMD 真實資料重新產出，確認 Y 軸數字
+        （0 到 90,000.0，帶 `$mm`）、X 軸日期（跳 4 期顯示一次）、圖例
+        （AMD/INTC/NVDA 三色分開不重疊）都正常顯示。新增 3 個測試於
+        `test_comparison_writer.py`
+- [x] **跨公司比較 Snapshot 改用真日期輸入 + 最近一期查找（2026-08-21，CTH
+      回報「打數字抓不到資料」並要求日期不用剛好對到期末結算日）**：
+      `comparison_writer.py::write_snapshot_sheets()` 的 B1 原本是純文字，
+      要求剛好打中 `YYYYMMDD`——使用者打數字會被 Excel 自動轉成數值型別，
+      跟 Compare_Data 期末結算日列（文字）型別對不上，`MATCH` 抓不到值。
+      改成真正的 Excel 日期型別（`number_format = "yyyy/mm/dd"`），使用者
+      可以直接打一般日期（如 `2024/7/15`），不用湊 8 碼數字。同時把查找
+      邏輯從「精確比對」改成「不晚於這天的最近一期」（`SUMPRODUCT(MAX(...))`
+      公式），符合分析師「這個時間點看得到的最新數字是什麼」的直覺——未來
+      才公布的財報不會被拿來回填過去的時間點。開發過程中用 PowerShell
+      呼叫真實 Excel COM 自動化實測（本機沒有 LibreOffice，改用已安裝的
+      Office），抓到並修掉兩個公式在 Python 端寫測試測不出來的 Excel 執行期
+      bug：① 用「期末結算日聯集列」判斷儲存格是否空白會誤判（應該看該公司
+      自己那一列）；② `INDEX(range,0)` 在 Excel 不會報錯而是回傳整個範圍的
+      隱含第一格，`IFERROR` 接不住，要用 `IF` 明確擋掉 offset=0 的情況。
+      新增測試於 `test_comparison_writer.py`
+- [x] **跨公司比較 X 軸資料密度控管 + 圖表版面調校（2026-08-21，TODO F3 全部
+      5 項完成，含新發現的第 6 項）**：`comparison_writer.py::write_chart_sheets()`
+      補齊尺寸（`chart.width=30`／`height=15`，openpyxl 預設 15×7.5cm 偏小，
+      CTH 要求雙倍）、圖例移到下方橫排（`legend.position="b"`，CTH 確認選
+      這個而非右側——公司數量不固定，右側直排公司一多會被擠進繪圖區，下方
+      橫排可隨數量自動換行）、Y 軸數字格式改跟 `Compare_Data` 儲存格同一套
+      規則（`excel_formatter.unit_format_for()`），軸標題金額類指標加
+      `($mm)` 單位。另外修了一個原本 5 項清單沒涵蓋、這次修復自己帶出來的
+      新問題（第 6 項）：接上 D0-1 Q4 合成後跨公司比較的時間跨度可以拉到
+      60-70 欄，全部日期標籤硬擠在 X 軸會疊字看不清楚，加
+      `x_axis.tickLblSkip`／`tickMarkSkip = max(1, n_periods // 15)`，目標
+      約 15 個可視標籤。真實抓 INTC/NVDA/AMD 資料驗證：X 軸 69 期正確跳 4
+      期顯示一次。新增 5 個測試於 `test_comparison_writer.py`
+- [x] **跨公司比較「選擇比較內容」視窗 3 項 UI 問題（2026-08-21，TODO F4）**：
+      `main.py::_open_compare_selection_window()`。① 新增模組層級純函式
+      `match_company_cache()`：公司自動完成原本只比對 ticker 開頭字串，打
+      公司全名（如「Intel」）搜不到，改成 ticker 開頭**或**公司名稱含有輸入
+      字串符合其一即收錄，8 個測試於 `test_match_company_cache.py`。②③
+      新增 `pack_wrapped_chips()`（已選公司/指標的 chip 依容器寬度自動換行，
+      不再用單純 `pack(side="left")` 導致超寬被視窗邊緣裁掉看不到）與
+      `make_scrollable_frame()`（整個視窗內容包進可捲動 Canvas，確認/取消
+      按鈕改成先 pack 在 `win`／`side="bottom"`，永遠貼在視窗底部看得到，
+      不會被下面可捲動內容擠出視窗）。這兩個都是 GUI 版面調整，沒有無頭
+      測試框架可用，改用真實 Tk（Windows 本機有顯示，`Tk()` 建得起來）寫
+      驗證腳本：塞 20 家公司/20 個指標的長標籤進選擇視窗，確認 chip 換行
+      成多行、確認/取消按鈕維持在視窗可視高度內（y=605，視窗高 640）、
+      而被擠出的內容確實在可捲動區域內（y 一路到 1163）而非消失或報錯
+- [x] **跨公司比較季度模式收尾補一次進度到滿格（2026-08-21，TODO F5，CTH
+      回報「Excel 已產出」訊息在進度條還沒跑完時就先跳出來）**：
+      `main.py::_compare_worker()` 全程只靠 `_on_company_start()`（每次開始
+      抓下一家時把進度設成 `current-1`，最後一家開始抓時進度只到
+      `total-1`，設計上就不會自然到滿格）與 `_on_filing_progress()`（借用
+      同一條進度條顯示逐份 filing 進度，但最後幾家一開抓就失敗時連一次都
+      沒機會回報）更新進度，寫完檔案前後沒有任何地方補一次「全部做完」的
+      進度更新。單一公司抓取與批次抓取都有在收尾呼叫
+      `self._set_progress(total, total, ...)`，跨公司比較這裡漏了同樣的
+      收尾呼叫。補上後跟另外兩條路徑行為一致
+- [x] **跨公司比較的季度模式接上 D0-1 Q4 合成（2026-08-21，CTH 回報圖表中段大量缺
+      Q4）**：`comparison.py::build_comparison()` 原本把「顯示頻率」跟「該不該抓
+      年報」錯誤綁成互斥——`fetch_annual=(frequency == "annual")`，選季度比較時
+      年報完全不抓，D0-1 的 Q4 合成（`fetcher_gaap._synthesize_q4()`，靠「年報－
+      Q1－Q2－Q3」湊出 10-Q 沒有的 Q4）沒有材料可用，整個跳過，日曆年結束的公司
+      （AMD/INTC 等）日曆 Q4 那一整欄空白。單一公司 Tab1 抓取用兩個獨立勾選框
+      （`fetch_q`／`fetch_k` 預設都 `True`）沒有這問題，是跨公司比較這邊漏接。
+      修法：`fetch_annual` 固定傳 `True`，年報只當 Q4 合成材料用，不影響輸出頻率
+      （季度/年度模式的 `fetch_quarterly` 仍照原邏輯區分）。代價是每家公司多抓
+      年報份數，跨公司比較耗時會拉長。新增測試
+      `test_build_comparison_quarterly_frequency_still_fetches_annual_for_q4_synthesis`
+      於 `test_comparison.py`，全套測試皆過。實測 INTC/NVDA/AMD 跨公司比較，
+      Q4 缺洞大幅減少（剩下的缺洞是真的沒有 XBRL 可抓的舊財報，屬於 SEC 端限制
+      非程式問題，見 `docs/TODO.md` D9 附近說明）
+- [x] **`google-generativeai` 汰換為 `google-genai`（2026-08-21，TODO D7）**：
+      舊 SDK 官方已終止支援。改動三處同樣的 pattern——`fetcher_nongaap.py::_ai_request()`、
+      `override_engine.py::_llm_call()`、`main.py::_test_ai_worker()`（設定面板
+      「測試連線」按鈕）：`genai.configure()` + `genai.GenerativeModel(model)
+      .generate_content(prompt)` 改成 `genai.Client(api_key=...).models
+      .generate_content(model=model, contents=prompt)`。回傳物件同樣有 `.text`
+      屬性，`errsafe.py::_exc_status()` 原本探測的 `code` 屬性名剛好對上新版
+      `google.genai.errors.APIError.code`，不用跟著改。`requirements.txt` 的
+      `google-generativeai>=0.8.0` 改成 `google-genai>=1.0.0`，`launcher.ps1`
+      的安裝說明文字同步更新。新增測試：`test_fetcher_nongaap.py` 與
+      `test_override_engine.py` 各一個，用 `unittest.mock.patch("google.genai
+      .Client")` 驗證呼叫參數正確；`main.py::_test_ai_worker()` 屬 GUI 背景
+      執行緒方法，本專案原本就沒有 GUI 層測試覆蓋，維持現況未補測試。
+      本環境沒有真實 Google API Key，先只驗證了 SDK 呼叫介面／參數正確；
+      **CTH 已用真實金鑰在「進階設定」按「測試連線」實測成功**，端對端驗證完成
+- [x] **`Chart_<指標>` X 軸改用期末結算日，修正折線亂連線（2026-08-21，
+      TODO F3 第 3 項）**：`comparison_writer.py::write_chart_sheets()` 原本
+      用財季標籤（`FY2024Q3`）當 X 軸類別——不同公司財年結束月不同（AAPL 9
+      月結束、NVDA 1 月結束），同一欄標籤在不同公司代表不同月份，且 Excel
+      對缺值期間預設直接連到下一個有值的點，畫出誤導折線。改用
+      `Compare_Data` 已有的期末結算日列（絕對日期，如 `20240331`，緊接在
+      資料列上方）取代財季標籤，並設 `chart.display_blanks = "gap"` 讓缺值
+      顯示為斷點不連線。屬於資料正確性修正，非排版美觀。新增 2 個測試於
+      `test_comparison_writer.py`，全專案 954 個既有測試皆過。F3 其餘 4 項
+      （圖表尺寸、座標軸單位、margin、圖例位置）未動，見 `docs/TODO.md`
 - [x] **跨公司財務比較功能（2026-08-20，TODO F1，CTH 提出）**：新增 Tab4
       「跨公司比較」，可同時選多家公司、多個財務指標，輸出獨立的新格式
       Excel，跟現有單一公司抓取流程完全分開。架構：`src/comparison.py`

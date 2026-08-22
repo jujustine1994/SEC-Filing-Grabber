@@ -173,10 +173,9 @@ def _llm_call(prompt: str, ai_config: dict) -> str:
     api_key  = ai_config.get("api_key", "")
 
     if provider == "google":
-        import google.generativeai as genai
-        genai.configure(api_key=api_key)
-        m = genai.GenerativeModel(model)
-        resp = m.generate_content(prompt)
+        from google import genai
+        client = genai.Client(api_key=api_key)
+        resp = client.models.generate_content(model=model, contents=prompt)
         return resp.text.strip()
 
     if provider == "openai":

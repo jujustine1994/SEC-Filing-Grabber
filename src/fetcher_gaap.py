@@ -25,7 +25,7 @@ import math
 import re
 import sys
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, date as _date
 from typing import Any
 
@@ -442,15 +442,25 @@ def _col_to_quarter_label(col_name: str, fy_end_month: int = 12) -> str:
     Examples (fy_end_month=9, AAPL):
         "2023-12-30 (Q1)"  -> "FY2024Q1"
         "2024-09-28 (FY)"  -> "FY2024"
+
+    財季編號**由期末日反推，不採信欄名裡的 `(Qn)`**：edgartools 對 52/53 週
+    財年制的公司會標錯。實測 NVDA 2016-05-01（FY2017 Q1）被標成 `(Q2)`、
+    INTC 2023-04-01（2023 Q1，13 週制溢出到 4 月）也被標成 `(Q2)`。兩份不同
+    期間的 10-Q 因此算出同一個 label，`_build_*_table` 的 dedup
+    （`if label in periods: continue`）就把舊的那一季靜默丟掉，連帶讓
+    `_synthesize_q4()` 缺 Q1/Q2/Q3 而合成不出 Q4。`(Qn)` 現在只用來分辨
+    「這是季度欄還是年度欄」，編號一律自己算。
     """
     m = re.match(r"(\d{4})-(\d{2})-\d{2}\s+\((\w+)\)", col_name.strip())
     if m:
-        year, month, period = int(m.group(1)), int(m.group(2)), m.group(3)
+        year, period = int(m.group(1)), m.group(3)
         if period.upper() == "FY":
             return f"FY{year}"
-        if fy_end_month < 12 and month > fy_end_month:
-            year += 1
-        return f"FY{year}{period}"
+        # 延後 import：fiscal_input -> excel_formatter -> fetcher_gaap 會循環匯入
+        from fiscal_input import fiscal_quarter_of, fy_start_month
+        label = fiscal_quarter_of(_col_to_period_end(col_name),
+                                  fy_start_month(fy_end_month))
+        return label or f"FY{year}{period}"
     return col_name
 
 
@@ -1493,10 +1503,20 @@ def _calendar_quarter(label: str, fy_end_month: int, period_end: str = "") -> st
     """財季標籤 → 日曆季標籤（`2026Q1`）。年度標籤或無法解析回空字串。
 
     有真實期末日就直接用它換算（最準）；沒有才靠結算月反推。
+
+    **判準一律委派給 `fiscal_input.calendar_quarter_of(basis="end")`，這裡不自己算。**
+    2026-08-22 之前這裡是第三套獨立實作，而且忘了內縮——INTC 結束在 2023-04-01
+    的那一季（實際涵蓋 1~3 月）會被算成 `2023Q2`。平常這個值會被
+    `fiscal_input._apply_to_sheet()` 的公式蓋掉看不到，但第 5 列不是完整 ISO
+    日期的殘留格（合成 Q4 的年報期末日有時只有 `2010-01`）會保留它，那就是錯值。
+
+    退路（期末日抓不到，靠財季標籤反推）保留：`_fiscal_period_end()` 算出來的
+    月份本來就是「該季最後一個月」，不需要再內縮，直接取日曆季即可。
     """
-    if period_end and re.match(r"\d{4}-\d{2}", period_end):
-        year, month = int(period_end[:4]), int(period_end[5:7])
-        return f"{year}Q{(month - 1) // 3 + 1}"
+    if period_end and re.match(r"\d{4}-\d{2}-\d{2}", period_end):
+        # 延後 import：fiscal_input -> excel_formatter -> fetcher_gaap 會循環匯入
+        from fiscal_input import calendar_quarter_of
+        return calendar_quarter_of(period_end, basis="end")
     parsed = _fiscal_period_end(label, fy_end_month)
     if parsed is None:
         return ""
@@ -1655,6 +1675,51 @@ def _merge_financials(is_tbl: StatementTable,
 #
 # 只處理模板列（`n_template_rows` 以內）——overflow 列（公司特有科目）在季報
 # 與年報兩邊出現的順序不保證對齊，沒有可靠的列對應，Q4 一律留 None。
+# IS 模板裡 source=="CF" 的列 → 對應 CF 模板的哪一列。
+# 兩邊名字刻意不同（IS 那邊帶「(CF memo)」提醒讀者這不是損益表原生科目），
+# 所以要有這張對照表，不能靠名字相等。
+_IS_ROWS_SOURCED_FROM_CF = {
+    "SBC": "SBC",
+    "D&A (CF memo)": "D&A",
+}
+
+
+def _backfill_cf_sourced_rows(is_tbl: StatementTable,
+                              cf_tbl: StatementTable) -> StatementTable:
+    """用已建好的 CF 表回填 IS 裡 source=="CF" 的那幾列。
+
+    為什麼要這樣做（2026-08-22，TODO G3）：10-Q 的現金流量表是 **YTD 累計**，
+    Q2/Q3 的 filing 沒有單季欄。`_build_is_table()` 原本用
+    `_current_q_col(cf_df)` 直接找單季欄，找不到就整格留空——實測 NVDA 的
+    `SBC` 與 `D&A (CF memo)` 缺 51/68 期，缺的全是 Q2/Q3（Q1 有值，因為 Q1 的
+    YTD 就等於單季），連帶 `_synthesize_q4()` 也算不出那兩列的 Q4。
+
+    `_build_cf_table()` 已經做過 YTD 拆算（本季 YTD − 上季 YTD，見該函式的
+    `is_ytd` 分支），所以 CF 區同名兩列是好的。這裡直接共用它的結果，
+    **不要在 IS 再寫一份 YTD 拆算**——那就是第二份會漂移的實作。
+
+    依 `quarter_labels` 對照，不靠欄位位置（兩張表的期數不保證一樣）。
+    CF 那格是 None 就不動 IS 原本的值，不要用 None 蓋掉真資料。
+    """
+    cf_idx_by_label = {q: i for i, q in enumerate(cf_tbl.quarter_labels)}
+    new_values = [list(row) for row in is_tbl.values]
+
+    for is_name, cf_name in _IS_ROWS_SOURCED_FROM_CF.items():
+        if is_name not in is_tbl.concepts or cf_name not in cf_tbl.concepts:
+            continue
+        is_row = is_tbl.concepts.index(is_name)
+        cf_row = cf_tbl.concepts.index(cf_name)
+        for j, label in enumerate(is_tbl.quarter_labels):
+            k = cf_idx_by_label.get(label)
+            if k is None:
+                continue
+            val = cf_tbl.values[cf_row][k]
+            if val is not None:
+                new_values[is_row][j] = val
+
+    return replace(is_tbl, values=new_values)
+
+
 def _synthesize_q4(q_tbl: StatementTable, ann_tbl: StatementTable,
                     n_template_rows: int, is_balance: bool) -> StatementTable:
     """Insert a synthesized Q4 column into q_tbl for each fiscal year covered by ann_tbl.
@@ -2207,6 +2272,12 @@ def fetch_gaap_statements(ticker: str, identity: str,
             is_tbl = _synthesize_q4(is_tbl, is_ann, len(IS_TEMPLATE), is_balance=False)
             bs_tbl = _synthesize_q4(bs_tbl, bs_ann, len(BS_TEMPLATE), is_balance=True)
             cf_tbl = _synthesize_q4(cf_tbl, cf_ann, len(CF_TEMPLATE), is_balance=False)
+
+        # IS 的 CF-sourced 列（SBC / D&A (CF memo)）改用 CF 表已經拆算好的單季值。
+        # **一定要放在 _synthesize_q4() 之後**：CF 表的 Q4 是在那一步才補上的，
+        # 放在前面的話 IS 那兩列的 Q4 仍然會是空的（見 _backfill_cf_sourced_rows
+        # 的說明與 TODO G3）。
+        is_tbl = _backfill_cf_sourced_rows(is_tbl, cf_tbl)
 
         quarterly_tbl = _merge_financials(is_tbl, bs_tbl, cf_tbl, sheet_name="Data_Financials(Q)", fy_end_month=fy_end_month)
         tables.append(quarterly_tbl)

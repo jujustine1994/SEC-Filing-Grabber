@@ -1183,6 +1183,33 @@ def test_english_subscription_variants_still_merge():
 
 
 # ═════════════════════════════════════════════════════════════════════════════
+# google-genai SDK 遷移（2026-08-21，TODO D7：google-generativeai 已終止支援）
+# ═════════════════════════════════════════════════════════════════════════════
+
+def test_ai_request_google_uses_genai_client(monkeypatch):
+    """provider=google 要用新版 google-genai SDK（Client().models.generate_content），
+    不是舊版已終止支援的 google.generativeai（GenerativeModel）。"""
+    import fetcher_nongaap as fn
+    from unittest.mock import MagicMock, patch
+
+    fake_response = MagicMock()
+    fake_response.text = '{"Non-GAAP Gross Margin": 45.5}'
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = fake_response
+
+    with patch("google.genai.Client", return_value=fake_client) as mock_client_cls:
+        result = fn._ai_request("prompt text", {
+            "provider": "google", "model": "gemini-flash-latest", "api_key": "fake-key",
+        })
+
+    mock_client_cls.assert_called_once_with(api_key="fake-key")
+    fake_client.models.generate_content.assert_called_once_with(
+        model="gemini-flash-latest", contents="prompt text",
+    )
+    assert result == '{"Non-GAAP Gross Margin": 45.5}'
+
+
+# ═════════════════════════════════════════════════════════════════════════════
 # D：AI 呼叫退避重試 + 跑完統計未取得季數（2026-08-01）
 # ═════════════════════════════════════════════════════════════════════════════
 

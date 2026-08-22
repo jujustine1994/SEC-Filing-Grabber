@@ -206,6 +206,30 @@ def test_e1_fuzzy_match_net_income_profit_loss():
     assert result == "ProfitLoss"
 
 
+# ── _llm_call google-genai 遷移（2026-08-21，TODO D7）────────────────────
+
+def test_llm_call_google_uses_genai_client():
+    """provider=google 要用新版 google-genai SDK（Client().models.generate_content），
+    不是舊版已終止支援的 google.generativeai（GenerativeModel）。"""
+    import override_engine as oe
+
+    fake_response = MagicMock()
+    fake_response.text = "  Revenues  \n"
+    fake_client = MagicMock()
+    fake_client.models.generate_content.return_value = fake_response
+
+    with patch("google.genai.Client", return_value=fake_client) as mock_client_cls:
+        result = oe._llm_call("prompt text", {
+            "provider": "google", "model": "gemini-flash-latest", "api_key": "fake-key",
+        })
+
+    mock_client_cls.assert_called_once_with(api_key="fake-key")
+    fake_client.models.generate_content.assert_called_once_with(
+        model="gemini-flash-latest", contents="prompt text",
+    )
+    assert result == "Revenues"
+
+
 # ── e2_llm_diagnose ───────────────────────────────────────────────────────
 
 def test_e2_llm_diagnose_returns_none_when_no_api_key():

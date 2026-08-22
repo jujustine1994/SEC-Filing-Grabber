@@ -120,7 +120,7 @@ STRINGS: dict[str, str] = {
 
     # ── Period header rows ──────────────────────────────────────────────
     "acct.Fiscal Quarter": 'Quarter on the company fiscal year',
-    "acct.Calendar Quarter": 'Quarter on the calendar year',
+    "acct.Calendar Quarter": 'Calendar quarter this period ENDS in (cross-company comparison uses a different basis: the quarter holding most of the period)',
     "acct.Period End": 'Actual period end date (mostly 52/53-week, so not month end)',
 
     # ── Segment axes ────────────────────────────────────────────────────
@@ -450,8 +450,8 @@ STRINGS: dict[str, str] = {
     'compare.xls.company': 'Company',
     'compare.xls.period_end': 'Period End',
     'compare.xls.timepoint': 'Date',
-    'compare.xls.snapshot_format_hint': '← Enter as YYYYMMDD (e.g. 20251231)',
-    'compare.xls.snapshot_available_dates': 'Available dates: {dates}',
+    'compare.xls.snapshot_format_hint': '← Enter any date (e.g. 2025/12/31) — picks the most recent period on or before it',
+    'compare.xls.snapshot_available_dates': 'Period-end dates: {dates}',
     'gui.compare.log_start': 'Fetching data for {n} companies...',
     'gui.compare.log_fetching_ticker': '[{ticker}] fetching... ({current}/{total})',
     'gui.compare.log_company_failed': '[{ticker}] fetch failed, skipped -> {error_type}',

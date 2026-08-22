@@ -394,8 +394,8 @@ STRINGS: dict[str, str] = {
     "compare.xls.company": '公司',
     "compare.xls.period_end": '期末結算日',
     "compare.xls.timepoint": '時間點',
-    "compare.xls.snapshot_format_hint": '← 請輸入 YYYYMMDD（如 20251231）',
-    "compare.xls.snapshot_available_dates": '可用日期：{dates}',
+    "compare.xls.snapshot_format_hint": '← 請輸入日期（如 2025/12/31），會自動抓不晚於這天的最近一期資料',
+    "compare.xls.snapshot_available_dates": '各期期末結算日：{dates}',
     "gui.compare.log_start": '開始抓取 {n} 家公司資料...',
     "gui.compare.log_fetching_ticker": '[{ticker}] 抓取中...（{current}/{total}）',
     "gui.compare.log_company_failed": '[{ticker}] 抓取失敗，跳過 -> {error_type}',
@@ -446,7 +446,7 @@ STRINGS: dict[str, str] = {
 
     # ── 表頭三列、Data_Meta 的值、使用者可見的錯誤訊息 ──────────────
     "acct.Fiscal Quarter": '公司財年基準的季度',
-    "acct.Calendar Quarter": '日曆年基準的季度',
+    "acct.Calendar Quarter": '該期「結束」在哪個日曆季（跨公司比較用的是另一套判準：該期天數多數落在哪一季）',
     "acct.Period End": '該期實際結束日（多為 52/53 週制，不是月底）',
     "xls.meta.sep": '、',
     "xls.meta.none": '無',

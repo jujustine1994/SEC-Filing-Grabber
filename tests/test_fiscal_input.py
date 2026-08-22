@@ -41,7 +41,7 @@ def test_period_ending_in_the_first_days_of_a_month_belongs_to_the_previous_one(
     （docs/8k-period-off-by-one.md：COST/WDC/PANW 七份對不上都是這個）。
     """
     assert fi.fiscal_quarter_of("2026-01-02", 7) == "FY2026Q2"
-    assert fi.calendar_quarter_of("2026-01-02") == "2025Q4"
+    assert fi.calendar_quarter_of("2026-01-02", basis="end") == "2025Q4"
 
 
 @pytest.mark.parametrize("period_end, expected", [
@@ -51,7 +51,7 @@ def test_period_ending_in_the_first_days_of_a_month_belongs_to_the_previous_one(
     ("2026-02-01", "2026Q1"),
 ])
 def test_calendar_quarter_of(period_end, expected):
-    assert fi.calendar_quarter_of(period_end) == expected
+    assert fi.calendar_quarter_of(period_end, basis="end") == expected
 
 
 def test_fiscal_year_of_annual_period():
@@ -63,7 +63,7 @@ def test_fiscal_year_of_annual_period():
 def test_bad_period_end_returns_empty():
     assert fi.fiscal_quarter_of("", 1) == ""
     assert fi.fiscal_quarter_of("不是日期", 1) == ""
-    assert fi.calendar_quarter_of(None) == ""
+    assert fi.calendar_quarter_of(None, basis="end") == ""
 
 
 # ── 公式字串 ────────────────────────────────────────────────────────────────
@@ -248,3 +248,81 @@ def test_note_row_height_follows_the_text_length():
     finally:
         fi._note = original
     assert short < tall
+
+
+# ── 跨公司對齊用的日曆季（2026-08-22）──────────────────────────────────────
+#
+# calendar_quarter_of() 看的是「期末日落在哪一季」，那是單一公司自己的標籤。
+# 跨公司比較要的是「這一季在市場上跟誰是同一期」——NVDA 7 月底結束的那一季，
+# 分析師拿它跟 AMD/INTC 6 月底那一季比（兩家同一波財報），不是跟 9 月那一季比。
+# 判準是「這一期的多數天數落在哪個日曆季」＝ 期中點（期末日往前推 45 天）。
+
+@pytest.mark.parametrize("period_end, expected", [
+    ("2025-06-28", "2025Q2"),   # AMD / INTC 的 6 月季
+    ("2025-07-27", "2025Q2"),   # NVDA 同一波財報，期末日晚一個月
+    ("2025-09-27", "2025Q3"),   # AMD 9 月季
+    ("2025-10-26", "2025Q3"),   # NVDA 同一波
+    ("2026-01-25", "2025Q4"),   # NVDA 財年最後一季，主要落在 2025Q4
+    ("2025-12-27", "2025Q4"),   # AMD 12 月季
+    ("2025-09-27", "2025Q3"),   # AAPL 9 月季（財年最後一季）也是 CQ3
+])
+def test_calendarized_quarter_of(period_end, expected):
+    assert fi.calendarized_quarter_of(period_end) == expected
+
+
+def test_calendarized_quarter_of_bad_input_returns_empty():
+    assert fi.calendarized_quarter_of("") == ""
+    assert fi.calendarized_quarter_of(None) == ""
+    assert fi.calendarized_quarter_of("不是日期") == ""
+
+
+@pytest.mark.parametrize("period_end, expected", [
+    ("2026-01-25", "2025"),     # NVDA FY2026 → 主要是日曆 2025 年
+    ("2025-12-31", "2025"),     # AMD / INTC
+    ("2025-09-27", "2025"),     # AAPL FY2025
+    ("2025-06-30", "2025"),     # MSFT FY2025（慣例掛在結束年）
+])
+def test_calendarized_year_of(period_end, expected):
+    assert fi.calendarized_year_of(period_end) == expected
+
+
+# ── G1：日曆季判準統一成「一份實作、兩個具名基準點」（2026-08-22）─────────
+#
+# 原本同一件事有三套算法散在三個檔案（見 docs/superpowers/
+# design-2026-08-22-period-alignment-and-gaps.md 的 G1）。統一的做法不是併成
+# 一個數字——「這季結束在哪一季」跟「這季主要落在哪一季」是兩個問題，強行
+# 合一必然弄壞一邊。改成同一份實作 + 兩個具名基準點，而且 basis 不給預設值，
+# 強迫每個呼叫端表態。
+
+def test_calendar_quarter_of_requires_explicit_basis():
+    """不給 basis 要噴 TypeError——這條就是「統一」的實質保障。"""
+    with pytest.raises(TypeError):
+        fi.calendar_quarter_of("2025-07-27")
+
+
+@pytest.mark.parametrize("period_end, basis, expected", [
+    # NVDA 一月結算：7 月底結束那季，「結束在」Q3、「主要落在」Q2
+    ("2025-07-27", "end", "2025Q3"),
+    ("2025-07-27", "span", "2025Q2"),
+    ("2026-01-25", "end", "2026Q1"),
+    ("2026-01-25", "span", "2025Q4"),
+    # 12 月結算的公司兩種基準點一致
+    ("2025-06-28", "end", "2025Q2"),
+    ("2025-06-28", "span", "2025Q2"),
+    # 52/53 週制溢出到下個月：兩種基準點都要吃掉漂移
+    ("2023-04-01", "end", "2023Q1"),
+    ("2023-04-01", "span", "2023Q1"),
+])
+def test_calendar_quarter_of_two_bases(period_end, basis, expected):
+    assert fi.calendar_quarter_of(period_end, basis=basis) == expected
+
+
+def test_calendar_quarter_of_rejects_unknown_basis():
+    with pytest.raises(ValueError):
+        fi.calendar_quarter_of("2025-07-27", basis="middle")
+
+
+def test_calendarized_quarter_of_is_a_thin_wrapper_over_span():
+    """跨公司那兩個薄包裝要跟 basis="span" 完全等價，不可以各自演化。"""
+    for pe in ["2025-07-27", "2026-01-25", "2025-06-28", "2023-04-01"]:
+        assert fi.calendarized_quarter_of(pe) == fi.calendar_quarter_of(pe, basis="span")

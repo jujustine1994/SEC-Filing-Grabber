@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Literal
 
 from fetcher_gaap import StatementTable, fetch_gaap_statements, report_progress
+from fiscal_input import calendarized_quarter_of, calendarized_year_of
 from ratios import build_ratio_table, RATIO_DEFS
 
 
@@ -34,6 +35,28 @@ class ComparisonResult:
 
 def _sheet_name_for(frequency: Literal["quarterly", "annual"]) -> str:
     return "Data_Financials(Q)" if frequency == "quarterly" else "Data_Financials(Y)"
+
+
+def _aligned_labels(
+    table: StatementTable, frequency: Literal["quarterly", "annual"]
+) -> list[str]:
+    """把各公司自己的財季／財年標籤換成跨公司共用的日曆期間標籤。
+
+    2026-08-22 修：原本直接拿財季標籤（`FY2026Q2`）當共同欄位鍵。財年結束月
+    不同的公司，同一個標籤指的根本不是同一段時間——NVDA 一月結算，它的
+    FY2026Q2 結束在 2025-07-27，卻跟 AMD 結束在 2026-06-27 的 FY2026Q2 疊在
+    同一欄，整條線在日曆時間上偏移約一年。改成用期末日算出的日曆期間
+    （`2025Q2` / `2025`，判準見 `fiscal_input.calendarized_quarter_of()`）。
+
+    期末日抓不到（空字串）時退回原本的財季標籤——寧可那一欄自己站一格，
+    也不要因為算不出來就把整季資料丟掉。
+    """
+    convert = calendarized_quarter_of if frequency == "quarterly" else calendarized_year_of
+    ends = table.period_ends or []
+    return [
+        convert(ends[i] if i < len(ends) else "") or label
+        for i, label in enumerate(table.quarter_labels)
+    ]
 
 
 def _filter_by_year(table: StatementTable, start_year: int | None, end_year: int | None) -> StatementTable:
@@ -110,7 +133,12 @@ def build_comparison(
                     ticker, identity, max_filings=max_filings,
                     max_annual_filings=max_annual_filings,
                     fetch_quarterly=(frequency == "quarterly"),
-                    fetch_annual=(frequency == "annual"),
+                    # 季度模式也要抓年報：D0-1 的 Q4 合成
+                    # （fetcher_gaap._synthesize_q4()）靠「年報－Q1－Q2－Q3」
+                    # 湊出 10-Q 沒有的 Q4，沒有年報這步就整個跳過，日曆 Q4
+                    # 對齊到日曆年結束的公司（如 AMD/INTC）會整欄空白。
+                    # 這裡永遠抓年報，只是當 Q4 合成材料用，不影響輸出頻率。
+                    fetch_annual=True,
                 )
         except Exception as e:
             result.failures.append(CompanyFetchError(ticker=ticker, error_type=type(e).__name__))
@@ -124,8 +152,10 @@ def build_comparison(
         raw_table = _filter_by_year(raw_table, start_year, end_year)
         ratio_table = build_ratio_table(raw_table)
 
+        aligned = _aligned_labels(raw_table, frequency)
+
         period_map: dict[str, str] = {}
-        for j, label in enumerate(raw_table.quarter_labels):
+        for j, label in enumerate(aligned):
             end = raw_table.period_ends[j] if j < len(raw_table.period_ends or []) else ""
             period_map[label] = end
         result.period_ends[ticker] = period_map
@@ -134,9 +164,11 @@ def build_comparison(
             source_table = ratio_table if metric_name in _RATIO_NAMES else raw_table
             if source_table is None or metric_name not in source_table.concepts:
                 continue
+            # build_ratio_table() 逐欄對應 raw_table，欄序一致，所以共用同一份
+            # aligned 標籤；長度不同（理論上不該發生）時以較短的為準，不硬配。
             row = source_table.values[source_table.concepts.index(metric_name)]
             result.metrics.setdefault(metric_name, {})[ticker] = dict(
-                zip(source_table.quarter_labels, row)
+                zip(aligned, row)
             )
 
     return result
