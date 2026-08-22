@@ -5,20 +5,23 @@
 下面每一項都寫了「為什麼」「規格」「動哪些檔案」「測試要釘什麼」「怎麼驗收」「風險」。
 **沒有寫在這裡的東西不要順手做**，發現新問題就記進 `docs/TODO.md` 再問 CTH。
 
-前置閱讀：`docs/superpowers/report-2026-08-22-quarter-label-and-alignment.md`
-（前一輪已完成的修復與當時的決策記錄）。
+前置閱讀：`docs/ARCHITECTURE.md` 的「期間標籤與日曆季」「缺漏判斷」兩節
+（前幾輪已完成的設計，這份的規格建立在那些之上）。已完成項目的來龍去脈在
+`docs/CHANGELOG.md`。
 
 ---
 
 ## 0. 執行順序與相依
 
 ```
-G1  →  G3  →  G2 + G7  →  G6  →  G8
+G2 + G7  →  G6  →  G8
 ```
+
+> **G1、G3 已於 2026-08-22 完成**，內容移入 `docs/CHANGELOG.md` 與
+> `docs/ARCHITECTURE.md`。這份只留還沒做的。
 
 | 相依 | 原因 |
 |---|---|
-| **G6 必須等 G1** | G6 會產生「第 5 列不是完整 ISO 日期」的欄位，那正是 G1 要收掉的殘留錯值路徑。順序反過來會直接生出一堆錯的日曆季 |
 | **G2 與 G7 綁一起** | 都改 `comparison_writer.py` 的版面，分兩次會動兩遍同一份檔案、測試也要跑兩遍 |
 | **G8 放最後** | 它會改變所有既有期間的資料來源優先序，前面幾項的驗收基準會跟著漂。等前面穩定再做 |
 
@@ -29,157 +32,6 @@ G1  →  G3  →  G2 + G7  →  G6  →  G8
 **每一項的收尾都一樣**：跑全套 `venv/Scripts/python.exe -m pytest tests/ -q`
 （約 15–30 分鐘，會真的連 SEC），然後更新 `docs/CHANGELOG.md` 與 `docs/TODO.md`。
 不要只跑相關的測試檔就宣稱完成。
-
----
-
-## G1. 日曆季判準統一成「一套演算法、兩個基準點」
-
-### 現況：同一件事有三套算法
-
-| # | 位置 | 判準 | INTC 季末 2023-04-01 | NVDA 季末 2025-07-27 |
-|---|---|---|---|---|
-| 1 | `fetcher_gaap._calendar_quarter()`（`fetcher_gaap.py:1502`） | 期末日字面落點，**完全不內縮** | `2023Q2` ❌ | `2025Q3` |
-| 2 | `fiscal_input.calendar_quarter_of()` + `calendar_quarter_formula()` | 期末日 −15 天 | `2023Q1` | `2025Q3` |
-| 3 | `fiscal_input.calendarized_quarter_of()` | 期中點 −45 天 | `2023Q1` | `2025Q2` |
-
-#1 是純 bug：INTC 那一季實際涵蓋 1–3 月，說它是 Q2 錯得離譜。平常被 #2 的公式蓋掉看不到，
-但**第 5 列不是完整 ISO 日期的欄位**（合成 Q4 的年報期末日有時只有 `2010-01`）
-`fiscal_input._apply_to_sheet()` 會跳過公式，那一格就保留 #1 寫的錯值。
-
-### CTH 決策
-
-- 「實際結束日」採**後者的讀法**＝**期末日去掉 52/53 週漂移**（也就是現行的 −15），
-  不是字面期末日。→ **第 4 列的公式不用改**
-- 三套要統一
-
-### 規格
-
-**不是把三套合併成一個數字**——#2 與 #3 回答的是不同問題，強行合一必然弄壞其中一邊：
-
-- 全改 −15 → 跨公司對齊壞掉，NVDA 整條線偏一格
-- 全改 −45 → 第 4 列會對一個 7 月結束的季說「2025Q2」，跟正下方第 5 列的 `2025-07-27` 自相矛盾
-
-**統一的做法是「一份實作、兩個具名基準點、呼叫端必須明講要哪一個」**：
-
-1. **刪掉 #1**。`fetcher_gaap._calendar_quarter()` 改成呼叫 `fiscal_input` 的實作，
-   不要自己算。它原本的「期末日抓不到就用財季標籤反推」那條退路要保留
-   （`_fiscal_period_end()`），只是算法換掉。
-   - 注意循環匯入：`fiscal_input → excel_formatter → fetcher_gaap`。比照
-     `_col_to_quarter_label()` 現在的寫法用函式內延後 import。
-2. **#2 與 #3 合併成同一個函式，用參數區分基準點**：
-
-   ```python
-   # fiscal_input.py
-   _BASIS_DAYS = {"end": 15, "span": 45}   # 名稱是規格的一部分，不要改成數字參數
-
-   def calendar_quarter_of(period_end, *, basis):
-       """期末日 → 日曆季。basis 沒有預設值，呼叫端一定要明講。
-
-       basis="end"  結算季：這一季**結束**在哪個日曆季（內縮 15 天吃掉 52/53 週漂移）
-       basis="span" 對齊季：這一季的**多數天數**落在哪個日曆季（期中點）
-       """
-   ```
-   - **`basis` 不給預設值**，強迫每個呼叫端表態。這就是「統一」的實質：
-     以後只有一個地方會算錯，而且每個使用點都看得出它要的是哪種語意
-   - `calendarized_quarter_of()` / `calendarized_year_of()` 保留成薄包裝
-     （`basis="span"`），不要讓 `comparison.py` 直接傳字串參數
-3. **Excel 公式維持 `basis="end"` 的邏輯**（`_date_expr()` 的 −15 不變）。
-   公式是 Python 那份的規格複寫，兩邊都要在註解裡互相指到對方。
-4. **顯示上要分得出來**。真正讓人混淆的不是「有兩套」，是兩邊都印成一模一樣的 `2025Q2`。
-   - 單一公司第 4 列：**機器鍵 `Calendar Quarter` 不動**（改了會打斷下游腳本，見
-     `docs/TODO.md` D0-5 的教訓），只改 B 欄譯文，講明是「期末日所在季」
-   - 跨公司：欄位標題維持純 `2025Q2`（它是圖表的 X 軸類別，加前綴會很醜），
-     語意寫在 G7 的說明 sheet 裡
-
-### 動到的檔案
-
-- `src/fiscal_input.py`（合併函式、`_BASIS_DAYS`、docstring）
-- `src/fetcher_gaap.py:1502` `_calendar_quarter()`
-- `src/comparison.py`（如果薄包裝改名）
-- `src/locales/*.py` 四個語系檔：第 4 列 B 欄譯文（**四個都要改，不可只改繁中**）
-
-### 測試要釘什麼
-
-- `calendar_quarter_of()` 不給 `basis` 要噴 `TypeError`（釘住「呼叫端必須表態」）
-- 同一個期末日在兩種 basis 下的差異：`2025-07-27` → `end`=`2025Q3`、`span`=`2025Q2`
-- `fetcher_gaap._calendar_quarter()` 對 `2023-04-01` 要回 `2023Q1`（釘住 #1 被修掉）
-- 期末日抓不到時 `_calendar_quarter()` 仍走財季標籤反推的退路
-
-### 驗收
-
-重跑 NVDA 單一公司，確認第 4 列在**所有欄位**（含合成 Q4 那些殘留格）都是同一套算法的結果。
-方法：讀 xlsx 時同時看第 4 列與第 5 列，自己用 `basis="end"` 算一遍逐格比對。
-
-### 風險：低
-
----
-
-## G3. IS 區的 SBC / D&A 只有 Q1 有值
-
-### 現況與根因（已實測定位，不用重查）
-
-`output/_verify/NVDA_v4.xlsx` 的 `Data_Financials(Q)`：
-
-```
-IS 區  第 13 列  D&A (CF memo)   缺 51/68
-IS 區  第 27 列  SBC             缺 51/68
-CF 區  第 89 列  D&A             缺  1/68   ← 好的
-CF 區  第 90 列  SBC             缺  1/68   ← 好的
-```
-
-缺的期間有規律：**Q1 都有值，Q2/Q3 全空**（2010-08-01／2010-10-31／2011-07-31／
-2011-10-30…），再加上 17 個合成 Q4。
-
-根因：`IS_TEMPLATE` 裡 `source == "CF"` 的兩列在 `_build_is_table()` 走
-`cf_q_col = _current_q_col(cf_df)`（`fetcher_gaap.py:877`）——直接找現金流量表的**單季欄**。
-但 10-Q 的現金流量表是 **YTD 累計**，Q2/Q3 的 filing 根本沒有單季欄，`_current_q_col()`
-回 `None`，那兩列就拿不到值。
-
-`_build_cf_table()`（`fetcher_gaap.py:1275-1290`、`1365-1382`）另外做了 YTD 拆算：
-找不到單季欄時改用 `_ytd_col()`，標記 `is_ytd=True`，最後用「本季 YTD − 上季 YTD」
-還原單季。**IS 這條路完全沒走這段。**
-
-連帶：Q2/Q3 是 `None`，`_synthesize_q4()` 的「年報 − Q1 − Q2 − Q3」也算不出來。
-
-### 規格
-
-**不要在 `_build_is_table()` 裡重寫一份 YTD 拆算**（那就是第二份會漂移的實作）。
-改成 **IS 的 CF-sourced 列從已經建好的 `cf_tbl` 依 label 回填**：
-
-1. `_build_is_table()` 拿掉 CF-sourced 列自己讀 `cf_df` 的那段，那兩列先留 `None`
-2. 在 `fetch_gaap_statements()` 裡，**`_synthesize_q4()` 跑完之後**
-   （`fetcher_gaap.py:2207-2209` 附近），用 `cf_tbl` 回填 `is_tbl`：
-
-   | IS 列名 | 來源 CF 列名 |
-   |---|---|
-   | `SBC` | `SBC` |
-   | `D&A (CF memo)` | `D&A` |
-
-   依 `quarter_labels` 對照，CF 有值才寫、沒有就維持 `None`
-3. 放在 Q4 合成之後，IS 那兩列就連合成 Q4 都跟 CF 一致（CF 區實測只缺 1 期）
-
-### 要注意的坑
-
-- **override 會被繞過**：現行 `_build_is_table()` 對這兩列會先套 `is_overrides`。
-  改成回填之後，IS 側的 override 就沒有作用了。查一下 `override_engine.KEY_ROWS`
-  ——`SBC`／`D&A` 都不在 KEY_ROWS 裡，理論上不會有 override，但**動手前要實際
-  確認 `overrides.get("IS", {})` 不會帶到這兩個 row_name**，有的話要決定怎麼處理
-- 年報路徑不受影響：10-K 的現金流量表有 `(FY)` 欄，`_is_q_col()` 對 `FY` 回 True，
-  `_current_q_col()` 找得到，所以年報那兩列本來就是好的
-- `_build_is_table()` 裡 `consumed` 只追蹤 IS df 的 index，CF-sourced 列本來就不進去，
-  拿掉那段不影響 overflow 計算
-
-### 測試要釘什麼
-
-- 用假 filing 建一組「Q1 有單季欄、Q2/Q3 只有 YTD 欄」的資料，跑
-  `fetch_gaap_statements()`，斷言 IS 的 `SBC` 在 Q2/Q3 有值且等於 CF 的 `SBC`
-- 斷言 IS 的 `SBC`／`D&A (CF memo)` 與 CF 的 `SBC`／`D&A` **逐格相等**（含合成 Q4）
-
-### 驗收
-
-重跑 NVDA，`Data_Financials(Q)` 的第 13/27 列缺漏數要從 51 降到跟第 89/90 列一樣（1）。
-
-### 風險：中（碰 `fetch_gaap_statements()` 的組裝流程）
 
 ---
 

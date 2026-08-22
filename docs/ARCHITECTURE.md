@@ -20,7 +20,12 @@
 | src/fetcher_gaap.py | edgartools XBRL 抓取 → StatementTable 列表 |
 | src/fetcher_nongaap.py | 8-K press release 抓取 → EPS Recon + Non-GAAP StatementTable |
 | src/excel_writer.py | 寫 Data_* sheets 至 output/TICKER.xlsx，並呼叫 excel_formatter |
-| src/excel_formatter.py | 寫 Index sheet（品質明細）、設欄寬、凍結窗格、數值分類（÷1M／百分比／每股） |
+| src/excel_formatter.py | 寫 Index sheet（含**資料完整度**區塊，見下方「缺漏判斷」）、設欄寬、凍結窗格、數值分類（÷1M／百分比／每股） |
+| src/data_quality.py | **抓取結果的缺漏判斷**（2026-08-22）：季度斷層／整欄稀疏／中間有洞／整列全空且矛盾。純函式，不打網路、不看別家公司。見下方「缺漏判斷」 |
+| src/comparison.py | **跨公司比較的抓取協調**：對每個 ticker 呼叫 `fetch_gaap_statements()`，重組成 `{指標: {ticker: {日曆季: 值}}}`。單一公司失敗不中斷其他家 |
+| src/comparison_writer.py | 跨公司比較的 Excel 輸出：`Compare_Data`／`Snapshot`／`Snapshot_Manual`／`Chart_<指標>` |
+| src/fetcher_facts.py | **走 SEC companyfacts API 的平行取數路徑（G11 spike，尚未接上主流程）**。見下方「companyfacts 平行路徑」 |
+| src/facts_mapping.py | 模板列 → us-gaap concept 對照表。**不是手填的**，是拿現行路徑當答案卷對 52 家反推出來的，每列附證據註解 |
 | src/ratios.py | `Data_Ratios`：37 個常見比率，值 + B 欄算法文字 + 列名單位後綴 |
 | src/nongaap_layout.py | `Data_NonGAAP` 固定模板版面（Core／調節／overflow／年度分區） |
 | src/segments.py | `Data_Segments`：把 `Data_Seg_*` 寬表彙成單一長格式表 |
@@ -29,7 +34,7 @@
 | src/errsafe.py | `_exc_status()`：從例外物件安全萃取 HTTP status，main / fetcher_* 共用 |
 | src/zh_labels.py | 薄 wrapper：`zh_label()` / `ratio_label()` / `meta_label()` / `axis_label()`，查 `locales/` 的 `acct.*` / `ratio.*` / `meta.*` / `axis.*`。譯文本體已遷入 locale |
 | src/i18n.py | **多語言核心**：`LANGUAGES` 登錄表（代號／顯示名／Excel 字型）、`set_lang()` / `t()` / `excel_font()`。`t()` 的 fallback 鏈為 目標語言 → 繁中 → key 本身 |
-| src/locales/*.py | 四份字串表（zh_tw／zh_cn／en／ja），各 341 條。繁中是母表，其餘從它翻出來 |
+| src/locales/*.py | 四份字串表（zh_tw／zh_cn／en／ja）。繁中是母表，其餘從它翻出來 |
 | conftest.py | pytest 探索設施（rootdir 定位 + slow/b1/cf_overflow marker 註冊），留根目錄不進 `src/` |
 | config.json | 使用者設定（gitignored） |
 | config.example.json | 範本（committed，留根目錄） |
@@ -514,6 +519,13 @@ Share／淨負債EBITDA）湊不到連續四季，多半是空的。
 - IS/CF（流量項）：`Q4 = 年報 FY 值 − Q1 − Q2 − Q3`
 - BS（存量項，資產負債表本來就是年底時點數字）：`Q4 = 年報 FY 值`，直接取用不相減
 
+⚠ **現金流量表裡混著時點值**（2026-08-22 修，G12）：`Ending Cash` 是期末現金**餘額**，
+不是本期發生額，做「年報 − Q1 − Q2 − Q3」會減成負數。`_CF_POINT_IN_TIME_IDX` 標出這些列，
+`_synthesize_q4()` 的 `point_in_time_idx` 參數讓它們直接取年報值。同一個錯誤在
+`_build_cf_table()` 的 YTD 拆算也有一份（本季 YTD − 上季 YTD 會把餘額減成變動額），
+兩處都要跳過。實測 AAPL 的 `2026-03-28` 從 255,000,000 修成 45,572,000,000。
+**日後在 `CF_TEMPLATE` 加時點值列時要記得加進 `_CF_POINT_IN_TIME_IDX`。**
+
 只處理模板列（`IS_TEMPLATE`／`BS_TEMPLATE`／`CF_TEMPLATE` 涵蓋的固定科目），overflow 列
 （公司特有科目）Q4 一律留 `None`——季報與年報兩邊 overflow 列的出現順序不保證對齊，沒有
 可靠的列對應。`fetch_annual=False`（只抓季報不抓年報）時優雅跳過，不影響既有行為；
@@ -535,10 +547,147 @@ live 測試（NVDA/AVGO/PLTR/ARLO 等）皆通過，0 failed。
 `Shares Outstanding` 資料本身缺期（PLTR 屬於下方「多股別公司抓不到流通股數」已知限制；
 NVDA/AVGO 缺口原因待查），與本次 Q4 修復無關，不在本次範圍內處理。
 
+## 期間標籤與日曆季（2026-08-22 重整）
+
+整套系統有**三種期間概念**，混用會出錯，所以刻意用不同的名字與寫法：
+
+| 概念 | 長相 | 意義 | 誰在用 |
+|---|---|---|---|
+| 財季 | `FY2026Q2` / `FY2026FQ2` | 公司自己財年裡的第幾季 | `Data_Financials` 第 1、3 列 |
+| 結算季 | `2025Q3` | 這一季**結束**在哪個日曆季 | `Data_Financials` 第 4 列 |
+| 對齊季 | `2025Q2` | 這一季的**多數天數**落在哪個日曆季 | 跨公司比較的欄位 |
+
+### 財季編號一律由期末日反推
+
+**不採信 edgartools 欄名裡的 `(Qn)`。** 那個標記對 52/53 週財年制的公司會標錯，
+而且同一家公司相鄰兩季會撞號：
+
+    NVDA 2010-08-01 → (Q3)   實際 FY2011Q2   ← 與下一行撞號
+    NVDA 2010-10-31 → (Q3)   實際 FY2011Q3
+    INTC 2023-07-01 → (Q3)   實際 2023Q2     ← 與下一行撞號
+
+filings 是新到舊排序，`_build_*_table()` 的 dedup（`if label in periods: continue`）
+會把撞號的舊那一季**靜默丟掉**；少了 Q1，`_synthesize_q4()` 也就合成不出來。
+更嚴重的是沒被丟掉的資料也貼錯格。
+
+現在 `(Qn)` 只用來分辨「季度欄 vs 年度欄」，編號一律交給
+`fiscal_input.fiscal_quarter_of()` 用實際期末日算。
+
+### 結算季 vs 對齊季：一份實作、兩個具名基準點
+
+`fiscal_input.calendar_quarter_of(period_end, *, basis)`：
+
+- `basis="end"` 內縮 **15 天** → 回到該季最後一個月，吃掉 52/53 週的月底漂移
+- `basis="span"` 內縮 **45 天** → 回到該季中點
+
+**`basis` 刻意不給預設值**，不給就噴 `TypeError`。強迫每個呼叫端表態——以後只有
+一個地方會算錯，而且每個使用點都看得出它要哪種語意。
+
+為什麼跨公司要用期中點：NVDA 7 月底結束那季要跟 AMD/INTC 6 月底那季擺同一欄
+（同一波財報），用期末日會把它推到跟 AMD 9 月那季同欄。**期中點是離日曆季邊界
+最遠的位置，最穩**；期初日反而最不穩（13 週季的起訖日都落在邊界附近）。
+
+**獨立驗證**：SEC 官方在每筆 fact 上標的 `frame`（如 `CY2025Q2`）是它自己的日曆季
+正規化。拿它跟 `basis="span"` 比，24 家、59,564 筆**零例外全數一致**。
+
+Excel 公式（`fiscal_input` 的 `_date_expr()` 等）是 Python 那份的規格複寫，
+維持 `basis="end"` 的邏輯，兩邊註解互相指到對方。
+
+## 缺漏判斷（`data_quality.py`，2026-08-22）
+
+Index 上的「資料完整度」區塊。**取代**舊的「9 個關鍵列、最近 4 期全空才算缺」
+——那個判準寬到形同虛設（NVDA 顯示 `9/9 ✓`，實際 95 個欄位有 27 個幾乎全空）。
+
+四個判斷，可信度由高到低，**全部不需要「同業基準表」**：
+
+| | 判斷 | 做法 | 誤判率 |
+|---|---|---|---|
+| A | 季度斷層 | `round(天數差 / 91) - 1` | 0 |
+| D | 整欄稀疏 | 一欄有值的模板列 < 50% | 0 |
+| B | 中間有洞 | 首末有值之間仍有空格 | 0 |
+| C | 整列全空且矛盾 | 空白，但相關欄位顯示它應該要有 | 低 |
+
+**為什麼不用同業普及率**：那會讓「公司真的沒有某個科目」被永遠標紅。C 改用
+**同一家公司的相關欄位互相驗證**（`_COHERENCE` 表，全是會計上必然的關係）：
+有負債餘額就會有借還款現金流；反過來若負債類欄位全空，沒有借還款紀錄是一致的，
+不標紅。
+
+三個實測踩出來、改動時不要弄掉的細節：
+
+1. **A 不能用固定門檻**——52 家 1,482 對相鄰期間裡，111~150 天的 16 筆全部是
+   COSTCO（16 週的第四季）。固定門檻會把它們全部誤判成缺季
+2. **B 只看「首末有值之間」**——`Operating Lease ROU Assets` 只有 28/67 期是因為
+   ASC 842 從 2019 才適用，前後空白不是漏抓
+3. **B 要排除 overflow 列與整欄稀疏的期間**——不排除的話 NVDA 報 85 列有洞，
+   排除後 14 列。合成 Q4 失敗時每個流量列都會在那一期留一個洞，那是**一個期間
+   問題**不是 40 個列問題
+
+**模板不適用**：稀疏欄超過一半期數時，Index 直接顯示「這個模板不適用這家公司」，
+不列出每一欄。金融股與 REIT 全數觸發。
+
+基線資料：`docs/template-coverage-baseline-*.md`，用
+`scripts/gen_template_coverage_baseline.py` 重跑（不打網路）。
+
+## 解析快取（`_parse_cache_scope()`，2026-08-22）
+
+IS/BS/CF/segments 四個 build pass 各自對**同一批 filing** 重新解析一次。實測
+ARLO 25 份 filing 共 66 秒，`_filing_obj` 被呼叫 96 次（每份 3.8 次），其中
+XBRL 解析 19.9 秒、`to_dataframe` 28.4 秒。**edgartools 不會跨呼叫快取**——
+同一支 ticker 在同一個 process 連跑兩次是 64.5s vs 67.3s，完全沒變快。
+
+`_parse_cache_scope()` 涵蓋一次抓取，`_filing_obj()` 與 `_financials_of()`
+在範圍內以 accession number 為鍵快取。實測 64.5s → 33.6s（冷）／44.0s → 32.4s
+（全熱），**輸出零變化**（逐格比對 5,678 格，0 格不同）。
+
+兩個容易弄錯的地方：
+
+- **快取的生命週期只能是一次抓取**。跨 ticker 殘留會吃到別家資料，跨執行殘留
+  會拿到過期申報
+- **範圍要包在 `fetch_gaap_statements()` 外層**（本體拆成 `_fetch_gaap_impl()`），
+  不是放在 `_ledger() is None` 那個分支裡——`main.py`／`cli.py` 會自己先開
+  `collect_gaps()`，那條路不會走到遞迴
+
+## 跨公司比較（`comparison.py` + `comparison_writer.py`）
+
+`build_comparison()` 對每個 ticker 呼叫一次 `fetch_gaap_statements()`，重組成
+`{指標: {ticker: {日曆季: 值}}}`。單一公司失敗只記成 `CompanyFetchError`，
+不中斷其他家。
+
+**欄位鍵是對齊季（`2025Q2`），不是財季。** 財年結束月不同的公司，同一個財季標籤
+指的不是同一段時間——NVDA 的 `FY2026Q2` 結束在 2025-07-27，AMD 的結束在
+2026-06-27，硬擺同一欄會讓 NVDA 整條線在日曆時間上偏移約一年。
+
+輸出四種 sheet：`Compare_Data`（唯一的原始資料表，每個指標一個區塊）、
+`Snapshot`（公式驅動的單一時間點切面）、`Snapshot_Manual`（空白供人工貼值）、
+`Chart_<指標>`（每個指標一張折線圖）。
+
+**期末結算日列取同欄各公司最晚的那個日期**——同一個對齊季各家期末日不同，
+Snapshot 用它做「不晚於 B1」的判斷，取早的會顯示還沒結算完的數字。
+
+openpyxl 畫圖有一類反覆踩到的坑：**它不寫的元素，Excel 會當成未定義狀態而不是
+預設值**。已知要明講的有 `<c:delete val="0"/>`（兩軸）、`<c:overlay val="0"/>`
+（圖例 + 三個標題）、`<c:layout/>`（三個標題）、`axPos`／`tickLblPos`／`crosses`，
+以及類別軸要手動換成 `strRef`（`set_categories()` 永遠寫 `numRef`）。
+
+## companyfacts 平行路徑（`fetcher_facts.py`，G11 spike）
+
+**尚未接上主流程。** 這是現行「逐份解 filing」的平行替代品，建好是為了先產出
+逐格比對報告，讓 CTH 看數據決定要不要切換。完整報告見
+`docs/superpowers/report-2026-08-22-g11-companyfacts.md`。
+
+一句話：`data.sec.gov/api/xbrl/companyfacts/CIK##########.json`，**一家公司一個
+request、0.34 秒**（現行每家 7.5 分鐘）。每筆 fact 自帶 `start`/`end`，所以不用
+猜期間、不用猜哪欄是 YTD、Q4 常常直接有。
+
+**它拿不到的**（結構限制，不是待辦）：沒有任何維度欄位 → `Data_Segments` 這條路
+拿不到；沒有 presentation linkbase → 沒有公司自報的原文標籤。所以真要切換是
+**混合架構**：模板列走 facts，segments 仍解 filing。
+
 ## Known Issues（已知限制，暫不修）
 
 - **Investment Proceeds**：XBRL 沒有單一加總行，取 first match
-- **金融股（GS/JPM）**：現行模板 BS/IS 部分空白，待獨立模板（已有 UI 警告）
+- **金融股（GS/JPM/BAC/SCHW）與 REIT（PLD）**：現行模板 BS/IS 大量空白，待獨立模板。2026-08-22 有量化證據——`data_quality` 對這五家全數判定「模板不適用」（稀疏欄佔 90~100%），Index 上會直接這樣顯示。逐列覆蓋率見 `docs/template-coverage-baseline-*.md`
 - **NG 分類誤判**：keyword-based 分類，label 含 "excluding" 的 GAAP 行可能誤進 NG sheet（可接受方向）
 - **Data_EPS_Recon 從未產生**：edgartools `eps_reconciliation` 對 NVDA/AAPL/MSFT 均回傳 None，非 XBRL-tagged 公司無解；待 edgartools 改善或改用 AI 解析方案
+- **模板列覆蓋率只有 40/97**（2026-08-22，52 家實測）：達到「≥45 家有值且填滿率 >90%」的只有 40 列。系統性問題見 `docs/TODO.md` H3——`Current Portion of LT Debt` 25/52 家被判矛盾、`Shares Outstanding` 43/52 家有洞。**部分列（`Accrued Compensation` 等）改 concept 名字救不了**——那些 filing 的報表表面根本沒有那一列，公司把它放在附註，只有 companyfacts 拿得到
 - **多股別公司抓不到流通股數**：PLTR／GOOGL／META 有 Class A/B/C，封面頁的 `dei:EntityCommonStockSharesOutstanding` 按股別分開標，`company.get_facts()` 取不到。連帶 BVPS、FCF per Share、流通股數 YoY 空白
