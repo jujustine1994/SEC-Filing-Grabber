@@ -143,13 +143,6 @@ G4. **`Other (as reported)` overflow 區天生就會斷斷續續**（2026-08-22 
    - 另外 `_synthesize_q4()` 明講**只補模板列、overflow 列留空**（D0-1 就記錄過），所以每個合成 Q4 欄位在 overflow 區整片是空的
    - 要處理的話有兩條路：① 用 synonym 把同義 concept 合併成一列（風險：合錯就是把兩個不同科目加在一起）；② 維持現狀但在 Excel 上把 overflow 區標示成「原樣呈現、不保證跨期連續」。**建議先做 ②**
 
-G5. **Index 的「完成度」評分標準要重新定義**（2026-08-22 CTH 回報「很多東西沒出現也是滿分，而且這標準不是我設的」）
-   - 現行邏輯（`excel_formatter.py:281` `ALL_KEY_ROWS` + `override_engine.py:115` `check_key_rows()`）：只看 9 個關鍵列 —— Revenue／Operating Income／Net Income／Diluted EPS／Total Assets／Total Liabilities／Total Equity — Parent／Operating Cash Flow／Capex
-   - 判準極寬：**只有「最近 4 期全部是 None」才算缺**。中間缺 50 期、只要最後 4 期有值就算通過；SBC、D&A、無形攤銷等等根本不在這 9 列裡，全空也不扣分。這就是 NVDA 顯示 `9/9 ✓` 的原因
-   - **這 9 列與「最近 4 期」的判準是開發時 AI 自訂的，沒有經過 CTH 確認**
-   - 要 CTH 決定的：① 要看哪些列（維持 9 列？擴到全模板？分權重？）② 判準要不要改成看覆蓋率（有值期數 / 應有期數）而不是只看最近 4 期 ③ 要不要把「整列全空」跟「中間有洞」分開顯示 ④ 分數要不要拆成 IS/BS/CF 三塊分別給
-   - 動手前先把現行標準的實際效果講給 CTH 看（例如同一份檔案在新舊標準下分別得幾分），再定新標準
-
 G6. **抓不到的季度不要跳過，留一整欄空白** ← **規格已用 52 家實際資料定案，可直接做**（設計書 G6）
    - **判定公式**：`missing = round((下一期末日 − 這期末日).days / 91) - 1`。91 = 13 週 × 7 天，要寫成具名常數並註明來源
    - 1,482 對相鄰期間驗證：95.3% 落在 70~110 天（正常一季）；111~150 天那 16 筆**全部是 COSTCO**（16 週的第四季），`round(112/91)=1` 正確判為沒缺——**這就是不能用固定門檻的原因**；151~210 天那 52 筆都是 182~189，`round=2` 補 1 欄；**沒有任何 >210 天的案例**
@@ -264,6 +257,14 @@ H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-22 提�
      6. **overflow 區**：使用者能不能把 `Other (as reported)` 裡的某列「升級」成正式列
    - **不要在 G11 決策之前動手**——公版列的來源（concept 對照）如果要換，先確定換不換
 
+H3. **模板體檢暴露的系統性抓取問題**（2026-08-22，52 家實測，基線見 `docs/template-coverage-baseline-2026-08-23.md`）
+   - 這些不是個案，是同一個 concept 對照問題在多家公司重複出現。**修一次就會讓很多公司一起變好**，優先度高於逐家排查
+   - 最常「中間有洞」：`Shares Outstanding` 43/52 家、`Acquisitions` 24 家、`Debt Proceeds` 24 家、`Debt Repayments` 16 家、`Short-term Debt` 15 家
+   - 最常被判「矛盾」：`Current Portion of LT Debt` **25/52 家**、`Op. Lease Liabilities, current` 14 家、`Change in Inventories` 13 家、`Debt Proceeds` 11 家
+   - `Current Portion of LT Debt` 25 家中招——不可能這麼多公司剛好都沒有一年內到期負債，**幾乎確定是 concept 對照有問題**，跟 G10 同一類
+   - 排查方式：對中招的公司印出該報表 dataframe 的 `standard_concept`/`label`，找實際用的 concept。**注意 2026-08-22 的教訓**——有些列（`Accrued Compensation` 等）fallback 名字本來就對，抓不到是因為那份 filing 的報表表面沒有這一列，改名字救不了
+   - 每修一批就重跑 `scripts/gen_template_coverage_baseline.py`，看 **40/97** 這個數字有沒有往上走
+
 ## 執行順序建議（2026-08-22 更新）
 
 > **維護規則**：做完的條目**直接從本檔刪除**，內容搬進 `docs/CHANGELOG.md`。
@@ -277,7 +278,6 @@ H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-22 提�
 | 3 | G6（缺季留空白欄） | 否 | 是（補到哪為止已決定，但要確認不誤傷 Index 完成度） | G1 已完成，相依已解除 |
 | 4 | B2 skill 端抽取 | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
 | 5 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
-| 6 | G5 Index 完成度標準 | 否 | 是 | 動手前要先給 CTH 看新舊標準的分數對照 |
 | 7 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
 | — | G4 overflow 標示 | 否 | 是 | 建議只做標示，不做 synonym 合併 |
 | — | G8／G10 | — | — | **等 G11 決策，做了大概率白做**（G9 已完成） |

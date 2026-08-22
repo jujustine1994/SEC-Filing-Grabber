@@ -278,6 +278,10 @@ QUALITY_ORANGE  = "FFC25C00"
 QUALITY_MISS_BG = "FFFFF0E0"
 QUALITY_MISS_FG = "FFC00000"
 
+# 完整度區塊最多列幾列問題。全部列出來會把 Index 撐到上百列——實測 TSLA 有
+# 19 列有洞。超過的用一行「還有 N 列」帶過，細節在 Data_Financials 上看得到。
+_DQ_MAX_LISTED = 10
+
 ALL_KEY_ROWS = [
     "Revenue", "Operating Income", "Net Income", "Diluted EPS",
     "Total Assets", "Total Liabilities", "Total Equity — Parent",
@@ -285,21 +289,23 @@ ALL_KEY_ROWS = [
 ]
 
 
-def _compute_quality(tables: list) -> tuple[int, int, set] | None:
-    """Compute quality score for Data_Financials(Q).
+def _compute_quality(tables: list):
+    """Data_Financials(Q) 的缺漏判斷。沒有 Q 表回 None。
 
-    Returns (score, total, missing_set) or None if no Q table found.
+    2026-08-22 換掉舊的「9 個關鍵列、最近 4 期全空才算缺」——那個判準寬到
+    形同虛設（NVDA 顯示 `9/9 ✓`，實際上 95 個欄位有 27 個幾乎全空、3 季完全
+    沒資料）。改用 `data_quality.assess()` 的四個判斷，細節見該模組說明。
     """
     q_tbl = next((t for t in tables if t.sheet_name == "Data_Financials(Q)"), None)
     if q_tbl is None:
         return None
-    missing = set(
-        check_key_rows(q_tbl.concepts, q_tbl.values, "IS") +
-        check_key_rows(q_tbl.concepts, q_tbl.values, "BS") +
-        check_key_rows(q_tbl.concepts, q_tbl.values, "CF")
-    )
-    total = len(ALL_KEY_ROWS)
-    return total - len(missing), total, missing
+    from data_quality import assess          # 延後 import：避免匯入期循環
+    return assess(q_tbl)
+
+
+def _issue_count(report) -> int:
+    return (sum(g.count for g in report.missing_quarters)
+            + len(report.holed) + len(report.contradictions))
 
 
 # ── Index sheet ───────────────────────────────────────────────────────────
@@ -411,12 +417,14 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
         e_cell = ws.cell(row=row, column=5)
         e_cell.fill = row_fill
         if tbl.sheet_name == "Data_Financials(Q)" and quality is not None:
-            score, total, _ = quality
-            if score == total:
-                e_cell.value = f"{score}/{total} ✓"
+            if quality.template_mismatch:
+                e_cell.value = t("xls.index.dq_mismatch_short")
+                e_cell.font = _font(color=QUALITY_MISS_FG, size=INDEX_TABLE_SIZE)
+            elif _issue_count(quality) == 0:
+                e_cell.value = "✓"
                 e_cell.font = _font(color=QUALITY_GREEN, size=INDEX_TABLE_SIZE)
             else:
-                e_cell.value = f"{score}/{total} ⚠"
+                e_cell.value = t("xls.index.dq_issues_short", n=_issue_count(quality))
                 e_cell.font = _font(color=QUALITY_ORANGE, size=INDEX_TABLE_SIZE)
         else:
             e_cell.value = "—"
@@ -429,36 +437,57 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     ws.column_dimensions["D"].width = 12
     ws.column_dimensions["E"].width = 10
 
-    # ── 品質明細區塊 ───────────────────────────────────────────────────────
+    # ── 資料完整度區塊 ─────────────────────────────────────────────────────
     if quality is None:
         return
 
-    _, _, missing = quality
     next_row = _TABLE_HDR_ROW + 1 + len(data_sheets) + 2   # blank row gap
 
-    # Section header
     hdr_cell = ws.cell(row=next_row, column=1, value=t("xls.index.quality_detail"))
     hdr_cell.fill = _fill(NAVY_DARK)
     hdr_cell.font = _font(color="FFFFFFFF", bold=True, size=INDEX_TABLE_SIZE)
-    ws.merge_cells(
-        start_row=next_row, start_column=1,
-        end_row=next_row, end_column=2
-    )
+    ws.merge_cells(start_row=next_row, start_column=1, end_row=next_row, end_column=2)
     next_row += 1
 
-    for row_name in ALL_KEY_ROWS:
-        is_missing = row_name in missing
-        bg = _fill(QUALITY_MISS_BG) if is_missing else _fill(ROW_WHITE)
-        status = t("xls.index.missing") if is_missing else "✓"
-        fg = QUALITY_MISS_FG if is_missing else QUALITY_GREEN
-
-        a = ws.cell(row=next_row, column=1, value=row_name)
-        b = ws.cell(row=next_row, column=2, value=status)
-        a.fill = bg
-        b.fill = bg
-        a.font = _font(color=fg, size=INDEX_TABLE_SIZE)
-        b.font = _font(color=fg, size=INDEX_TABLE_SIZE)
+    def _line(label: str, value: str, color: str = "FF333333") -> None:
+        nonlocal next_row
+        a = ws.cell(row=next_row, column=1, value=label)
+        b = ws.cell(row=next_row, column=2, value=value)
+        for c in (a, b):
+            c.fill = _fill(ROW_WHITE)
+            c.font = _font(color=color, size=INDEX_TABLE_SIZE)
         next_row += 1
+
+    # 模板不適用時，逐列的判斷沒有意義——先講這件事，其餘不列
+    if quality.template_mismatch:
+        _line(t("xls.index.dq_template_mismatch"),
+              t("xls.index.dq_sparse_n", n=len(quality.sparse_periods),
+                total=quality.total_periods),
+              QUALITY_MISS_FG)
+        return
+
+    gaps = sum(g.count for g in quality.missing_quarters)
+    _line(t("xls.index.dq_periods"),
+          t("xls.index.dq_periods_v", n=quality.total_periods, missing=gaps),
+          QUALITY_MISS_FG if gaps else QUALITY_GREEN)
+    if quality.sparse_periods:
+        _line(t("xls.index.dq_sparse"),
+              t("xls.index.dq_sparse_n", n=len(quality.sparse_periods),
+                total=quality.total_periods), QUALITY_ORANGE)
+
+    # 矛盾：整列全空、但同一家公司的相關欄位顯示它應該要有值。可信度最高，放最前面
+    for c in quality.contradictions[:_DQ_MAX_LISTED]:
+        _line(f"⚠ {c.row}", t("xls.index.dq_contradiction_v", evidence=c.evidence),
+              QUALITY_MISS_FG)
+    # 中間有洞：同一列有些期有、有些沒有。一定是漏抓
+    for h in quality.holed[:_DQ_MAX_LISTED]:
+        _line(f"⚠ {h.row}", t("xls.index.dq_holed_v", have=h.have, span=h.span),
+              QUALITY_ORANGE)
+    rest = max(0, len(quality.holed) - _DQ_MAX_LISTED)
+    if rest:
+        _line("", t("xls.index.dq_more", n=rest), "FF999999")
+    if not quality.contradictions and not quality.holed and not gaps:
+        _line("", t("xls.index.dq_clean"), QUALITY_GREEN)
 
 
 # ── Public API ────────────────────────────────────────────────────────────

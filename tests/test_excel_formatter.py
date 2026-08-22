@@ -311,18 +311,21 @@ def _make_q_table(missing=None):
 
 
 def test_compute_quality_all_ok():
-    tbl = _make_q_table()
-    score, total, missing = _compute_quality([tbl])
-    assert total == 9
-    assert score == 9
-    assert missing == set()
+    """9 個關鍵列都滿 → 沒有偵測到問題。
+
+    2026-08-22 起 `_compute_quality()` 回的是 `data_quality.QualityReport`，
+    不是 (score, total, missing)。舊的判準（只看 9 列、只看最近 4 期全空）
+    寬到形同虛設，換掉的理由見 `data_quality` 的模組說明。
+    """
+    r = _compute_quality([_make_q_table()])
+    assert r.total_periods == 4
+    assert r.holed == [] and r.contradictions == []
 
 
-def test_compute_quality_two_missing():
-    tbl = _make_q_table(missing=["Operating Income", "Capex"])
-    score, total, missing = _compute_quality([tbl])
-    assert score == 7
-    assert missing == {"Operating Income", "Capex"}
+def test_compute_quality_flags_all_empty_rows_as_not_holed():
+    """整列全空歸「矛盾」判斷，不是「中間有洞」——兩者可信度不同。"""
+    r = _compute_quality([_make_q_table(missing=["Operating Income", "Capex"])])
+    assert [h.row for h in r.holed] == []
 
 
 def test_compute_quality_no_q_table():
@@ -358,19 +361,19 @@ def test_index_quality_header_exists():
 
 
 def test_index_quality_col_all_ok():
-    tbl = _make_q_table()
-    ws = _index_ws([tbl])
+    ws = _index_ws([_make_q_table()])
     cell = ws.cell(row=_HDR_ROW + 1, column=5)
-    assert "9/9" in str(cell.value)
-    assert "✓" in str(cell.value)
+    assert str(cell.value) == "✓"
     assert cell.font.color.rgb == QUALITY_GREEN
 
 
-def test_index_quality_col_missing():
-    tbl = _make_q_table(missing=["Operating Income", "Capex"])
+def test_index_quality_col_flags_a_row_with_a_hole():
+    """中間有洞才是要示警的——整列全空可能是這家公司真的沒這個科目。"""
+    tbl = _make_q_table()
+    i = tbl.concepts.index("Capex")
+    tbl.values[i] = [100.0, None, 300.0, 400.0]
     ws = _index_ws([tbl])
     cell = ws.cell(row=_HDR_ROW + 1, column=5)
-    assert "7/9" in str(cell.value)
     assert "⚠" in str(cell.value)
     assert cell.font.color.rgb == QUALITY_ORANGE
 
@@ -392,7 +395,7 @@ def _find_detail_header_row(ws) -> int | None:
     """Find the row containing the quality detail section header."""
     for row in ws.iter_rows():
         for cell in row:
-            if cell.value and "品質明細" in str(cell.value):
+            if cell.value and "資料完整度" in str(cell.value):
                 return cell.row
     return None
 
@@ -400,7 +403,7 @@ def _find_detail_header_row(ws) -> int | None:
 def test_index_detail_section_present():
     tbl = _make_q_table()
     ws = _index_ws([tbl])
-    assert _find_detail_header_row(ws) is not None, "品質明細 section header not found"
+    assert _find_detail_header_row(ws) is not None, "資料完整度 section header not found"
 
 
 def test_index_detail_section_absent_when_no_q_table():
@@ -408,38 +411,32 @@ def test_index_detail_section_absent_when_no_q_table():
     assert _find_detail_header_row(ws) is None
 
 
-def test_index_detail_all_ok_shows_check():
+def test_index_detail_all_ok_says_no_gaps():
+    """沒有偵測到問題時要明講「沒有缺漏」，不要留白讓人以為壞了。"""
+    ws = _index_ws([_make_q_table()])
+    hdr = _find_detail_header_row(ws)
+    texts = [str(ws.cell(row=hdr + 1 + i, column=2).value or "") for i in range(6)]
+    assert any("沒有偵測到缺漏" in x for x in texts), texts
+
+
+def test_index_detail_lists_a_holed_row_with_its_coverage():
+    """中間有洞的列要列出來，而且要講「幾期有值」——只說「有問題」沒用。"""
     tbl = _make_q_table()
+    tbl.values[tbl.concepts.index("Capex")] = [100.0, None, 300.0, 400.0]
     ws = _index_ws([tbl])
-    hdr_row = _find_detail_header_row(ws)
-    b_vals = [ws.cell(row=hdr_row + 1 + i, column=2).value for i in range(9)]
-    assert all(v == "✓" for v in b_vals), f"Expected all ✓, got: {b_vals}"
+    hdr = _find_detail_header_row(ws)
+    rows = {str(ws.cell(row=hdr + 1 + i, column=1).value or ""):
+            str(ws.cell(row=hdr + 1 + i, column=2).value or "") for i in range(8)}
+    key = next((k for k in rows if "Capex" in k), None)
+    assert key is not None, rows
+    assert "3/4" in rows[key], rows[key]
 
 
-def test_index_detail_missing_row_shows_cross():
-    tbl = _make_q_table(missing=["Operating Income", "Capex"])
-    ws = _index_ws([tbl])
-    hdr_row = _find_detail_header_row(ws)
-    rows = {
-        ws.cell(row=hdr_row + 1 + i, column=1).value:
-        ws.cell(row=hdr_row + 1 + i, column=2).value
-        for i in range(9)
-    }
-    assert "✗" in rows.get("Operating Income", ""), f"Operating Income: {rows.get('Operating Income')}"
-    assert "✗" in rows.get("Capex", ""), f"Capex: {rows.get('Capex')}"
-
-
-def test_index_detail_missing_row_highlighted():
-    tbl = _make_q_table(missing=["Capex"])
-    ws = _index_ws([tbl])
-    hdr_row = _find_detail_header_row(ws)
-    for i in range(9):
-        a_val = ws.cell(row=hdr_row + 1 + i, column=1).value
-        if a_val == "Capex":
-            fill_rgb = ws.cell(row=hdr_row + 1 + i, column=1).fill.fgColor.rgb
-            assert fill_rgb == QUALITY_MISS_BG, f"Expected orange bg, got: {fill_rgb}"
-            return
-    pytest.fail("Capex row not found in detail section")
+def test_index_detail_shows_the_timeline_line():
+    ws = _index_ws([_make_q_table()])
+    hdr = _find_detail_header_row(ws)
+    labels = [str(ws.cell(row=hdr + 1 + i, column=1).value or "") for i in range(4)]
+    assert "時間軸" in labels, labels
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -881,10 +878,10 @@ def test_index_sheet_name_and_completeness_size():
 
 
 def test_index_quality_block_size():
-    """品質明細區塊也要跟著放大，不然表格 11pt、下面 10pt 看起來像沒改完。"""
+    """資料完整度區塊也要跟著放大，不然表格 11pt、下面 10pt 看起來像沒改完。"""
     ws = _index_wb_with_meta()
     sizes = {c.font.size for row in ws.iter_rows(min_col=1, max_col=2) for c in row
-             if c.value and str(c.value).startswith(("✓", "✗", "品質明細"))}
+             if c.value and str(c.value).startswith(("✓", "⚠", "資料完整度", "時間軸"))}
     assert sizes == {INDEX_TABLE_SIZE}, sizes
 
 
