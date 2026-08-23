@@ -23,7 +23,7 @@ TAGS = [("IS", IS_TEMPLATE), ("BS", BS_TEMPLATE), ("CF", CF_TEMPLATE)]
 rows = [(tag, r[0]) for tag, T in TAGS for r in T]
 
 cur_co = Counter(); fac_co = Counter(); fill = {r: [] for _, r in rows}
-hole_hits = Counter(); contra_hits = Counter()
+hole_hits = Counter(); contra_hits = Counter(); spor_hits = Counter()
 per_co = []
 for p in sorted(C.glob("gaap_*.pkl")):
     tk = p.stem[5:]; fp = C / f"facts_{tk}.json"
@@ -47,6 +47,7 @@ for p in sorted(C.glob("gaap_*.pkl")):
                        labels=[""] * len(g["concepts"]), period_ends=g["ends"])
     r = dq.assess(t)
     for h in r.holed: hole_hits[h.row] += 1
+    for sp in r.sporadic: spor_hits[sp.row] += 1
     for c in r.contradictions: contra_hits[c.row] += 1
     per_co.append((tk, r))
 
@@ -76,6 +77,14 @@ w("### 中間有洞（同一列有些期有、有些沒有——一定是漏抓�
 w("| 列名 | 幾家中招 |")
 w("|---|---|")
 for k, v in hole_hits.most_common(15): w(f"| {k} | {v} / {N} |")
+w("")
+w("### 零星有值（填滿率 <70%，多半是公司本來就沒這項活動，不是漏抓）\n")
+w("2026-08-23（H3-2）從「中間有洞」拆出來的一類。拿 companyfacts 當真值驗 52 家、")
+w("2,906 個洞：填滿率 70% 以下的那 1,526 個洞**只有 18% 是真的漏抓**，70% 以上才")
+w("到 53%。門檻的完整證據見 `data_quality._SPORADIC_FILL_RATIO`。\n")
+w("| 列名 | 幾家中招 |")
+w("|---|---|")
+for k, v in spor_hits.most_common(15): w(f"| {k} | {v} / {N} |")
 w("")
 w("### 被判矛盾（整列空白，但同一家公司的相關欄位顯示應該要有）\n")
 w("| 列名 | 幾家中招 |")

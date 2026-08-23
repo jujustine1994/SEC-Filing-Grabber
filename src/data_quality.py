@@ -53,6 +53,28 @@ _SPARSE_PERIOD_RATIO = 0.5
 # 少於這麼多列就不做稀疏判斷——「一半的列是空的」在只有兩三列的表上沒有意義，
 # 那時一個 None 就會讓整欄被判成稀疏。實際的表有 95 列，這道門檻只擋掉退化情況。
 _SPARSE_MIN_ROWS = 8
+# B 的門檻：首末有值之間填滿率低於這個比例，就不算「漏抓」，改歸「零星有值」。
+#
+# **不是隨手取的數字。** 2026-08-23（H3-2）拿 companyfacts 當真值，驗 52 家、
+# 2,906 個洞，問「這個期末日在 companyfacts 裡到底有沒有數字」：
+#
+#     填滿率 0~30%    269 個洞，只有  8% 是真的漏抓
+#     填滿率 30~50%   575 個洞，只有 18%
+#     填滿率 50~70%   682 個洞，只有 22%
+#     填滿率 70~85%  1179 個洞，    54%
+#     填滿率 85~100%  201 個洞，    46%
+#
+# 70% 以下幾乎都是假警報。成因是**流量列的 episodic 特性**：公司沒併購、沒借款、
+# 沒買回的那一季，通常整條列不寫，不是寫 0。`Acquisitions` 一列就佔 52 家裡的
+# 25 家「有洞」，實際上多數公司本來就不是每季併購。
+#
+# 為什麼不直接照列名把流量列排除：那要人工維護一張名單，而且同一列在不同公司
+# 的性質不一樣（AAPL 幾乎每季都有併購支出，ONTO 三年一次）。**用這家公司自己
+# 在這一列的填滿率判斷**，跟 C 的設計原則一致——不跟別家比。
+_SPORADIC_FILL_RATIO = 0.7
+# 首末有值之間少於這麼多期就不做「零星」判斷——3 期缺 1 期就是 67%，但那只代表
+# 資料太少，看不出 episodic 這個型態。真實的表有 21~69 期，這道門檻只擋退化情況。
+_SPORADIC_MIN_SPAN = 8
 # 稀疏欄超過總期數這個比例 → 不是「某幾期有問題」，是**模板不適用這家公司**。
 # 52 家實測：BAC / GS / SCHW / PLD 的稀疏欄佔 90~100%，因為 IS/BS/CF 模板是為
 # 製造業設計的，金融股與 REIT 的報表結構完全不同（TODO D8 已記錄，另外處理）。
@@ -69,6 +91,14 @@ class QuarterGap:
 
 @dataclass(frozen=True)
 class HoledRow:
+    row: str
+    have: int       # 在「首末有值之間」實際有幾期
+    span: int       # 首末有值之間共幾期
+
+
+@dataclass(frozen=True)
+class SporadicRow:
+    """零星有值——公司偶爾才做一次的事，不是漏抓。見 `_SPORADIC_FILL_RATIO`。"""
     row: str
     have: int       # 在「首末有值之間」實際有幾期
     span: int       # 首末有值之間共幾期
@@ -93,6 +123,7 @@ class QualityReport:
     sparse_periods: list[SparsePeriod] = field(default_factory=list)
     missing_quarters: list[QuarterGap] = field(default_factory=list)
     holed: list[HoledRow] = field(default_factory=list)
+    sporadic: list[SporadicRow] = field(default_factory=list)
     contradictions: list[Contradiction] = field(default_factory=list)
     empty_but_plausible: int = 0     # 整列全空、但沒有矛盾可指認的列數
     # 一半以上的期間都整欄稀疏 → 模板不適用這家公司（金融股／REIT），
@@ -244,6 +275,17 @@ def holed_rows(table, known: frozenset[str] | None = None) -> list[HoledRow]:
     return sorted(out, key=lambda h: (h.have / h.span, h.have))
 
 
+def _split_sporadic(holed: list[HoledRow]) -> tuple[list[HoledRow], list[SporadicRow]]:
+    """把「有洞」拆成真的漏抓與零星有值。門檻的證據見 `_SPORADIC_FILL_RATIO`。"""
+    real, sporadic = [], []
+    for h in holed:
+        if h.span >= _SPORADIC_MIN_SPAN and h.have / h.span < _SPORADIC_FILL_RATIO:
+            sporadic.append(SporadicRow(row=h.row, have=h.have, span=h.span))
+        else:
+            real.append(h)
+    return real, sporadic
+
+
 def contradictions(table, known: frozenset[str] | None = None) -> list[Contradiction]:
     """C：整列全空，但同一家公司的相關欄位顯示它應該要有值。"""
     rows = dict(_rows(table, known))
@@ -263,7 +305,7 @@ def contradictions(table, known: frozenset[str] | None = None) -> list[Contradic
 def assess(table, known: frozenset[str] | None = None) -> QualityReport:
     """跑完三個判斷。純函式，不打網路、不看別家公司。"""
     rows = _rows(table, known)
-    holed = holed_rows(table, known)
+    holed, sporadic = _split_sporadic(holed_rows(table, known))
     contra = contradictions(table, known)
     contra_names = {c.row for c in contra}
     empty = sum(1 for name, vals in rows
@@ -276,6 +318,7 @@ def assess(table, known: frozenset[str] | None = None) -> QualityReport:
         template_mismatch=bool(n_periods) and len(sparse) > n_periods * _TEMPLATE_MISMATCH_RATIO,
         missing_quarters=missing_quarters(list(table.period_ends or [])),
         holed=holed,
+        sporadic=sporadic,
         contradictions=contra,
         empty_but_plausible=empty,
     )

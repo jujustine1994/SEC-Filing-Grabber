@@ -202,6 +202,7 @@ STRINGS: dict[str, str] = {
     "xls.index.dq_sparse_n": '{n} 欄（共 {total} 期）',
     "xls.index.dq_contradiction_v": '整列空白，但「{evidence}」有值——應該要有卻沒抓到',
     "xls.index.dq_holed_v": '中間有洞：{have}/{span} 期有值',
+    "xls.index.dq_sporadic_v": '零星有值：{have}/{span} 期有值（多半是公司本來就沒有，不是漏抓）',
     "xls.index.dq_more": '還有 {n} 列有洞，明細見 Data_Financials(Q)',
     "xls.index.dq_clean": '沒有偵測到缺漏',
     "xls.index.missing": '✗  缺失',

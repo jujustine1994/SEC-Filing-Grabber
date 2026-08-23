@@ -486,6 +486,12 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
     rest = max(0, len(quality.holed) - _DQ_MAX_LISTED)
     if rest:
         _line("", t("xls.index.dq_more", n=rest), "FF999999")
+    # 零星有值：填滿率太低，多半是公司本來就沒有這項活動（併購、借款、買回）。
+    # **刻意不用 ⚠、也不算進問題數**——它是參考資訊，不是抓漏（見 data_quality
+    # 的 `_SPORADIC_FILL_RATIO`，52 家實測那些洞只有 8~22% 是真的漏抓）。
+    for sp in quality.sporadic[:_DQ_MAX_LISTED]:
+        _line(sp.row, t("xls.index.dq_sporadic_v", have=sp.have, span=sp.span),
+              "FF999999")
     if not quality.contradictions and not quality.holed and not gaps:
         _line("", t("xls.index.dq_clean"), QUALITY_GREEN)
 

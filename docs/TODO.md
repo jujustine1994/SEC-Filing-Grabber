@@ -269,7 +269,9 @@ H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-23：確
 H3-1. **剩下的模板列缺漏：多數是「公司沒在報表表面單獨列」，不是 concept 對照錯**（2026-08-23，H3 主體已完成搬進 CHANGELOG，覆蓋率 40/97 → 47/97）
    - **`Op. Lease Liabilities, current` 14/52 家**（最大的一批）：實測 AMD／AMZN／ARLO／COST／GOOGL／MSFT／MU／NVDA／ORCL／PANW／SWKS／TSLA **十二家全部**只在資產負債表表面列「非流動」那條（`OperatingLeaseLiabilityNoncurrent`），流動部分併在「其他流動負債」裡、只有附註才拆開。**改 concept 名字救不了**，現行逐份解 filing 的路徑結構上拿不到
    - `Change in Inventories` 10 家（ADI／CVX／KO／MCD／NEE／PFE／XOM 等）同一類：現金流量表沒有單獨的存貨變動列，整包在「changes in operating assets and liabilities, net」
-   - **要 CTH 決定**：這種「資料只在附註」的列要不要另開一條抓附註的路徑（G11 已決定不切 companyfacts，但 `fetcher_facts` 保留當第二資料源——它抓得到這些，`Op. Lease Liabilities, current` 44/52、`Deferred Revenue, current` 31/52）。不做的話就是已知限制，Index 會一直標紅這幾列
+   - **CTH 2026-08-23 決定：先當「暫時性已知限制」，不動手。** 這是**擱置、不是結案**——資料是拿得到的（`fetcher_facts` 走 companyfacts 讀得到附註層的 fact：`Op. Lease Liabilities, current` 44/52、`Deferred Revenue, current` 31/52、`Accrued Compensation` 35/52），只是現行逐份解 filing 的路徑結構上碰不到。想解的時候有現成的第二資料源可以接
+   - **重啟這條的時機**：(a) 使用者實際回報這幾列的空白造成困擾；(b) 之後有其他理由要動 `fetcher_facts` 的接線時順手一起做
+   - **受影響的列（Index 會一直標紅，這是預期行為不是 bug）**：`Op. Lease Liabilities, current` 14 家、`Change in Inventories` 10 家、`Op. Lease Liabilities, LT` 4 家；另外 `Accrued Compensation`、`Operating Lease ROU Assets`、`Amortization of Intangibles`、`Finance Lease Liabilities, LT` 的覆蓋率偏低也是同一個成因
 
 H3-2. **「中間有洞」對流量列會過度報警**（2026-08-23 發現，需 CTH 決定要不要調整判準）
    - `Acquisitions` 25/52、`Debt Proceeds` 24 家、`Short-term Debt` 15 家仍在榜首，但這些是**episodic 流量列**——公司沒併購、沒借款的那一季，通常是整條列不寫，不是寫 0
@@ -296,6 +298,11 @@ H3-2. **「中間有洞」對流量列會過度報警**（2026-08-23 發現，�
 | — | F2 估值倍數 | 是（要股價來源） | 是 | 待研究，未確認方向 |
 
 ## D. 待 CTH 決定的已知限制
+
+D10. **⏳ 暫時性限制：只寫在附註、沒印在報表表面的科目抓不到**（CTH 2026-08-23 決定先擱置，詳見 H3-1）
+   - **這條標「暫時性」是有意義的**——資料拿得到，只是現行路徑碰不到。`fetcher_facts`（companyfacts）讀得到附註層的 fact，隨時可以接。不是「這個資料不存在」那種永久限制
+   - 症狀：`Op. Lease Liabilities, current`、`Change in Inventories`、`Accrued Compensation`、`Amortization of Intangibles` 等列，Index 會標紅或留白
+   - 判斷方式：印出那份 filing 的報表 dataframe，如果整張表裡沒有那個 concept，就是這一類，**改 concept 名字沒用**
 
 D0-2. **多股別公司抓不到期末流通股數**：PLTR／GOOGL／META `company.get_facts()` 裡 `dei:EntityCommonStockSharesOutstanding` **0 筆**（只有 `EntityPublicFloat`），因為 Class A/B/C 是分開標的。TSLA 61 筆、COHR 62 筆、BRK.B 7 筆正常。連帶 BVPS／FCF per Share／流通股數 YoY 空白。`output/_final/META.xlsx` 現在就有這個洞。
    - **研究記錄（2026-08-12）**：`fetcher_gaap.py` 只查單一 XBRL concept，多股別公司這欄位本來就是空的（各股別分開報）。修法要改成按股別分別抓再加總，但程式碼裡已有註解記錄過「連單一股別公司這欄位都不乾淨」的踩坑史（抓到的是財報日後幾週的股數，非期末當天）——多股別可能根本沒有乾淨來源。**風險：中偏大**，搞不好要接受「這幾家就是空」當已知限制，或退而求其次抓 `EntityPublicFloat` 換算（精確度打折）

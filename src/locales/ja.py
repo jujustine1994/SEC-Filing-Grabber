@@ -216,6 +216,7 @@ STRINGS: dict[str, str] = {
     "xls.index.dq_sparse_n": '{n} 列（全 {total} 期）',
     "xls.index.dq_contradiction_v": '行が空ですが「{evidence}」には値があります——取得漏れの可能性',
     "xls.index.dq_holed_v": '途中に欠落：{have}/{span} 期に値あり',
+    "xls.index.dq_sporadic_v": '散発的：{have}/{span} 期のみ値あり（取得漏れではなく元々ない可能性が高い）',
     "xls.index.dq_more": '他に {n} 行で欠落。詳細は Data_Financials(Q)',
     "xls.index.dq_clean": '欠落は検出されませんでした',
     "xls.index.missing": '✗  欠損',

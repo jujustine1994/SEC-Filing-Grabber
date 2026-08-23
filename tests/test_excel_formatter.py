@@ -328,6 +328,36 @@ def test_compute_quality_flags_all_empty_rows_as_not_holed():
     assert [h.row for h in r.holed] == []
 
 
+def test_index_lists_sporadic_rows_separately_from_holes():
+    """零星有值要**看得到**，但不能跟「中間有洞」混在一起——使用者要分得出
+    「這格是我們漏抓」跟「這家公司本來就沒每季併購」。"""
+    ends = [f"202{y}-{m}" for y in (0, 1, 2, 3, 4) for m in ("03-31", "06-30")]
+    vals = [7.0, None, None, None, None, None, None, None, None, 9.0]
+    tbl = StatementTable(
+        sheet_name="Data_Financials(Q)", ticker="TEST",
+        quarter_labels=[f"FY{2020 + i // 2}Q{i % 2 + 1}" for i in range(10)],
+        filing_dates=[""] * 10, period_ends=ends,
+        concepts=["Acquisitions"], values=[vals], labels=[""],
+    )
+    wb = _make_wb()
+    format_workbook(wb, [tbl])
+    ws = wb["Index"]
+    col_a = [str(ws.cell(row=r, column=1).value or "") for r in range(1, ws.max_row + 1)]
+    assert any("Acquisitions" in v for v in col_a)
+    # 不能被標成「⚠」——那是漏抓才用的記號
+    assert not any(v.startswith("⚠") and "Acquisitions" in v for v in col_a)
+
+
+def test_sporadic_rows_do_not_count_as_issues():
+    """零星有值是**參考資訊**，不是抓漏——Index 的問題計數不該把它算進去，
+    不然併購那種列會讓每一家公司都掛著一堆假警報（見 data_quality H3-2）。"""
+    from excel_formatter import _issue_count
+    from data_quality import QualityReport, SporadicRow
+    r = QualityReport(total_periods=20,
+                      sporadic=[SporadicRow(row="Acquisitions", have=4, span=20)])
+    assert _issue_count(r) == 0
+
+
 def test_compute_quality_no_q_table():
     result = _compute_quality([])
     assert result is None

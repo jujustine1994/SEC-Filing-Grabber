@@ -218,6 +218,7 @@ STRINGS: dict[str, str] = {
     "xls.index.dq_sparse_n": '{n} of {total} periods',
     "xls.index.dq_contradiction_v": 'Row is empty, but "{evidence}" has values — it should be here',
     "xls.index.dq_holed_v": 'Gaps in the middle: {have}/{span} periods have values',
+    "xls.index.dq_sporadic_v": 'Sporadic: only {have}/{span} periods have values (likely genuinely absent, not a fetch miss)',
     "xls.index.dq_more": '{n} more rows with gaps — see Data_Financials(Q)',
     "xls.index.dq_clean": 'No gaps detected',
     "xls.index.missing": '✗  missing',

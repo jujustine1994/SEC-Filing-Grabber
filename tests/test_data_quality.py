@@ -124,6 +124,65 @@ def test_holed_rows_sorted_worst_first():
     assert [h.row for h in dq.holed_rows(t, _KNOWN)] == ["A", "B"]
 
 
+# ── B2. 零星有值（episodic 流量列）─────────────────────────────────────────
+#
+# 2026-08-23（H3-2）：B 對「公司偶爾才做一次的事」會過度報警。拿 companyfacts
+# 當真值驗 52 家、2,906 個洞，依填滿率分桶看「這個洞是不是真的漏抓」：
+#
+#       填滿率 0~30%   269 個洞，只有  8% 是真的漏抓
+#       填滿率 30~50%  575 個洞，只有 18%
+#       填滿率 50~70%  682 個洞，只有 22%
+#       填滿率 70~85% 1179 個洞，    54%
+#       填滿率 85~100% 201 個洞，    46%
+#
+# 70% 是乾淨的分水嶺。低於它的列改歸「零星有值」，不當漏抓標紅。
+
+_ENDS8 = ["2024-03-31", "2024-06-30", "2024-09-30", "2024-12-31",
+          "2025-03-31", "2025-06-30", "2025-09-30", "2025-12-31"]
+
+
+def test_sporadic_row_is_not_reported_as_holed():
+    """併購這種列，公司三年做一次、其餘季度整條不寫——那不是漏抓。
+    8 期裡只有 2 期有值（填滿率 25%）。"""
+    t = _tbl(["Acquisitions"], [[5.0, None, None, None, None, None, None, 7.0]], _ENDS8)
+    r = dq.assess(t, frozenset({"Acquisitions"}))
+    assert [h.row for h in r.holed] == []
+    assert [s.row for s in r.sporadic] == ["Acquisitions"]
+
+
+def test_mostly_filled_row_with_one_gap_is_still_holed():
+    """每季都買回、只缺一季——填滿率 87%，那才是真的漏抓，要留著標紅。"""
+    t = _tbl(["Share Repurchases"], [[1.0, 2.0, 3.0, None, 5.0, 6.0, 7.0, 8.0]], _ENDS8)
+    r = dq.assess(t, frozenset({"Share Repurchases"}))
+    assert [h.row for h in r.holed] == ["Share Repurchases"]
+    assert r.sporadic == []
+
+
+def test_sporadic_boundary_is_seventy_percent_filled():
+    """填滿率剛好 70% 仍算「有洞」，門檻以下才降級（10 期有 7 期）。"""
+    vals = [1.0, None, 2.0, 3.0, None, 4.0, 5.0, None, 6.0, 7.0]
+    ends = _ENDS8 + ["2026-03-31", "2026-06-30"]
+    t = _tbl(["X"], [vals], ends)
+    r = dq.assess(t, frozenset({"X"}))
+    assert [h.row for h in r.holed] == ["X"]
+
+
+def test_short_series_is_never_downgraded_to_sporadic():
+    """期數太少看不出「零星」這個型態——3 期缺 1 期就是 67%，但那只代表資料太少。
+    真實的表有 21~69 期，這道門檻只擋掉退化情況。"""
+    t = _tbl(["Revenue"], [[1.0, None, 3.0]], ["2025-03-29", "2025-06-28", "2025-12-27"])
+    r = dq.assess(t, frozenset({"Revenue"}))
+    assert [h.row for h in r.holed] == ["Revenue"]
+    assert r.sporadic == []
+
+
+def test_sporadic_rows_report_how_sparse_they_are():
+    """要講得出「8 期裡只有 2 期有值」，使用者才判斷得了這是不是問題。"""
+    t = _tbl(["Acquisitions"], [[5.0, None, None, None, None, None, None, 7.0]], _ENDS8)
+    s = dq.assess(t, frozenset({"Acquisitions"})).sporadic[0]
+    assert (s.have, s.span) == (2, 8)
+
+
 # ── C. 整列全空且與其他欄位矛盾 ────────────────────────────────────────────
 
 def test_contradictions_flags_missing_debt_flows_when_debt_exists():

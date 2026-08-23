@@ -13,55 +13,55 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 
 | ticker | 期數 | 缺季 | 稀疏欄 | 有洞列 | 矛盾 | 模板不適用 |
 |---|---|---|---|---|---|---|
-| COST | 67 | 0 | 25 | 28 | 1 |  |
+| COST | 67 | 0 | 25 | 26 | 1 |  |
 | BAC | 21 | 1 | 21 | 0 | 0 | **是** |
 | GS | 21 | 1 | 17 | 0 | 1 | **是** |
-| SCHW | 21 | 1 | 10 | 2 | 0 |  |
+| SCHW | 21 | 1 | 10 | 1 | 0 |  |
 | PLD | 21 | 1 | 4 | 2 | 2 |  |
-| ADBE | 69 | 1 | 3 | 8 | 0 |  |
-| INTC | 69 | 1 | 3 | 13 | 0 |  |
-| ONTO | 21 | 2 | 2 | 4 | 4 |  |
+| ADBE | 69 | 1 | 3 | 7 | 0 |  |
+| INTC | 69 | 1 | 3 | 10 | 0 |  |
+| ONTO | 21 | 2 | 2 | 3 | 4 |  |
 | SNOW | 21 | 2 | 2 | 1 | 0 |  |
-| AAPL | 69 | 1 | 1 | 7 | 0 |  |
-| ADI | 21 | 1 | 1 | 7 | 1 |  |
-| AMAT | 21 | 1 | 1 | 3 | 0 |  |
-| AMD | 65 | 1 | 1 | 18 | 1 |  |
+| AAPL | 69 | 1 | 1 | 3 | 0 |  |
+| ADI | 21 | 1 | 1 | 4 | 1 |  |
+| AMAT | 21 | 1 | 1 | 2 | 0 |  |
+| AMD | 65 | 1 | 1 | 11 | 1 |  |
 | AMZN | 21 | 1 | 1 | 0 | 3 |  |
 | ARLO | 21 | 1 | 1 | 1 | 1 |  |
 | AVGO | 33 | 1 | 1 | 6 | 0 |  |
 | CAT | 21 | 1 | 1 | 1 | 0 |  |
-| CVX | 21 | 1 | 1 | 6 | 2 |  |
-| DDOG | 21 | 1 | 1 | 4 | 0 |  |
-| FORM | 21 | 1 | 1 | 8 | 0 |  |
-| GE | 21 | 1 | 1 | 3 | 4 |  |
-| GOOGL | 44 | 1 | 1 | 6 | 2 |  |
-| JNJ | 21 | 1 | 1 | 3 | 1 |  |
-| JPM | 21 | 1 | 1 | 1 | 2 |  |
-| KO | 21 | 1 | 1 | 1 | 1 |  |
+| CVX | 21 | 1 | 1 | 4 | 2 |  |
+| DDOG | 21 | 1 | 1 | 3 | 0 |  |
+| FORM | 21 | 1 | 1 | 5 | 0 |  |
+| GE | 21 | 1 | 1 | 2 | 4 |  |
+| GOOGL | 44 | 1 | 1 | 4 | 2 |  |
+| JNJ | 21 | 1 | 1 | 0 | 1 |  |
+| JPM | 21 | 1 | 1 | 0 | 2 |  |
+| KO | 21 | 1 | 1 | 0 | 1 |  |
 | MCD | 21 | 1 | 1 | 8 | 1 |  |
-| META | 57 | 1 | 1 | 6 | 1 |  |
-| MSFT | 67 | 2 | 1 | 6 | 1 |  |
+| META | 57 | 1 | 1 | 4 | 1 |  |
+| MSFT | 67 | 2 | 1 | 4 | 1 |  |
 | MU | 21 | 1 | 1 | 3 | 2 |  |
 | NEE | 21 | 1 | 1 | 0 | 1 |  |
 | NOW | 21 | 1 | 1 | 2 | 1 |  |
-| NVDA | 68 | 1 | 1 | 14 | 1 |  |
-| NXPI | 21 | 1 | 1 | 7 | 0 |  |
+| NVDA | 68 | 1 | 1 | 7 | 1 |  |
+| NXPI | 21 | 1 | 1 | 4 | 0 |  |
 | ON | 21 | 1 | 1 | 6 | 0 |  |
 | PANW | 21 | 1 | 1 | 4 | 2 |  |
 | PFE | 21 | 1 | 1 | 3 | 1 |  |
 | QCOM | 21 | 1 | 1 | 4 | 0 |  |
 | SWKS | 21 | 1 | 1 | 5 | 1 |  |
-| TSLA | 61 | 1 | 1 | 17 | 2 |  |
-| TXN | 21 | 1 | 1 | 3 | 0 |  |
-| UNH | 21 | 1 | 1 | 2 | 0 |  |
-| WMT | 68 | 1 | 1 | 10 | 0 |  |
+| TSLA | 61 | 1 | 1 | 8 | 2 |  |
+| TXN | 21 | 1 | 1 | 2 | 0 |  |
+| UNH | 21 | 1 | 1 | 1 | 0 |  |
+| WMT | 68 | 1 | 1 | 9 | 0 |  |
 | XOM | 21 | 1 | 1 | 2 | 1 |  |
-| COHR | 21 | 1 | 0 | 6 | 0 |  |
-| CRM | 21 | 0 | 0 | 6 | 0 |  |
-| KLAC | 21 | 1 | 0 | 4 | 0 |  |
-| LITE | 21 | 1 | 0 | 4 | 0 |  |
+| COHR | 21 | 1 | 0 | 3 | 0 |  |
+| CRM | 21 | 0 | 0 | 4 | 0 |  |
+| KLAC | 21 | 1 | 0 | 1 | 0 |  |
+| LITE | 21 | 1 | 0 | 2 | 0 |  |
 | LRCX | 21 | 1 | 0 | 3 | 1 |  |
-| MRVL | 21 | 0 | 0 | 7 | 0 |  |
+| MRVL | 21 | 0 | 0 | 4 | 0 |  |
 | NKE | 21 | 1 | 0 | 1 | 1 |  |
 | ORCL | 21 | 1 | 0 | 1 | 1 |  |
 | PG | 21 | 1 | 0 | 1 | 0 |  |
@@ -75,21 +75,45 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 
 | 列名 | 幾家中招 |
 |---|---|
-| Acquisitions | 25 / 52 |
-| Debt Proceeds | 24 / 52 |
-| Debt Repayments | 16 / 52 |
-| Short-term Debt | 15 / 52 |
-| Preferred Stock | 12 / 52 |
-| Investment Purchases | 8 / 52 |
-| Current Portion of LT Debt | 8 / 52 |
+| Acquisitions | 13 / 52 |
+| Debt Repayments | 12 / 52 |
+| Debt Proceeds | 11 / 52 |
+| Short-term Debt | 11 / 52 |
 | Other Working Capital | 8 / 52 |
 | Share Repurchases | 8 / 52 |
-| Investment Proceeds | 7 / 52 |
-| Other Non-cash Items | 6 / 52 |
-| D&A (CF memo) | 6 / 52 |
-| Cash Taxes Paid | 6 / 52 |
+| Current Portion of LT Debt | 6 / 52 |
+| Investment Proceeds | 6 / 52 |
+| Other Non-cash Items | 5 / 52 |
+| Preferred Stock | 5 / 52 |
+| Cash Taxes Paid | 5 / 52 |
 | Ending Cash | 5 / 52 |
+| Investment Purchases | 5 / 52 |
 | Shares Outstanding | 5 / 52 |
+| Amortization of Intangibles | 4 / 52 |
+
+### 零星有值（填滿率 <70%，多半是公司本來就沒這項活動，不是漏抓）
+
+2026-08-23（H3-2）從「中間有洞」拆出來的一類。拿 companyfacts 當真值驗 52 家、
+2,906 個洞：填滿率 70% 以下的那 1,526 個洞**只有 18% 是真的漏抓**，70% 以上才
+到 53%。門檻的完整證據見 `data_quality._SPORADIC_FILL_RATIO`。
+
+| 列名 | 幾家中招 |
+|---|---|
+| Debt Proceeds | 13 / 52 |
+| Acquisitions | 12 / 52 |
+| Preferred Stock | 7 / 52 |
+| Debt Repayments | 4 / 52 |
+| Short-term Debt | 4 / 52 |
+| D&A (CF memo) | 4 / 52 |
+| Investment Purchases | 3 / 52 |
+| Intangible Assets, net | 3 / 52 |
+| Short-term Investments | 2 / 52 |
+| Deferred Tax Liability, LT | 2 / 52 |
+| Current Portion of LT Debt | 2 / 52 |
+| Treasury Stock | 2 / 52 |
+| Additional Paid-in Capital | 2 / 52 |
+| Long-term Debt | 2 / 52 |
+| Goodwill | 1 / 52 |
 
 ### 被判矛盾（整列空白，但同一家公司的相關欄位顯示應該要有）
 
