@@ -122,6 +122,19 @@ _COHERENCE: dict[str, tuple[str, ...]] = {
     # 實測 52 家幾乎人人中招，是規則太寬不是真的漏抓。
 }
 
+# 「這一列空白有正當理由」的反證。有反證就不標紅——**優先於 `_COHERENCE`**。
+#
+# 2026-08-23 的教訓：`Current Portion of LT Debt` 52 家有 25 家被判矛盾，
+# 一度以為是 concept 對照抓錯。實際查 INTC/PG/XOM/MU/NVDA/QCOM/PFE/ORCL 八家的
+# 資產負債表，表面只有**一條**流動負債借款列（`us-gaap:DebtCurrent` 或
+# `NotesPayableCurrent`，standard_concept 是 `ShortTermDebt`），一年內到期的長期
+# 負債就併在那一條裡。那條已經進了 Short-term Debt，資訊沒掉，不該再標紅。
+# 25 家的 Short-term Debt 全部有值，改完這一條就消掉 24 家（AMZN 例外——它表面
+# 連流動借款列都沒有，那是真的抓不到，留著標紅）。
+_COHERENCE_EXCUSES: dict[str, tuple[str, ...]] = {
+    "Current Portion of LT Debt": ("Short-term Debt",),
+}
+
 
 def _parse(d: str | None) -> date | None:
     m = _ISO.match((d or "").strip())
@@ -239,6 +252,8 @@ def contradictions(table, known: frozenset[str] | None = None) -> list[Contradic
     for name, related in _COHERENCE.items():
         if name not in rows or name in filled:
             continue                       # 沒這一列、或有值 → 不是 C 的範圍
+        if any(x in filled for x in _COHERENCE_EXCUSES.get(name, ())):
+            continue                       # 空白有正當理由（見 `_COHERENCE_EXCUSES`）
         evidence = [r for r in related if r in filled]
         if evidence:
             out.append(Contradiction(row=name, evidence="、".join(evidence)))

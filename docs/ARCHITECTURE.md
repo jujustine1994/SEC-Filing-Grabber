@@ -254,9 +254,22 @@ Priority 1: standard_concept == std_concept
 Priority 2: concept 欄位包含 fallback_suffix（case-insensitive）
 Priority 3: label 欄位包含 label_fallback（case-insensitive）
 
-label_hint: 在 candidates 中優先選 label 含 hint 的行
+label_hint: 在該層的 candidates 裡**過濾**出 label 含 hint 的行
 match:      "first"（預設）= 最早那行；"last" = 最後那行（用於 CF 彙總行）
 ```
+
+⚠ **`label_hint` 不是「優先選」，是「濾掉」——濾空之後整個優先層被跳過，
+不會退回去用 concept 比對。** 所以一個寫太窄的 hint 等於把那一列整個關掉。
+2026-08-23（H3）掃 22 家最新 10-Q，光是這個成因就讓 `Cash Taxes Paid` 少 14 家、
+`Deferred Revenue, current` 少 12 家、`Share Repurchases` 少 9 家、
+`Accounts Receivable` 少 8 家。踩過的坑：hint 寫 `repurchas`，但多數公司的 label
+是「Treasury stock purchases」；hint 寫複數 `inventories`，但公司寫單數
+`Inventory`；hint 寫 `^net cash|^cash`，但 PG 三個小計都寫
+「TOTAL OPERATING ACTIVITIES」。
+
+**hint 只該用來擋掉會抓錯的鄰居，不該用來描述這一列長什麼樣。** 加 hint 之前
+先確認它擋的是什麼（例：`Operating Cash Flow` 的 hint 是為了擋現金流量表最下面
+的租賃補充揭露列，那個 hint 有存在的必要），並且用實測掃一遍再收工。
 
 ## Template 行數摘要
 
@@ -611,6 +624,16 @@ Index 上的「資料完整度」區塊。**取代**舊的「9 個關鍵列、�
 **同一家公司的相關欄位互相驗證**（`_COHERENCE` 表，全是會計上必然的關係）：
 有負債餘額就會有借還款現金流；反過來若負債類欄位全空，沒有借還款紀錄是一致的，
 不標紅。
+
+**`_COHERENCE_EXCUSES`：空白的正當理由，優先於 `_COHERENCE`**（2026-08-23，H3）。
+只有 `_COHERENCE` 一張表不夠——它只問「有沒有理由該有值」，不問「有沒有理由
+可以空白」。`Current Portion of LT Debt` 就是這樣被誤判 25 家：多數美國公司的
+資產負債表表面只有**一條**流動借款列（`us-gaap:DebtCurrent`），一年內到期的長期
+負債併在裡面，而那條已經進了 `Short-term Debt`——資訊沒掉，不該標紅。所以
+「Short-term Debt 有值」就是這一列空白的正當理由。改完 25 家 → 3 家。
+
+加新規則到 `_COHERENCE` 之前先問一句：**這一列空白時，數字有沒有可能是被抓進
+隔壁那一列了？** 有的話要一起加 excuse，不然就是在製造假警報。
 
 三個實測踩出來、改動時不要弄掉的細節：
 

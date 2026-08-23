@@ -239,11 +239,11 @@ G13. **同一個期末日出現兩次（重複列）**（2026-08-22 做 G6 判�
 > CTH 的五個要求：① 數字都要對且沒有缺漏 ② 有缺漏要能發現 ③ 呼叫要快
 > ④ 既有公版項目要正確 ⑤ 確認公版完整性
 
-H0. **已有的體檢數字（2026-08-22，52 家實測，可直接當基線）**
-   - 現行路徑：97 個模板列中，**只有 40 列達到「≥45 家有值且填滿率 >90%」**
-   - 18 列在「有值公司數 < 20 家」，其中 `Other Operating Expense` 是 **0 家**
-   - **7 列現行抓不到但 companyfacts 抓得到**（差 ≥8 家）：`Other Operating Expense`（0→13）、`Accrued Compensation`（16→35）、`Op. Lease Liabilities, current`（12→42）、`Operating Lease ROU Assets`（25→50）、`Amortization of Intangibles`（14→34）、`Deferred Revenue, current`（3→31）、`Current Portion of LT Debt`（23→35）。**這幾列全是 concept 名稱對不上，跟 G10／Q2 同一類**
-   - 資料在 `output/_spike/`（52 家的 facts JSON 與答案卷快取），重跑體檢不用再打網路
+H0. **已有的體檢數字（2026-08-23 H3 修完後重跑，52 家實測，可直接當基線）**
+   - 現行路徑：97 個模板列中，**47 列達到「≥45 家有值且填滿率 >90%」**（H3 之前是 40 列）
+   - **「現行抓不到但 companyfacts 抓得到」原本有 7 列，H3 修掉其中 3 列**：`Other Operating Expense`（0 → **13**）、`Deferred Revenue, current`（3 → **28**）、`Current Portion of LT Debt`（23 → 21，但矛盾判定從 25 家降到 3 家，見 CHANGELOG H3）
+   - **剩下 4 列改 concept 名字救不了**（公司沒在報表表面單獨列，只有附註有）：`Accrued Compensation`、`Op. Lease Liabilities, current`、`Operating Lease ROU Assets`、`Amortization of Intangibles`。詳見 H3-1
+   - 資料在 `output/_spike/`（52 家的 facts JSON 與答案卷快取），重跑體檢不用再打網路。**注意答案卷的抓取窗不一致**：AAPL/ADBE/AMD/AVGO/COST/GOOGL/INTC/META/MSFT/NVDA/TSLA/WMT 十二家是全部 filing（44~69 期），其餘 40 家是 `max_filings=16`（約 21 期）。重建時要沿用同樣的參數，不然逐列覆蓋率沒得比
 
 H1. **⚠ 新發現：companyfacts 對「現金流量表的流量項」只有約 25% 覆蓋**（做 H0 體檢時發現，**修正 G11 的評估**）
    - 症狀：`Capex`／`Dividends Paid`／`Change in Receivables`／`FX Effect on Cash` 等 CF 流量列，facts 的填滿率中位數只有 **25%**（＝一年四季只拿得到一季）
@@ -266,13 +266,16 @@ H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-23：確
      6. **overflow 區**：使用者能不能把 `Other (as reported)` 裡的某列「升級」成正式列
    - **不要在 G11 決策之前動手**——公版列的來源（concept 對照）如果要換，先確定換不換
 
-H3. **模板體檢暴露的系統性抓取問題**（2026-08-22，52 家實測，基線見 `docs/template-coverage-baseline-2026-08-23.md`）
-   - 這些不是個案，是同一個 concept 對照問題在多家公司重複出現。**修一次就會讓很多公司一起變好**，優先度高於逐家排查
-   - 最常「中間有洞」：`Shares Outstanding` 43/52 家、`Acquisitions` 24 家、`Debt Proceeds` 24 家、`Debt Repayments` 16 家、`Short-term Debt` 15 家
-   - 最常被判「矛盾」：`Current Portion of LT Debt` **25/52 家**、`Op. Lease Liabilities, current` 14 家、`Change in Inventories` 13 家、`Debt Proceeds` 11 家
-   - `Current Portion of LT Debt` 25 家中招——不可能這麼多公司剛好都沒有一年內到期負債，**幾乎確定是 concept 對照有問題**，跟 G10 同一類
-   - 排查方式：對中招的公司印出該報表 dataframe 的 `standard_concept`/`label`，找實際用的 concept。**注意 2026-08-22 的教訓**——有些列（`Accrued Compensation` 等）fallback 名字本來就對，抓不到是因為那份 filing 的報表表面沒有這一列，改名字救不了
-   - 每修一批就重跑 `scripts/gen_template_coverage_baseline.py`，看 **40/97** 這個數字有沒有往上走
+H3-1. **剩下的模板列缺漏：多數是「公司沒在報表表面單獨列」，不是 concept 對照錯**（2026-08-23，H3 主體已完成搬進 CHANGELOG，覆蓋率 40/97 → 47/97）
+   - **`Op. Lease Liabilities, current` 14/52 家**（最大的一批）：實測 AMD／AMZN／ARLO／COST／GOOGL／MSFT／MU／NVDA／ORCL／PANW／SWKS／TSLA **十二家全部**只在資產負債表表面列「非流動」那條（`OperatingLeaseLiabilityNoncurrent`），流動部分併在「其他流動負債」裡、只有附註才拆開。**改 concept 名字救不了**，現行逐份解 filing 的路徑結構上拿不到
+   - `Change in Inventories` 10 家（ADI／CVX／KO／MCD／NEE／PFE／XOM 等）同一類：現金流量表沒有單獨的存貨變動列，整包在「changes in operating assets and liabilities, net」
+   - **要 CTH 決定**：這種「資料只在附註」的列要不要另開一條抓附註的路徑（G11 已決定不切 companyfacts，但 `fetcher_facts` 保留當第二資料源——它抓得到這些，`Op. Lease Liabilities, current` 44/52、`Deferred Revenue, current` 31/52）。不做的話就是已知限制，Index 會一直標紅這幾列
+
+H3-2. **「中間有洞」對流量列會過度報警**（2026-08-23 發現，需 CTH 決定要不要調整判準）
+   - `Acquisitions` 25/52、`Debt Proceeds` 24 家、`Short-term Debt` 15 家仍在榜首，但這些是**episodic 流量列**——公司沒併購、沒借款的那一季，通常是整條列不寫，不是寫 0
+   - 拿 companyfacts 交叉驗證 `Acquisitions` 的 290 個洞：**只有 42% 在 companyfacts 裡找得到那個期末日的數字**，其餘 58% 是真的那季沒有併購
+   - `data_quality` 的 B 判斷（首末有值之間不能有空格）對存量列（資產負債表）誤判率確實是 0，但對流量列不是。**選項**：(a) 維持現狀、接受這幾列一直標紅；(b) 給流量列另一套判準；(c) 只在洞的比例超過某個門檻才報
+   - 不建議直接把這些列從 B 拿掉——那會連真的抓漏一起藏掉
 
 ## 執行順序建議（2026-08-22 更新）
 

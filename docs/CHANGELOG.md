@@ -10,6 +10,58 @@
 ## 功能清單
 
 ### 已完成
+- [x] **H3：模板 concept 對照的系統性修復，覆蓋率 40/97 → 47/97（2026-08-23）**：
+      52 家實測基線 `docs/template-coverage-baseline-2026-08-23.md` 重跑後，
+      **16 個模板列的有值公司數上升、只有 1 列下降 1 家（刻意的，見下）**。
+      - **最大的一批「矛盾」其實是判斷規則誤判，不是抓漏**：
+        `Current Portion of LT Debt` 原本 25/52 家被判矛盾，一度以為是 concept
+        名字錯。實際查 INTC／PG／XOM／MU／NVDA／QCOM／PFE／ORCL 八家的資產負債表，
+        **表面只有一條流動借款列**（tag 成 `us-gaap:DebtCurrent` 或
+        `NotesPayableCurrent`，`standard_concept` 是 `ShortTermDebt`），一年內到期
+        的長期負債就併在那一條裡——而那一條我們早就抓進 `Short-term Debt` 了，
+        資訊沒有掉。`data_quality` 新增 `_COHERENCE_EXCUSES`（「空白有正當理由」
+        的反證，優先於 `_COHERENCE`），**矛盾 25 家 → 3 家**。留下的是 AMZN 這種
+        表面連流動借款列都沒有的公司，那才是真的抓不到
+      - **`label_hint` 太窄是最大的系統性成因**。掃描 22 家最新 10-Q，統計「hint
+        把一個本來命中的列變成沒命中」的次數：`Cash Taxes Paid` 14 家、
+        `Deferred Revenue, current` 12、`Share Repurchases` 9、
+        `Accounts Receivable` 8、`Capex` 7、`Cash Interest Paid` 6、
+        `Long-term Debt` 5、`Change in Inventories` 4。
+        `_pick()` 濾空之後**整個優先層被跳過**，不會退回去用 concept 比對，
+        所以一個過窄的 hint 等於把那一列整個關掉。典型例子：多數公司寫
+        「Treasury stock purchases」不寫「repurchase」；PG 三個現金流小計都寫
+        「TOTAL OPERATING ACTIVITIES」；hint 寫複數 `inventories`，但公司寫單數
+        `Inventory`
+      - **`Shares Outstanding` 43/52 家「中間有洞」，成因單一**：期末股數走封面頁
+        的 `dei:EntityCommonStockSharesOutstanding`，**10-K 那筆標的是 `fp='FY'`**，
+        對出來的標籤是 `FY2025`，季表要的是 `FY2025Q4` → **每一年的 Q4 都是洞**。
+        `_shares_map_from_records()` 現在把年度那筆同時補進 Q4（公司自己有標
+        `fp='Q4'` 就不覆蓋）。**有洞 43 家 → 5 家**
+      - **`Other Operating Expense` 52 家掛零**：模板猜的 `OtherOperatingExpenses`
+        （std）與 `OtherOperatingExpense`（fallback）**沒有任何一家公司在用**。
+        實際 tag 的是 `OtherCostAndExpenseOperating`（KO）與
+        `OtherOperatingIncomeExpenseNet`（MCD／CAT）。**0 家 → 13 家**
+      - **`Debt Proceeds` / `Debt Repayments` 改由既有的加總後處理獨佔**：模板比對
+        到一條之後 `consumed` 會讓加總跳過它，加總再覆蓋回去就只剩「其他幾條的
+        和」——所以這兩列的模板 tuple 改成不比對，值一律由 `_sum_matching_rows()`
+        算。同時**排掉 `ProceedsFromRepaymentsOf...` 這種淨額**（借款減還款，可正
+        可負）：WMT 原本「還款」是 **+26 億正數**、PG 少算 10 億、MCD 少算 4.9 億。
+        唯一下降的一列就是這個 trade-off——GE 只有一條淨額列，排掉之後那一格空白
+        （落到 overflow，資料沒消失）
+      - 其餘一併修好的列：`Accounts Receivable`（hint `accounts receivable` →
+        `receivable`）、`Cash`（`cash and (cash )?equivalents`，MCD 寫
+        「Cash and equivalents」）、`Other Current Assets`、`Other Non-current Assets`
+        （MCD 寫「Miscellaneous」）、`Common Stock & APIC`（GOOGL 寫「Class A,
+        Class B, and Class C stock and additional paid-in capital」）、
+        `Long-term Debt`（fallback 改成排除流動部分的正則，AAPL 寫「Term debt」、
+        CRM 寫「Noncurrent debt」）、三個現金流小計、`Capex`、
+        `Cash Taxes Paid`／`Cash Interest Paid`（原本的 std_concept 分別會命中
+        **遞延所得稅費用**與 **AVGO 的債務清償損失**，那都不是付出去的現金）
+      - **新增 53 個測試**，每一個都釘住「哪一家公司、哪個 concept、哪個 label」，
+        字串是從真實 `to_dataframe()` 逐字抄的。含反向測試（放寬 hint 之後不能
+        誤抓：TSLA 的流動負債不能進長期負債、XOM 的利息要取合計不是營運那段、
+        AAPL 的 Non-trade receivables 不能冒充其他流動資產）
+      - **28 家真實 10-Q 前後逐格對照：新命中 82 格、失去 1 格**（GE 的淨額列）
 - [x] **G5：Index 的「完成度」重寫成四個判斷（2026-08-22，CTH 回報「很多東西
       沒出現也是滿分，而且這標準不是我設的」）**：
       - **舊標準形同虛設**：只看 9 個關鍵列、而且**只在「最近 4 期全部是 None」

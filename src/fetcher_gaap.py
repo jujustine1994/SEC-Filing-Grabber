@@ -296,7 +296,7 @@ IS_TEMPLATE: list[_T] = [
     ("R&D Expense",                "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment",                                 "IS", "first", None),
     ("SG&A Expense",               "SellingGeneralAndAdminExpenses", "SellingGeneralAndAdmin",                                 "IS", "first", None),
     ("D&A (CF memo)",              "DepreciationExpense",            "DepreciationDepletionAndAmortization",                   "CF", "first", None),
-    ("Other Operating Expense",    "OtherOperatingExpenses",         "OtherOperatingExpense",                                  "IS", "first", None),
+    ("Other Operating Expense",    None,                             "OtherCostAndExpenseOperating|OtherOperatingIncomeExpenseNet|OtherOperatingExpense", "IS", "first", None),
     ("Total Operating Expense",    "TotalOperatingExpenses",         "OperatingExpenses",                                      "IS", "first", None),
     ("Total Costs and Expenses",   None,                             "^us-gaap_CostsAndExpenses$",                             "IS", "first", None),
     ("Operating Income",           "OperatingIncomeLoss",            "OperatingIncomeLoss",                                    "IS", "first", None),
@@ -320,11 +320,11 @@ IS_TEMPLATE: list[_T] = [
 
 BS_TEMPLATE: list[_T] = [
     # ── Assets ──────────────────────────────────────────────────────────
-    ("Cash",                           "CashAndMarketableSecurities",             "CashAndCashEquivalents",                                    "BS", "first", "cash and cash equivalents"),
+    ("Cash",                           "CashAndMarketableSecurities",             "CashAndCashEquivalents",                                    "BS", "first", r"cash and (?:cash )?equivalents"),
     ("Short-term Investments",         "ShortTermInvestments",                    "ShortTermInvestments",                                      "BS", "first", None),
-    ("Accounts Receivable",            "TradeReceivables",                        "AccountsReceivable",                                        "BS", "first", "accounts receivable"),
+    ("Accounts Receivable",            "TradeReceivables",                        "AccountsReceivable",                                        "BS", "first", "receivable"),
     ("Inventories",                    "Inventories",                             "Inventories",                                               "BS", "first", None),
-    ("Other Current Assets",           "OtherNonOperatingCurrentAssets",          "OtherCurrentAssets",                                        "BS", "first", "other current"),
+    ("Other Current Assets",           "OtherNonOperatingCurrentAssets",          "OtherCurrentAssets",                                        "BS", "first", "other"),
     ("Total Current Assets",           "CurrentAssetsTotal",                      "AssetsCurrent",                                             "BS", "first", None),
     ("PP&E, net",                      "PlantPropertyEquipmentNet",               "PropertyPlantAndEquipmentNet",                              "BS", "first", None),
     ("Operating Lease ROU Assets",     "OperatingLeaseRightOfUseAsset",           "OperatingLeaseRightOfUseAsset",                             "BS", "first", None),
@@ -332,7 +332,7 @@ BS_TEMPLATE: list[_T] = [
     ("Goodwill",                       "Goodwill",                                "Goodwill",                                                  "BS", "first", None),
     ("Intangible Assets, net",         "IntangibleAssets",                        "IntangibleAssetsNet",                                       "BS", "first", None),
     ("Deferred Tax Assets",            "DeferredTaxNoncurrentAssets",             "DeferredIncomeTaxAssetsNet",                                "BS", "first", None),
-    ("Other Non-current Assets",       "OtherNonOperatingNonCurrentAssets",       "OtherAssetsNoncurrent",                                     "BS", "last",  "other"),
+    ("Other Non-current Assets",       "OtherNonOperatingNonCurrentAssets",       "OtherAssetsNoncurrent",                                     "BS", "last",  "other|miscellaneous"),
     ("Total Non-current Assets",       None,                                      "^us-gaap_AssetsNoncurrent$",                                "BS", "first", None),
     ("Total Assets",                   "Assets",                                  "Assets",                                                    "BS", "last",  None),
     # ── Liabilities ─────────────────────────────────────────────────────
@@ -341,11 +341,11 @@ BS_TEMPLATE: list[_T] = [
     ("Current Portion of LT Debt",     "CurrentPortionOfLongTermDebt",            "LongTermDebtCurrent",                                       "BS", "first", None),
     ("Op. Lease Liabilities, current", "OperatingLeaseCurrentDebtEquivalent",     "OperatingLeaseLiabilityCurrent",                            "BS", "first", None),
     ("Accrued Compensation",           "AccruedCompensation",                     "EmployeeRelatedLiabilitiesCurrent",                         "BS", "first", None),
-    ("Deferred Revenue, current",      "OtherOperatingCurrentLiabilities",        "ContractWithCustomerLiabilityCurrent",                      "BS", "first", "unearned revenue"),
+    ("Deferred Revenue, current",      None,                                      "ContractWithCustomerLiabilityCurrent|DeferredRevenueCurrent", "BS", "first", None),
     ("Income Tax Payable",             "AccruedIncomeTaxes",                      "AccruedIncomeTaxesCurrent",                                 "BS", "first", None),
     ("Other Current Liabilities",      "OtherNonOperatingCurrentLiabilities",     "OtherLiabilitiesCurrent",                                   "BS", "first", None),
     ("Total Current Liabilities",      "CurrentLiabilitiesTotal",                 "LiabilitiesCurrent",                                        "BS", "first", None),
-    ("Long-term Debt",                 "LongTermDebt",                            "LongTermDebt",                                              "BS", "first", "long-term debt"),
+    ("Long-term Debt",                 "LongTermDebt",                            r"LongTerm(?:Debt|NotesAndLoans|Borrowings)(?!\w*(?<!Non)Current$)", "BS", "first", None),
     ("Op. Lease Liabilities, LT",      "OperatingLeaseNonCurrentDebtEquivalent",  "OperatingLeaseLiabilityNoncurrent",                         "BS", "first", None),
     ("Finance Lease Liabilities, LT",  None,                                      "FinanceLeaseLiabilityNoncurrent",                           "BS", "first", "finance lease"),
     ("Deferred Revenue, LT",           "ContractLiabilities",                     "ContractWithCustomerLiabilityNoncurrent",                   "BS", "first", None),
@@ -356,7 +356,7 @@ BS_TEMPLATE: list[_T] = [
     ("Total Liabilities",              "Liabilities",                             "Liabilities",                                               "BS", "last",  None),
     # ── Equity ──────────────────────────────────────────────────────────
     ("Preferred Stock",                "PreferredStock",                          "PreferredStockValue",                                       "BS", "first", None),
-    ("Common Stock & APIC",            "CommonEquity",                            "CommonStockValue",                                          "BS", "first", "common stock"),
+    ("Common Stock & APIC",            "CommonEquity",                            "CommonStockValue",                                          "BS", "first", "common stock|paid-in capital"),
     ("Additional Paid-in Capital",     "AdditionalPaidInCapital",                 "AdditionalPaidInCapitalCommonStock",                        "BS", "first", None),
     ("Treasury Stock",                 "TreasuryShares",                          "TreasuryStockValue",                                        "BS", "first", None),
     ("Retained Earnings",              "RetainedEarnings",                        "RetainedEarningsAccumulatedDeficit",                        "BS", "first", None),
@@ -377,32 +377,36 @@ CF_TEMPLATE: list[_T] = [
     ("SBC",                        "StockBasedCompensationExpense",      "ShareBasedCompensation",                                "CF", "first", None),
     ("Amortization of Intangibles","AmortizationOfIntangibles",          "AmortizationOfIntangibleAssets",                        "CF", "first", None),
     ("Change in Receivables",      "ChangeInReceivables",                "IncreaseDecreaseInAccountsReceivable",                  "CF", "first", "receivable"),
-    ("Change in Inventories",      None,                                 "IncreaseDecreaseInInventories",                         "CF", "first", "inventories"),
+    ("Change in Inventories",      None,                                 "IncreaseDecreaseIn(?:RetailRelated)?Inventories",         "CF", "first", "inventor"),
     ("Change in Accounts Payable",     None,  "IncreaseDecreaseInAccountsPayable",                          "CF", "first", None),
     ("Change in Prepaid & Other Assets", None, "IncreaseDecreaseInPrepaidDeferredExpenseAndOtherAssets",     "CF", "first", None),
     ("Change in Other Operating Assets", None, "IncreaseDecreaseInOtherOperatingAssets",                     "CF", "first", None),
     ("Change in Deferred Revenue", "ChangeInDeferredRevenue",            "IncreaseDecreaseInDeferredRevenue",                     "CF", "first", None),
     ("Other Working Capital",      "ChangeInOtherWorkingCapital",        "IncreaseDecreaseInOtherOperatingLiabilities",           "CF", "first", None),
     ("Other Non-cash Items",       "OtherNonCashItemsCF",                "OtherNoncashIncomeExpense",                             "CF", "first", None),
-    ("Operating Cash Flow",        "NetCashFromOperatingActivities",     "NetCashProvidedByUsedInOperatingActivities",            "CF", "last",  "^net cash|^cash"),
+    ("Operating Cash Flow",        "NetCashFromOperatingActivities",     "NetCashProvidedByUsedInOperatingActivities",            "CF", "last",  "^net cash|^cash|^total"),
     # ── Investing ────────────────────────────────────────────────────────
-    ("Capex",                      "CapitalExpenses",                    "PaymentsToAcquirePropertyPlantAndEquipment",            "CF", "first", "property"),
+    ("Capex",                      "CapitalExpenses",                    "PaymentsToAcquirePropertyPlantAndEquipment",            "CF", "first", "propert|capital expenditure"),
     ("Acquisitions",               "AcquisitionsNet",                    "PaymentsToAcquireBusinessesNetOfCashAcquired",          "CF", "first", None),
     ("Investment Purchases",       "InvestmentPurchases",                "PaymentsToAcquireInvestments",                          "CF", "first", None),
     ("Investment Proceeds",        "InvestmentProceeds",                 "ProceedsFromSaleOfInvestments",                         "CF", "first", None),
-    ("Investing Cash Flow",        "NetCashFromInvestingActivities",     "NetCashProvidedByUsedInInvestingActivities",            "CF", "last",  "^net cash|^cash"),
+    ("Investing Cash Flow",        "NetCashFromInvestingActivities",     "NetCashProvidedByUsedInInvestingActivities",            "CF", "last",  "^net cash|^cash|^total"),
     # ── Financing ────────────────────────────────────────────────────────
-    ("Debt Proceeds",              "DebtProceeds",                       "ProceedsFromIssuanceOfDebt",                            "CF", "first", None),
-    ("Debt Repayments",            "DebtRepayments",                     "RepaymentsOfDebt",                                      "CF", "first", None),
-    ("Share Repurchases",          "EquityExpenseIncomeBuybackIssued",   "PaymentsForRepurchaseOfCommonStock",                    "CF", "first", "repurchas"),
+    # 借款／還款這兩列**刻意不在這裡比對**，值一律由下面的 `_sum_matching_rows()`
+    # 加總（見 `_DEBT_PROCEEDS_PATTERNS`）。理由：公司常常同時有長期借款、商業本票
+    # 等好幾條借款線，要的是總額；而且模板一旦比對到其中一條，`consumed` 會讓加總
+    # 跳過它，加總再覆蓋回 row_vals 就只剩「其他幾條的和」——比不比對還錯。
+    ("Debt Proceeds",              None,                                 "",                                                      "CF", "first", None),
+    ("Debt Repayments",            None,                                 "",                                                      "CF", "first", None),
+    ("Share Repurchases",          None,                                 "PaymentsForRepurchaseOfCommonStock",                    "CF", "first", None),
     ("Dividends Paid",             None,                                  "PaymentsOfDividends|PaymentsOfDividendsCommonStock|PaymentsOfOrdinaryDividends", "CF", "first", "dividend"),
-    ("Financing Cash Flow",        "NetCashFromFinancingActivities",     "NetCashProvidedByUsedInFinancingActivities",            "CF", "last",  "^net cash|^cash"),
+    ("Financing Cash Flow",        "NetCashFromFinancingActivities",     "NetCashProvidedByUsedInFinancingActivities",            "CF", "last",  "^net cash|^cash|^total"),
     # ── Other ────────────────────────────────────────────────────────────
     ("FX Effect on Cash",          "ForeignExchangeEffectOnCash",        "EffectOfExchangeRateOnCashAndCashEquivalents",          "CF", "first", None),
     ("Net Change in Cash",         "NetChangeInCash",                    "CashAndCashEquivalentsPeriodIncreaseDecrease",          "CF", "first", None),
     ("Ending Cash",                "CashAndCashEquivalents",             "CashAndCashEquivalentsAtCarryingValue",                 "CF", "last",  None),
-    ("Cash Taxes Paid",            "IncomeTaxes",                        "IncomeTaxesPaid",                                       "CF", "first", "paid"),
-    ("Cash Interest Paid",         "InterestExpense",                    "InterestPaid",                                          "CF", "first", "paid"),
+    ("Cash Taxes Paid",            None,                                 "IncomeTaxesPaid",                                       "CF", "first", None),
+    ("Cash Interest Paid",         None,                                 "InterestPaid",                                          "CF", "first", "interest|^total"),
     # ── Derived (computed, not from XBRL) ────────────────────────────────
     ("Free Cash Flow",             None,                                 "",                                                      "DERIVED", "first", None),
 ]
@@ -460,21 +464,22 @@ _INV_PROCEEDS_PATTERNS: list[str] = [
     r"ProceedsFromSaleOfShortTermInvestments",
     r"ProceedsFromSaleMaturityAndCollectionOfShorttermInvestments",
 ]
+# 借款／還款一律「把所有借款線加總」，不是挑一條——實測 INTC、PG、XOM、COST
+# 都同時有長期借款與商業本票兩條以上。
+#
+# ⚠ `ProceedsFromRepaymentsOf...` 是**淨額**（借款減還款），不能算進任何一邊：
+# 它可正可負，塞進 Debt Repayments 會讓「還款」出現負數。CAT、GE、WMT、NKE、
+# XOM 都有這種列，所以兩個正則都要把它排掉（借款用 `(?!Repayments)`，還款用
+# `(?<!ProceedsFrom)`）。排掉之後它們會落到 overflow，資料不會消失。
 _DEBT_PROCEEDS_PATTERNS: list[str] = [
     r"ProceedsFromIssuanceOfDebt$",
-    r"ProceedsFromIssuanceOfLongTermDebt",
-    r"ProceedsFromShortTermBorrowings",
-    r"ProceedsFromLinesOfCredit",
-    r"ProceedsFromIssuanceOfMediumTermNotes",
-    r"ProceedsFromIssuanceOfSeniorLongTermDebt",
+    r"ProceedsFrom(?!Repayments)\w*(?:LongTermDebt|ShortTermDebt|ShortTermBorrowings"
+    r"|CommercialPaper|ConvertibleDebt|NotesPayable|LinesOfCredit|MediumTermNotes"
+    r"|DebtNetOfIssuanceCosts|DebtMaturingIn)",
 ]
 _DEBT_REPAYMENTS_PATTERNS: list[str] = [
-    r"RepaymentsOfDebt$",
-    r"RepaymentsOfLongTermDebt",
-    r"RepaymentsOfShortTermDebt",
-    r"RepaymentsOfLinesOfCredit",
-    r"RepaymentsOfMediumTermNotes",
-    r"RepaymentsOfSeniorDebt",
+    r"(?<!ProceedsFrom)RepaymentsOf\w*(?:Debt|Borrowings|CommercialPaper"
+    r"|NotesPayable|LinesOfCredit|MediumTermNotes)",
 ]
 
 
@@ -2053,6 +2058,8 @@ def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> 
 #   等於「期末權益 ÷ 幾週後的股數」，量級無虞但不是同一天。
 
 _SHARES_CONCEPT = "dei:EntityCommonStockSharesOutstanding"
+# 年度標籤（`FY2025`），用來把 10-K 的封面頁股數同時補進季表的 Q4
+_ANNUAL_LABEL = re.compile(r"FY\d{4}")
 
 
 def _shares_label(fiscal_year, fiscal_period) -> str | None:
@@ -2072,8 +2079,17 @@ def _shares_label(fiscal_year, fiscal_period) -> str | None:
 
 
 def _shares_map_from_records(records) -> dict[str, float]:
-    """fact 記錄 → {期間標籤: 股數}。重複申報取最後一筆（更正後的）。"""
+    """fact 記錄 → {期間標籤: 股數}。重複申報取最後一筆（更正後的）。
+
+    **10-K 的封面頁 fact 標的是 `fp='FY'`**，對出來的標籤是 `FY2025`；季表要的
+    標籤是 `FY2025Q4`，對不上就每年缺一格。52 家實測 43 家的 `Shares Outstanding`
+    「中間有洞」，成因全部是這個——AAPL/NVDA/WMT/COST/MU/ADBE 都是 Q1~Q3 全中、
+    Q4 全空。年表照舊用 `FY2025`，季表另外補一份 `FY2025Q4`。
+
+    公司若真的另外標了 `fp='Q4'`，那筆比封面頁的年度 fact 更貼近季末，**不覆蓋**。
+    """
     out: dict[str, float] = {}
+    annual: dict[str, float] = {}
     for rec in records or []:
         label = _shares_label(rec.get("fiscal_year"), rec.get("fiscal_period"))
         if label is None:
@@ -2085,6 +2101,10 @@ def _shares_map_from_records(records) -> dict[str, float]:
             out[label] = float(value)
         except (TypeError, ValueError):
             continue
+        if _ANNUAL_LABEL.fullmatch(label):
+            annual[label + "Q4"] = out[label]
+    for label, value in annual.items():
+        out.setdefault(label, value)
     return out
 
 

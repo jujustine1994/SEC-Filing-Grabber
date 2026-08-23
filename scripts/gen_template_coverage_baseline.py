@@ -82,8 +82,15 @@ w("| 列名 | 幾家中招 |")
 w("|---|---|")
 for k, v in contra_hits.most_common(12): w(f"| {k} | {v} / {N} |")
 w("")
-w(f"`Current Portion of LT Debt` {contra_hits.get('Current Portion of LT Debt', 0)} 家中招")
-w("——那幾乎確定是 concept 對照有問題，不是這麼多公司剛好都沒有一年內到期負債。\n")
+# 2026-08-23（H3）改寫。原本這裡寫「`Current Portion of LT Debt` 25 家中招，
+# 幾乎確定是 concept 對照有問題」——查證後是**錯的判斷**：INTC/PG/XOM/MU/NVDA/
+# QCOM/PFE/ORCL 八家的資產負債表表面只有一條流動借款列（`us-gaap:DebtCurrent`），
+# 一年內到期的長期負債併在裡面、早就進了 Short-term Debt。問題出在判斷規則，
+# 不是抓取。留這段話當提醒，別再從「中招家數多」直接跳到「concept 名字錯」。
+w("**中招家數多 ≠ concept 對照錯。** 仍在榜上的 `Op. Lease Liabilities, current`")
+w("等列，實測多數是**公司沒有在報表表面單獨列出**（金額併在「其他流動負債」裡，")
+w("只在附註拆開），現行逐份解 filing 的路徑結構上拿不到。動 concept 對照之前，")
+w("先把那份 filing 的報表 dataframe 印出來確認這一列到底在不在。\n")
 w("## 三、逐列覆蓋率：現行路徑 vs companyfacts\n")
 w("「有值公司數」＝ 52 家裡有幾家這一列拿得到資料。兩邊差 ≥8 家的標 ⚠。\n")
 w("| 表 | 列名 | 現行 | facts | 差 |")

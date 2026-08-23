@@ -2353,3 +2353,323 @@ def test_filing_obj_still_works_without_a_cache_scope():
     f.obj.return_value = "X"
     f.accession_no = "acc-1"
     assert _filing_obj(f) == "X"
+
+
+# ── H3 系統性 concept 對照修復（2026-08-23）────────────────────────────────
+#
+# 每個測試都釘住「哪一家公司、哪個 concept / label」——這些 concept 與 label
+# 字串是從真實的 `to_dataframe()` 逐字抄下來的，不是編的（來源：2026-08-23
+# 對 22 家最新 10-Q 的實測掃描）。起因見
+# `docs/template-coverage-baseline-2026-08-23.md`：同一個「`label_hint` 太窄」
+# 或「fallback 正則太窄」的問題在多家公司重複出現，修一次多家一起變好。
+
+def _row_df(concept: str, label: str, std_concept, *, extra=None):
+    """單列（或多列）的最小 statement dataframe。extra 是 [(concept, label, std)]。"""
+    rows = [(concept, label, std_concept)] + list(extra or [])
+    return pd.DataFrame({
+        "concept":                [r[0] for r in rows],
+        "label":                  [r[1] for r in rows],
+        "standard_concept":       [r[2] for r in rows],
+        "abstract":               [False] * len(rows),
+        "is_breakdown":           [False] * len(rows),
+        "level":                  [3] * len(rows),
+        "dimension_member_label": [None] * len(rows),
+        "2026-06-30 (Q2)":        [float(i + 1) for i in range(len(rows))],
+    })
+
+
+def _template_entry(row_name: str):
+    from fetcher_gaap import BS_TEMPLATE, CF_TEMPLATE, IS_TEMPLATE
+    for T in (IS_TEMPLATE, BS_TEMPLATE, CF_TEMPLATE):
+        for r in T:
+            if r[0] == row_name:
+                return r
+    raise AssertionError("模板裡沒有這一列：" + row_name)
+
+
+def _match_template_row(row_name: str, df):
+    """照模板設定跑一次 _match_is_row，回傳命中的 label（沒命中回 None）。"""
+    _, std, fallback, _src, match, hint = _template_entry(row_name)
+    idx = _match_is_row(df, std, fallback, match=match, label_hint=hint)
+    return None if idx is None else df.loc[idx, "label"]
+
+
+@pytest.mark.parametrize("label", [
+    "Treasury stock purchases",                 # PG / MCD / LRCX
+    "Purchases of stock for treasury",          # KO
+    "Purchases of common stock for treasury",   # GE
+    "Common stock acquired",                    # XOM
+    "Purchase of Company stock",                # WMT
+    "Payments to purchase common stock",        # CAT
+    "Purchase of treasury shares and restricted stock unit withholdings",  # NXPI
+    "Repurchases of common stock",              # AMD（原本就過，防止改壞）
+])
+def test_share_repurchases_matches_regardless_of_label_wording(label):
+    """`label_hint='repurchas'` 把 22 家裡的 9 家過濾掉——多數公司寫 treasury 不寫 repurchase。"""
+    df = _row_df("us-gaap_PaymentsForRepurchaseOfCommonStock", label,
+                 "EquityExpenseIncome(BuybackIssued)")
+    assert _match_template_row("Share Repurchases", df) == label
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_IncreaseDecreaseInInventories", "Inventory"),                 # GOOGL/AVGO/SWKS/TSLA
+    ("us-gaap_IncreaseDecreaseInRetailRelatedInventories", "Inventories"),  # WMT
+])
+def test_change_in_inventories_matches_singular_label_and_retail_concept(concept, label):
+    """hint 是複數 inventories，但多數公司的 label 是單數 Inventory。"""
+    df = _row_df(concept, label, float("nan"))
+    assert _match_template_row("Change in Inventories", df) == label
+
+
+def _sum_debt_row(kind: str, df):
+    """跑一次借款／還款的加總後處理，回傳金額（沒有任何列命中回 None）。"""
+    from fetcher_gaap import (_DEBT_PROCEEDS_PATTERNS, _DEBT_REPAYMENTS_PATTERNS,
+                              _sum_matching_rows)
+    pats = _DEBT_PROCEEDS_PATTERNS if kind == "proceeds" else _DEBT_REPAYMENTS_PATTERNS
+    val, _idx = _sum_matching_rows(df, "2026-06-30 (Q2)", pats, set())
+    return val
+
+
+@pytest.mark.parametrize("concept", [
+    "us-gaap_ProceedsFromIssuanceOfLongTermDebt",
+    "us-gaap_ProceedsFromIssuanceOfSeniorLongTermDebt",     # NOW
+    "us-gaap_ProceedsFromIssuanceOfCommercialPaper",        # AMAT / INTC / NOW
+    "us-gaap_ProceedsFromDebtNetOfIssuanceCosts",           # GOOGL
+    "us-gaap_ProceedsFromDebtMaturingInMoreThanThreeMonths",  # CAT
+    "us-gaap_ProceedsFromConvertibleDebt",                  # PANW
+])
+def test_debt_proceeds_sums_real_world_concepts(concept):
+    """原本的 pattern 清單漏掉商業本票、可轉債、GOOGL 與 CAT 的寫法。"""
+    df = _row_df(concept, "Proceeds from borrowings", float("nan"))
+    assert _sum_debt_row("proceeds", df) == 1.0
+
+
+def test_debt_proceeds_adds_up_every_borrowing_line():
+    """公司常常同時有長期借款與商業本票兩條以上，要加總不是挑一條。"""
+    df = _row_df("us-gaap_ProceedsFromIssuanceOfLongTermDebt", "Proceeds from long-term debt",
+                 float("nan"),
+                 extra=[("us-gaap_ProceedsFromIssuanceOfCommercialPaper",
+                         "Proceeds from commercial paper", float("nan"))])
+    assert _sum_debt_row("proceeds", df) == 3.0    # 1.0 + 2.0
+
+
+def test_debt_proceeds_ignores_net_proceeds_from_repayments_rows():
+    """`ProceedsFromRepaymentsOf...` 是淨額（借款減還款），塞進 Debt Proceeds 會失真。"""
+    df = _row_df("us-gaap_ProceedsFromRepaymentsOfShortTermDebtMaturingInThreeMonthsOrLess",
+                 "Short-term borrowings, net", float("nan"))   # CAT / GE
+    assert _sum_debt_row("proceeds", df) is None
+
+
+@pytest.mark.parametrize("concept", [
+    "us-gaap_RepaymentsOfLongTermDebt",
+    "us-gaap_RepaymentsOfCommercialPaper",                    # AMAT
+    "us-gaap_RepaymentsOfDebtMaturingInMoreThanThreeMonths",  # MSFT / CAT
+    "us-gaap_RepaymentsOfDebtAndCapitalLeaseObligations",     # GOOGL / LRCX
+    "us-gaap_RepaymentsOfNotesPayable",                       # NXPI
+])
+def test_debt_repayments_sums_real_world_concepts(concept):
+    df = _row_df(concept, "Repayments of borrowings", float("nan"))
+    assert _sum_debt_row("repayments", df) == 1.0
+
+
+def test_debt_repayments_ignores_net_proceeds_from_repayments_rows():
+    """`RepaymentsOfShortTermDebt` 這個舊 pattern 會誤吃 WMT 的
+    `ProceedsFromRepaymentsOfShortTermDebt`（淨額，可正可負）。"""
+    df = _row_df("us-gaap_ProceedsFromRepaymentsOfShortTermDebt",
+                 "Net change in short-term borrowings", float("nan"))   # WMT
+    assert _sum_debt_row("repayments", df) is None
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_IncomeTaxesPaid",    "Income taxes, net"),                  # COST
+    ("us-gaap_IncomeTaxesPaidNet", "Income taxes, net of tax refunds"),   # CRM
+])
+def test_cash_taxes_paid_matches_when_label_omits_the_word_paid(concept, label):
+    df = _row_df(concept, label, float("nan"))
+    assert _match_template_row("Cash Taxes Paid", df) == label
+
+
+def test_cash_taxes_paid_never_returns_deferred_tax_expense():
+    """std_concept `IncomeTaxes` 會命中遞延所得稅費用，那不是付出去的現金稅。
+    22 家裡有 11 家的 CF 有這一列（NVDA/AMZN/PG/KO/CAT/ORCL/TSLA/LRCX/MCD/NXPI/PFE）。"""
+    df = _row_df("us-gaap_DeferredIncomeTaxExpenseBenefit", "Deferred income taxes",
+                 "IncomeTaxes")
+    assert _match_template_row("Cash Taxes Paid", df) is None
+
+
+def test_cash_interest_paid_matches_label_without_the_word_paid():
+    df = _row_df("us-gaap_InterestPaidNet", "Interest", float("nan"))   # COST / CRM
+    assert _match_template_row("Cash Interest Paid", df) == "Interest"
+
+
+def test_cash_interest_paid_picks_the_total_not_the_operating_portion():
+    """XOM 把利息拆成三列：營運活動內、資本化、以及合計。三列的 concept 都以
+    `InterestPaid` 開頭，取第一列會只拿到營運那一段（402M 而不是 910M）。"""
+    df = _row_df("us-gaap_InterestPaidNet", "Included in cash flows from operating activities",
+                 "InterestExpense",
+                 extra=[("us-gaap_InterestPaidCapitalized",
+                         "Capitalized, included in cash flows from investing activities", "InterestExpense"),
+                        ("us-gaap_InterestPaid", "Total cash interest paid", "InterestExpense")])
+    assert _match_template_row("Cash Interest Paid", df) == "Total cash interest paid"
+
+
+def test_cash_interest_paid_never_returns_debt_extinguishment_loss():
+    """std_concept `InterestExpense` 在 AVGO 命中 `GainsLossesOnExtinguishmentOfDebt`。"""
+    df = _row_df("us-gaap_GainsLossesOnExtinguishmentOfDebt", "Loss on debt extinguishment",
+                 "InterestExpense")
+    assert _match_template_row("Cash Interest Paid", df) is None
+
+
+@pytest.mark.parametrize("row_name,concept,label", [
+    ("Operating Cash Flow", "us-gaap_NetCashProvidedByUsedInOperatingActivities", "TOTAL OPERATING ACTIVITIES"),
+    ("Investing Cash Flow", "us-gaap_NetCashProvidedByUsedInInvestingActivities", "TOTAL INVESTING ACTIVITIES"),
+    ("Financing Cash Flow", "us-gaap_NetCashProvidedByUsedInFinancingActivities", "TOTAL FINANCING ACTIVITIES"),
+])
+def test_cash_flow_subtotals_match_pg_total_wording(row_name, concept, label):
+    """PG 三個小計都寫 TOTAL ... ACTIVITIES，hint `^net cash|^cash` 把整層濾掉。"""
+    df = _row_df(concept, label, float("nan"))
+    assert _match_template_row(row_name, df) == label
+
+
+def test_operating_cash_flow_still_rejects_supplemental_lease_rows():
+    """hint 放寬之後仍要擋掉補充揭露列——`NetCashProvidedByUsedInOperatingActivities`
+    這個 fallback 用 match='last'，不擋的話 XOM/COST/MU/TSLA/SWKS/LRCX 會抓到
+    現金流量表最下面的租賃補充揭露列。"""
+    df = _row_df("us-gaap_RightOfUseAssetObtainedInExchangeForFinanceLeaseLiability",
+                 "Right-of-use assets obtained in exchange for finance lease liabilities",
+                 "NetCashFromOperatingActivities")
+    assert _match_template_row("Operating Cash Flow", df) is None
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Capital expenditures"),   # PG/ORCL/CRM/SWKS/MCD
+    ("us-gaap_PaymentsToAcquireProductiveAssets", "Capital expenditures and intangible assets"),  # LRCX
+])
+def test_capex_matches_capital_expenditures_wording(concept, label):
+    """hint 'property' 把「Capital expenditures」這個最常見的寫法整層濾掉。"""
+    df = _row_df(concept, label, "CapitalExpenses")
+    assert _match_template_row("Capex", df) == label
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_ReceivablesNetCurrent", "Receivables, net"),                       # COST/WMT
+    ("us-gaap_ReceivablesNetCurrent", "Receivables"),                            # MU
+    ("us-gaap_AccountsReceivableNetCurrent", "Receivables - trade and other"),   # CAT
+    ("us-gaap_AccountsNotesAndLoansReceivableNetCurrent", "Accounts and notes receivable"),  # MCD
+    ("us-gaap_AccountsReceivableNetCurrent", "Trade receivables, net of allowances"),  # ORCL
+])
+def test_accounts_receivable_matches_shorter_receivable_wording(concept, label):
+    df = _row_df(concept, label, "TradeReceivables")
+    assert _match_template_row("Accounts Receivable", df) == label
+
+
+def test_cash_matches_cash_and_equivalents_without_the_second_cash():
+    df = _row_df("us-gaap_CashAndCashEquivalentsAtCarryingValue", "Cash and equivalents",
+                 "CashAndMarketableSecurities")   # MCD
+    assert _match_template_row("Cash", df) == "Cash and equivalents"
+
+
+def test_other_current_assets_matches_prepaid_and_other_wording():
+    df = _row_df("us-gaap_PrepaidExpenseAndOtherAssetsCurrent", "Prepaid expenses and other",
+                 "OtherNonOperatingCurrentAssets")   # WMT
+    assert _match_template_row("Other Current Assets", df) == "Prepaid expenses and other"
+
+
+def test_other_current_assets_still_rejects_nontrade_receivables():
+    """AAPL 的 `NontradeReceivablesCurrent` 也掛在 `OtherNonOperatingCurrentAssets`
+    這個 std_concept 下，hint 放寬之後仍不能讓它冒充其他流動資產。"""
+    df = _row_df("us-gaap_NontradeReceivablesCurrent", "Non-trade receivables",
+                 "OtherNonOperatingCurrentAssets")
+    assert _match_template_row("Other Current Assets", df) is None
+
+
+def test_other_non_current_assets_matches_miscellaneous():
+    df = _row_df("us-gaap_OtherAssetsNoncurrent", "Miscellaneous",
+                 "OtherNonOperatingNonCurrentAssets")   # MCD
+    assert _match_template_row("Other Non-current Assets", df) == "Miscellaneous"
+
+
+def test_common_stock_and_apic_matches_googl_multi_class_label():
+    """GOOGL 的 label 是「Class A, Class B, and Class C stock and additional paid-in capital」，
+    沒有「common stock」這個字。"""
+    label = ("Class A, Class B, and Class C stock and additional paid-in capital, "
+             "$0.001 par value per share")
+    df = _row_df("us-gaap_CommonStocksIncludingAdditionalPaidInCapital", label, "CommonEquity")
+    assert _match_template_row("Common Stock & APIC", df) == label
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_LongTermDebtNoncurrent",                 "Term debt"),          # AAPL
+    ("us-gaap_LongTermDebtNoncurrent",                 "Noncurrent debt"),    # CRM
+    ("us-gaap_LongTermDebtAndCapitalLeaseObligations", "Long-term borrowings"),  # GE
+    ("us-gaap_LongTermNotesAndLoans", "Notes payable and other borrowings, non-current"),  # ORCL
+])
+def test_long_term_debt_matches_when_label_omits_long_term(concept, label):
+    df = _row_df(concept, label, float("nan"))
+    assert _match_template_row("Long-term Debt", df) == label
+
+
+def test_long_term_debt_never_matches_a_current_portion_row():
+    """TSLA 的 `tsla_LongTermDebtAndFinanceLeasesCurrent` 是流動部分，
+    不能塞進長期負債（拿掉 label_hint 之後就會撞到這一列）。"""
+    df = _row_df("tsla_LongTermDebtAndFinanceLeasesCurrent",
+                 "Current portion of debt and finance leases", float("nan"))
+    assert _match_template_row("Long-term Debt", df) is None
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_ContractWithCustomerLiabilityCurrent", "Deferred revenue"),    # AAPL/TSLA
+    ("us-gaap_ContractWithCustomerLiabilityCurrent", "Deferred revenues"),   # ORCL
+    ("us-gaap_ContractWithCustomerLiabilityCurrent", "Contract liabilities and deferred income"),  # GE
+])
+def test_deferred_revenue_current_matches_deferred_revenue_wording(concept, label):
+    """hint 'unearned revenue' 幾乎沒有公司在用——52 家只抓到 3 家。"""
+    df = _row_df(concept, label, "OtherOperatingCurrentLiabilities")
+    assert _match_template_row("Deferred Revenue, current", df) == label
+
+
+def test_deferred_revenue_current_never_returns_accrued_liabilities():
+    """std_concept `OtherOperatingCurrentLiabilities` 會命中應計負債，那不是遞延收入。
+    22 家裡 NVDA/GOOGL/PG/CAT/COST/WMT/LRCX 都是這一列。"""
+    df = _row_df("us-gaap_AccruedLiabilitiesCurrent", "Accrued expenses and other current liabilities",
+                 "OtherOperatingCurrentLiabilities")
+    assert _match_template_row("Deferred Revenue, current", df) is None
+
+
+@pytest.mark.parametrize("concept,std,label", [
+    ("us-gaap_OtherCostAndExpenseOperating",   "OtherExpenseIS", "Other operating charges"),          # KO
+    ("us-gaap_OtherOperatingIncomeExpenseNet", "OtherIncomeIS",  "Other operating (income) expense, net"),  # MCD / CAT
+])
+def test_other_operating_expense_matches_the_concepts_companies_actually_tag(concept, std, label):
+    """這一列 52 家**一家都沒抓到**。模板猜的 `OtherOperatingExpenses`（std）與
+    `OtherOperatingExpense`（fallback）沒有任何公司在用，實際的 tag 是這兩個。"""
+    df = _row_df(concept, label, std)
+    assert _match_template_row("Other Operating Expense", df) == label
+
+
+# ── 期末流通股數：10-K 的封面頁 fact 標 fp='FY'，要對到該財年的 Q4 ──────────
+
+def test_shares_outstanding_maps_annual_cover_fact_to_q4():
+    """43/52 家「中間有洞」的成因：10-K 的 dei fact 標 fp='FY'，對出來的標籤是
+    `FY2025`，季表要的是 `FY2025Q4` → **每一年的 Q4 都是洞**。
+    實測 AAPL/NVDA/WMT/COST/MU/ADBE 六家 Q1~Q3 全中、Q4 全空。
+    數字取自 AAPL：FY2025Q3 的 14,840,390,000 與 10-K 封面的 14,776,353,000。"""
+    from fetcher_gaap import _shares_map_from_records
+    records = [
+        {"fiscal_year": 2025, "fiscal_period": "Q3", "numeric_value": 14840390000},
+        {"fiscal_year": 2025, "fiscal_period": "FY", "numeric_value": 14776353000},
+    ]
+    out = _shares_map_from_records(records)
+    assert out["FY2025Q3"] == 14840390000
+    assert out["FY2025"] == 14776353000      # 年表照舊
+    assert out["FY2025Q4"] == 14776353000    # 季表的 Q4 補上
+
+
+def test_shares_outstanding_explicit_q4_wins_over_annual_fact():
+    """公司若真的另外標了 fp='Q4'，那筆比 10-K 封面頁的 FY 更貼近季末，不能被蓋掉。"""
+    from fetcher_gaap import _shares_map_from_records
+    records = [
+        {"fiscal_year": 2025, "fiscal_period": "FY", "numeric_value": 222},
+        {"fiscal_year": 2025, "fiscal_period": "Q4", "numeric_value": 111},
+    ]
+    assert _shares_map_from_records(records)["FY2025Q4"] == 111

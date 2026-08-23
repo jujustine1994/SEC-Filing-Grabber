@@ -18,7 +18,8 @@ from fetcher_gaap import StatementTable
 
 _KNOWN = frozenset({"Revenue", "ROU", "Old", "X", "A", "B", "Nothing",
                     "Long-term Debt", "Short-term Debt", "Interest Expense",
-                    "Debt Proceeds", "Debt Repayments"}
+                    "Debt Proceeds", "Debt Repayments",
+                    "Current Portion of LT Debt"}
                    | {f"R{i}" for i in range(12)})
 
 
@@ -153,6 +154,27 @@ def test_contradictions_reason_names_the_evidence():
              [[100.0] * 4, [None] * 4], _ENDS4)
     c = dq.contradictions(t, _KNOWN)[0]
     assert "Long-term Debt" in c.evidence
+
+
+def test_current_portion_of_lt_debt_not_flagged_when_short_term_debt_is_filled():
+    """**這是 52 家實測裡最大的一批誤判**：`Current Portion of LT Debt` 25 家被判
+    矛盾，25 家的 Short-term Debt 全都有值。
+
+    實測 INTC/PG/XOM/MU/NVDA/QCOM/PFE/ORCL 八家的資產負債表表面只有**一條**流動
+    負債借款列（tag 成 `us-gaap:DebtCurrent` 或 `NotesPayableCurrent`，
+    standard_concept 是 `ShortTermDebt`），一年內到期的長期負債就併在那一條裡。
+    那條我們已經抓進 Short-term Debt 了，資訊沒有掉，不該再標紅。"""
+    t = _tbl(["Long-term Debt", "Short-term Debt", "Current Portion of LT Debt"],
+             [[100.0] * 4, [30.0] * 4, [None] * 4], _ENDS4)
+    assert [c.row for c in dq.contradictions(t, _KNOWN)] == []
+
+
+def test_current_portion_of_lt_debt_still_flagged_when_there_is_no_current_debt_row():
+    """AMZN 實測：有長期負債、但資產負債表表面**完全沒有**流動借款列（一年內到期
+    的部分只寫在附註）。這種才是真的抓漏了，要留著標紅。"""
+    t = _tbl(["Long-term Debt", "Short-term Debt", "Current Portion of LT Debt"],
+             [[100.0] * 4, [None] * 4, [None] * 4], _ENDS4)
+    assert [c.row for c in dq.contradictions(t, _KNOWN)] == ["Current Portion of LT Debt"]
 
 
 def test_contradictions_missing_rows_do_not_crash():
