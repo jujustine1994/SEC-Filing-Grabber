@@ -269,6 +269,13 @@ H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-23：確
      6. **overflow 區**：使用者能不能把 `Other (as reported)` 裡的某列「升級」成正式列
    - **不要在 G11 決策之前動手**——公版列的來源（concept 對照）如果要換，先確定換不換
 
+H4. **⚠ 公司自訂延伸 tag（`nvda_` / `tsla_` / `goog_` 這種）完全抓不到——模板沒有 label 比對層**（2026-08-23 端到端實測 NVDA 發現，**優先度高**）
+   - **實測證據**：NVDA 的 `Capex` 在 57 期裡只有 36 期有值，**年報 17 年裡有 13 年整年抓不到**。根因是 NVDA 從 FY2019 到 FY2023 用自己的延伸 tag `nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets`，FY2024 起才改用標準的 `us-gaap_PaymentsToAcquireProductiveAssets`
+   - **連鎖影響**：年報那一格空白 → `_synthesize_q4()` 算不出 Q4（年報 − Q1 − Q2 − Q3）→ **2014~2023 每一年的 Q4 Capex 都空**，`Free Cash Flow` 跟著一起空
+   - **為什麼現行架構救不了**：`_match_is_row()` 有三層（std_concept → concept 正則 → label），但**模板的 6-tuple 只餵得進前兩層**。延伸 tag 的 concept 名字每家公司都不一樣，只有 label 對得上——NVDA 那幾年的 label 一直是「Purchases related to property and equipment and intangible assets」，穩定得很
+   - **修法**：模板 tuple 加第 7 欄 `label_fallback`，把 `_match_is_row` 已經支援的第三層接起來。動到全部 97 列的結構，**要獨立一輪做，並且逐列前後對照**（`_match_is_row` 的第三層很寬，亂加會誤抓）
+   - **範圍未量化**：目前只確認 NVDA 的 Capex。動手前先掃 102 家的 overflow 區，統計「有多少非 `us-gaap_` 開頭的 concept，其 label 對得上某個模板列」——那就是這個問題的實際規模
+
 H3-1. **剩下的模板列缺漏：多數是「公司沒在報表表面單獨列」，不是 concept 對照錯**（2026-08-23，H3 主體已完成搬進 CHANGELOG，覆蓋率 40/97 → 47/97）
    - **`Op. Lease Liabilities, current` 14/52 家**（最大的一批）：實測 AMD／AMZN／ARLO／COST／GOOGL／MSFT／MU／NVDA／ORCL／PANW／SWKS／TSLA **十二家全部**只在資產負債表表面列「非流動」那條（`OperatingLeaseLiabilityNoncurrent`），流動部分併在「其他流動負債」裡、只有附註才拆開。**改 concept 名字救不了**，現行逐份解 filing 的路徑結構上拿不到
    - `Change in Inventories` 10 家（ADI／CVX／KO／MCD／NEE／PFE／XOM 等）同一類：現金流量表沒有單獨的存貨變動列，整包在「changes in operating assets and liabilities, net」

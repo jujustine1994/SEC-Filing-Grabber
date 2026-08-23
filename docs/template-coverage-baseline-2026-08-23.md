@@ -149,8 +149,7 @@ NVDA/TSLA/WMT 這 12 家是全部 filing（44~69 期），其餘都是 `max_fili
 | PG | 21 | 1 | 0 | 1 | 0 |  |
 | TGT | 21 | 0 | 0 | 4 | 1 |  |
 
-**金融股與 REIT 全數觸發「模板不適用」**（稀疏欄佔 90~100%）。這是 TODO D8
-記錄的已知限制，現在有量化證據。
+**觸發「模板不適用」的 3 家：AXP, BAC, GS**——全是金融股。IS/BS/CF 模板是為製造業設計的，銀行／券商的報表結構完全不同（存款、放款、備抵呆帳…），這是 TODO D8 記錄的已知限制，現在有量化證據。
 
 ## 二、最常出問題的列
 
@@ -239,10 +238,10 @@ NVDA/TSLA/WMT 這 12 家是全部 filing（44~69 期），其餘都是 `max_fili
 | IS | Total Non-op Income/(Loss) | 98 | 77 | -21 ⚠ |
 | IS | Pre-tax Income | 97 | 99 | +2 |
 | IS | Income Tax | 102 | 102 | +0 |
-| IS | Net Income | 102 | 204 | +102 ⚠ |
+| IS | Net Income | 102 | 102 | +0 |
 | IS | Minority Interest | 54 | 63 | +9 ⚠ |
 | IS | Net Income incl. NCI | 57 | 73 | +16 ⚠ |
-| IS | SBC | 89 | 182 | +93 ⚠ |
+| IS | SBC | 89 | 91 | +2 |
 | IS | Basic EPS | 102 | 101 | -1 |
 | IS | Diluted EPS | 102 | 101 | -1 |
 | IS | Basic Shares | 86 | 101 | +15 ⚠ |
@@ -291,9 +290,9 @@ NVDA/TSLA/WMT 這 12 家是全部 filing（44~69 期），其餘都是 `max_fili
 | BS | Total Equity incl. NCI | 63 | 76 | +13 ⚠ |
 | BS | Total Liabilities & Equity | 102 | 102 | +0 |
 | BS | Shares Outstanding | 97 | 99 | +2 |
-| CF | Net Income | 102 | 204 | +102 ⚠ |
+| CF | Net Income | 102 | 102 | +0 |
 | CF | D&A | 99 | 101 | +2 |
-| CF | SBC | 89 | 182 | +93 ⚠ |
+| CF | SBC | 89 | 91 | +2 |
 | CF | Amortization of Intangibles | 25 | 72 | +47 ⚠ |
 | CF | Change in Receivables | 74 | 76 | +2 |
 | CF | Change in Inventories | 57 | 63 | +6 |

@@ -54,15 +54,15 @@ for p in sorted(C.glob("gaap_*.pkl")):
             if k: cur_co[name] += 1; fill[name].append(k / n)
     ours_has = {name for i, name in enumerate(g["concepts"])
                 if any(isinstance(v, (int, float)) for v in g["values"][i])}
-    for _, name in rows:
+    for tag, name in rows:
         for M in (fm.IS_MAPPING, fm.BS_MAPPING, fm.CF_MAPPING):
             if name in M:
                 facts_has = bool(ff.resolve_row(raw, M[name], prefer="as_reported"))
-                if facts_has: fac_co[name] += 1
+                if facts_has: fac_co[(tag, name)] += 1
                 # 真缺口：這家公司**確實 tag 過**（companyfacts 讀得到），我們卻整列空白。
                 # 這才是「該抓到卻沒抓到」；兩邊都沒有代表公司真的沒報，不算我們的問題。
                 if facts_has and name not in ours_has:
-                    real_gap[name].append(tk)
+                    real_gap[name].append(tk)   # 同名列合看，不分 IS/CF
                 # 三分類，用來回答「XBRL 裡到底有沒有模板要的數字」
                 if name in ours_has:      census["ours"] += 1
                 elif facts_has:           census["gap"] += 1
@@ -124,8 +124,10 @@ for tk, r in sorted(per_co, key=lambda x: -len(x[1].sparse_periods)):
       f"{len(r.sparse_periods)} | {len(r.holed)} | {len(r.contradictions)} | "
       f"{'**是**' if r.template_mismatch else ''} |")
 w("")
-w("**金融股與 REIT 全數觸發「模板不適用」**（稀疏欄佔 90~100%）。這是 TODO D8")
-w("記錄的已知限制，現在有量化證據。\n")
+_mismatch = [tk for tk, r in per_co if r.template_mismatch]
+w(f"**觸發「模板不適用」的 {len(_mismatch)} 家：{', '.join(sorted(_mismatch))}**"
+  "——全是金融股。IS/BS/CF 模板是為製造業設計的，銀行／券商的報表結構完全不同"
+  "（存款、放款、備抵呆帳…），這是 TODO D8 記錄的已知限制，現在有量化證據。\n")
 w("## 二、最常出問題的列\n")
 w("### 中間有洞（同一列有些期有、有些沒有——一定是漏抓）\n")
 w("| 列名 | 幾家中招 |")
@@ -159,7 +161,7 @@ w(f"「有值公司數」＝ {N} 家裡有幾家這一列拿得到資料。兩�
 w("| 表 | 列名 | 現行 | facts | 差 |")
 w("|---|---|---|---|---|")
 for tag, name in rows:
-    a, b = cur_co[name], fac_co[name]
+    a, b = cur_co[name], fac_co[(tag, name)]
     flag = " ⚠" if abs(a - b) >= 8 else ""
     w(f"| {tag} | {name} | {a} | {b} | {b - a:+d}{flag} |")
 w("")
