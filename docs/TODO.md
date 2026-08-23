@@ -273,8 +273,10 @@ H4. **⚠ 公司自訂延伸 tag（`nvda_` / `tsla_` / `goog_` 這種）完全�
    - **實測證據**：NVDA 的 `Capex` 在 57 期裡只有 36 期有值，**年報 17 年裡有 13 年整年抓不到**。根因是 NVDA 從 FY2019 到 FY2023 用自己的延伸 tag `nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets`，FY2024 起才改用標準的 `us-gaap_PaymentsToAcquireProductiveAssets`
    - **連鎖影響**：年報那一格空白 → `_synthesize_q4()` 算不出 Q4（年報 − Q1 − Q2 − Q3）→ **2014~2023 每一年的 Q4 Capex 都空**，`Free Cash Flow` 跟著一起空
    - **為什麼現行架構救不了**：`_match_is_row()` 有三層（std_concept → concept 正則 → label），但**模板的 6-tuple 只餵得進前兩層**。延伸 tag 的 concept 名字每家公司都不一樣，只有 label 對得上——NVDA 那幾年的 label 一直是「Purchases related to property and equipment and intangible assets」，穩定得很
-   - **修法**：模板 tuple 加第 7 欄 `label_fallback`，把 `_match_is_row` 已經支援的第三層接起來。動到全部 97 列的結構，**要獨立一輪做，並且逐列前後對照**（`_match_is_row` 的第三層很寬，亂加會誤抓）
-   - **範圍未量化**：目前只確認 NVDA 的 Capex。動手前先掃 102 家的 overflow 區，統計「有多少非 `us-gaap_` 開頭的 concept，其 label 對得上某個模板列」——那就是這個問題的實際規模
+   - **✅ 第一步已完成（2026-08-23）**：模板 tuple 加了第 7 欄 `label_fallback`，97 列全部補上，四個呼叫點都接線。目前只有 `Capex` 真的填了正則（`^purchases (?:of|related to).*propert`），因為那是唯一有實證的案例。非 live 測試 1114 passed
+   - **⏳ 第二步待做**：數值指紋自動連結。設計已定案並自我檢視過，見 `docs/superpowers/specs/2026-08-23-concept-rename-linking-design.md`，交接見 `docs/superpowers/handoff-2026-08-24-h4-concept-rename-linking.md`
+   - **範圍已部分量化**：文字相似度那條路實測過——102 家強候選 458 組、**約一半誤判**，而且 NVDA 這個案例根本偵測不到（相似度拿模板列名「Capex」比公司原文「Purchases of property and equipment」，字面 0% 重疊）。**不要重走那條路**
+   - **companyfacts 沒有延伸 tag**（102 家實測，只有 us-gaap/dei/srt/ffd/ecd/invest 這些 SEC 標準 taxonomy）→ 第二資料源救不了這題，而且基線的〔真缺口〕KPI **低估了**這一類
 
 H3-1. **剩下的模板列缺漏：多數是「公司沒在報表表面單獨列」，不是 concept 對照錯**（2026-08-23，H3 主體已完成搬進 CHANGELOG，覆蓋率 40/97 → 47/97）
    - **`Op. Lease Liabilities, current` 14/52 家**（最大的一批）：實測 AMD／AMZN／ARLO／COST／GOOGL／MSFT／MU／NVDA／ORCL／PANW／SWKS／TSLA **十二家全部**只在資產負債表表面列「非流動」那條（`OperatingLeaseLiabilityNoncurrent`），流動部分併在「其他流動負債」裡、只有附註才拆開。**改 concept 名字救不了**，現行逐份解 filing 的路徑結構上拿不到

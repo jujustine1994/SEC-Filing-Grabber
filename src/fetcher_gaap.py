@@ -286,129 +286,138 @@ def _filter_filings_by_year(
 #   fallback_suffix — secondary: concept contains value
 #   source        — "IS" | "CF" | "BS" | "DERIVED"
 #   match         — "first" | "last"  (which occurrence when multiple rows match)
-#   label_hint    — tertiary filter: prefer rows whose label contains this string
-_T = tuple[str, str | None, str, str, str, str | None]
+#   label_hint    — filter: 該優先層的候選裡只留 label 含這個字串的（濾空整層跳過）
+#   label_fallback— 第三層：concept 兩層都比不到時，改用 label 比對。
+#                   **公司自訂延伸 tag（`nvda_...`）唯一抓得到的方式**——那種 concept
+#                   名字每家自己取，只有 label 對得上。寫得下去就要窄，第三層沒有
+#                   任何東西再擋它了（見 H4 spec）
+_T = tuple[str, str | None, str, str, str, str | None, str | None]
 
 IS_TEMPLATE: list[_T] = [
-    ("Revenue",                    "Revenue",                        r"RevenueFromContractWithCustomer|SalesRevenueNet|SalesRevenueGoodsNet|_Revenues$|^Revenues$", "IS", "first", None),
-    ("Cost of Revenue",            "CostOfGoodsAndServicesSold",     "CostOfGoodsSold",                                       "IS", "first", "cost"),
-    ("Gross Profit",               "GrossProfit",                    "GrossProfit",                                            "IS", "first", None),
-    ("R&D Expense",                "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment",                                 "IS", "first", None),
-    ("SG&A Expense",               "SellingGeneralAndAdminExpenses", "SellingGeneralAndAdmin",                                 "IS", "first", None),
-    ("D&A (CF memo)",              "DepreciationExpense",            "DepreciationDepletionAndAmortization",                   "CF", "first", None),
-    ("Other Operating Expense",    None,                             "OtherCostAndExpenseOperating|OtherOperatingIncomeExpenseNet|OtherOperatingExpense", "IS", "first", None),
-    ("Total Operating Expense",    "TotalOperatingExpenses",         "OperatingExpenses",                                      "IS", "first", None),
-    ("Total Costs and Expenses",   None,                             "^us-gaap_CostsAndExpenses$",                             "IS", "first", None),
-    ("Operating Income",           "OperatingIncomeLoss",            "OperatingIncomeLoss",                                    "IS", "first", None),
-    ("Interest Expense",           "InterestExpense",                "InterestExpense",                                        "IS", "first", None),
-    ("Interest Income",            "InterestIncome",                 "InterestIncome",                                         "IS", "first", None),
-    ("Other Non-op Inc/(Exp)",     None,                             "OtherNonoperatingIncome",                                "IS", "first", None),
-    ("Total Non-op Income/(Loss)", "NonoperatingIncomeExpense",      "NonoperatingIncome",                                     "IS", "first", None),
-    ("Pre-tax Income",             "PretaxIncomeLoss",               "IncomeLossFromContinuingOperationsBeforeIncomeTax",       "IS", "first", None),
-    ("Income Tax",                 "IncomeTaxes",                    "IncomeTaxExpense",                                       "IS", "first", None),
-    ("Net Income",                 "NetIncome",                      "NetIncomeLoss|NetIncomeLossAttributableToParent",         "IS", "first", None),
-    ("Minority Interest",          None,                             "NetIncomeLossAttributableToNoncontrollingInterest",       "IS", "first", None),
+    ("Revenue",                    "Revenue",                        r"RevenueFromContractWithCustomer|SalesRevenueNet|SalesRevenueGoodsNet|_Revenues$|^Revenues$", "IS", "first", None, None),
+    ("Cost of Revenue",            "CostOfGoodsAndServicesSold",     "CostOfGoodsSold",                                       "IS", "first", "cost", None),
+    ("Gross Profit",               "GrossProfit",                    "GrossProfit",                                            "IS", "first", None, None),
+    ("R&D Expense",                "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment",                                 "IS", "first", None, None),
+    ("SG&A Expense",               "SellingGeneralAndAdminExpenses", "SellingGeneralAndAdmin",                                 "IS", "first", None, None),
+    ("D&A (CF memo)",              "DepreciationExpense",            "DepreciationDepletionAndAmortization",                   "CF", "first", None, None),
+    ("Other Operating Expense",    None,                             "OtherCostAndExpenseOperating|OtherOperatingIncomeExpenseNet|OtherOperatingExpense", "IS", "first", None, None),
+    ("Total Operating Expense",    "TotalOperatingExpenses",         "OperatingExpenses",                                      "IS", "first", None, None),
+    ("Total Costs and Expenses",   None,                             "^us-gaap_CostsAndExpenses$",                             "IS", "first", None, None),
+    ("Operating Income",           "OperatingIncomeLoss",            "OperatingIncomeLoss",                                    "IS", "first", None, None),
+    ("Interest Expense",           "InterestExpense",                "InterestExpense",                                        "IS", "first", None, None),
+    ("Interest Income",            "InterestIncome",                 "InterestIncome",                                         "IS", "first", None, None),
+    ("Other Non-op Inc/(Exp)",     None,                             "OtherNonoperatingIncome",                                "IS", "first", None, None),
+    ("Total Non-op Income/(Loss)", "NonoperatingIncomeExpense",      "NonoperatingIncome",                                     "IS", "first", None, None),
+    ("Pre-tax Income",             "PretaxIncomeLoss",               "IncomeLossFromContinuingOperationsBeforeIncomeTax",       "IS", "first", None, None),
+    ("Income Tax",                 "IncomeTaxes",                    "IncomeTaxExpense",                                       "IS", "first", None, None),
+    ("Net Income",                 "NetIncome",                      "NetIncomeLoss|NetIncomeLossAttributableToParent",         "IS", "first", None, None),
+    ("Minority Interest",          None,                             "NetIncomeLossAttributableToNoncontrollingInterest",       "IS", "first", None, None),
     # 含少數股權的淨利。有 NCI 結構的公司會把「合併淨利」與「歸屬母公司淨利」分開報，
     # 上面的 Net Income 只認 NetIncomeLoss（歸屬母公司），這一列補的是合併數。
-    ("Net Income incl. NCI",       None,                             "^us-gaap_ProfitLoss$",                                   "IS", "first", None),
-    ("SBC",                        "StockBasedCompensationExpense",  "ShareBasedCompensation",                                 "CF", "first", None),
-    ("Basic EPS",                  None,                             "EarningsPerShareBasic",                                  "IS", "first", None),
-    ("Diluted EPS",                None,                             "EarningsPerShareDiluted",                                "IS", "first", None),
-    ("Basic Shares",               "SharesAverage",                  "WeightedAverageNumberOfSharesOutstandingBasic",          "IS", "first", None),
-    ("Diluted Shares",             "SharesFullyDilutedAverage",      "WeightedAverageNumberOfDilutedSharesOutstanding",        "IS", "first", None),
+    ("Net Income incl. NCI",       None,                             "^us-gaap_ProfitLoss$",                                   "IS", "first", None, None),
+    ("SBC",                        "StockBasedCompensationExpense",  "ShareBasedCompensation",                                 "CF", "first", None, None),
+    ("Basic EPS",                  None,                             "EarningsPerShareBasic",                                  "IS", "first", None, None),
+    ("Diluted EPS",                None,                             "EarningsPerShareDiluted",                                "IS", "first", None, None),
+    ("Basic Shares",               "SharesAverage",                  "WeightedAverageNumberOfSharesOutstandingBasic",          "IS", "first", None, None),
+    ("Diluted Shares",             "SharesFullyDilutedAverage",      "WeightedAverageNumberOfDilutedSharesOutstanding",        "IS", "first", None, None),
 ]
 
 BS_TEMPLATE: list[_T] = [
     # ── Assets ──────────────────────────────────────────────────────────
-    ("Cash",                           "CashAndMarketableSecurities",             "CashAndCashEquivalents",                                    "BS", "first", r"cash and (?:cash )?equivalents"),
-    ("Short-term Investments",         "ShortTermInvestments",                    "ShortTermInvestments",                                      "BS", "first", None),
-    ("Accounts Receivable",            "TradeReceivables",                        "AccountsReceivable",                                        "BS", "first", "receivable"),
-    ("Inventories",                    "Inventories",                             "Inventories",                                               "BS", "first", None),
-    ("Other Current Assets",           "OtherNonOperatingCurrentAssets",          "OtherCurrentAssets",                                        "BS", "first", "other"),
-    ("Total Current Assets",           "CurrentAssetsTotal",                      "AssetsCurrent",                                             "BS", "first", None),
-    ("PP&E, net",                      "PlantPropertyEquipmentNet",               "PropertyPlantAndEquipmentNet",                              "BS", "first", None),
-    ("Operating Lease ROU Assets",     "OperatingLeaseRightOfUseAsset",           "OperatingLeaseRightOfUseAsset",                             "BS", "first", None),
-    ("Long-term Investments",          "LongtermInvestments",                     "LongTermInvestments",                                       "BS", "first", None),
-    ("Goodwill",                       "Goodwill",                                "Goodwill",                                                  "BS", "first", None),
-    ("Intangible Assets, net",         "IntangibleAssets",                        "IntangibleAssetsNet",                                       "BS", "first", None),
-    ("Deferred Tax Assets",            "DeferredTaxNoncurrentAssets",             "DeferredIncomeTaxAssetsNet",                                "BS", "first", None),
-    ("Other Non-current Assets",       "OtherNonOperatingNonCurrentAssets",       "OtherAssetsNoncurrent",                                     "BS", "last",  "other|miscellaneous"),
-    ("Total Non-current Assets",       None,                                      "^us-gaap_AssetsNoncurrent$",                                "BS", "first", None),
-    ("Total Assets",                   "Assets",                                  "Assets",                                                    "BS", "last",  None),
+    ("Cash",                           "CashAndMarketableSecurities",             "CashAndCashEquivalents",                                    "BS", "first", r"cash and (?:cash )?equivalents", None),
+    ("Short-term Investments",         "ShortTermInvestments",                    "ShortTermInvestments",                                      "BS", "first", None, None),
+    ("Accounts Receivable",            "TradeReceivables",                        "AccountsReceivable",                                        "BS", "first", "receivable", None),
+    ("Inventories",                    "Inventories",                             "Inventories",                                               "BS", "first", None, None),
+    ("Other Current Assets",           "OtherNonOperatingCurrentAssets",          "OtherCurrentAssets",                                        "BS", "first", "other", None),
+    ("Total Current Assets",           "CurrentAssetsTotal",                      "AssetsCurrent",                                             "BS", "first", None, None),
+    ("PP&E, net",                      "PlantPropertyEquipmentNet",               "PropertyPlantAndEquipmentNet",                              "BS", "first", None, None),
+    ("Operating Lease ROU Assets",     "OperatingLeaseRightOfUseAsset",           "OperatingLeaseRightOfUseAsset",                             "BS", "first", None, None),
+    ("Long-term Investments",          "LongtermInvestments",                     "LongTermInvestments",                                       "BS", "first", None, None),
+    ("Goodwill",                       "Goodwill",                                "Goodwill",                                                  "BS", "first", None, None),
+    ("Intangible Assets, net",         "IntangibleAssets",                        "IntangibleAssetsNet",                                       "BS", "first", None, None),
+    ("Deferred Tax Assets",            "DeferredTaxNoncurrentAssets",             "DeferredIncomeTaxAssetsNet",                                "BS", "first", None, None),
+    ("Other Non-current Assets",       "OtherNonOperatingNonCurrentAssets",       "OtherAssetsNoncurrent",                                     "BS", "last",  "other|miscellaneous", None),
+    ("Total Non-current Assets",       None,                                      "^us-gaap_AssetsNoncurrent$",                                "BS", "first", None, None),
+    ("Total Assets",                   "Assets",                                  "Assets",                                                    "BS", "last",  None, None),
     # ── Liabilities ─────────────────────────────────────────────────────
-    ("Accounts Payable",               "TradePayables",                           "AccountsPayable",                                           "BS", "first", None),
-    ("Short-term Debt",                "ShortTermDebt",                           "ShortTermBorrowings",                                       "BS", "first", None),
-    ("Current Portion of LT Debt",     "CurrentPortionOfLongTermDebt",            "LongTermDebtCurrent",                                       "BS", "first", None),
-    ("Op. Lease Liabilities, current", "OperatingLeaseCurrentDebtEquivalent",     "OperatingLeaseLiabilityCurrent",                            "BS", "first", None),
-    ("Accrued Compensation",           "AccruedCompensation",                     "EmployeeRelatedLiabilitiesCurrent",                         "BS", "first", None),
-    ("Deferred Revenue, current",      None,                                      "ContractWithCustomerLiabilityCurrent|DeferredRevenueCurrent", "BS", "first", None),
-    ("Income Tax Payable",             "AccruedIncomeTaxes",                      "AccruedIncomeTaxesCurrent",                                 "BS", "first", None),
-    ("Other Current Liabilities",      "OtherNonOperatingCurrentLiabilities",     "OtherLiabilitiesCurrent",                                   "BS", "first", None),
-    ("Total Current Liabilities",      "CurrentLiabilitiesTotal",                 "LiabilitiesCurrent",                                        "BS", "first", None),
-    ("Long-term Debt",                 "LongTermDebt",                            r"LongTerm(?:Debt|NotesAndLoans|Borrowings)(?!\w*(?<!Non)Current$)", "BS", "first", None),
-    ("Op. Lease Liabilities, LT",      "OperatingLeaseNonCurrentDebtEquivalent",  "OperatingLeaseLiabilityNoncurrent",                         "BS", "first", None),
-    ("Finance Lease Liabilities, LT",  None,                                      "FinanceLeaseLiabilityNoncurrent",                           "BS", "first", "finance lease"),
-    ("Deferred Revenue, LT",           "ContractLiabilities",                     "ContractWithCustomerLiabilityNoncurrent",                   "BS", "first", None),
-    ("Deferred Tax Liability, LT",     "DeferredTaxNonCurrentLiabilities",        "DeferredIncomeTaxLiabilitiesNet",                           "BS", "first", None),
-    ("Pension & Retirement Oblig.",    "PensionObligations",                      "PensionAndOtherPostretirementDefinedBenefitPlans",          "BS", "first", None),
-    ("Other Non-current Liabilities",  "OtherNonOperatingNonCurrentLiabilities",  "OtherLiabilitiesNoncurrent",                                "BS", "first", None),
-    ("Total Non-current Liabilities",  None,                                      "^us-gaap_LiabilitiesNoncurrent$",                           "BS", "first", None),
-    ("Total Liabilities",              "Liabilities",                             "Liabilities",                                               "BS", "last",  None),
+    ("Accounts Payable",               "TradePayables",                           "AccountsPayable",                                           "BS", "first", None, None),
+    ("Short-term Debt",                "ShortTermDebt",                           "ShortTermBorrowings",                                       "BS", "first", None, None),
+    ("Current Portion of LT Debt",     "CurrentPortionOfLongTermDebt",            "LongTermDebtCurrent",                                       "BS", "first", None, None),
+    ("Op. Lease Liabilities, current", "OperatingLeaseCurrentDebtEquivalent",     "OperatingLeaseLiabilityCurrent",                            "BS", "first", None, None),
+    ("Accrued Compensation",           "AccruedCompensation",                     "EmployeeRelatedLiabilitiesCurrent",                         "BS", "first", None, None),
+    ("Deferred Revenue, current",      None,                                      "ContractWithCustomerLiabilityCurrent|DeferredRevenueCurrent", "BS", "first", None, None),
+    ("Income Tax Payable",             "AccruedIncomeTaxes",                      "AccruedIncomeTaxesCurrent",                                 "BS", "first", None, None),
+    ("Other Current Liabilities",      "OtherNonOperatingCurrentLiabilities",     "OtherLiabilitiesCurrent",                                   "BS", "first", None, None),
+    ("Total Current Liabilities",      "CurrentLiabilitiesTotal",                 "LiabilitiesCurrent",                                        "BS", "first", None, None),
+    ("Long-term Debt",                 "LongTermDebt",                            r"LongTerm(?:Debt|NotesAndLoans|Borrowings)(?!\w*(?<!Non)Current$)", "BS", "first", None, None),
+    ("Op. Lease Liabilities, LT",      "OperatingLeaseNonCurrentDebtEquivalent",  "OperatingLeaseLiabilityNoncurrent",                         "BS", "first", None, None),
+    ("Finance Lease Liabilities, LT",  None,                                      "FinanceLeaseLiabilityNoncurrent",                           "BS", "first", "finance lease", None),
+    ("Deferred Revenue, LT",           "ContractLiabilities",                     "ContractWithCustomerLiabilityNoncurrent",                   "BS", "first", None, None),
+    ("Deferred Tax Liability, LT",     "DeferredTaxNonCurrentLiabilities",        "DeferredIncomeTaxLiabilitiesNet",                           "BS", "first", None, None),
+    ("Pension & Retirement Oblig.",    "PensionObligations",                      "PensionAndOtherPostretirementDefinedBenefitPlans",          "BS", "first", None, None),
+    ("Other Non-current Liabilities",  "OtherNonOperatingNonCurrentLiabilities",  "OtherLiabilitiesNoncurrent",                                "BS", "first", None, None),
+    ("Total Non-current Liabilities",  None,                                      "^us-gaap_LiabilitiesNoncurrent$",                           "BS", "first", None, None),
+    ("Total Liabilities",              "Liabilities",                             "Liabilities",                                               "BS", "last",  None, None),
     # ── Equity ──────────────────────────────────────────────────────────
-    ("Preferred Stock",                "PreferredStock",                          "PreferredStockValue",                                       "BS", "first", None),
-    ("Common Stock & APIC",            "CommonEquity",                            "CommonStockValue",                                          "BS", "first", "common stock|paid-in capital"),
-    ("Additional Paid-in Capital",     "AdditionalPaidInCapital",                 "AdditionalPaidInCapitalCommonStock",                        "BS", "first", None),
-    ("Treasury Stock",                 "TreasuryShares",                          "TreasuryStockValue",                                        "BS", "first", None),
-    ("Retained Earnings",              "RetainedEarnings",                        "RetainedEarningsAccumulatedDeficit",                        "BS", "first", None),
-    ("AOCI",                           "AccumulatedOtherComprehensiveIncome",     "AccumulatedOtherComprehensiveIncomeLossNetOfTax",            "BS", "first", None),
-    ("Total Equity — Parent",          "AllEquityBalance",                        "StockholdersEquity",                                        "BS", "first", None),
-    ("Noncontrolling Interests",       "MinorityInterestBalance",                 "MinorityInterest",                                          "BS", "first", None),
-    ("Total Equity incl. NCI",         "AllEquityBalanceIncludingMinorityInterest","StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", "BS", "first", None),
-    ("Total Liabilities & Equity",     "LiabilitiesAndEquity",                    "LiabilitiesAndStockholdersEquity",                          "BS", "first", None),
+    ("Preferred Stock",                "PreferredStock",                          "PreferredStockValue",                                       "BS", "first", None, None),
+    ("Common Stock & APIC",            "CommonEquity",                            "CommonStockValue",                                          "BS", "first", "common stock|paid-in capital", None),
+    ("Additional Paid-in Capital",     "AdditionalPaidInCapital",                 "AdditionalPaidInCapitalCommonStock",                        "BS", "first", None, None),
+    ("Treasury Stock",                 "TreasuryShares",                          "TreasuryStockValue",                                        "BS", "first", None, None),
+    ("Retained Earnings",              "RetainedEarnings",                        "RetainedEarningsAccumulatedDeficit",                        "BS", "first", None, None),
+    ("AOCI",                           "AccumulatedOtherComprehensiveIncome",     "AccumulatedOtherComprehensiveIncomeLossNetOfTax",            "BS", "first", None, None),
+    ("Total Equity — Parent",          "AllEquityBalance",                        "StockholdersEquity",                                        "BS", "first", None, None),
+    ("Noncontrolling Interests",       "MinorityInterestBalance",                 "MinorityInterest",                                          "BS", "first", None, None),
+    ("Total Equity incl. NCI",         "AllEquityBalanceIncludingMinorityInterest","StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest", "BS", "first", None, None),
+    ("Total Liabilities & Equity",     "LiabilitiesAndEquity",                    "LiabilitiesAndStockholdersEquity",                          "BS", "first", None, None),
     # 期末在外流通股數（時點值）。與 IS 的 Basic/Diluted Shares 不同——那兩個是
     # 算 EPS 用的**加權平均**，在有買回或增發的季度會與期末股數差很多。
-    ("Shares Outstanding",             "CommonSharesOutstanding",                 "CommonStockSharesOutstanding|EntityCommonStockSharesOutstanding", "BS", "last", None),
+    ("Shares Outstanding",             "CommonSharesOutstanding",                 "CommonStockSharesOutstanding|EntityCommonStockSharesOutstanding", "BS", "last", None, None),
 ]
 
 CF_TEMPLATE: list[_T] = [
     # ── Operating ────────────────────────────────────────────────────────
-    ("Net Income",                 "NetIncome",                          "NetIncomeLoss|ProfitLoss",                              "CF", "first", None),
-    ("D&A",                        "DepreciationExpense",                "DepreciationDepletionAndAmortization",                  "CF", "first", None),
-    ("SBC",                        "StockBasedCompensationExpense",      "ShareBasedCompensation",                                "CF", "first", None),
-    ("Amortization of Intangibles","AmortizationOfIntangibles",          "AmortizationOfIntangibleAssets",                        "CF", "first", None),
-    ("Change in Receivables",      "ChangeInReceivables",                "IncreaseDecreaseInAccountsReceivable",                  "CF", "first", "receivable"),
-    ("Change in Inventories",      None,                                 "IncreaseDecreaseIn(?:RetailRelated)?Inventories",         "CF", "first", "inventor"),
-    ("Change in Accounts Payable",     None,  "IncreaseDecreaseInAccountsPayable",                          "CF", "first", None),
-    ("Change in Prepaid & Other Assets", None, "IncreaseDecreaseInPrepaidDeferredExpenseAndOtherAssets",     "CF", "first", None),
-    ("Change in Other Operating Assets", None, "IncreaseDecreaseInOtherOperatingAssets",                     "CF", "first", None),
-    ("Change in Deferred Revenue", "ChangeInDeferredRevenue",            "IncreaseDecreaseInDeferredRevenue",                     "CF", "first", None),
-    ("Other Working Capital",      "ChangeInOtherWorkingCapital",        "IncreaseDecreaseInOtherOperatingLiabilities",           "CF", "first", None),
-    ("Other Non-cash Items",       "OtherNonCashItemsCF",                "OtherNoncashIncomeExpense",                             "CF", "first", None),
-    ("Operating Cash Flow",        "NetCashFromOperatingActivities",     "NetCashProvidedByUsedInOperatingActivities",            "CF", "last",  "^net cash|^cash|^total"),
+    ("Net Income",                 "NetIncome",                          "NetIncomeLoss|ProfitLoss",                              "CF", "first", None, None),
+    ("D&A",                        "DepreciationExpense",                "DepreciationDepletionAndAmortization",                  "CF", "first", None, None),
+    ("SBC",                        "StockBasedCompensationExpense",      "ShareBasedCompensation",                                "CF", "first", None, None),
+    ("Amortization of Intangibles","AmortizationOfIntangibles",          "AmortizationOfIntangibleAssets",                        "CF", "first", None, None),
+    ("Change in Receivables",      "ChangeInReceivables",                "IncreaseDecreaseInAccountsReceivable",                  "CF", "first", "receivable", None),
+    ("Change in Inventories",      None,                                 "IncreaseDecreaseIn(?:RetailRelated)?Inventories",         "CF", "first", "inventor", None),
+    ("Change in Accounts Payable",     None,  "IncreaseDecreaseInAccountsPayable",                          "CF", "first", None, None),
+    ("Change in Prepaid & Other Assets", None, "IncreaseDecreaseInPrepaidDeferredExpenseAndOtherAssets",     "CF", "first", None, None),
+    ("Change in Other Operating Assets", None, "IncreaseDecreaseInOtherOperatingAssets",                     "CF", "first", None, None),
+    ("Change in Deferred Revenue", "ChangeInDeferredRevenue",            "IncreaseDecreaseInDeferredRevenue",                     "CF", "first", None, None),
+    ("Other Working Capital",      "ChangeInOtherWorkingCapital",        "IncreaseDecreaseInOtherOperatingLiabilities",           "CF", "first", None, None),
+    ("Other Non-cash Items",       "OtherNonCashItemsCF",                "OtherNoncashIncomeExpense",                             "CF", "first", None, None),
+    ("Operating Cash Flow",        "NetCashFromOperatingActivities",     "NetCashProvidedByUsedInOperatingActivities",            "CF", "last",  "^net cash|^cash|^total", None),
     # ── Investing ────────────────────────────────────────────────────────
-    ("Capex",                      "CapitalExpenses",                    "PaymentsToAcquirePropertyPlantAndEquipment",            "CF", "first", "propert|capital expenditure"),
-    ("Acquisitions",               "AcquisitionsNet",                    "PaymentsToAcquireBusinessesNetOfCashAcquired",          "CF", "first", None),
-    ("Investment Purchases",       "InvestmentPurchases",                "PaymentsToAcquireInvestments",                          "CF", "first", None),
-    ("Investment Proceeds",        "InvestmentProceeds",                 "ProceedsFromSaleOfInvestments",                         "CF", "first", None),
-    ("Investing Cash Flow",        "NetCashFromInvestingActivities",     "NetCashProvidedByUsedInInvestingActivities",            "CF", "last",  "^net cash|^cash|^total"),
+    # label_fallback 是為了 NVDA 這種用自訂延伸 tag 的公司：它的 10-K 從 FY2013 到
+    # FY2023 共 11 年 tag 成 `nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets`，
+    # concept 兩層都比不到，年報那格空掉之後連 Q4 都合成不出來（見 H4 spec）。
+    # **刻意用 `^purchases` 錨在開頭**——第三層後面沒有任何東西再擋它了，寫寬一點
+    # 就會吃到「Proceeds from sales of property」與「Depreciation of property」。
+    ("Capex",                      "CapitalExpenses",                    "PaymentsToAcquirePropertyPlantAndEquipment",            "CF", "first", "propert|capital expenditure", r"^purchases (?:of|related to).*propert"),
+    ("Acquisitions",               "AcquisitionsNet",                    "PaymentsToAcquireBusinessesNetOfCashAcquired",          "CF", "first", None, None),
+    ("Investment Purchases",       "InvestmentPurchases",                "PaymentsToAcquireInvestments",                          "CF", "first", None, None),
+    ("Investment Proceeds",        "InvestmentProceeds",                 "ProceedsFromSaleOfInvestments",                         "CF", "first", None, None),
+    ("Investing Cash Flow",        "NetCashFromInvestingActivities",     "NetCashProvidedByUsedInInvestingActivities",            "CF", "last",  "^net cash|^cash|^total", None),
     # ── Financing ────────────────────────────────────────────────────────
     # 借款／還款這兩列**刻意不在這裡比對**，值一律由下面的 `_sum_matching_rows()`
     # 加總（見 `_DEBT_PROCEEDS_PATTERNS`）。理由：公司常常同時有長期借款、商業本票
     # 等好幾條借款線，要的是總額；而且模板一旦比對到其中一條，`consumed` 會讓加總
     # 跳過它，加總再覆蓋回 row_vals 就只剩「其他幾條的和」——比不比對還錯。
-    ("Debt Proceeds",              None,                                 "",                                                      "CF", "first", None),
-    ("Debt Repayments",            None,                                 "",                                                      "CF", "first", None),
-    ("Share Repurchases",          None,                                 "PaymentsForRepurchaseOfCommonStock",                    "CF", "first", None),
-    ("Dividends Paid",             None,                                  "PaymentsOfDividends|PaymentsOfDividendsCommonStock|PaymentsOfOrdinaryDividends", "CF", "first", "dividend"),
-    ("Financing Cash Flow",        "NetCashFromFinancingActivities",     "NetCashProvidedByUsedInFinancingActivities",            "CF", "last",  "^net cash|^cash|^total"),
+    ("Debt Proceeds",              None,                                 "",                                                      "CF", "first", None, None),
+    ("Debt Repayments",            None,                                 "",                                                      "CF", "first", None, None),
+    ("Share Repurchases",          None,                                 "PaymentsForRepurchaseOfCommonStock",                    "CF", "first", None, None),
+    ("Dividends Paid",             None,                                  "PaymentsOfDividends|PaymentsOfDividendsCommonStock|PaymentsOfOrdinaryDividends", "CF", "first", "dividend", None),
+    ("Financing Cash Flow",        "NetCashFromFinancingActivities",     "NetCashProvidedByUsedInFinancingActivities",            "CF", "last",  "^net cash|^cash|^total", None),
     # ── Other ────────────────────────────────────────────────────────────
-    ("FX Effect on Cash",          "ForeignExchangeEffectOnCash",        "EffectOfExchangeRateOnCashAndCashEquivalents",          "CF", "first", None),
-    ("Net Change in Cash",         "NetChangeInCash",                    "CashAndCashEquivalentsPeriodIncreaseDecrease",          "CF", "first", None),
-    ("Ending Cash",                "CashAndCashEquivalents",             "CashAndCashEquivalentsAtCarryingValue",                 "CF", "last",  None),
-    ("Cash Taxes Paid",            None,                                 "IncomeTaxesPaid",                                       "CF", "first", None),
-    ("Cash Interest Paid",         None,                                 "InterestPaid",                                          "CF", "first", "interest|^total"),
+    ("FX Effect on Cash",          "ForeignExchangeEffectOnCash",        "EffectOfExchangeRateOnCashAndCashEquivalents",          "CF", "first", None, None),
+    ("Net Change in Cash",         "NetChangeInCash",                    "CashAndCashEquivalentsPeriodIncreaseDecrease",          "CF", "first", None, None),
+    ("Ending Cash",                "CashAndCashEquivalents",             "CashAndCashEquivalentsAtCarryingValue",                 "CF", "last",  None, None),
+    ("Cash Taxes Paid",            None,                                 "IncomeTaxesPaid",                                       "CF", "first", None, None),
+    ("Cash Interest Paid",         None,                                 "InterestPaid",                                          "CF", "first", "interest|^total", None),
     # ── Derived (computed, not from XBRL) ────────────────────────────────
-    ("Free Cash Flow",             None,                                 "",                                                      "DERIVED", "first", None),
+    ("Free Cash Flow",             None,                                 "",                                                      "DERIVED", "first", None, None),
 ]
 
 # ── Index maps for post-processing derived / fallback rows ────────────────
@@ -836,11 +845,11 @@ def _build_template_table(filings, template: list[_T], sheet_name: str,
             continue
 
         row_vals: dict[int, Any] = {}
-        for i, (_, std_concept, fallback, source, match, label_hint) in enumerate(template):
+        for i, (_, std_concept, fallback, source, match, label_hint, lbl_fb) in enumerate(template):
             if source == "DERIVED":
                 row_vals[i] = None   # filled in post-processing
                 continue
-            idx = _match_is_row(df, std_concept, fallback,
+            idx = _match_is_row(df, std_concept, fallback, label_fallback=lbl_fb,
                                  match=match, label_hint=label_hint)
             val = _to_python_val(df.loc[idx, q_col]) if idx is not None else None
             row_vals[i] = val
@@ -950,7 +959,7 @@ def _build_is_table(
         consumed: set[int] = set()
 
         row_vals: dict[int, Any] = {}
-        for i, (row_name, std_concept, fallback, source, match, label_hint) in enumerate(IS_TEMPLATE):
+        for i, (row_name, std_concept, fallback, source, match, label_hint, lbl_fb) in enumerate(IS_TEMPLATE):
             # Apply override if one exists for this row (concept_override or structural_absence)
             if row_name in is_overrides:
                 ov = is_overrides[row_name]
@@ -966,7 +975,7 @@ def _build_is_table(
                 # CF-sourced rows look in cf_df; those indices are NOT tracked in IS consumed set
                 # (CF overflow is handled separately by _build_cf_table)
                 if cf_df is not None and cf_q_col is not None:
-                    idx = _match_is_row(cf_df, std_concept, fallback,
+                    idx = _match_is_row(cf_df, std_concept, fallback, label_fallback=lbl_fb,
                                         match=match, label_hint=label_hint)
                     val = _to_python_val(cf_df.loc[idx, cf_q_col]) if idx is not None else None
                     if idx is not None and i not in row_labels:
@@ -975,7 +984,7 @@ def _build_is_table(
                 else:
                     val = None
             else:
-                idx = _match_is_row(df, std_concept, fallback,
+                idx = _match_is_row(df, std_concept, fallback, label_fallback=lbl_fb,
                                     match=match, label_hint=label_hint)
                 if idx is not None:
                     consumed.add(idx)   # mark as consumed so overflow skips this row
@@ -1172,7 +1181,7 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
 
         consumed: set[int] = set()
         row_vals: dict[int, Any] = {}
-        for i, (row_name, std_concept, fallback, source, match, label_hint) in enumerate(BS_TEMPLATE):
+        for i, (row_name, std_concept, fallback, source, match, label_hint, lbl_fb) in enumerate(BS_TEMPLATE):
             if source == "DERIVED":
                 row_vals[i] = None
                 continue
@@ -1183,7 +1192,8 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
                     continue
                 row_vals[i] = _apply_row_override(df, bs_col, ov)
                 continue
-            idx = _match_is_row(df, std_concept, fallback, match=match, label_hint=label_hint)
+            idx = _match_is_row(df, std_concept, fallback, label_fallback=lbl_fb,
+                                match=match, label_hint=label_hint)
             val = _to_python_val(df.loc[idx, bs_col]) if idx is not None else None
             row_vals[i] = val
             if idx is not None:
@@ -1348,7 +1358,7 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
 
         consumed: set[int] = set()
         row_vals: dict[int, Any] = {}
-        for i, (row_name, std_concept, fallback, source, match, label_hint) in enumerate(CF_TEMPLATE):
+        for i, (row_name, std_concept, fallback, source, match, label_hint, lbl_fb) in enumerate(CF_TEMPLATE):
             if source == "DERIVED":
                 row_vals[i] = None
                 continue
@@ -1359,7 +1369,8 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
                     continue
                 row_vals[i] = _apply_row_override(df, data_col, ov)
                 continue
-            idx = _match_is_row(df, std_concept, fallback, match=match, label_hint=label_hint)
+            idx = _match_is_row(df, std_concept, fallback, label_fallback=lbl_fb,
+                                match=match, label_hint=label_hint)
             val = _to_python_val(df.loc[idx, data_col]) if idx is not None else None
             row_vals[i] = val
             if idx is not None:

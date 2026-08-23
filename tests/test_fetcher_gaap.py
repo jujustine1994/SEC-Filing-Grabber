@@ -2389,8 +2389,9 @@ def _template_entry(row_name: str):
 
 def _match_template_row(row_name: str, df):
     """照模板設定跑一次 _match_is_row，回傳命中的 label（沒命中回 None）。"""
-    _, std, fallback, _src, match, hint = _template_entry(row_name)
-    idx = _match_is_row(df, std, fallback, match=match, label_hint=hint)
+    _, std, fallback, _src, match, hint, lbl_fb = _template_entry(row_name)
+    idx = _match_is_row(df, std, fallback, label_fallback=lbl_fb,
+                        match=match, label_hint=hint)
     return None if idx is None else df.loc[idx, "label"]
 
 
@@ -2645,6 +2646,53 @@ def test_other_operating_expense_matches_the_concepts_companies_actually_tag(con
     `OtherOperatingExpense`（fallback）沒有任何公司在用，實際的 tag 是這兩個。"""
     df = _row_df(concept, label, std)
     assert _match_template_row("Other Operating Expense", df) == label
+
+
+# ── H4 第一步：模板 tuple 第七欄 label_fallback ─────────────────────────────
+#
+# `_match_is_row()` 一直有第三層（label 比對），但模板的 6-tuple 餵不進去，
+# 等於死碼。公司自訂的延伸 tag（`nvda_...`）concept 名字每家不同，只有 label
+# 對得上——不接這一層就永遠抓不到。設計見
+# `docs/superpowers/specs/2026-08-23-concept-rename-linking-design.md`。
+
+def test_every_template_row_is_a_seven_tuple():
+    """三張模板的每一列都要有第七欄，不然 build 函式解包會炸。"""
+    from fetcher_gaap import BS_TEMPLATE, CF_TEMPLATE, IS_TEMPLATE
+    for T in (IS_TEMPLATE, BS_TEMPLATE, CF_TEMPLATE):
+        for row in T:
+            assert len(row) == 7, f"{row[0]} 不是 7-tuple（{len(row)} 欄）"
+
+
+def test_template_label_fallback_is_passed_through_to_the_matcher():
+    """第七欄要真的接到 `_match_is_row` 的第三層，不能只是加了欄位沒接線。"""
+    df = _row_df("nvda_SomethingCompletelyCustom", "Widget purchases", float("nan"))
+    assert _match_is_row(df, "NoSuchStd", "NoSuchConcept") is None
+    assert _match_is_row(df, "NoSuchStd", "NoSuchConcept",
+                         label_fallback="widget purchases") is not None
+
+
+def test_capex_matches_nvda_custom_extension_tag_by_label():
+    """NVDA 的 10-K 從 FY2013 到 FY2023 共 11 年用自訂 tag
+    `nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets`，concept 兩層都比不到。
+    label 這十一年只有兩種寫法，都含「purchases ... property and equipment」。"""
+    for label in ("Purchases of property and equipment and intangible assets",
+                  "Purchases related to property and equipment and intangible assets"):
+        df = _row_df("nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets", label,
+                     float("nan"))
+        assert _match_template_row("Capex", df) == label
+
+
+def test_capex_label_fallback_does_not_grab_proceeds_from_selling_property():
+    """第三層很寬，處分不動產的**流入**不能被當成資本支出。"""
+    df = _row_df("us-gaap_ProceedsFromSaleOfPropertyPlantAndEquipment",
+                 "Proceeds from sales of property and equipment", float("nan"))
+    assert _match_template_row("Capex", df) is None
+
+
+def test_capex_label_fallback_does_not_grab_depreciation_of_property():
+    df = _row_df("us-gaap_DepreciationDepletionAndAmortization",
+                 "Depreciation of property and equipment", float("nan"))
+    assert _match_template_row("Capex", df) is None
 
 
 # ── 期末流通股數：10-K 的封面頁 fact 標 fp='FY'，要對到該財年的 Q4 ──────────
