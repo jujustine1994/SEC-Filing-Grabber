@@ -1,7 +1,11 @@
-# 模板體檢：56 家公司的逐列覆蓋率（2026-08-23 產出）
+# 模板體檢：59 家公司的逐列覆蓋率（2026-08-23 產出）
 
-**這份是自動產出的基線，不是手寫的。** 資料來源 `output/_spike/`（52 家的
+**這份是自動產出的基線，不是手寫的。** 資料來源 `output/_spike/`（59 家的
 companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
+
+**⚠ 答案卷的抓取窗不一致**：AAPL/ADBE/AMD/AVGO/COST/GOOGL/INTC/META/MSFT/
+NVDA/TSLA/WMT 這 12 家是全部 filing（44~69 期），其餘都是 `max_filings=16`
+（約 21 期）。重建時要沿用同樣的參數，不然逐列覆蓋率沒得比。
 
 公司清單刻意涵蓋大中小型 × 跨產業，**包含金融股（JPM/GS/BAC/SCHW）與 REIT（PLD）**
 ——它們的報表結構跟製造業差很多，是檢驗模板通不通用最有效的一群。
@@ -32,7 +36,7 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 | `R&D Expense` | 零售、餐飲、能源業不在損益表單獨揭露 |
 | `Pension & Retirement Oblig.` | 大多數公司沒有確定給付制退休金 |
 
-**真正該當 KPI 的是第五節那兩個數字**：〔真缺口〕該抓到卻沒抓到幾列、
+**真正該當 KPI 的是第六節那兩個數字**：〔真缺口〕該抓到卻沒抓到幾列、
 〔假警報〕Index 標紅裡有幾個是誤判。達標列數只是一支粗略的體溫計。
 
 ## 一、每家公司的缺漏判斷
@@ -62,9 +66,11 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 | CAT | 21 | 1 | 1 | 1 | 0 |  |
 | CVX | 21 | 1 | 1 | 4 | 2 |  |
 | DDOG | 21 | 1 | 1 | 3 | 0 |  |
+| DHR | 21 | 1 | 1 | 5 | 1 |  |
 | FORM | 21 | 1 | 1 | 5 | 0 |  |
 | GE | 21 | 1 | 1 | 2 | 4 |  |
 | GOOGL | 44 | 1 | 1 | 4 | 2 |  |
+| ISRG | 21 | 1 | 1 | 3 | 3 |  |
 | JNJ | 21 | 1 | 1 | 0 | 1 |  |
 | JPM | 21 | 1 | 1 | 0 | 2 |  |
 | KO | 21 | 1 | 1 | 0 | 1 |  |
@@ -94,6 +100,7 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 | KLAC | 21 | 1 | 0 | 1 | 0 |  |
 | LITE | 21 | 1 | 0 | 2 | 0 |  |
 | LRCX | 21 | 1 | 0 | 3 | 1 |  |
+| MDT | 21 | 1 | 0 | 1 | 0 |  |
 | MRVL | 21 | 0 | 0 | 4 | 0 |  |
 | NKE | 21 | 1 | 0 | 1 | 1 |  |
 | ORCL | 21 | 1 | 0 | 1 | 1 |  |
@@ -108,59 +115,59 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 
 | 列名 | 幾家中招 |
 |---|---|
-| Acquisitions | 15 / 56 |
-| Debt Repayments | 13 / 56 |
-| Debt Proceeds | 12 / 56 |
-| Short-term Debt | 12 / 56 |
-| Other Working Capital | 9 / 56 |
-| Share Repurchases | 9 / 56 |
-| Current Portion of LT Debt | 6 / 56 |
-| Preferred Stock | 6 / 56 |
-| Investment Proceeds | 6 / 56 |
-| Other Non-cash Items | 5 / 56 |
-| Cash Taxes Paid | 5 / 56 |
-| Amortization of Intangibles | 5 / 56 |
-| Ending Cash | 5 / 56 |
-| Investment Purchases | 5 / 56 |
-| Shares Outstanding | 5 / 56 |
+| Acquisitions | 17 / 59 |
+| Debt Repayments | 14 / 59 |
+| Debt Proceeds | 12 / 59 |
+| Short-term Debt | 12 / 59 |
+| Share Repurchases | 11 / 59 |
+| Other Working Capital | 9 / 59 |
+| Current Portion of LT Debt | 6 / 59 |
+| Preferred Stock | 6 / 59 |
+| Investment Proceeds | 6 / 59 |
+| Cash Taxes Paid | 6 / 59 |
+| Other Non-cash Items | 5 / 59 |
+| Amortization of Intangibles | 5 / 59 |
+| Ending Cash | 5 / 59 |
+| Investment Purchases | 5 / 59 |
+| Shares Outstanding | 5 / 59 |
 
 ### 零星有值（填滿率 <70%，多半是公司本來就沒這項活動，不是漏抓）
 
-2026-08-23（H3-2）從「中間有洞」拆出來的一類。拿 companyfacts 當真值驗 52 家、
+2026-08-23（H3-2）從「中間有洞」拆出來的一類。當時拿 companyfacts 當真值驗 52 家、
 2,906 個洞：填滿率 70% 以下的那 1,526 個洞**只有 18% 是真的漏抓**，70% 以上才
 到 53%。門檻的完整證據見 `data_quality._SPORADIC_FILL_RATIO`。
 
 | 列名 | 幾家中招 |
 |---|---|
-| Debt Proceeds | 14 / 56 |
-| Acquisitions | 13 / 56 |
-| Preferred Stock | 7 / 56 |
-| Debt Repayments | 4 / 56 |
-| Short-term Debt | 4 / 56 |
-| D&A (CF memo) | 4 / 56 |
-| Investment Purchases | 3 / 56 |
-| Intangible Assets, net | 3 / 56 |
-| Short-term Investments | 2 / 56 |
-| Deferred Tax Liability, LT | 2 / 56 |
-| Current Portion of LT Debt | 2 / 56 |
-| Treasury Stock | 2 / 56 |
-| Additional Paid-in Capital | 2 / 56 |
-| Long-term Debt | 2 / 56 |
-| Goodwill | 1 / 56 |
+| Debt Proceeds | 15 / 59 |
+| Acquisitions | 14 / 59 |
+| Preferred Stock | 7 / 59 |
+| Debt Repayments | 5 / 59 |
+| D&A (CF memo) | 5 / 59 |
+| Short-term Debt | 4 / 59 |
+| Investment Purchases | 3 / 59 |
+| Intangible Assets, net | 3 / 59 |
+| Short-term Investments | 2 / 59 |
+| Deferred Tax Liability, LT | 2 / 59 |
+| Current Portion of LT Debt | 2 / 59 |
+| Treasury Stock | 2 / 59 |
+| Additional Paid-in Capital | 2 / 59 |
+| Long-term Debt | 2 / 59 |
+| Goodwill | 1 / 59 |
 
 ### 被判矛盾（整列空白，但同一家公司的相關欄位顯示應該要有）
 
 | 列名 | 幾家中招 |
 |---|---|
-| Op. Lease Liabilities, current | 14 / 56 |
-| Change in Inventories | 13 / 56 |
-| Debt Proceeds | 6 / 56 |
-| Op. Lease Liabilities, LT | 4 / 56 |
-| Debt Repayments | 4 / 56 |
-| Current Portion of LT Debt | 3 / 56 |
-| Minority Interest | 2 / 56 |
-| Share Repurchases | 1 / 56 |
-| Noncontrolling Interests | 1 / 56 |
+| Op. Lease Liabilities, current | 14 / 59 |
+| Change in Inventories | 13 / 59 |
+| Debt Proceeds | 7 / 59 |
+| Debt Repayments | 5 / 59 |
+| Current Portion of LT Debt | 4 / 59 |
+| Op. Lease Liabilities, LT | 4 / 59 |
+| Minority Interest | 3 / 59 |
+| Share Repurchases | 1 / 59 |
+| Noncontrolling Interests | 1 / 59 |
 
 **中招家數多 ≠ concept 對照錯。** 仍在榜上的 `Op. Lease Liabilities, current`
 等列，實測多數是**公司沒有在報表表面單獨列出**（金額併在「其他流動負債」裡，
@@ -169,109 +176,109 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 
 ## 三、逐列覆蓋率：現行路徑 vs companyfacts
 
-「有值公司數」＝ 52 家裡有幾家這一列拿得到資料。兩邊差 ≥8 家的標 ⚠。
+「有值公司數」＝ 59 家裡有幾家這一列拿得到資料。兩邊差 8 家以上的標 ⚠。
 
 | 表 | 列名 | 現行 | facts | 差 |
 |---|---|---|---|---|
-| IS | Revenue | 56 | 55 | -1 |
-| IS | Cost of Revenue | 46 | 48 | +2 |
-| IS | Gross Profit | 46 | 37 | -9 ⚠ |
-| IS | R&D Expense | 42 | 39 | -3 |
-| IS | SG&A Expense | 52 | 51 | -1 |
-| IS | D&A (CF memo) | 56 | 55 | -1 |
-| IS | Other Operating Expense | 14 | 18 | +4 |
-| IS | Total Operating Expense | 27 | 28 | +1 |
-| IS | Total Costs and Expenses | 16 | 19 | +3 |
-| IS | Operating Income | 52 | 46 | -6 |
-| IS | Interest Expense | 48 | 50 | +2 |
-| IS | Interest Income | 16 | 15 | -1 |
-| IS | Other Non-op Inc/(Exp) | 38 | 46 | +8 ⚠ |
-| IS | Total Non-op Income/(Loss) | 54 | 46 | -8 ⚠ |
-| IS | Pre-tax Income | 53 | 53 | +0 |
-| IS | Income Tax | 56 | 56 | +0 |
-| IS | Net Income | 56 | 112 | +56 ⚠ |
-| IS | Minority Interest | 25 | 29 | +4 |
-| IS | Net Income incl. NCI | 25 | 37 | +12 ⚠ |
-| IS | SBC | 49 | 102 | +53 ⚠ |
-| IS | Basic EPS | 56 | 56 | +0 |
-| IS | Diluted EPS | 56 | 56 | +0 |
-| IS | Basic Shares | 49 | 56 | +7 |
-| IS | Diluted Shares | 50 | 56 | +6 |
-| BS | Cash | 52 | 56 | +4 |
-| BS | Short-term Investments | 41 | 48 | +7 |
-| BS | Accounts Receivable | 52 | 50 | -2 |
-| BS | Inventories | 42 | 45 | +3 |
-| BS | Other Current Assets | 54 | 50 | -4 |
-| BS | Total Current Assets | 51 | 51 | +0 |
-| BS | PP&E, net | 54 | 56 | +2 |
-| BS | Operating Lease ROU Assets | 25 | 56 | +31 ⚠ |
-| BS | Long-term Investments | 24 | 26 | +2 |
-| BS | Goodwill | 52 | 55 | +3 |
-| BS | Intangible Assets, net | 45 | 51 | +6 |
-| BS | Deferred Tax Assets | 29 | 32 | +3 |
-| BS | Other Non-current Assets | 51 | 50 | -1 |
-| BS | Total Non-current Assets | 51 | 9 | -42 ⚠ |
-| BS | Total Assets | 56 | 56 | +0 |
-| BS | Accounts Payable | 53 | 50 | -3 |
-| BS | Short-term Debt | 47 | 48 | +1 |
-| BS | Current Portion of LT Debt | 24 | 42 | +18 ⚠ |
-| BS | Op. Lease Liabilities, current | 12 | 48 | +36 ⚠ |
-| BS | Accrued Compensation | 18 | 42 | +24 ⚠ |
-| BS | Deferred Revenue, current | 29 | 32 | +3 |
-| BS | Income Tax Payable | 18 | 32 | +14 ⚠ |
-| BS | Other Current Liabilities | 38 | 40 | +2 |
-| BS | Total Current Liabilities | 54 | 51 | -3 |
-| BS | Long-term Debt | 53 | 53 | +0 |
-| BS | Op. Lease Liabilities, LT | 22 | 48 | +26 ⚠ |
-| BS | Finance Lease Liabilities, LT | 1 | 20 | +19 ⚠ |
-| BS | Deferred Revenue, LT | 12 | 22 | +10 ⚠ |
-| BS | Deferred Tax Liability, LT | 38 | 47 | +9 ⚠ |
-| BS | Pension & Retirement Oblig. | 7 | 13 | +6 |
-| BS | Other Non-current Liabilities | 50 | 47 | -3 |
-| BS | Total Non-current Liabilities | 54 | 9 | -45 ⚠ |
-| BS | Total Liabilities | 56 | 56 | +0 |
-| BS | Preferred Stock | 37 | 48 | +11 ⚠ |
-| BS | Common Stock & APIC | 56 | 53 | -3 |
-| BS | Additional Paid-in Capital | 44 | 46 | +2 |
+| IS | Revenue | 59 | 58 | -1 |
+| IS | Cost of Revenue | 49 | 51 | +2 |
+| IS | Gross Profit | 49 | 40 | -9 ⚠ |
+| IS | R&D Expense | 45 | 42 | -3 |
+| IS | SG&A Expense | 55 | 54 | -1 |
+| IS | D&A (CF memo) | 59 | 58 | -1 |
+| IS | Other Operating Expense | 16 | 20 | +4 |
+| IS | Total Operating Expense | 28 | 30 | +2 |
+| IS | Total Costs and Expenses | 16 | 20 | +4 |
+| IS | Operating Income | 55 | 49 | -6 |
+| IS | Interest Expense | 50 | 52 | +2 |
+| IS | Interest Income | 16 | 16 | +0 |
+| IS | Other Non-op Inc/(Exp) | 40 | 48 | +8 ⚠ |
+| IS | Total Non-op Income/(Loss) | 57 | 48 | -9 ⚠ |
+| IS | Pre-tax Income | 56 | 56 | +0 |
+| IS | Income Tax | 59 | 59 | +0 |
+| IS | Net Income | 59 | 118 | +59 ⚠ |
+| IS | Minority Interest | 27 | 32 | +5 |
+| IS | Net Income incl. NCI | 27 | 40 | +13 ⚠ |
+| IS | SBC | 52 | 108 | +56 ⚠ |
+| IS | Basic EPS | 59 | 59 | +0 |
+| IS | Diluted EPS | 59 | 59 | +0 |
+| IS | Basic Shares | 52 | 59 | +7 |
+| IS | Diluted Shares | 53 | 59 | +6 |
+| BS | Cash | 54 | 59 | +5 |
+| BS | Short-term Investments | 43 | 51 | +8 ⚠ |
+| BS | Accounts Receivable | 55 | 53 | -2 |
+| BS | Inventories | 45 | 48 | +3 |
+| BS | Other Current Assets | 57 | 53 | -4 |
+| BS | Total Current Assets | 54 | 54 | +0 |
+| BS | PP&E, net | 57 | 59 | +2 |
+| BS | Operating Lease ROU Assets | 25 | 59 | +34 ⚠ |
+| BS | Long-term Investments | 24 | 27 | +3 |
+| BS | Goodwill | 55 | 58 | +3 |
+| BS | Intangible Assets, net | 47 | 54 | +7 |
+| BS | Deferred Tax Assets | 31 | 34 | +3 |
+| BS | Other Non-current Assets | 53 | 53 | +0 |
+| BS | Total Non-current Assets | 54 | 9 | -45 ⚠ |
+| BS | Total Assets | 59 | 59 | +0 |
+| BS | Accounts Payable | 56 | 52 | -4 |
+| BS | Short-term Debt | 49 | 50 | +1 |
+| BS | Current Portion of LT Debt | 25 | 44 | +19 ⚠ |
+| BS | Op. Lease Liabilities, current | 12 | 51 | +39 ⚠ |
+| BS | Accrued Compensation | 19 | 44 | +25 ⚠ |
+| BS | Deferred Revenue, current | 30 | 33 | +3 |
+| BS | Income Tax Payable | 19 | 34 | +15 ⚠ |
+| BS | Other Current Liabilities | 41 | 43 | +2 |
+| BS | Total Current Liabilities | 57 | 54 | -3 |
+| BS | Long-term Debt | 56 | 55 | -1 |
+| BS | Op. Lease Liabilities, LT | 22 | 51 | +29 ⚠ |
+| BS | Finance Lease Liabilities, LT | 1 | 21 | +20 ⚠ |
+| BS | Deferred Revenue, LT | 12 | 23 | +11 ⚠ |
+| BS | Deferred Tax Liability, LT | 39 | 50 | +11 ⚠ |
+| BS | Pension & Retirement Oblig. | 8 | 15 | +7 |
+| BS | Other Non-current Liabilities | 53 | 50 | -3 |
+| BS | Total Non-current Liabilities | 57 | 10 | -47 ⚠ |
+| BS | Total Liabilities | 59 | 59 | +0 |
+| BS | Preferred Stock | 39 | 51 | +12 ⚠ |
+| BS | Common Stock & APIC | 58 | 56 | -2 |
+| BS | Additional Paid-in Capital | 47 | 49 | +2 |
 | BS | Treasury Stock | 26 | 29 | +3 |
-| BS | Retained Earnings | 56 | 56 | +0 |
-| BS | AOCI | 56 | 56 | +0 |
-| BS | Total Equity — Parent | 56 | 54 | -2 |
-| BS | Noncontrolling Interests | 26 | 30 | +4 |
-| BS | Total Equity incl. NCI | 26 | 36 | +10 ⚠ |
-| BS | Total Liabilities & Equity | 56 | 56 | +0 |
-| BS | Shares Outstanding | 54 | 53 | -1 |
-| CF | Net Income | 56 | 112 | +56 ⚠ |
-| CF | D&A | 53 | 55 | +2 |
-| CF | SBC | 49 | 102 | +53 ⚠ |
-| CF | Amortization of Intangibles | 17 | 41 | +24 ⚠ |
-| CF | Change in Receivables | 37 | 40 | +3 |
-| CF | Change in Inventories | 29 | 36 | +7 |
-| CF | Change in Accounts Payable | 40 | 42 | +2 |
-| CF | Change in Prepaid & Other Assets | 18 | 22 | +4 |
+| BS | Retained Earnings | 59 | 59 | +0 |
+| BS | AOCI | 59 | 59 | +0 |
+| BS | Total Equity — Parent | 59 | 57 | -2 |
+| BS | Noncontrolling Interests | 29 | 33 | +4 |
+| BS | Total Equity incl. NCI | 29 | 39 | +10 ⚠ |
+| BS | Total Liabilities & Equity | 59 | 59 | +0 |
+| BS | Shares Outstanding | 57 | 56 | -1 |
+| CF | Net Income | 59 | 118 | +59 ⚠ |
+| CF | D&A | 56 | 58 | +2 |
+| CF | SBC | 52 | 108 | +56 ⚠ |
+| CF | Amortization of Intangibles | 19 | 44 | +25 ⚠ |
+| CF | Change in Receivables | 40 | 42 | +2 |
+| CF | Change in Inventories | 32 | 39 | +7 |
+| CF | Change in Accounts Payable | 43 | 45 | +2 |
+| CF | Change in Prepaid & Other Assets | 20 | 24 | +4 |
 | CF | Change in Other Operating Assets | 19 | 23 | +4 |
-| CF | Change in Deferred Revenue | 22 | 26 | +4 |
-| CF | Other Working Capital | 27 | 20 | -7 |
-| CF | Other Non-cash Items | 35 | 35 | +0 |
-| CF | Operating Cash Flow | 56 | 56 | +0 |
-| CF | Capex | 53 | 48 | -5 |
-| CF | Acquisitions | 45 | 47 | +2 |
-| CF | Investment Purchases | 41 | 42 | +1 |
-| CF | Investment Proceeds | 38 | 39 | +1 |
-| CF | Investing Cash Flow | 56 | 56 | +0 |
-| CF | Debt Proceeds | 48 | 39 | -9 ⚠ |
-| CF | Debt Repayments | 50 | 37 | -13 ⚠ |
-| CF | Share Repurchases | 52 | 53 | +1 |
-| CF | Dividends Paid | 44 | 44 | +0 |
-| CF | Financing Cash Flow | 56 | 56 | +0 |
-| CF | FX Effect on Cash | 44 | 45 | +1 |
-| CF | Net Change in Cash | 56 | 56 | +0 |
-| CF | Ending Cash | 53 | 56 | +3 |
-| CF | Cash Taxes Paid | 25 | 27 | +2 |
-| CF | Cash Interest Paid | 22 | 27 | +5 |
-| CF | Free Cash Flow | 53 | 0 | -53 ⚠ |
+| CF | Change in Deferred Revenue | 23 | 27 | +4 |
+| CF | Other Working Capital | 29 | 21 | -8 ⚠ |
+| CF | Other Non-cash Items | 36 | 36 | +0 |
+| CF | Operating Cash Flow | 59 | 59 | +0 |
+| CF | Capex | 56 | 51 | -5 |
+| CF | Acquisitions | 48 | 50 | +2 |
+| CF | Investment Purchases | 44 | 45 | +1 |
+| CF | Investment Proceeds | 39 | 42 | +3 |
+| CF | Investing Cash Flow | 59 | 59 | +0 |
+| CF | Debt Proceeds | 50 | 41 | -9 ⚠ |
+| CF | Debt Repayments | 52 | 39 | -13 ⚠ |
+| CF | Share Repurchases | 55 | 56 | +1 |
+| CF | Dividends Paid | 47 | 47 | +0 |
+| CF | Financing Cash Flow | 59 | 59 | +0 |
+| CF | FX Effect on Cash | 47 | 48 | +1 |
+| CF | Net Change in Cash | 59 | 59 | +0 |
+| CF | Ending Cash | 56 | 59 | +3 |
+| CF | Cash Taxes Paid | 27 | 29 | +2 |
+| CF | Cash Interest Paid | 24 | 29 | +5 |
+| CF | Free Cash Flow | 56 | 0 | -56 ⚠ |
 
-**現行路徑達到「>=45 家有值且填滿率 >90%」的列：51 / 97**
+**現行路徑達到「>=45 家有值且填滿率 >90%」的列：56 / 97**
 （這個數字不該以 97/97 為目標，理由見第零節。）
 
 ## 四、哪些數字是直接讀 XBRL、哪些是推理出來的
@@ -309,11 +316,29 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 | **現金流量表的每一個單季值** | 公司多半只 tag 年初至今累計 → 本季 YTD − 上季 YTD |
 | **每一個 Q4 欄** | 10-Q 只有 Q1~Q3，Q4 由年報 − Q1 − Q2 − Q3 合成（餘額列直接取年報值） |
 
-本次 56 家共 1661 個期間欄，其中 **402 欄是 Q4**（24%）——
+本次 59 家共 1724 個期間欄，其中 **417 欄是 Q4**（24%）——
 這些欄的流量列全部是合成的。Q1~Q3 不齊全時合成會失敗，那一整欄會空掉，
 `data_quality` 的「整欄稀疏」就是用來抓這件事的。
 
-## 五、兩個真正的 KPI
+## 五、XBRL 裡到底有沒有模板要的數字
+
+把「97 個模板列 × 59 家公司」每一格分成三類。**判斷「有沒有」靠
+companyfacts**（它讀得到公司 tag 過的全部 fact，含附註層），比只看報表表面準。
+
+| 分類 | 格數 | 佔比 | 意思 |
+|---|---|---|---|
+| 我們抓到了 | 4155 | 73% | 正常 |
+| **真缺口** | 488 | 9% | 公司有 tag，我們沒抓到 → 見下面 KPI 1 |
+| 公司真的沒有 | 1021 | 18% | **不是問題**，這家公司就是沒報這個科目 |
+
+另有 59 格不列入分類：那些模板列在 `facts_mapping` 裡沒有對應
+concept（例如 `Free Cash Flow`，XBRL 本來就沒有這個 tag），無從判斷「有沒有」。
+
+**所以答案是：不是每一格都存在。** 「公司真的沒有」那一類佔了相當比例，而且
+**那是正常的**——沒發特別股、沒有非控制權益、不揭露 R&D 的公司本來就不該有值。
+值得追的只有中間那一類。
+
+## 六、兩個真正的 KPI
 
 ### KPI 1 — 真缺口：該抓到卻沒抓到
 
@@ -322,28 +347,28 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 
 | 列名 | 幾家真缺 | 哪幾家 |
 |---|---|---|
-| Op. Lease Liabilities, current | 36 / 56 | AAPL, ABBV, ADI, AMAT, AMD, AMZN, ARLO, AVGO … |
-| Operating Lease ROU Assets | 31 / 56 | AAPL, ABBV, ADI, AMAT, AVGO, BAC, CAT, COHR … |
-| Op. Lease Liabilities, LT | 26 / 56 | AAPL, ABBV, ADI, AMAT, AMZN, AVGO, CAT, CVX … |
-| Amortization of Intangibles | 25 / 56 | ADBE, AMAT, ARLO, BAC, CAT, CRM, DDOG, FORM … |
-| Accrued Compensation | 24 / 56 | AAPL, ABBV, ADBE, ADI, AMAT, AMD, AMZN, ARLO … |
-| Finance Lease Liabilities, LT | 19 / 56 | AAPL, ABBV, AMAT, AMZN, ARLO, AVGO, COST, CRM … |
-| Current Portion of LT Debt | 19 / 56 | AMAT, AMZN, CRM, CVX, GE, GOOGL, INTC, JNJ … |
-| Income Tax Payable | 15 / 56 | AAPL, AMAT, AMD, CRM, DDOG, FORM, LITE, META … |
-| Net Income incl. NCI | 12 / 56 | ADI, BAC, CRM, DDOG, FORM, GS, JNJ, JPM … |
-| Preferred Stock | 11 / 56 | AAPL, ABBV, BAC, GOOGL, JPM, MRK, MSFT, MU … |
-| Deferred Tax Liability, LT | 10 / 56 | AAPL, AMZN, AVGO, CAT, CRM, DDOG, MRVL, MU … |
-| Total Equity incl. NCI | 10 / 56 | AMAT, CRM, FORM, JPM, LITE, MU, NKE, PANW … |
-| Deferred Revenue, LT | 10 / 56 | AMZN, AVGO, CAT, COHR, LITE, NVDA, ON, ONTO … |
-| Interest Expense | 8 / 56 | AAPL, GOOGL, INTC, LLY, LRCX, MRK, MSFT, PFE |
-| Other Non-op Inc/(Exp) | 8 / 56 | AAPL, CVX, GOOGL, LLY, MSFT, NXPI, ORCL, QCOM |
-| Other Current Liabilities | 8 / 56 | ADI, CRM, LRCX, META, NKE, PANW, PG, XOM |
-| Change in Inventories | 8 / 56 | CVX, MRK, NEE, ONTO, ORCL, PFE, TMO, XOM |
-| Pension & Retirement Oblig. | 7 / 56 | ABBV, ADI, AMAT, INTC, LITE, NXPI, ON |
-| Long-term Investments | 7 / 56 | ADBE, COST, KLAC, MRVL, QCOM, SWKS, TXN |
-| Short-term Investments | 7 / 56 | ARLO, GS, JPM, LRCX, MCD, SCHW, XOM |
+| Op. Lease Liabilities, current | 39 / 59 | AAPL, ABBV, ADI, AMAT, AMD, AMZN, ARLO, AVGO … |
+| Operating Lease ROU Assets | 34 / 59 | AAPL, ABBV, ADI, AMAT, AVGO, BAC, CAT, COHR … |
+| Op. Lease Liabilities, LT | 29 / 59 | AAPL, ABBV, ADI, AMAT, AMZN, AVGO, CAT, CVX … |
+| Amortization of Intangibles | 26 / 59 | ADBE, AMAT, ARLO, BAC, CAT, CRM, DDOG, FORM … |
+| Accrued Compensation | 25 / 59 | AAPL, ABBV, ADBE, ADI, AMAT, AMD, AMZN, ARLO … |
+| Finance Lease Liabilities, LT | 20 / 59 | AAPL, ABBV, AMAT, AMZN, ARLO, AVGO, COST, CRM … |
+| Current Portion of LT Debt | 20 / 59 | AMAT, AMZN, CRM, CVX, DHR, GE, GOOGL, INTC … |
+| Income Tax Payable | 16 / 59 | AAPL, AMAT, AMD, CRM, DDOG, DHR, FORM, LITE … |
+| Net Income incl. NCI | 13 / 59 | ADI, BAC, CRM, DDOG, DHR, FORM, GS, JNJ … |
+| Deferred Tax Liability, LT | 12 / 59 | AAPL, AMZN, AVGO, CAT, CRM, DDOG, DHR, ISRG … |
+| Preferred Stock | 12 / 59 | AAPL, ABBV, BAC, GOOGL, JPM, MDT, MRK, MSFT … |
+| Deferred Revenue, LT | 11 / 59 | AMZN, AVGO, CAT, COHR, DHR, LITE, NVDA, ON … |
+| Total Equity incl. NCI | 10 / 59 | AMAT, CRM, FORM, JPM, LITE, MU, NKE, PANW … |
+| Interest Expense | 8 / 59 | AAPL, GOOGL, INTC, LLY, LRCX, MRK, MSFT, PFE |
+| Other Non-op Inc/(Exp) | 8 / 59 | AAPL, CVX, GOOGL, LLY, MSFT, NXPI, ORCL, QCOM |
+| Pension & Retirement Oblig. | 8 / 59 | ABBV, ADI, AMAT, DHR, INTC, LITE, NXPI, ON |
+| Long-term Investments | 8 / 59 | ADBE, COST, KLAC, MDT, MRVL, QCOM, SWKS, TXN |
+| Other Current Liabilities | 8 / 59 | ADI, CRM, LRCX, META, NKE, PANW, PG, XOM |
+| Short-term Investments | 8 / 59 | ARLO, DHR, GS, JPM, LRCX, MCD, SCHW, XOM |
+| Deferred Revenue, current | 8 / 59 | AVGO, COHR, DHR, LITE, MRVL, MU, NVDA, ON |
 
-**真缺口總計：455 個（列 × 公司）組合，分布在 65 個模板列。**
+**真缺口總計：488 個（列 × 公司）組合，分布在 67 個模板列。**
 
 榜首那幾列全部是 TODO D10（只寫在附註、沒印在報表表面）——這是**已知的暫時性
 限制**，不是新 bug。要壓低這個數字只有兩條路：接一條讀附註的路徑，或接受它。
@@ -355,15 +380,15 @@ companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 
 | | 家次 |
 |---|---|
-| 標紅：矛盾 | 48 |
-| 標紅：中間有洞 | 208 |
-| **標紅合計** | **256** |
-| 降級為零星有值（不標紅） | 78 |
+| 標紅：矛盾 | 52 |
+| 標紅：中間有洞 | 217 |
+| **標紅合計** | **269** |
+| 降級為零星有值（不標紅） | 82 |
 
 **要壓低的是標紅合計裡的誤判比例**，不是把標紅壓到 0——真缺口該標就要標。
 驗證方式：對標紅的列抽樣，走 ARCHITECTURE「三步排查順序」確認是哪一類。
 
-## 六、怎麼重跑
+## 七、怎麼重跑
 
 ```
 venv/Scripts/python.exe scripts/spike_derive_mapping.py    # 需要答案卷，慢

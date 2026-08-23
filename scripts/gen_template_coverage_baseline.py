@@ -30,6 +30,7 @@ MIN_FILL = 0.9     # 抓得到的公司裡，填滿率中位數要超過多少
 cur_co = Counter(); fac_co = Counter(); fill = {r: [] for _, r in rows}
 hole_hits = Counter(); contra_hits = Counter(); spor_hits = Counter()
 real_gap = defaultdict(list)   # 真缺口：companyfacts 有、我們整列空白
+census = Counter()             # 每個（列 × 公司）格子的三分類
 per_co = []
 for p in sorted(C.glob("gaap_*.pkl")):
     tk = p.stem[5:]; fp = C / f"facts_{tk}.json"
@@ -53,7 +54,13 @@ for p in sorted(C.glob("gaap_*.pkl")):
                 # 這才是「該抓到卻沒抓到」；兩邊都沒有代表公司真的沒報，不算我們的問題。
                 if facts_has and name not in ours_has:
                     real_gap[name].append(tk)
+                # 三分類，用來回答「XBRL 裡到底有沒有模板要的數字」
+                if name in ours_has:      census["ours"] += 1
+                elif facts_has:           census["gap"] += 1
+                else:                     census["absent"] += 1
                 break
+        else:
+            census["nomap"] += 1   # 模板有這一列，但 facts_mapping 沒有對應（如 Free Cash Flow）
     t = StatementTable(sheet_name="Data_Financials(Q)", quarter_labels=g["labels"],
                        filing_dates=[""] * len(g["labels"]), concepts=g["concepts"],
                        values=g["values"], ticker=tk,
@@ -69,8 +76,11 @@ def med(x): return st.median(x) if x else 0.0
 L = []
 w = L.append
 w(f"# 模板體檢：{N} 家公司的逐列覆蓋率（{date.today():%Y-%m-%d} 產出）\n")
-w("**這份是自動產出的基線，不是手寫的。** 資料來源 `output/_spike/`（52 家的")
+w(f"**這份是自動產出的基線，不是手寫的。** 資料來源 `output/_spike/`（{N} 家的")
 w("companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。\n")
+w("**⚠ 答案卷的抓取窗不一致**：AAPL/ADBE/AMD/AVGO/COST/GOOGL/INTC/META/MSFT/")
+w("NVDA/TSLA/WMT 這 12 家是全部 filing（44~69 期），其餘都是 `max_filings=16`")
+w("（約 21 期）。重建時要沿用同樣的參數，不然逐列覆蓋率沒得比。\n")
 w("公司清單刻意涵蓋大中小型 × 跨產業，**包含金融股（JPM/GS/BAC/SCHW）與 REIT（PLD）**")
 w("——它們的報表結構跟製造業差很多，是檢驗模板通不通用最有效的一群。\n")
 w("## 零、這份文件怎麼讀（先看這段，不然數字會誤導）\n")
@@ -92,7 +102,7 @@ w("| `Finance Lease Liabilities, LT` | 多數公司只有營業租賃 |")
 w("| `R&D Expense` | 零售、餐飲、能源業不在損益表單獨揭露 |")
 w("| `Pension & Retirement Oblig.` | 大多數公司沒有確定給付制退休金 |")
 w("")
-w("**真正該當 KPI 的是第五節那兩個數字**：〔真缺口〕該抓到卻沒抓到幾列、")
+w("**真正該當 KPI 的是第六節那兩個數字**：〔真缺口〕該抓到卻沒抓到幾列、")
 w("〔假警報〕Index 標紅裡有幾個是誤判。達標列數只是一支粗略的體溫計。\n")
 w("## 一、每家公司的缺漏判斷\n")
 w("`data_quality.assess()` 的四個判斷。缺季那一欄幾乎每家都是 1，要打折看：")
@@ -113,7 +123,7 @@ w("|---|---|")
 for k, v in hole_hits.most_common(15): w(f"| {k} | {v} / {N} |")
 w("")
 w("### 零星有值（填滿率 <70%，多半是公司本來就沒這項活動，不是漏抓）\n")
-w("2026-08-23（H3-2）從「中間有洞」拆出來的一類。拿 companyfacts 當真值驗 52 家、")
+w("2026-08-23（H3-2）從「中間有洞」拆出來的一類。當時拿 companyfacts 當真值驗 52 家、")
 w("2,906 個洞：填滿率 70% 以下的那 1,526 個洞**只有 18% 是真的漏抓**，70% 以上才")
 w("到 53%。門檻的完整證據見 `data_quality._SPORADIC_FILL_RATIO`。\n")
 w("| 列名 | 幾家中招 |")
@@ -135,7 +145,7 @@ w("等列，實測多數是**公司沒有在報表表面單獨列出**（金額�
 w("只在附註拆開），現行逐份解 filing 的路徑結構上拿不到。動 concept 對照之前，")
 w("先把那份 filing 的報表 dataframe 印出來確認這一列到底在不在。\n")
 w("## 三、逐列覆蓋率：現行路徑 vs companyfacts\n")
-w("「有值公司數」＝ 52 家裡有幾家這一列拿得到資料。兩邊差 ≥8 家的標 ⚠。\n")
+w(f"「有值公司數」＝ {N} 家裡有幾家這一列拿得到資料。兩邊差 8 家以上的標 ⚠。\n")
 w("| 表 | 列名 | 現行 | facts | 差 |")
 w("|---|---|---|---|---|")
 for tag, name in rows:
@@ -185,7 +195,22 @@ w("")
 w(f"本次 {N} 家共 {n_all} 個期間欄，其中 **{n_q4} 欄是 Q4**（{n_q4/max(n_all,1):.0%}）——")
 w("這些欄的流量列全部是合成的。Q1~Q3 不齊全時合成會失敗，那一整欄會空掉，")
 w("`data_quality` 的「整欄稀疏」就是用來抓這件事的。\n")
-w("## 五、兩個真正的 KPI\n")
+w("## 五、XBRL 裡到底有沒有模板要的數字\n")
+w(f"把「{len(rows)} 個模板列 × {N} 家公司」每一格分成三類。**判斷「有沒有」靠")
+w("companyfacts**（它讀得到公司 tag 過的全部 fact，含附註層），比只看報表表面準。\n")
+_tot = census['ours'] + census['gap'] + census['absent']
+w("| 分類 | 格數 | 佔比 | 意思 |")
+w("|---|---|---|---|")
+w(f"| 我們抓到了 | {census['ours']} | {census['ours']/max(_tot,1):.0%} | 正常 |")
+w(f"| **真缺口** | {census['gap']} | {census['gap']/max(_tot,1):.0%} | 公司有 tag，我們沒抓到 → 見下面 KPI 1 |")
+w(f"| 公司真的沒有 | {census['absent']} | {census['absent']/max(_tot,1):.0%} | **不是問題**，這家公司就是沒報這個科目 |")
+w("")
+w(f"另有 {census['nomap']} 格不列入分類：那些模板列在 `facts_mapping` 裡沒有對應")
+w("concept（例如 `Free Cash Flow`，XBRL 本來就沒有這個 tag），無從判斷「有沒有」。\n")
+w("**所以答案是：不是每一格都存在。** 「公司真的沒有」那一類佔了相當比例，而且")
+w("**那是正常的**——沒發特別股、沒有非控制權益、不揭露 R&D 的公司本來就不該有值。")
+w("值得追的只有中間那一類。\n")
+w("## 六、兩個真正的 KPI\n")
 w("### KPI 1 — 真缺口：該抓到卻沒抓到\n")
 w("判準：**這家公司確實 tag 過**（companyfacts 讀得到），我們卻整列空白。")
 w("兩邊都沒有的不算——那是公司真的沒報，不是我們的問題。\n")
@@ -212,7 +237,7 @@ w(f"| 降級為零星有值（不標紅） | {sum(spor_hits.values())} |")
 w("")
 w("**要壓低的是標紅合計裡的誤判比例**，不是把標紅壓到 0——真缺口該標就要標。")
 w("驗證方式：對標紅的列抽樣，走 ARCHITECTURE「三步排查順序」確認是哪一類。\n")
-w("## 六、怎麼重跑\n")
+w("## 七、怎麼重跑\n")
 w("```")
 w("venv/Scripts/python.exe scripts/spike_derive_mapping.py    # 需要答案卷，慢")
 w("venv/Scripts/python.exe scripts/spike_verify_mapping.py    # 用快取，幾秒")
