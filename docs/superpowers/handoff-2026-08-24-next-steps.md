@@ -188,8 +188,15 @@ label 夠穩定，第一步就解決了。**第二步真正還能多救多少，
    開頭**且有值
 4. 統計「模板列空格」中有多少對得上這種延伸 tag
 
-現成可改的腳本在 scratchpad：`probe.py`（單表 dump）、`shape.py`（數模板吃掉幾列
-vs overflow 幾列）、`rowprobe.py`（單一模板列跨公司的命中情況）。
+現成的腳本已經收進 repo（2026-08-24 從 scratchpad 移入，scratchpad 是 session
+專屬的、換對話就沒了）：
+
+| 腳本 | 用途 |
+|---|---|
+| `scripts/diag_probe.py` | 印出某家某張報表裡符合正則的列（最常用） |
+| `scripts/diag_rowprobe.py` | 某個模板列在多家公司的命中情況 + 所有候選 |
+| `scripts/diag_hintsweep.py` | 掃出 `label_hint` 太窄殺掉正確答案的列 |
+| `scripts/diag_celldiff2.py` | 兩份答案卷快取逐格比對（回歸驗收用，鍵已處理好） |
 
 #### 順手做掉，讓下次免費
 
