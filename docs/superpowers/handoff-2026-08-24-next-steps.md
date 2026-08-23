@@ -10,9 +10,12 @@
 |---|---|---|---|---|
 | **1** | **H5：`Interest Income` fallback 太窄** | ~1.5 小時（1 小時是機器跑） | 低 | **可能 +84 家，單列最大** |
 | **2** | **D11-A：Index 顯示「本次抓取失敗幾份」** | ~1 小時 | 極低 | 讓「抓壞了」跟「資料本身缺」分得開 |
-| **3** | **H4 第二步：數值指紋** | ~5~7 小時 | 中（動取值主流程） | **未知，動手前必須先量化** |
+| **3a** | **量化 H4 第二步還能救多少**（第 3 項的前置） | ~30 分鐘 | 無（純分析） | 決定 3b 做不做 |
+| **3b** | H4 第二步：數值指紋 | ~5~7 小時 | 中（動取值主流程） | **未知，看 3a 的結果** |
 
-**先做 1 和 2，第 3 項動手前先花 30 分鐘量化。** 理由見下面 H4 那節。
+**先做 1 和 2。3a 是純分析、不動程式，做完才決定 3b 值不值得。**
+第一步的 `label_fallback` 效果超過 spec 預估（NVDA Capex 季表 spec 估上限 53/57、
+實際做到 67/68），所以 3b 的邊際效益可能已經變小——**不要跳過 3a 直接做 3b**。
 
 ---
 
@@ -156,17 +159,43 @@ spec 原本預估   NVDA Capex 季表上限 53/57
 當初設計第二步是假設「label 也會改、光靠 label 救不了」。實際上 NVDA 那個案例
 label 夠穩定，第一步就解決了。**第二步真正還能多救多少，目前沒有數字。**
 
-### 動手前先做這個量化（約 30 分鐘，不動任何程式）
+### ⚠ 動手前先做這個量化（約 30 分鐘）——這是第 3 項的前置任務，不是選配
 
-對 201 家統計：**模板列有空格 且 那些期間的 overflow 區有非 `us-gaap_` 開頭的
-concept 有值** 的數量。
+**要回答的問題**：模板列的空格裡，有多少是「那一期其實有一個公司自訂延伸 tag
+帶著值，只是進了 overflow 區」？
 
-- 數字大 → 值得做第二步
-- 數字小 → 降級成長期項目，把時間花在 H5 那類對照缺口上
+- 數字大 → 值得花 5~7 小時做第二步
+- 數字小 → 降級成長期項目，時間花在 H5 那類對照缺口上
 
-**注意**：`output/_spike/` 的 pkl **只存了 overflow 列的 label、沒有 concept key**
-（`concepts` 欄對 overflow 列放的是公司原文標籤）。所以這個量化要嘛改抓取腳本
-多存一份 concept key，要嘛抽樣幾家用網路 probe。抽樣比較快。
+#### 為什麼不能純離線做
+
+`output/_spike/` 的 pkl 有四個欄位：`labels`（**期間標籤**，如 `FY2026Q2`）、
+`ends`、`concepts`、`values`。overflow 列在 `concepts` 裡放的是**公司原文標籤**
+（如「Purchases related to property and equipment and intangible assets」），
+**concept key 沒有存進去**——所以離線分不出 `nvda_Xxx` 與 `us-gaap_Xxx`。
+
+`StatementTable` 本身有 `labels` 欄位存 concept key（`_build_*_table` 裡
+`labels_g.append(key)`），只是重建腳本沒存它。
+
+#### 建議做法：抽樣 20 家用網路 probe（約 15 分鐘）
+
+挑 20 家（**務必含 NVDA／TSLA／GE／PG，它們已知有自訂 tag**），對每家最新的
+5~8 份 filing：
+
+1. 取 IS/BS/CF 的 `to_dataframe()`
+2. 跑一次現行的模板比對，記下哪些模板列在那一期沒命中
+3. 在同一份 dataframe 的**未被消化列**裡，數有多少 concept **不是 `us-gaap_`
+   開頭**且有值
+4. 統計「模板列空格」中有多少對得上這種延伸 tag
+
+現成可改的腳本在 scratchpad：`probe.py`（單表 dump）、`shape.py`（數模板吃掉幾列
+vs overflow 幾列）、`rowprobe.py`（單一模板列跨公司的命中情況）。
+
+#### 順手做掉，讓下次免費
+
+**重建腳本存 pkl 時多存一個 `"row_labels": list(q.labels)`。** 之後這類分析就完全
+離線、幾秒跑完，不用再打網路。改一行的事，但要注意 `gen_template_coverage_baseline.py`
+讀 pkl 的地方不會壞（它只讀 `labels`／`ends`／`concepts`／`values`，多一個鍵不影響）。
 
 ### 已經試過、不要重走的路
 
