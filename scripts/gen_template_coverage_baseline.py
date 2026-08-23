@@ -3,11 +3,16 @@
 輸出 `docs/template-coverage-baseline-<日期>.md`：每家公司的缺漏判斷、
 最常出問題的列、逐列覆蓋率（現行路徑 vs companyfacts）。
 
-**不打網路**，吃 `output/_spike/` 的快取（52 家的 companyfacts JSON 與現行
-路徑的答案卷）。那些快取是 `spike_derive_mapping.py` 產生的，沒有的話先跑那支。
+**不打網路**，吃 `output/_spike/` 的快取（每家一份 companyfacts JSON ＋ 一份現行
+路徑答案卷 pkl）。快取是 `spike_derive_mapping.py` 產生的，沒有的話先跑那支。
+2026-08-23 樣本從 52 家擴到 102 家（新增醫療／工業／消費／金融／能源／公用事業／
+REIT 各類）。
 
 什麼時候重跑：改了 `IS/BS/CF_TEMPLATE` 的 concept 對照、改了 `data_quality`
-的判斷規則、或想確認「40/97」這個覆蓋率數字有沒有往上走。
+的判斷規則、或想確認達標列數有沒有往上走。
+
+**看數字之前先讀產出文件的第零節。** 達標列數只是體溫計，真正的 KPI 是
+〔真缺口〕與〔假警報〕；而且**永遠不該以 97/97 為目標**。
 """
 import sys, json, pickle, pathlib, statistics as st
 from collections import Counter, defaultdict
@@ -24,8 +29,12 @@ rows = [(tag, r[0]) for tag, T in TAGS for r in T]
 
 # 「達標」的兩個門檻。文件開頭的說明與下面的計分共用這兩個常數，不要各寫一份
 # ——改了門檻卻忘了改說明，讀的人會被誤導。
-MIN_CO = 45        # 至少幾家公司抓得到
-MIN_FILL = 0.9     # 抓得到的公司裡，填滿率中位數要超過多少
+#
+# ⚠ 覆蓋門檻**一定要用比例、不能用絕對家數**。原本寫死 `>=45 家`，是照 52 家
+# 樣本訂的（45/52 ≈ 87%）。2026-08-23 樣本擴到 102 家時，同一個「45」等於門檻
+# 從 87% 悄悄鬆到 44%，達標列數會從 47 跳到 74——**看起來大幅進步，其實是尺變了**。
+MIN_CO_RATIO = 0.85   # 至少多少比例的公司抓得到
+MIN_FILL = 0.9        # 抓得到的公司裡，填滿率中位數要超過多少
 
 cur_co = Counter(); fac_co = Counter(); fill = {r: [] for _, r in rows}
 hole_hits = Counter(); contra_hits = Counter(); spor_hits = Counter()
@@ -72,6 +81,7 @@ for p in sorted(C.glob("gaap_*.pkl")):
     per_co.append((tk, r))
 
 N = len(per_co)
+MIN_CO = round(N * MIN_CO_RATIO)   # 門檻隨樣本數走，見上面 MIN_CO_RATIO 的說明
 def med(x): return st.median(x) if x else 0.0
 L = []
 w = L.append
@@ -87,7 +97,7 @@ w("## 零、這份文件怎麼讀（先看這段，不然數字會誤導）\n")
 w("### 「達標列數」是什麼\n")
 w("一列要「達標」必須**同時**滿足兩個條件：\n")
 w("```")
-w(f"有值的公司數 >= {MIN_CO}      這一列在絕大多數公司都抓得到")
+w(f"有值的公司數 >= {MIN_CO} 家（{MIN_CO_RATIO:.0%} 的樣本）   這一列在絕大多數公司都抓得到")
 w(f"填滿率中位數 > {MIN_FILL:.0%}      抓得到的那些公司，幾乎每一季都有值")
 w("```\n")
 w("兩個缺一不可。只滿足前者代表「大家都有、但常常缺季」；只滿足後者代表")
@@ -154,7 +164,7 @@ for tag, name in rows:
     w(f"| {tag} | {name} | {a} | {b} | {b - a:+d}{flag} |")
 w("")
 good = sum(1 for _, name in rows if cur_co[name] >= MIN_CO and med(fill[name]) > MIN_FILL)
-w(f"**現行路徑達到「>={MIN_CO} 家有值且填滿率 >{MIN_FILL:.0%}」的列：{good} / {len(rows)}**")
+w(f"**現行路徑達到「>={MIN_CO} 家（{MIN_CO_RATIO:.0%}）有值且填滿率 >{MIN_FILL:.0%}」的列：{good} / {len(rows)}**")
 w("（這個數字不該以 97/97 為目標，理由見第零節。）\n")
 
 # ── 四、哪些數字是推理出來的 ────────────────────────────────────────────
