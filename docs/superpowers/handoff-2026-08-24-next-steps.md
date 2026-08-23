@@ -36,7 +36,8 @@
 生出 **3,659 個假異動**，一度誤判成嚴重回歸。overflow 區的 `Other`／
 `Accrued expenses` 這類重複列名更嚴重。
 
-現成的正確版本在：`scratchpad/celldiff2.py`（如果找不到就照上面那句重寫，很短）。
+現成的正確版本在 **`scripts/diag_celldiff2.py`**（2026-08-24 收進 repo），
+直接用它做回歸驗收，不要自己重寫一個。
 
 ### 2. 答案卷的抓取窗不一致，重建務必沿用
 
@@ -221,9 +222,8 @@ equipment」，字面 0% 重疊。
 ## 現況（2026-08-24）
 
 ```
-分支          fix/period-alignment-and-companyfacts-spike（尚未併回 master）
-最新 commit   a2623f0
-測試          1172 passed / 7 skipped / 0 failed（含真連 SEC）
+分支          fix/period-alignment-and-companyfacts-spike（尚未併回 master，已 push）
+測試          1172 passed / 7 skipped / 0 failed（含真連 SEC，2026-08-24）
 驗證樣本      201 家，快取在 output/_spike/
 基線          docs/template-coverage-baseline-2026-08-24.md
 ```
