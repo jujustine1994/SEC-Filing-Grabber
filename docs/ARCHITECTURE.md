@@ -245,6 +245,67 @@ class StatementTable:
     labels:         list[str]     # Col B, Row 3+ (original XBRL labels)
 ```
 
+## edgartools 到底是什麼（2026-08-23 釐清，很容易誤會）
+
+**它是裝在本機的 pip 套件，不是雲端服務。沒有任何人在遠端幫我們維護財報對應。**
+
+```
+Name     edgartools 5.29.0        Author   Dwight Gunning（個人）
+License  MIT                      Source   github.com/dgunning/edgartools
+```
+
+它連的網域只有兩個，都是 SEC 自己的免費端點：`www.sec.gov`（下載 filing 文件）
+與 `data.sec.gov`（官方 XBRL JSON）。**沒有第三方伺服器。**
+
+**XBRL 是在我們的 CPU 上解的**：`venv/Lib/site-packages/edgar/xbrl/` 有 55 個
+`.py`、33,078 行，全部在本機跑。這就是「每家 30 秒～2 分鐘」的來源——實測 ARLO
+25 份 filing，XBRL 解析 19.9 秒 ＋ `to_dataframe()` 28.4 秒。慢的是解 XML，
+不是網路。
+
+### ⚠ 它的「標準科目對照表」很薄，不能當靠山
+
+```
+edgar/xbrl/standardization/concept_mappings.json   100 個標準名 → 163 個 us-gaap concept
+edgar/xbrl/standardization/company_mappings/       公司專屬 override 共 3 家：BRK.A、MSFT、TSLA
+```
+
+美股幾千家上市公司、us-gaap 分類標準上萬個 element，對照表只有 163 筆、3 家特例。
+**所以 `standard_concept` 這一欄薄而且會錯**，實測到的：
+
+| 它給的 | 實際是什麼 | 後果 |
+|---|---|---|
+| `EquityExpenseIncome(BuybackIssued)` | 模板寫的名字沒有括號 | 優先層變成死碼 |
+| `IncomeTaxes` ← `DeferredIncomeTaxExpenseBenefit` | 遞延所得稅費用 | 「現金稅」抓到完全不同的東西 |
+| `NetCashFromFinancingActivities` ← `ProceedsFromDebtNetOfIssuanceCosts`（GOOGL） | 借款收入 | 語意完全不對 |
+| `NonoperatingIncomeExpense` ← D&A（AMD/MRVL） | 折舊攤銷 | 靠 `label_hint` 退路才救得回來 |
+
+**這就是模板要寫成 `(std_concept, fallback, label_hint)` 三層的原因**：
+`std_concept` 只是去碰它那張 163 筆的表，碰不到（或碰錯）才靠我們自己的 fallback。
+
+### 結論：`IS/BS/CF_TEMPLATE` 才是這個專案真正的資產
+
+edgartools 負責「把 XBRL 解成 dataframe」，**「哪個 tag 對應到我們的哪一列」
+100% 是我們自己維護的**。沒有人會幫我們把它變好；反過來說，錯了我們也修得動
+（2026-08-23 H3 一次修好 16 列）。評估任何「換掉 edgartools」的方案時，要分清楚
+換掉的是**解析器**還是**對照表**——對照表換不掉，那是自製的。
+
+## `Data_Financials` 的 A / B / C 三欄各是什麼
+
+| 欄 | 內容 | 誰在用 |
+|---|---|---|
+| A | **模板列名（英文機器鍵）**，如 `Share Repurchases` | 下游靠**固定列位**取值；`_col_b()` 拿它當查表 key。**永遠英文、永遠不可改** |
+| B | A 欄的介面語言翻譯（`zh_labels.py` 查表，查不到留白） | 人看的 |
+| C | **公司自己在財報上印的那行字**（`df.loc[idx,"label"]`） | 稽核軌跡 |
+
+C 欄常被誤以為是「edgartools 的名稱」，**它不是**——它是公司原文標籤。價值在於
+它讓每一格都可回溯：C 欄寫「Common stock acquired」而 A 欄是 `Share Repurchases`，
+就看得出我們把 XOM 的哪一行填進了哪一列。這是這個專案相對於黑箱資料源最大的優勢，
+**動任何取數路徑之前先確認 C 欄還在**（companyfacts 沒有 presentation linkbase，
+切過去這一欄會消失——見 G11 報告第 5 節）。
+
+已知小限制：`row_labels[i]` 只在第一份命中的 filing 寫入（`if i not in row_labels`），
+公司改過用詞的話 C 欄只顯示其中一種。
+
 ## Template Matching Logic（_match_is_row）
 
 3 層查找 + 2 個修飾參數：
