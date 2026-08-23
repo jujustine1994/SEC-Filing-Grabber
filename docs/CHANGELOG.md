@@ -10,6 +10,38 @@
 ## 功能清單
 
 ### 已完成
+- [x] **H4 第一步：模板 tuple 加第七欄 `label_fallback`，NVDA 的 Capex 從 39/68 期
+      補到 67/68（2026-08-24）**：
+      - **起因**：端到端實跑 NVDA 的 Excel 才發現的（只跑測試看不出來）。`Capex`
+        年報 17 年只有 4 年有值，連帶 FY2014~FY2023 每一年的 Q4 都空、
+        `Free Cash Flow` 跟著空
+      - **根因**：NVDA 的 10-K 從 **FY2013 到 FY2023 共 11 年**用自己的延伸 tag
+        `nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets`（逐份 filing 查證）。
+        `_match_is_row()` 前兩層都比對 concept 名稱，**延伸 tag 的名字每家公司自己取**，
+        比不到。它其實有第三層（label 比對），但模板的 6-tuple 餵不進去，等於死碼
+      - **做法**：`_T` 加第七欄，97 列全部補上，四個呼叫點都接線。目前只有 `Capex`
+        真的填了正則 `^purchases (?:of|related to).*propert`——**那是唯一有實證的案例**，
+        其他列要填之前先拿資料證明。正則刻意錨在 `^purchases`，第三層後面沒有任何
+        東西再擋它，寫寬就會吃到「Proceeds from sales of property」與
+        「Depreciation of property」（兩個反向測試釘住）
+      - **驗收**：102 家逐格比對，**模板列回歸 0 格**、補上 116 格；全套測試（含真連
+        SEC）1172 passed / 7 skipped / 0 failed
+      - 第二步（數值指紋自動連結）設計已定案未實作，見
+        `docs/superpowers/specs/2026-08-23-concept-rename-linking-design.md`
+- [x] **驗證樣本 102 → 201 家，三次量測結論一致（2026-08-24）**：再加 99 家
+      （FI／HES 因 edgartools 的 ticker 對照表過期抓不到，略過）。
+      | | 52 家 | 102 家 | 201 家 |
+      |---|---|---|---|
+      | 達標列數 | 47/97 | 46/97 | 44/97 |
+      | 我們抓到／真缺口／公司真的沒有 | — | 73/9/18% | 72/9/18% |
+      - 44 vs 46 是**門檻邊緣的自然浮動不是回歸**：`SBC` 87%→84%、`Diluted Shares`
+        85%→80% 掉出，`Additional Paid-in Capital` 81%→88% 補進
+      - 「模板不適用」9 家：AFL／AIG／AMP／AXP／BAC／COF／GS／MET 都是金融股
+        （D8 已知限制），**AZO 是唯一的非金融股，原因未查**
+      - **踩到並記錄的比對陷阱**：`Net Income` 與 `SBC` 在 IS 和 CF 模板各有一列，
+        比對腳本用列名當字典鍵只會留最後一個，變成拿 IS 那列比 CF 那列，憑空生出
+        **3,659 個假異動**、一度誤判成嚴重回歸。改用 `(列名, 第幾次出現)` 當鍵之後
+        真實回歸是 0。overflow 區的 `Other`／`Accrued expenses` 這類重複列名更嚴重
 - [x] **驗證樣本 52 → 102 家，模板覆蓋率不變（2026-08-23）**：新增 50 家跨產業
       公司（醫療 LLY/ABBV/MRK/AMGN…、工業 HON/DE/RTX/BA…、消費 PEP/HD/TGT…、
       金融 V/MA/AXP/MS/C/WFC、能源 COP/SLB/EOG、公用事業 DUK/SO、REIT AMT/EQIX、
