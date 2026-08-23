@@ -213,7 +213,10 @@ G10. **`D&A` 與 `Capex` 的 concept 對照對某些公司完全失效**（2026-
 G11. **改用 SEC companyfacts API 取數** ← **CTH 2026-08-23 決定：先不切換，主力維持 edgartools**
    - **CTH 原話**：「g11 先不要切，我們主力維持從 edgartool 抓取」
    - 平行路徑（`src/fetcher_facts.py` + `src/facts_mapping.py`）保留不刪，40 個測試維持綠燈。它同時是「第二個獨立資料來源」，做交叉驗證用得到
-   - **重評時機**：H3 做完之後，用改善過的現行路徑當新答案卷重跑 `scripts/spike_verify_mapping.py`。差異收斂到 99% 再談切換
+   - **✅ 重評已完成（2026-08-23 晚），結論：不換，這題可以收了。** 兩個獨立的理由，任一個單獨成立就足夠：
+     1. **速度優勢在混合架構下幾乎消失。** 「快 215 倍」的前提是**完全不解 filing**。實測 ARLO 16 份 10-Q 的時間拆分：下載＋解 XBRL **佔 54%**（這步 `Data_Segments` 非做不可，而且它跟三表用同一個 `max_filings`），三表各自的 `to_dataframe()` 合計才 46%。**CTH 2026-08-23 確認 segments 要 20 年份、只有 8 季不可接受** → 那 54% 一分都省不掉 → 混合架構只快 1.9 倍，不值得付下面那些代價
+     2. **H3 做完後重跑 `spike_verify_mapping.py`：83.96% 精確／95.17% 符號對齊，比 H3 之前的 92.82%／95.35% 還低。** 不是 facts 變差，是**現行路徑今天變好了**，差距反而拉開。最明顯的是 `Debt Repayments` 只剩 20.67%——H3-2 把那一列改成加總所有借款線，facts 那邊還是單一 concept。目標 99% 不但沒收斂，方向是反的
+   - **要付的代價（不換就不用付）**：C 欄的公司原文標籤會消失（facts 沒有 presentation linkbase）、`Data_Segments` 結構上拿不到（fact 沒有維度欄位）、`Other (as reported)` 語意從「報表印出來但模板沒收的列」變成「tag 過但模板沒收的 concept」，會混進附註層的東西
    - **重評前要補的**：那條路**從來沒產出過一份完整 Excel**——只驗過取數層，沒跑過 `_merge_financials` → `ratios` → `excel_writer` 整條下游，比率與版面對不對都還不知道
    - **完整報告：`docs/superpowers/report-2026-08-22-g11-companyfacts.md`**（52 家逐格比對、所有決定與理由）
    - 現況：`src/fetcher_facts.py` + `src/facts_mapping.py` 已完成，40 個測試。**現有程式一行都沒動**
