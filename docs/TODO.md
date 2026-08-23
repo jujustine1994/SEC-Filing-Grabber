@@ -242,8 +242,11 @@ G13. **同一個期末日出現兩次（重複列）**（2026-08-22 做 G6 判�
 > CTH 的五個要求：① 數字都要對且沒有缺漏 ② 有缺漏要能發現 ③ 呼叫要快
 > ④ 既有公版項目要正確 ⑤ 確認公版完整性
 
-H0. **已有的體檢數字（2026-08-23 H3 修完後重跑，52 家實測，可直接當基線）**
-   - 現行路徑：97 個模板列中，**47 列達到「≥45 家有值且填滿率 >90%」**（H3 之前是 40 列）
+H0. **已有的體檢數字（2026-08-24 重跑，**201 家**實測，基線見 `docs/template-coverage-baseline-2026-08-24.md`）**
+   - 現行路徑：97 個模板列中，**44 列達標**（門檻改成比例：≥85% 的公司有值 且 填滿率中位數 >90%）
+   - **樣本從 52 → 102 → 201 家，結論高度穩定**：達標列數 47（52 家）→ 46（102 家）→ 44（201 家）；每格三分類「我們抓到 / 真缺口 / 公司真的沒有」三次量測都是 **72~73% / 9% / 18%**
+   - 44 vs 46 那兩列是**門檻邊緣的自然浮動**，不是回歸：`SBC` 87%→84%、`Diluted Shares` 85%→80% 掉出，`Additional Paid-in Capital` 81%→88% 補進
+   - 「模板不適用」9 家：AFL／AIG／AMP／AXP／BAC／COF／GS／MET 都是金融股（D8 已知限制），**AZO（AutoZone）是唯一的非金融股，原因未查**
    - **「現行抓不到但 companyfacts 抓得到」原本有 7 列，H3 修掉其中 3 列**：`Other Operating Expense`（0 → **13**）、`Deferred Revenue, current`（3 → **28**）、`Current Portion of LT Debt`（23 → 21，但矛盾判定從 25 家降到 3 家，見 CHANGELOG H3）
    - **剩下 4 列改 concept 名字救不了**（公司沒在報表表面單獨列，只有附註有）：`Accrued Compensation`、`Op. Lease Liabilities, current`、`Operating Lease ROU Assets`、`Amortization of Intangibles`。詳見 H3-1
    - 資料在 `output/_spike/`（52 家的 facts JSON 與答案卷快取），重跑體檢不用再打網路。**注意答案卷的抓取窗不一致**：AAPL/ADBE/AMD/AVGO/COST/GOOGL/INTC/META/MSFT/NVDA/TSLA/WMT 十二家是全部 filing（44~69 期），其餘 40 家是 `max_filings=16`（約 21 期）。重建時要沿用同樣的參數，不然逐列覆蓋率沒得比
@@ -268,6 +271,14 @@ H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-23：確
      5. **跟 `Data_Ratios` 的相依**：比率是從模板列算出來的，關掉某列會讓哪些比率變空？要不要在 UI 上提示
      6. **overflow 區**：使用者能不能把 `Other (as reported)` 裡的某列「升級」成正式列
    - **不要在 G11 決策之前動手**——公版列的來源（concept 對照）如果要換，先確定換不換
+
+H5. **`Interest Income` 的 fallback 太窄，201 家有 137 家整列空白**（2026-08-24 實測，**跟 H4 無關，是 H3 那一類，可以直接修**）
+   - **實證**：201 家裡 `Interest Income` 整列空白的有 **137 家**。查那批公司的 companyfacts，實際 tag 的是：`InvestmentIncomeInterest` **84 家**、`InterestIncomeOther` 21 家、`InvestmentIncomeInterestAndDividend` 14 家、`InterestIncomeExpenseNet` 12 家
+   - **根因**：模板的 fallback 是 `InterestIncome`，而 **`InvestmentIncomeInterest` 不含這個子字串**（字序相反），兩層都比不到。實測 KO 的損益表表面就是 `us-gaap_InvestmentIncomeInterest`，label 寫「Interest income」
+   - **跟 H4 是不同問題**：這些都是標準 us-gaap concept，不是公司自訂延伸 tag。修法跟 2026-08-23 修 `Debt Proceeds`／`Other Operating Expense` 完全同型——把 fallback 正則放寬
+   - **動手前要確認**：`InterestIncomeExpenseNet` 是**淨額**（利息收入減支出），跟 `Interest Expense` 那一列可能重複計算，要決定收不收。純收入的 `InvestmentIncomeInterest`／`InterestIncomeOther` 沒有這個疑慮
+   - **另一個候選**：同一輪分析發現 `Amortization of Intangibles` 有 22 家的 overflow 出現「Amortization of (acquired/purchased) intangible assets」變體，值得一併查
+   - 這條的潛在效益可能是今天所有修復裡最大的單列改善（一列 +84 家）
 
 H4. **⚠ 公司自訂延伸 tag（`nvda_` / `tsla_` / `goog_` 這種）完全抓不到——模板沒有 label 比對層**（2026-08-23 端到端實測 NVDA 發現，**優先度高**）
    - **實測證據**：NVDA 的 `Capex` 在 57 期裡只有 36 期有值，**年報 17 年裡有 13 年整年抓不到**。根因是 NVDA 從 FY2019 到 FY2023 用自己的延伸 tag `nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets`，FY2024 起才改用標準的 `us-gaap_PaymentsToAcquireProductiveAssets`
@@ -310,6 +321,15 @@ H3-2. **「中間有洞」對流量列會過度報警**（2026-08-23 發現，�
 | — | F2 估值倍數 | 是（要股價來源） | 是 | 待研究，未確認方向 |
 
 ## D. 待 CTH 決定的已知限制
+
+D11. **抓取結果會被當下的 SEC 狀況影響——同一家公司重抓可能得到更完整的資料**（2026-08-24 實測發現）
+   - **實測證據**：`fetch50` 那一輪連續抓 50 家時，AXP／BMY／C／COP／ETN／HON／LLY／MRK／MS／PSX／WFC 的 `Operating Income` 只有 16/21 期；隔幾小時單獨重抓 LLY 兩次都是 **20/21 期**。DUK 的 `Revenue`／`Gross Profit` 同樣情形
+   - **根因**：連續大量抓取時 SEC 偶發失敗 → `_filing_obj()` 重試用盡 → `_note_gap()` 記帳後跳過那份 → 少了年報就 `_synthesize_q4()` 合成不出 Q4 → **靜默少掉 4 格**（一年一格 × 5 份年報）
+   - **同一份程式碼本身是決定性的**：單獨重抓 AAPL 兩次，逐格完全相同（含 overflow）。不確定性來自網路，不是程式
+   - **為什麼會漏看**：帳本有記，但 Index 的完成度只會顯示成「整欄稀疏」或「中間有洞」，看起來像資料本身缺，不像「這次抓壞了」
+   - **可能修法**（都未決定）：(a) 抓完自動偵測「有帳本缺漏就重試那幾份」；(b) Index 上把「本次抓取有幾份 filing 失敗」講明白，跟資料本身的缺漏分開顯示；(c) 降低連續抓取的速率
+   - **對驗證樣本的影響**：`output/_spike/` 那 201 家裡可能有數家帶著這種缺漏，做逐列覆蓋率統計時要記得這是雜訊來源之一
+   - **待查證的候選名單**：2026-08-24 抓新公司那輪，log 出現「自動修復：發現 N 期缺失需要修復重疊」的有 AIG／ALL／BK／CB／COF／DD／DOW／HIG／MET／NEM／OXY 共 11 家。**還沒確認那則訊息是否等同於「抓壞了」**（也可能是正常的重疊修復路徑）。確認方式：單獨重抓一家，看 `Operating Income` 會不會從 16/21 變 20/21
 
 D10. **⏳ 暫時性限制：只寫在附註、沒印在報表表面的科目抓不到**（CTH 2026-08-23 決定先擱置，詳見 H3-1）
    - **這條標「暫時性」是有意義的**——資料拿得到，只是現行路徑碰不到。`fetcher_facts`（companyfacts）讀得到附註層的 fact，隨時可以接。不是「這個資料不存在」那種永久限制
