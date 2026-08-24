@@ -301,6 +301,19 @@ def _cache_key(filing) -> str | None:
     return str(acc) if acc else None
 
 
+def _list_filings(company, form: str, amendments: bool = False,
+                   sleep: Callable[[float], None] = time.sleep) -> list:
+    """列出這家公司某個表單類型的所有 filing，網路問題退避重試（2026-08-25）。
+
+    這一步比逐份 filing 更早——`_filing_obj()` 抓內容早就有 `with_retry`
+    保護瞬斷，但列清單這一步完全沒被蓋到。2026-08-25 實測 201 家重建撞到
+    6 家逾時，全部發生在這裡：一次瞬斷直接讓整趟 `fetch_gaap_statements()`
+    拋例外，連 D11-B 的缺漏帳本都還沒開始記，重試不到。
+    """
+    return with_retry(lambda: list(company.get_filings(form=form, amendments=amendments)),
+                       sleep=sleep)
+
+
 def _filing_obj(filing):
     """下載並解析一份 filing，網路問題會退避重試（CTH 2026-08-17）。
 
@@ -2378,8 +2391,8 @@ def _fetch_gaap_impl(ticker: str, identity: str,
     set_identity(identity)
     company = Company(ticker)
 
-    filings_q = list(company.get_filings(form="10-Q", amendments=False)) if fetch_quarterly else []
-    filings_k = list(company.get_filings(form="10-K", amendments=False)) if fetch_annual else []
+    filings_q = _list_filings(company, "10-Q") if fetch_quarterly else []
+    filings_k = _list_filings(company, "10-K") if fetch_annual else []
 
     if fetch_quarterly and not filings_q:
         raise ValueError(
@@ -2408,7 +2421,7 @@ def _fetch_gaap_impl(ticker: str, identity: str,
     if filings_k:
         fy_end_month = _detect_fy_end_month(filings_k)
     elif fetch_quarterly and filings_q:
-        _probe_k = list(company.get_filings(form="10-K", amendments=False))[:1]
+        _probe_k = _list_filings(company, "10-K")[:1]
         fy_end_month = _detect_fy_end_month(_probe_k) if _probe_k else 12
     else:
         fy_end_month = 12
@@ -2540,7 +2553,7 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
 
     set_identity(identity)
     company = Company(ticker)
-    filings_q = list(company.get_filings(form="10-Q", amendments=False))
+    filings_q = _list_filings(company, "10-Q")
     if not filings_q:
         return empty
 

@@ -2355,6 +2355,50 @@ def test_filing_obj_still_works_without_a_cache_scope():
     assert _filing_obj(f) == "X"
 
 
+# ── 列 filing 清單也要有退避重試（2026-08-25）────────────────────────────────
+#
+# `_filing_obj()` 抓單份 filing 內容早就有 `with_retry` 保護瞬斷；但「列出這家
+# 公司有哪些 filing」（`company.get_filings()`）比那更早一步，完全沒被任何重試
+# 機制蓋到——2026-08-25 實測 201 家重建撞到 6 家逾時（JCI/JPM/MCD/MDLZ/MDT/META），
+# 全部發生在這一步，直接讓整趟 `fetch_gaap_statements()` 拋例外，連 D11-B 的
+# 缺漏帳本都還沒開始記，重試不到。
+
+def test_list_filings_retries_transient_network_error():
+    from fetcher_gaap import _list_filings
+
+    class ReadTimeout(Exception):
+        pass
+
+    calls = {"n": 0}
+
+    def _get_filings(form, amendments):
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise ReadTimeout("timed out")
+        return ["filing1", "filing2"]
+
+    company = MagicMock()
+    company.get_filings.side_effect = _get_filings
+
+    result = _list_filings(company, "10-Q", sleep=lambda _s: None)
+    assert result == ["filing1", "filing2"]
+    assert calls["n"] == 2
+
+
+def test_list_filings_gives_up_after_exhausting_retries():
+    from fetcher_gaap import _list_filings
+    from net_retry import NetworkDownError
+
+    class ReadTimeout(Exception):
+        pass
+
+    company = MagicMock()
+    company.get_filings.side_effect = ReadTimeout("timed out")
+
+    with pytest.raises(NetworkDownError):
+        _list_filings(company, "10-Q", sleep=lambda _s: None)
+
+
 # ── H3 系統性 concept 對照修復（2026-08-23）────────────────────────────────
 #
 # 每個測試都釘住「哪一家公司、哪個 concept / label」——這些 concept 與 label
