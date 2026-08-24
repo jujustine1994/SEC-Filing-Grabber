@@ -165,3 +165,38 @@ def test_summary_never_leaks_exception_messages():
     led.record("FY2025Q2", Boom("https://sec.gov/x?apikey=SECRET"))
     assert "SECRET" not in led.summary()
     assert "sec.gov" not in led.summary()
+
+
+# ── D11-B：網路缺漏自動重試一次，重試結果吸收回帳本 ─────────────────────────
+#
+# 只重試一次、只重試 network 那類（data 類重試沒用，見 fetch_ledger.py 開頭
+# 的分類說明）。判斷「這期救回來了沒」不用猜——直接看同一個 `where` 標籤
+# 在重試那輪的帳本裡還在不在：不在＝救回來了，在＝還是沒抓到。
+
+def test_retry_absorbs_gaps_that_succeeded_the_second_time():
+    """一期第一輪失敗、重試那輪沒有再記到同一個 where，代表救回來了。"""
+    led = FetchLedger(probe=_net_probe(False))
+    led.record("FY2025Q1", Boom("x"))
+    led.record("FY2025Q2", Boom("x"))
+    retry_led = FetchLedger(probe=_net_probe(False))
+    retry_led.record("FY2025Q2", Boom("x"))   # 這期重試還是失敗
+    led.absorbed_by_retry(retry_led)
+    assert [g.where for g in led.gaps] == ["FY2025Q2"]
+
+
+def test_retry_absorbs_all_gaps_when_second_pass_is_clean():
+    led = FetchLedger(probe=_net_probe(False))
+    led.record("FY2025Q1", Boom("x"))
+    retry_led = FetchLedger(probe=_net_probe(False))   # 重試那輪一期都沒失敗
+    led.absorbed_by_retry(retry_led)
+    assert led.gaps == []
+
+
+def test_retry_does_not_absorb_data_kind_gaps():
+    """資料類缺漏本來就不指望重試救得回（重試也不會真的去補這種），
+    不該被當成「救回來了」而移除。"""
+    led = FetchLedger(probe=_net_probe(True))   # kind="data"
+    led.record("FY2025Q1", Boom("x"))
+    retry_led = FetchLedger(probe=_net_probe(True))
+    led.absorbed_by_retry(retry_led)
+    assert [g.where for g in led.gaps] == ["FY2025Q1"]

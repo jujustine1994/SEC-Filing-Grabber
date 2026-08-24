@@ -114,6 +114,17 @@ class FetchLedger:
         """
         return self._consecutive_network >= self.brake_after
 
+    def absorbed_by_retry(self, retry: "FetchLedger") -> None:
+        """用重試那輪的帳本更新自己（D11-B）。
+
+        判斷「這期救回來了沒」不用猜——重試那輪沒有再記到同一個 `where`，
+        就是救回來了，從帳本移除。`data` 類缺漏不處理：那是 SEC 有回應、
+        資料本身的性質，重試不會真的去補，留著才誠實。
+        """
+        retry_wheres = {g.where for g in retry.gaps}
+        self.gaps = [g for g in self.gaps
+                     if not (g.kind == "network" and g.where not in retry_wheres)]
+
     def summary(self) -> str:
         """一行給人看的摘要，已翻譯。沒缺漏回空字串。
 

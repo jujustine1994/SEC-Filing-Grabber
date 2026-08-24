@@ -24,10 +24,11 @@ from __future__ import annotations
 import math
 import re
 import sys
+import time
 import unicodedata
 from dataclasses import dataclass, field, replace
 from datetime import date, date as _date
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 from edgar import Company, set_identity as set_identity
@@ -114,6 +115,83 @@ def _note_ok() -> None:
     led = _ledger()
     if led is not None:
         led.succeeded()
+
+
+# ── 缺漏自動重試（D11-B，2026-08-24 CTH 決定要做）───────────────────────────
+#
+# 帳本有網路造成的缺漏時（`network_blamed`），退避幾秒後整趟重跑一次、
+# 逐格合併：原本有值的格子保留，None 的格子用重試那輪的值補。只重試一次，
+# 不遞迴重試到底——網路真的斷線時不該乾等。`data` 類缺漏不重試，SEC 有
+# 回應代表那是資料本身的性質，重試沒用（跟 `fetch_ledger.py` 既有的分類
+# 判斷同一套邏輯，不重新發明）。
+#
+# 整趟重跑而不是只重試失敗的那幾份 filing：帳本現在只記期間標籤跟例外
+# 分類，沒存 filing 物件本身，要做到「只補失敗那幾份」得動 7 個
+# `_note_gap()` 呼叫點的呼叫鏈，範圍與風險都大得多。單一 ticker 重跑一次
+# 多花的時間可接受，因為只有真的撞到 `network_blamed` 才會觸發。
+
+_RETRY_BACKOFF_SECONDS = 5.0
+
+
+def _merge_retry_tables(orig: list[StatementTable],
+                         retry: list[StatementTable]) -> list[StatementTable]:
+    """逐格合併：`orig` 有值的格子保留，`None` 的格子用 `retry` 同位置的值補。
+
+    用 `sheet_name` 配對；`quarter_labels`／`concepts` 結構對不上（理論上
+    不該發生，同一組參數兩輪本該一致）就整張表保留原樣，不硬湊、不猜。
+    """
+    retry_by_name = {t.sheet_name: t for t in retry}
+    merged = []
+    for tbl in orig:
+        rt = retry_by_name.get(tbl.sheet_name)
+        if (rt is None
+                or rt.quarter_labels != tbl.quarter_labels
+                or rt.concepts != tbl.concepts):
+            merged.append(tbl)
+            continue
+        new_values = [
+            [o if o is not None else r for o, r in zip(orig_row, retry_row)]
+            for orig_row, retry_row in zip(tbl.values, rt.values)
+        ]
+        merged.append(replace(tbl, values=new_values))
+    return merged
+
+
+def _patch_meta_gap_note(tables: list[StatementTable], led: "FetchLedger") -> None:
+    """重試吸收帳本之後，把 `Data_Meta` 的 `Fetch Gaps` 欄位改成最新的
+    `led.summary()`——不然 Index 還是會顯示重試前的舊缺漏數。"""
+    note = led.summary() or t("xls.meta.none")
+    for tbl in tables:
+        if tbl.sheet_name == "Data_Meta" and "Fetch Gaps" in tbl.concepts:
+            idx = tbl.concepts.index("Fetch Gaps")
+            tbl.values[idx] = [note] * len(tbl.values[idx])
+
+
+def _fetch_with_retry(
+    tables: list[StatementTable],
+    led: FetchLedger,
+    retry_once: Callable[[], tuple[list[StatementTable], FetchLedger]],
+    sleep: Callable[[float], None] = time.sleep,
+) -> list[StatementTable]:
+    """第一輪 `tables`／`led` 已經跑完了；帳本有網路造成的缺漏就退避重試一次並合併。
+
+    `led` 是呼叫端當下在用的那本帳本（自己開的或外層 caller 開的都一樣）——
+    這個函式不負責開第一輪的帳本，只決定要不要重試、重試完怎麼合併回去。
+    `retry_once` 要在自己獨立的一輪 `collect_gaps()` 範圍裡重跑一次、回傳
+    `(tables, ledger)`；純函式不碰網路，測試把它換成假的即可。
+    """
+    if led.network_blamed:
+        sleep(_RETRY_BACKOFF_SECONDS)
+        try:
+            retry_tables, retry_led = retry_once()
+        except Exception:
+            # 重試路徑本身出錯不該把「第一輪已經抓到大半資料」變成整趟
+            # 失敗——退回第一輪的結果，帳本維持原本記的缺漏就好。
+            return tables
+        tables = _merge_retry_tables(tables, retry_tables)
+        led.absorbed_by_retry(retry_led)
+        _patch_meta_gap_note(tables, led)
+    return tables
 
 
 # ── 抓取進度回報（2026-08-18，TODO E12）────────────────────────────────────
@@ -2265,11 +2343,26 @@ def fetch_gaap_statements(ticker: str, identity: str,
     # 解析快取涵蓋整趟（G9）。開在這裡而不是上面那個 `_ledger() is None` 分支
     # 裡面——`main.py` 與 `cli.py` 會自己先開 `collect_gaps()`，那條路不會走到
     # 上面的遞迴，快取就不會生效。`_parse_cache_scope()` 可以巢狀，重複開無害。
+    #
+    # D11-B：`led` 在這裡一定是「當下在用的那本帳本」，不管是誰開的
+    # （上面的遞迴自己開的，或是 `main.py`／`cli.py` 先開好才呼叫進來的）——
+    # 兩條路都會走到這裡，重試才不會只在其中一條路生效。
+    led = _ledger()
     with _parse_cache_scope():
-        return _fetch_gaap_impl(
+        tables = _fetch_gaap_impl(
             ticker, identity, max_filings, max_annual_filings, ai_config,
             start_year, end_year, fetch_quarterly, fetch_annual, excluded_sheets,
         )
+
+    def _retry_once() -> tuple[list[StatementTable], FetchLedger]:
+        with collect_gaps() as retry_led, _parse_cache_scope():
+            retry_tables = _fetch_gaap_impl(
+                ticker, identity, max_filings, max_annual_filings, ai_config,
+                start_year, end_year, fetch_quarterly, fetch_annual, excluded_sheets,
+            )
+        return retry_tables, retry_led
+
+    return _fetch_with_retry(tables, led, _retry_once)
 
 
 def _fetch_gaap_impl(ticker: str, identity: str,

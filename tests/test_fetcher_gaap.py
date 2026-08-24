@@ -2759,3 +2759,170 @@ def test_shares_outstanding_explicit_q4_wins_over_annual_fact():
         {"fiscal_year": 2025, "fiscal_period": "Q4", "numeric_value": 111},
     ]
     assert _shares_map_from_records(records)["FY2025Q4"] == 111
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# D11-B：偵測到帳本有網路造成的缺漏，自動重試一次並合併結果
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# `_fetch_with_retry` / `_merge_retry_tables` / `_patch_meta_gap_note` 都是純函式
+# （不碰網路），注入點讓測試把「跑一次抓取」換成假的。真正打網路的那層
+# （`fetch_gaap_statements` 頂層的 `_ledger() is None` 分支）只是接線，
+# 靠既有的 1120+ 個離線測試守住「沒有缺漏時行為完全不變」。
+
+def _meta_table(quarter_labels, gap_notes):
+    return StatementTable(sheet_name="Data_Meta", quarter_labels=quarter_labels,
+                           filing_dates=[""] * len(quarter_labels),
+                           concepts=["Ticker", "Fetch Gaps"],
+                           values=[["AAPL"] * len(quarter_labels), gap_notes])
+
+
+class _Boom(Exception):
+    pass
+
+
+def test_merge_retry_tables_fills_none_cells_from_retry():
+    from fetcher_gaap import _merge_retry_tables
+    orig = [StatementTable("Data_Financials(Q)", ["FY2025Q1", "FY2025Q2"], ["", ""],
+                            ["Revenue"], [[100.0, None]])]
+    retry = [StatementTable("Data_Financials(Q)", ["FY2025Q1", "FY2025Q2"], ["", ""],
+                             ["Revenue"], [[999.0, 200.0]])]
+    merged = _merge_retry_tables(orig, retry)
+    assert merged[0].values == [[100.0, 200.0]], "orig 有值的保留，None 才用 retry 補"
+
+
+def test_merge_retry_tables_skips_mismatched_shape():
+    """期別對不上（理論上不該發生，但求穩）就不合併，保留原樣，不硬湊。"""
+    from fetcher_gaap import _merge_retry_tables
+    orig = [StatementTable("Data_Financials(Q)", ["FY2025Q1"], [""], ["Revenue"], [[None]])]
+    retry = [StatementTable("Data_Financials(Q)", ["FY2025Q1", "FY2025Q2"], ["", ""],
+                             ["Revenue"], [[1.0, 2.0]])]
+    merged = _merge_retry_tables(orig, retry)
+    assert merged[0].values == [[None]]
+
+
+def test_merge_retry_tables_keeps_sheet_missing_from_retry_untouched():
+    from fetcher_gaap import _merge_retry_tables
+    orig = [StatementTable("Data_Meta", ["FY2025Q1"], [""], ["Ticker"], [["AAPL"]])]
+    merged = _merge_retry_tables(orig, [])
+    assert merged[0].values == [["AAPL"]]
+
+
+def test_patch_meta_gap_note_reflects_absorbed_ledger():
+    """重試吸收帳本之後，Data_Meta 的 Fetch Gaps 欄位要跟著更新，
+    不然 Index 還是會顯示重試前的舊缺漏數。"""
+    from fetcher_gaap import _patch_meta_gap_note
+    from fetch_ledger import FetchLedger
+    from i18n import t
+    led = FetchLedger()   # 吸收後乾淨，沒有缺漏
+    tbl = _meta_table(["FY2025Q1", "FY2025Q2"], ["stale note", "stale note"])
+    _patch_meta_gap_note([tbl], led)
+    assert tbl.values[1] == [t("xls.meta.none")] * 2
+
+
+def test_fetch_with_retry_skips_retry_when_no_network_gaps():
+    """沒有網路造成的缺漏就不重試——不浪費時間，也不該去 sleep、不該呼叫 retry_once。
+
+    `led` 是呼叫端已經在用的那本帳本（不管是它自己開的還是外層 caller 開的）
+    ——這個函式不負責開第一輪的帳本，只負責「要不要重試、重試完怎麼合併」。
+    """
+    from fetcher_gaap import _fetch_with_retry
+    from fetch_ledger import FetchLedger
+
+    led = FetchLedger(probe=lambda: True)   # 沒有任何 record，乾淨
+
+    def _no_retry():
+        raise AssertionError("不該呼叫 retry_once")
+
+    def _no_sleep(_secs):
+        raise AssertionError("不該 sleep")
+
+    tables = _fetch_with_retry([_meta_table(["FY2025Q1"], [""])], led,
+                                _no_retry, sleep=_no_sleep)
+    assert not led.has_gaps
+
+
+def test_fetch_with_retry_retries_once_on_network_gap_and_merges():
+    from fetcher_gaap import _fetch_with_retry
+    from fetch_ledger import FetchLedger
+
+    led = FetchLedger(probe=lambda: False)   # 連不上 = network
+    led.record("FY2025Q2", _Boom("x"))
+    first_tables = [StatementTable("Data_Financials(Q)", ["FY2025Q1", "FY2025Q2"], ["", ""],
+                                    ["Revenue"], [[100.0, None]])]
+
+    def retry_once():
+        retry_led = FetchLedger(probe=lambda: False)   # 這輪沒有失敗
+        tbl = StatementTable("Data_Financials(Q)", ["FY2025Q1", "FY2025Q2"], ["", ""],
+                              ["Revenue"], [[100.0, 200.0]])
+        return [tbl], retry_led
+
+    sleeps = []
+    tables = _fetch_with_retry(first_tables, led, retry_once, sleep=sleeps.append)
+    assert tables[0].values == [[100.0, 200.0]]
+    assert not led.has_gaps, "救回來了，帳本要吸收掉這筆缺漏"
+    assert sleeps, "重試前要退避一下，不要立刻連打"
+
+
+def test_fetch_with_retry_only_retries_once():
+    """重試那輪還是有網路缺漏，也不再重試第三次——避免網路真的斷線時拖很久。"""
+    from fetcher_gaap import _fetch_with_retry
+    from fetch_ledger import FetchLedger
+
+    led = FetchLedger(probe=lambda: False)
+    led.record("FY2025Q2", _Boom("x"))
+    first_tables = [StatementTable("Data_Financials(Q)", ["FY2025Q1", "FY2025Q2"], ["", ""],
+                                    ["Revenue"], [[100.0, None]])]
+
+    calls = []
+
+    def retry_once():
+        calls.append(1)
+        retry_led = FetchLedger(probe=lambda: False)
+        retry_led.record("FY2025Q2", _Boom("x"))   # 重試還是失敗
+        tbl = StatementTable("Data_Financials(Q)", ["FY2025Q1", "FY2025Q2"], ["", ""],
+                              ["Revenue"], [[100.0, None]])
+        return [tbl], retry_led
+
+    _fetch_with_retry(first_tables, led, retry_once, sleep=lambda _s: None)
+    assert len(calls) == 1, "重試只呼叫一次 retry_once，不會再多"
+    assert led.has_gaps, "兩輪都失敗，帳本仍要記著"
+
+
+def test_fetch_with_retry_falls_back_to_first_pass_if_retry_itself_blows_up():
+    """重試本身意外整個炸掉（不是「這期又沒抓到」那種正常缺漏，是重試路徑
+    自己出錯）不該把「第一輪已經抓到大半資料」變成整趟失敗——保留第一輪
+    的結果，帳本維持原本記的缺漏，不要讓 D11-B 反而讓事情變更糟。"""
+    from fetcher_gaap import _fetch_with_retry
+    from fetch_ledger import FetchLedger
+
+    led = FetchLedger(probe=lambda: False)
+    led.record("FY2025Q2", _Boom("x"))
+    first_tables = [StatementTable("Data_Financials(Q)", ["FY2025Q1", "FY2025Q2"], ["", ""],
+                                    ["Revenue"], [[100.0, None]])]
+
+    def retry_once():
+        raise RuntimeError("重試路徑本身炸了")
+
+    tables = _fetch_with_retry(first_tables, led, retry_once, sleep=lambda _s: None)
+    assert tables[0].values == [[100.0, None]], "退回第一輪的結果，不憑空丟資料"
+    assert led.has_gaps, "帳本維持原本記的缺漏，不要假裝救回來了"
+
+
+def test_fetch_with_retry_does_not_retry_data_kind_gaps():
+    """資料類缺漏（SEC 有回應，是這份資料本身的性質）重試沒用，不該白白多打一輪。"""
+    from fetcher_gaap import _fetch_with_retry
+    from fetch_ledger import FetchLedger
+
+    led = FetchLedger(probe=lambda: True)   # 連得上 = data
+    led.record("FY2025Q2", _Boom("x"))
+    first_tables = [_meta_table(["FY2025Q1", "FY2025Q2"], ["", ""])]
+
+    def _no_retry():
+        raise AssertionError("data 類不該觸發重試")
+
+    def _no_sleep(_secs):
+        raise AssertionError("data 類不該 sleep")
+
+    tables = _fetch_with_retry(first_tables, led, _no_retry, sleep=_no_sleep)
+    assert led.has_gaps
