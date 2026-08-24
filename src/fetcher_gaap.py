@@ -305,7 +305,7 @@ IS_TEMPLATE: list[_T] = [
     ("Total Costs and Expenses",   None,                             "^us-gaap_CostsAndExpenses$",                             "IS", "first", None, None),
     ("Operating Income",           "OperatingIncomeLoss",            "OperatingIncomeLoss",                                    "IS", "first", None, None),
     ("Interest Expense",           "InterestExpense",                "InterestExpense",                                        "IS", "first", None, None),
-    ("Interest Income",            "InterestIncome",                 "InterestIncome",                                         "IS", "first", None, None),
+    ("Interest Income",            "InterestIncome",                 r"(?<!Non)InterestIncome(?!Expense)|InvestmentIncomeInterest", "IS", "first", None, None),
     ("Other Non-op Inc/(Exp)",     None,                             "OtherNonoperatingIncome",                                "IS", "first", None, None),
     ("Total Non-op Income/(Loss)", "NonoperatingIncomeExpense",      "NonoperatingIncome",                                     "IS", "first", None, None),
     ("Pre-tax Income",             "PretaxIncomeLoss",               "IncomeLossFromContinuingOperationsBeforeIncomeTax",       "IS", "first", None, None),

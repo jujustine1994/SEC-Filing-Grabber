@@ -2648,6 +2648,44 @@ def test_other_operating_expense_matches_the_concepts_companies_actually_tag(con
     assert _match_template_row("Other Operating Expense", df) == label
 
 
+# ── H5：Interest Income fallback 太窄，201 家有 137 家整列空白 ────────────────
+#
+# 模板的 fallback 是 `InterestIncome`，而 `InvestmentIncomeInterest`（字序相反）
+# 兩層都比不到。實測 201 家：`InvestmentIncomeInterest` 84 家、`InterestIncomeOther`
+# 21 家、`InvestmentIncomeInterestAndDividend` 14 家。三個都是純收入 concept。
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_InvestmentIncomeInterest", "Interest income"),                       # KO（實測確認在 IS 表面）
+    ("us-gaap_InvestmentIncomeInterestAndDividend", "Interest and dividend income"),
+    ("us-gaap_InterestIncomeOther", "Other interest income"),
+])
+def test_interest_income_matches_concepts_companies_actually_tag(concept, label):
+    """`InvestmentIncomeInterest` 字序與模板的 fallback `InterestIncome` 相反，
+    substring 比對兩層都比不到——即使 std_concept 命名相似，也要靠 fallback 正則抓到。"""
+    df = _row_df(concept, label, "InterestAndDividendIncome")
+    assert _match_template_row("Interest Income", df) == label
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_InterestIncomeExpenseNet", "Interest income (expense), net"),
+    ("us-gaap_InterestIncomeExpenseNonoperatingNet", "Interest expense, net"),  # 50 家抽樣：CHTR/KR/LOW/NEM
+])
+def test_interest_income_does_not_match_net_concept(concept, label):
+    """`InterestIncomeExpense...Net` 這整族都是利息收入減支出的淨額，跟
+    `Interest Expense` 那一列可能重複計算——刻意不收，只收純收入的 concept。"""
+    df = _row_df(concept, label, "NonoperatingIncomeExpense")
+    assert _match_template_row("Interest Income", df) is None
+
+
+def test_interest_income_does_not_match_noninterest_income():
+    """`NoninterestIncomeOtherOperatingIncome`（銀行股常見的「Other income」）字串
+    裡剛好包著 `...nterestIncome...`，substring 比對會誤命中——201 家逐格回歸測出來的
+    真實案例（BAC）：新 fallback 排除 `ExpenseNet` 之後，比對往後掉到這個完全不相關
+    的科目。"""
+    df = _row_df("us-gaap_NoninterestIncomeOtherOperatingIncome", "Other income (loss)",
+                 "OtherOperatingExpense")
+    assert _match_template_row("Interest Income", df) is None
+
+
 # ── H4 第一步：模板 tuple 第七欄 label_fallback ─────────────────────────────
 #
 # `_match_is_row()` 一直有第三層（label 比對），但模板的 6-tuple 餵不進去，

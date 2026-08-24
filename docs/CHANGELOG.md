@@ -10,6 +10,37 @@
 ## 功能清單
 
 ### 已完成
+- [x] **H5：`Interest Income` fallback 太窄，201 家有 137 家整列空白，修正並修掉過程中發現的
+      2 個誤命中 bug（2026-08-24）**：
+      - **起因**：201 家實測，`Interest Income` 整列空白的公司裡，companyfacts 實際 tag
+        的是 `InvestmentIncomeInterest`（84 家）、`InterestIncomeOther`（21 家）、
+        `InvestmentIncomeInterestAndDividend`（14 家）、`InterestIncomeExpenseNet`（12 家）
+      - **根因**：模板 fallback 只有 `InterestIncome`，而 `InvestmentIncomeInterest`
+        **字序相反**（Investment+Income+Interest vs Interest+Income），substring 比對
+        兩層都比不到。實測 KO 的損益表表面就是 `us-gaap_InvestmentIncomeInterest`
+      - **第一版修法**：fallback 正則改成 `InterestIncome(?!ExpenseNet)|InvestmentIncomeInterest`，
+        新增比對 `InvestmentIncomeInterest`／`InvestmentIncomeInterestAndDividend`／
+        `InterestIncomeOther`，並排除 `InterestIncomeExpenseNet`（利息收支淨額，避免跟
+        `Interest Expense` 重複計算）
+      - **驗收時抓到兩個第一版沒防到的誤命中**：
+        1. 50 家抽樣掃描（每家抓最新 1 份 10-Q 直接跑比對，不用整套重建，跑得動也跑得快）
+           發現 BAC 誤命中 `NoninterestIncomeOtherOperatingIncome`（label「Other income
+           (loss)」，完全不相關）——`"Noninterest..."` 裡剛好包著 `"...nterestIncome..."`
+           子字串。加負向後顧 `(?<!Non)` 擋掉
+        2. 同一輪抽樣又發現 CHTR／KR／LOW／NEM 誤命中 `InterestIncomeExpenseNonoperatingNet`
+           （label 是「Interest expense, net」這類淨額敘述）——原本只排除 `ExpenseNet` 後綴，
+           擋不到 `ExpenseNonoperatingNet` 這個變體。改成排除整個 `InterestIncome(?!Expense)`
+           家族（只要 `InterestIncome` 後面接的是 `Expense` 開頭都不收，因為那個字組
+           本身就代表「收支已經合併成淨額」）
+      - **最終正則**：`(?<!Non)InterestIncome(?!Expense)|InvestmentIncomeInterest`
+      - **驗收方式（跟原計畫不同，中途因網路狀況改為抽樣）**：原規劃是 201 家逐格重建比對
+        （`diag_celldiff2.py`），但重建一次要 5~6 小時，改成兩輪 50 家代表性抽樣
+        （含已知問題股 BAC/WMT，涵蓋金融/科技/消費/工業/能源）+ 6 個單元測試釘住行為
+        + 全套非連線測試。第二輪抽樣 `suspect=0`，沒有再抓到誤命中案例
+      - 6 個新測試（`tests/test_fetcher_gaap.py`），全套非連線測試 1120 passed
+      - **未做**：201 家全量逐格回歸（因網路狀況取消，未來若要更高信心可補跑）；
+        `Amortization of Intangibles` 候選（抽測 KO 是 D&A 未拆分的真缺口，非漏抓，
+        沒有進一步展開查）
 - [x] **H4 第一步：模板 tuple 加第七欄 `label_fallback`，NVDA 的 Capex 從 39/68 期
       補到 67/68（2026-08-24）**：
       - **起因**：端到端實跑 NVDA 的 Excel 才發現的（只跑測試看不出來）。`Capex`

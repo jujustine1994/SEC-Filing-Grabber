@@ -272,14 +272,6 @@ H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-23：確
      6. **overflow 區**：使用者能不能把 `Other (as reported)` 裡的某列「升級」成正式列
    - **不要在 G11 決策之前動手**——公版列的來源（concept 對照）如果要換，先確定換不換
 
-H5. **`Interest Income` 的 fallback 太窄，201 家有 137 家整列空白**（2026-08-24 實測，**跟 H4 無關，是 H3 那一類，可以直接修**）
-   - **實證**：201 家裡 `Interest Income` 整列空白的有 **137 家**。查那批公司的 companyfacts，實際 tag 的是：`InvestmentIncomeInterest` **84 家**、`InterestIncomeOther` 21 家、`InvestmentIncomeInterestAndDividend` 14 家、`InterestIncomeExpenseNet` 12 家
-   - **根因**：模板的 fallback 是 `InterestIncome`，而 **`InvestmentIncomeInterest` 不含這個子字串**（字序相反），兩層都比不到。實測 KO 的損益表表面就是 `us-gaap_InvestmentIncomeInterest`，label 寫「Interest income」
-   - **跟 H4 是不同問題**：這些都是標準 us-gaap concept，不是公司自訂延伸 tag。修法跟 2026-08-23 修 `Debt Proceeds`／`Other Operating Expense` 完全同型——把 fallback 正則放寬
-   - **動手前要確認**：`InterestIncomeExpenseNet` 是**淨額**（利息收入減支出），跟 `Interest Expense` 那一列可能重複計算，要決定收不收。純收入的 `InvestmentIncomeInterest`／`InterestIncomeOther` 沒有這個疑慮
-   - **另一個候選**：同一輪分析發現 `Amortization of Intangibles` 有 22 家的 overflow 出現「Amortization of (acquired/purchased) intangible assets」變體，值得一併查
-   - 這條的潛在效益可能是今天所有修復裡最大的單列改善（一列 +84 家）
-
 H4. **⚠ 公司自訂延伸 tag（`nvda_` / `tsla_` / `goog_` 這種）完全抓不到——模板沒有 label 比對層**（2026-08-23 端到端實測 NVDA 發現，**優先度高**）
    - **實測證據**：NVDA 的 `Capex` 在 57 期裡只有 36 期有值，**年報 17 年裡有 13 年整年抓不到**。根因是 NVDA 從 FY2019 到 FY2023 用自己的延伸 tag `nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets`，FY2024 起才改用標準的 `us-gaap_PaymentsToAcquireProductiveAssets`
    - **連鎖影響**：年報那一格空白 → `_synthesize_q4()` 算不出 Q4（年報 − Q1 − Q2 − Q3）→ **2014~2023 每一年的 Q4 Capex 都空**，`Free Cash Flow` 跟著一起空
