@@ -71,9 +71,18 @@
         （含已知問題股 BAC/WMT，涵蓋金融/科技/消費/工業/能源）+ 6 個單元測試釘住行為
         + 全套非連線測試。第二輪抽樣 `suspect=0`，沒有再抓到誤命中案例
       - 6 個新測試（`tests/test_fetcher_gaap.py`），全套非連線測試 1120 passed
-      - **未做**：201 家全量逐格回歸（因網路狀況取消，未來若要更高信心可補跑）；
-        `Amortization of Intangibles` 候選（抽測 KO 是 D&A 未拆分的真缺口，非漏抓，
-        沒有進一步展開查）
+      - **2026-08-25 補跑 201 家全量逐格回歸**（前一晚網路狀況好轉後補做）：模板列
+        回歸全部集中在 `Interest Income` 一列（747 格：140 值變了、607 變空），**逐一
+        查證後確認不是新 bug**——全部是 `InterestIncomeExpenseNonoperatingNet` 那個
+        淨額 concept 家族（`ExpenseNet` 的變體，第一輪抽樣沒掃到）造成的假命中被排除
+        後的正確結果：實測 ARLO／AZO／NKE／ABBV 這幾家的 IS 表面**只有**這個淨額
+        concept、根本沒有對應的純收入 concept，新程式碼正確判定整列空白，舊程式碼是
+        誤把淨額塞進去。WMT 的 67 格「值變了」是同一原因，從淨額（`Interest, net`）
+        改成正確的純收入數字（`Interest income`）。模板列補上：`Interest Income` +751、
+        `Operating Income` +49、`Revenue` +4；另有 7 家期間軸筆數變動（21→22/23/26，
+        單純是隔一天新一季 filing 進來，`diag_celldiff2.py` 本來就會跳過不比對）
+      - **未做**：`Amortization of Intangibles` 候選（抽測 KO 是 D&A 未拆分的真缺口，
+        非漏抓，沒有進一步展開查）
 - [x] **H4 第一步：模板 tuple 加第七欄 `label_fallback`，NVDA 的 Capex 從 39/68 期
       補到 67/68（2026-08-24）**：
       - **起因**：端到端實跑 NVDA 的 Excel 才發現的（只跑測試看不出來）。`Capex`
