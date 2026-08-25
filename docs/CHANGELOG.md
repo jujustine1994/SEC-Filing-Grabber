@@ -307,6 +307,28 @@
       - **尚未切換**。完整報告與待決事項見
         `docs/superpowers/report-2026-08-22-g11-companyfacts.md`
       - 四支 spike 腳本登記於 `scripts/README.md`
+- [x] **G11 決策：不切換，主力維持 edgartools（2026-08-23 定案）**：**CTH 原話**
+      「g11 先不要切，我們主力維持從 edgartool 抓取」。平行路徑（`fetcher_facts.py`／
+      `facts_mapping.py`）保留不刪，40 個測試維持綠燈，當第二資料來源做交叉驗證用。
+      兩個獨立理由，任一個單獨成立就足夠：
+      1. **速度優勢在混合架構下幾乎消失**。「快 215 倍」的前提是完全不解 filing，
+         但實測 ARLO 16 份 10-Q 裡下載＋解 XBRL 佔 54%（`Data_Segments` 非做不可，
+         跟三表用同一個 `max_filings`），三表各自的 `to_dataframe()` 合計才 46%。
+         CTH 確認 segments 要 20 年份、只有 8 季不可接受 → 那 54% 一分都省不掉 →
+         混合架構只快 1.9 倍，不值得付下面那些代價
+      2. **H3 做完後重跑 `spike_verify_mapping.py`：83.96% 精確／95.17% 符號對齊，
+         比 H3 之前的 92.82%／95.35% 還低**。不是 facts 變差，是現行路徑今天變好了，
+         差距反而拉開（`Debt Repayments` 只剩 20.67%——H3-2 把那列改成加總所有借款線，
+         facts 那邊還是單一 concept）
+      - **要付的代價（不換就不用付）**：C 欄公司原文標籤消失（facts 沒有 presentation
+        linkbase）、`Data_Segments` 結構上拿不到（fact 沒有維度欄位）、
+        `Other (as reported)` 語意會從「報表印出來但模板沒收」變成「tag 過但模板
+        沒收，混進附註層」
+      - **附帶決策**：符號**一律照公司原始申報，不做正規化**（`facts_mapping` 已全面
+        移除 `negate`）；`Other Operating Expense` 模板列不刪、改對照
+        `OtherCostAndExpenseOperating`／`OtherOperatingIncomeExpenseNet`（跟 G10
+        同一類問題，現行路徑側後續由 H3 修掉）
+      - 完整報告（52 家逐格比對、所有理由）：`docs/superpowers/report-2026-08-22-g11-companyfacts.md`
 - [x] **G1：日曆季判準統一成「一份實作、兩個具名基準點」（2026-08-22）**：同一件事
       原本有三套算法散在三個檔案——① `fetcher_gaap._calendar_quarter()` 完全不內縮
       （把 INTC 結束在 2023-04-01、實際涵蓋 1~3 月的那一季算成 `2023Q2`）；

@@ -208,28 +208,12 @@ G10. **`D&A` 與 `Capex` 的 concept 對照對某些公司完全失效**（2026-
      `NonoperatingIncomeExpense` 跟折舊攤銷毫無關係，但 `label` 寫得清清楚楚。`_match_is_row()` 優先比對 `std_concept`，比不中就漏掉
    - 另外看到 AMD 有兩列 `standard_concept` 是 `nan`（`Purchases of property and equipment`、`Stock repurchases for tax withholding...`），以及 `CapitalExpenses` 在 AMD 出現兩次（第二次是 "accrued but not paid"，**不可以加總，會重複計算**）
    - **修法選項**：① 幫 `D&A` 在 `CF_TEMPLATE` 補 `label_hint`，讓 std_concept 比不中時退回 label 比對（成本最低）；② 走 `SYNONYM_MAP`。**注意 ①/② 都要處理「同一個 concept 出現兩次」的去重**
-   - **這一類問題在 G11（改用 companyfacts）之後會整個消失**——companyfacts 直接給原始 us-gaap concept 名稱，沒有 edgartools 的 `standard_concept` 轉譯層。所以動手前先確認 G11 的決策，不然大概率白做
+   - **G11 已定案不切換（2026-08-23，主力維持 edgartools）**，這一類問題不會自動消失，**要在現行路徑這邊修**——`修法選項` 那行的做法可以直接動手
 
-G11. **改用 SEC companyfacts API 取數** ← **CTH 2026-08-23 決定：先不切換，主力維持 edgartools**
-   - **CTH 原話**：「g11 先不要切，我們主力維持從 edgartool 抓取」
-   - 平行路徑（`src/fetcher_facts.py` + `src/facts_mapping.py`）保留不刪，40 個測試維持綠燈。它同時是「第二個獨立資料來源」，做交叉驗證用得到
-   - **✅ 重評已完成（2026-08-23 晚），結論：不換，這題可以收了。** 兩個獨立的理由，任一個單獨成立就足夠：
-     1. **速度優勢在混合架構下幾乎消失。** 「快 215 倍」的前提是**完全不解 filing**。實測 ARLO 16 份 10-Q 的時間拆分：下載＋解 XBRL **佔 54%**（這步 `Data_Segments` 非做不可，而且它跟三表用同一個 `max_filings`），三表各自的 `to_dataframe()` 合計才 46%。**CTH 2026-08-23 確認 segments 要 20 年份、只有 8 季不可接受** → 那 54% 一分都省不掉 → 混合架構只快 1.9 倍，不值得付下面那些代價
-     2. **H3 做完後重跑 `spike_verify_mapping.py`：83.96% 精確／95.17% 符號對齊，比 H3 之前的 92.82%／95.35% 還低。** 不是 facts 變差，是**現行路徑今天變好了**，差距反而拉開。最明顯的是 `Debt Repayments` 只剩 20.67%——H3-2 把那一列改成加總所有借款線，facts 那邊還是單一 concept。目標 99% 不但沒收斂，方向是反的
-   - **要付的代價（不換就不用付）**：C 欄的公司原文標籤會消失（facts 沒有 presentation linkbase）、`Data_Segments` 結構上拿不到（fact 沒有維度欄位）、`Other (as reported)` 語意從「報表印出來但模板沒收的列」變成「tag 過但模板沒收的 concept」，會混進附註層的東西
-   - **重評前要補的**：那條路**從來沒產出過一份完整 Excel**——只驗過取數層，沒跑過 `_merge_financials` → `ratios` → `excel_writer` 整條下游，比率與版面對不對都還不知道
-   - **完整報告：`docs/superpowers/report-2026-08-22-g11-companyfacts.md`**（52 家逐格比對、所有決定與理由）
-   - 現況：`src/fetcher_facts.py` + `src/facts_mapping.py` 已完成，40 個測試。**現有程式一行都沒動**
-   - 實測：每家 0.34 秒 vs 現行 7.5 分鐘（**215 倍**）；最早涵蓋 2008-07（現行 2009-07）
-   - 逐格比對 **92.8% 相同，符號對齊後 95.4%**。剩下的差異分三類，全部有解釋（符號慣例、現行路徑會加總而 facts 是單一 concept、現行路徑本身算錯）
-   - **切換前要先做完的兩件事**：
-     1. **符號慣例定案**——現行輸出自己就不一致（`Income Tax` 有 15% 的格子符號相反）。要定義「每列一個明確慣例」並在兩條路強制執行。**這是行為改變，要 CTH 拍板**
-     2. **加總型的列**（`Investment Proceeds`／`Debt Proceeds`／`Debt Repayments`／`Total Non-op`）要在 facts 這邊補上跟 `_sum_matching_rows()` 一樣的加總邏輯
-   - 做完再跑 `scripts/spike_verify_mapping.py`，目標 99% 再談切換
-   - **限制（不是待辦）**：companyfacts 沒有維度資料 → `Data_Segments` 非走解 filing 不可；沒有 presentation linkbase → 公司自報標籤與 `Other (as reported)` 的語意會改變。建議混合架構
-   - **CTH 2026-08-22 決策（符號）**：**一律照公司原始申報，不做正規化**（「尊重公司原始資料，使用者要查找時會自己處理」）。`facts_mapping` 已全面移除 `negate`。附帶說明：反推出來的符號旗標仍有診斷價值——它揭露現行路徑的符號本身就不一致（AAPL 的 Capex 早年正、近年負），而 `ratios.py` 早就用 `abs()` 包住 Capex／Interest Expense，所以比率不受影響
-   - **CTH 2026-08-22 決策（模板列）**：`Other Operating Expense` **不刪，改對照名字**。原本判定「建議刪除」是錯的——52 家都抓不到是因為模板猜的 `OtherOperatingExpenses`／`OtherOperatingExpense` 根本沒有公司在用，實際 tag 的是 `OtherCostAndExpenseOperating`／`OtherOperatingIncomeExpenseNet`（各 11 家）。跟 G10 同一類問題。facts 側已修，**現行路徑側的 concept 名稱也要跟著修**
-   - `Free Cash Flow` 本來就是 DERIVED（OCF − Capex），不動。其餘列都有對應
+> **G11（改用 companyfacts API 取數）已於 2026-08-23 定案：不切換，主力維持
+> edgartools。** 決策理由與完整報告見 `docs/CHANGELOG.md`（搜尋「G11 決策」）與
+> `docs/superpowers/report-2026-08-22-g11-companyfacts.md`。下面 G10／H2 提到
+> 「等 G11 決策」都已經解除，可以直接動手。
 
 G13. **同一個期末日出現兩次（重複列）**（2026-08-22 做 G6 判定規則分析時發現）
    - 實測 SNOW 的 `Data_Financials(Q)` 有兩欄期末日都是 `2022-01-31`
@@ -270,15 +254,31 @@ H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-23：確
      4. **存在哪**：`config.json` 還是每個 ticker 各自一份？換公司要不要換清單（金融股跟製造業要的列本來就不同，見 D8）
      5. **跟 `Data_Ratios` 的相依**：比率是從模板列算出來的，關掉某列會讓哪些比率變空？要不要在 UI 上提示
      6. **overflow 區**：使用者能不能把 `Other (as reported)` 裡的某列「升級」成正式列
-   - **不要在 G11 決策之前動手**——公版列的來源（concept 對照）如果要換，先確定換不換
+   - **G11 已定案不切換**，公版列的來源（concept 對照）不會換，這個前提已經解除，不再是阻擋動手的理由——但 H2 本身仍是「保留方向未來再處理」，不是目前最急迫的事
 
 H4. **⚠ 公司自訂延伸 tag（`nvda_` / `tsla_` / `goog_` 這種）完全抓不到——模板沒有 label 比對層**（2026-08-23 端到端實測 NVDA 發現，**優先度高**）
    - **實測證據**：NVDA 的 `Capex` 在 57 期裡只有 36 期有值，**年報 17 年裡有 13 年整年抓不到**。根因是 NVDA 從 FY2019 到 FY2023 用自己的延伸 tag `nvda_PurchasesOfPropertyAndEquipmentAndIntangibleAssets`，FY2024 起才改用標準的 `us-gaap_PaymentsToAcquireProductiveAssets`
    - **連鎖影響**：年報那一格空白 → `_synthesize_q4()` 算不出 Q4（年報 − Q1 − Q2 − Q3）→ **2014~2023 每一年的 Q4 Capex 都空**，`Free Cash Flow` 跟著一起空
    - **為什麼現行架構救不了**：`_match_is_row()` 有三層（std_concept → concept 正則 → label），但**模板的 6-tuple 只餵得進前兩層**。延伸 tag 的 concept 名字每家公司都不一樣，只有 label 對得上——NVDA 那幾年的 label 一直是「Purchases related to property and equipment and intangible assets」，穩定得很
    - **✅ 第一步已完成（2026-08-23）**：模板 tuple 加了第 7 欄 `label_fallback`，97 列全部補上，四個呼叫點都接線。目前只有 `Capex` 真的填了正則（`^purchases (?:of|related to).*propert`），因為那是唯一有實證的案例。非 live 測試 1114 passed
-   - **⏳ 第二步待做**：數值指紋自動連結。設計已定案並自我檢視過，見 `docs/superpowers/specs/2026-08-23-concept-rename-linking-design.md`，交接見 `docs/superpowers/handoff-2026-08-24-h4-concept-rename-linking.md`
-   - **範圍已部分量化**：文字相似度那條路實測過——102 家強候選 458 組、**約一半誤判**，而且 NVDA 這個案例根本偵測不到（相似度拿模板列名「Capex」比公司原文「Purchases of property and equipment」，字面 0% 重疊）。**不要重走那條路**
+   - **⏳ 第二步（3b，數值指紋自動連結）：2026-08-25 量化完成，建議降級成長期項目，暫不做**。設計見
+     `docs/superpowers/specs/2026-08-23-concept-rename-linking-design.md`。
+     - **量化做法（3a）**：20 家（含 NVDA/TSLA/GE/PG）× 最新 6 份 10-Q，跑一次模板比對記下空格，
+       在同一份 dataframe 未消化列裡數「不是 us-gaap_ 開頭、有值」的延伸 tag，取
+       `min(當期空格數, 當期候選數)` 當理論上限（避免 1 個候選灌水算成救了好幾個空格）
+     - **結果**：4013 個模板空格裡，理論上限只有 614 格（**15.3%**）。逐家差異大：
+       GE 44%／JNJ 41%／TSLA 33% 較高，NVDA 只 5.6%（第一步 label_fallback 已經吃掉大半，
+       印證第一步效果超預期、第二步邊際效益變小的猜測）；AAPL／HD 是 0%（overflow 沒有延伸 tag）
+     - **這個 15.3% 還是高估**：人工抽查候選后，多數文不對題（JNJ「Other Operating Expense」
+       空格配到 `jnj_GrossProfitPercentToSales`——毛利率百分比，跟營業費用無關；META「Inventories」
+       配到 `meta_NonmarketableEquitySecuritiesCarryingValue`——非流通股權投資，跟存貨無關）。
+       跟已經否決的「文字相似度配對」踩到同一類坑，只是方向相反（這次是字面沾邊但語意不同）
+     - **少數看起來真的對得上**：MSFT `D&A` 空格配 `msft_DepreciationAmortizationAndOther`；
+       AMZN `R&D Expense` 空格配 `amzn_TechnologyAndInfrastructureExpense`（AMZN 本來就不用
+       R&D 這個名字）。但這種只占候選裡一小部分
+     - **結論**：5~7 小時、風險中（動主流程取值）換來的可能只有個位數 % 的真實改善，且要另外
+       設計怎麼濾掉像 JNJ／META 那種假候選。投報率明顯不如第一步。建議先不做，除非之後有
+       具體案例（像 NVDA Capex 那種）逼出真正的需求
    - **companyfacts 沒有延伸 tag**（102 家實測，只有 us-gaap/dei/srt/ffd/ecd/invest 這些 SEC 標準 taxonomy）→ 第二資料源救不了這題，而且基線的〔真缺口〕KPI **低估了**這一類
 
 H3-1. **剩下的模板列缺漏：多數是「公司沒在報表表面單獨列」，不是 concept 對照錯**（2026-08-23，H3 主體已完成搬進 CHANGELOG，覆蓋率 40/97 → 47/97）
@@ -302,14 +302,13 @@ H3-2. **「中間有洞」對流量列會過度報警**（2026-08-23 發現，�
 
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
 |---|---|---|---|---|
-| 1 | **G11 切換決策** | 否（spike 已做完） | 是 | 平行路徑已驗證完成（92.8%／符號對齊後 95.4%）。要 CTH 決定符號慣例與是否切換。做完會讓 G8／G9／G10 全部不需要 |
-| 3 | G2 + G7（對應表 + 說明 sheet） | 否 | 是（說明條目的措辭要 CTH 過） | 跨公司輸出改版，兩項一起做 |
+| 1 | G2 + G7（對應表 + 說明 sheet） | 否 | 是（說明條目的措辭要 CTH 過） | 跨公司輸出改版，兩項一起做 |
 | 3 | G6（缺季留空白欄） | 否 | 是（補到哪為止已決定，但要確認不誤傷 Index 完成度） | G1 已完成，相依已解除 |
 | 4 | B2 skill 端抽取 | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
 | 5 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
 | 7 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
 | — | G4 overflow 標示 | 否 | 是 | 建議只做標示，不做 synonym 合併 |
-| — | G8／G10 | — | — | **等 G11 決策，做了大概率白做**（G9 已完成） |
+| — | G8／G10 | — | — | **G11 已定案不切換，這兩項不會白做**，只是排序上晚於 G2/G7/G6（G9 已完成） |
 | — | F2 估值倍數 | 是（要股價來源） | 是 | 待研究，未確認方向 |
 
 ## D. 待 CTH 決定的已知限制
