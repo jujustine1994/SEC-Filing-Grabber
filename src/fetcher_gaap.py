@@ -408,6 +408,18 @@ _CAPEX_HINT = (
 # ——那是概念取捨題，CTH 還沒決定（TODO H6），H6 刻意不動。
 _CASH_HINT = r"cash and (?:cash )?equivalents|^cash\s*$|cash and cash items|cash and temporary"
 
+# 第三層（label 比對）。ASU 2016-18 只要求**現金流量表**的期初期末總額包含受限
+# 現金，**資產負債表沒有要求合併列示**——多數公司 BS 仍分開列、附註做 reconciliation。
+# INTC 2022~2025 那 15 期就是這樣：BS 印的字是「Cash and cash equivalents」，
+# 但 tag 挑了 ASU 2016-18 的合併 element
+# `CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`
+# （⚠ 名字裡沒有 "And"，所以 std 與 fallback_suffix 兩層都比不中）。
+#
+# 抓「公司自己印在報表表面的那一行」是對的口徑；真的把受限現金併進列示的公司，
+# label 會寫成「Cash, cash equivalents and restricted cash」之類，**要窄到吃不到
+# 那種**——第三層後面沒有任何東西再擋它。
+_CASH_LABEL_FALLBACK = r"^cash and cash equivalents$"
+
 # Common Stock & APIC：12 家全損。愛爾蘭／英國／瑞士註冊或改遷冊的公司寫
 # Ordinary shares（ACN/AON/ETN/JCI/LIN/MDT），另一批寫 Common shares
 # （ABT/AMP/AXP/CB/KR/UNP）。concept 全部是 `CommonStockValue(Outstanding)`、
@@ -465,7 +477,7 @@ IS_TEMPLATE: list[_T] = [
 
 BS_TEMPLATE: list[_T] = [
     # ── Assets ──────────────────────────────────────────────────────────
-    ("Cash",                           "CashAndMarketableSecurities",             "CashAndCashEquivalents",                                    "BS", "first", _CASH_HINT, None),
+    ("Cash",                           "CashAndMarketableSecurities",             "CashAndCashEquivalents",                                    "BS", "first", _CASH_HINT, _CASH_LABEL_FALLBACK),
     ("Short-term Investments",         "ShortTermInvestments",                    "ShortTermInvestments",                                      "BS", "first", None, None),
     ("Accounts Receivable",            "TradeReceivables",                        "AccountsReceivable",                                        "BS", "first", "receivable", None),
     ("Inventories",                    "Inventories",                             "Inventories",                                               "BS", "first", None, None),

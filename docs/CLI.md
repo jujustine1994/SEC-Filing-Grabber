@@ -57,6 +57,8 @@
 （例如財年結束後才發的年報季）邊界仍可能差一份，要精確就把範圍放寬一年，
 再自己用 `fiscal_label` 篩。
 
-⚠ **公司改過財年的舊申報可能整段標錯**：EDGAR 的 `fiscal_year_end` 只有現值。
-`label_agrees_with_fiscal_label` 抓得到「選進來的那幾份有問題」，抓不到
-「該選進來卻被 `--years` 漏掉」的那一類。
+⚠ **公司改過財年的舊申報會整段標錯**：EDGAR 的 `fiscal_year_end` 只有現值。
+**201 家實測只有 2 家改過財年（1.0%）**，但中招的話中得徹底——LHX 2019 年從
+6 月底改成 12 月底，改制前那 30 季**全部**差 2 季；MSCI 那次只挪 31 天，不跨季所以
+沒事（`scripts/check_fye_drift.py`，離線可重驗）。`label_agrees_with_fiscal_label`
+抓得到「選進來的那幾份有問題」，抓不到「該選進來卻被 `--years` 漏掉」的那一類。

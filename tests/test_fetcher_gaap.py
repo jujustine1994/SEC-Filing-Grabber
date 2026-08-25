@@ -3229,3 +3229,44 @@ def test_cost_of_revenue_prefers_purchased_fuel_over_operating_and_maintenance_e
                  extra=[("us-gaap_UtilitiesOperatingExpenseMaintenanceOperationsAndOtherCostsAndExpenses",
                          "Operating and maintenance", "CostOfGoodsAndServicesSold")])
     assert _match_template_row("Cost of Revenue", df) == "Purchased power and/or fuel"
+
+
+# ── Cash 的 label_fallback：ASU 2016-18 合併 tag（2026-08-25）──────────────
+#
+# ASU 2016-18 只要求**現金流量表**的期初期末總額包含 restricted cash，資產負債表
+# 沒有要求合併列示。INTC 2022~2025 的 BS 那一行印的字就是「Cash and cash
+# equivalents」，只是 tag 挑了 ASU 2016-18 那個合併 element
+# （`CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`，⚠ 名字裡
+# 沒有 "And"，所以模板的 std 與 fallback 兩層都比不中）。抓公司印在報表表面的
+# 那一行是對的；真的把受限現金併進列示的公司 label 會不一樣，靠窄正則排除。
+
+
+@pytest.mark.parametrize("concept", [
+    "us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",       # INTC 2022~2025
+    "us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalentsAtCarryingValue",
+])
+def test_cash_falls_back_to_the_presented_label_when_the_concept_is_the_asu_combined_tag(concept):
+    df = _row_df(concept, "Cash and cash equivalents", float("nan"))
+    assert _match_template_row("Cash", df) == "Cash and cash equivalents"
+
+
+@pytest.mark.parametrize("label", [
+    "Cash, cash equivalents and restricted cash",
+    "Cash and cash equivalents, including restricted cash of $412",
+    "Restricted cash and cash equivalents",
+])
+def test_cash_label_fallback_stays_out_of_combined_presentations(label):
+    """公司**真的**把受限現金併進資產負債表列示時，口徑跟其他公司不同，
+    不可以抓進來——第三層的正則要窄到只吃「Cash and cash equivalents」那一行。"""
+    df = _row_df("us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+                 label, float("nan"))
+    assert _match_template_row("Cash", df) is None
+
+
+def test_cash_label_fallback_does_not_override_the_concept_layers():
+    """第三層只在前兩層都沒中時才走。標準 concept 在場時照樣走 Priority 1。"""
+    df = _row_df("us-gaap_CashAndCashEquivalentsAtCarryingValue", "Cash and cash equivalents",
+                 "CashAndMarketableSecurities",
+                 extra=[("us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
+                         "Cash and cash equivalents", float("nan"))])
+    assert _match_template_row("Cash", df) == "Cash and cash equivalents"

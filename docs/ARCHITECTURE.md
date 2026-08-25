@@ -370,6 +370,24 @@ H3 那批 hint 是照 **22 家**調的，擴到 **201 家**重掃後有四條明
 「Accrued property additions」——**填的是錯的數字**。H6 之後那格留空。判斷一個 hint
 改得對不對，不能只看「填滿的格子有沒有變多」。
 
+### 什麼時候該用第三層（label_fallback）而不是放寬 concept
+
+`Cash` 那一列 2026-08-25 補了 `^cash and cash equivalents$`。成因是 ASU 2016-18：
+**現金流量表**的期初期末總額必須含受限現金，**資產負債表沒有要求合併列示**，
+但有些公司（INTC 2022~2025、PG、SBUX、GILD…）把 BS 那一行 tag 成 ASU 的合併 element
+`CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`（⚠ 名字裡**沒有
+"And"**，所以模板的 `CashAndCashEquivalents` 兩層都比不中），而印出來的字仍然是
+「Cash and cash equivalents」。
+
+**判準：抓「公司印在報表表面的那一行」。** 所以走第三層 label 比對、正則要窄到
+只吃那一行——真的把受限現金併進列示的公司會寫「Cash, cash equivalents and
+restricted cash」，窄正則吃不到，口徑不同的自動排除。
+
+副作用實測（201 家最新 10-Q）：**新增命中 11 家、換答案 0 家**。其中 BAC 拿到的是
+它自己在 BS 上列的小計 `$229.7bn = 28.1（cash and due from banks）+ 201.6（存放同業）`
+——**正好是 ASC 230 現金流量表定義的銀行現金**。JPM 沒列這條小計，所以仍是空的
+（銀行 Cash 的完整解法要能加總兩列，屬於 D8）。
+
 ## Template 行數摘要
 
 | 報表 | 行數 | 格式 |

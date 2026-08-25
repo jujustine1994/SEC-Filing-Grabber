@@ -18,26 +18,30 @@ B4. **最新法說會資料能不能自動更新**（2026-08-12 CTH 提出）
    - 預期方向：自動抓最新 8-K（尤其 Item 2.02 財報發布 8-K）來補即時數字，而不是等 10-Q/10-K 才更新——跟 B1 的 `cli.py press-release` 子指令、B3 的 `press_release_tables.py` 應該是同一條路線，需要研究怎麼接
    - **待研究，未動手**
 
-B6. **8-K 零下載規則的剩餘風險：`fiscal_year_end` 會不會隨時間變**（2026-08-25，
-   B5 實作完後留下的唯一未決事項，**要 CTH 決定要不要驗**）
-   - 背景：B5 已上線（見 `docs/CHANGELOG.md`），列清單階段的季度標籤改用
-     EDGAR `Company.fiscal_year_end` 回推。**EDGAR 只給「現在」的值**，公司改過
-     財年的話，拿現值去回推改制以前的申報會整段偏掉
-   - **⚠ 交接文件原本寫的「加一道 0~70 天 sanity check 就接得住」是錯的，那是恆真式**：
-     候選季末永遠相隔 89~92 天，規則取「不晚於 發布日+tol 的最新候選」，選中的必然
-     落在 `[-tol, 91-tol)`，tol=21 時上界剛好 70。200 份實測 lag 範圍 -2~58，
-     那道檢查一次都沒攔到過。程式碼保留它（`max_lag_days`），但它擋的是參數被改壞
-     與畸形輸入，**不是 FYE 漂移**
-   - **現有的唯一偵測手段有個洞**：`cli.py` 下載後把 label 與 `fiscal_label` 比對，
-     不一致就在 payload 標 `label_agrees_with_fiscal_label: false`。但 `--years`
-     **篩在下載之前**——被漂移害到而根本沒被選中的那幾份不會被下載，也就永遠不會被
-     比對到。抓得到「選進來的有問題」，抓不到「該選進來卻被漏掉」
-   - **想真的驗的話，有一條不打網路的路子**（成本低，先記著省下次的力氣）：
-     `output/_spike/` 有 201 家的 facts 快取，裡面帶歷年期末日。拿「歷年 10-K 期末日
-     推出來的財年結束月日」跟 `Company.fiscal_year_end` 現值比，**漂超過兩週的就是
-     改過財年的公司**，再看那幾家的 8-K label 會不會出錯
-   - 另外沒測到的：樣本只到最近 8 季（2024~2026），更早期沒驗；2004-08 之前
-     Item 2.02 這個編號還不存在，那段本來就抓不到
+B6. ~~**8-K 零下載規則的剩餘風險：`fiscal_year_end` 會不會隨時間變**~~
+   ✅ **2026-08-25 驗完，風險已量化，決定接受**（CTH 決定「驗」）
+   - **結果：201 家裡只有 2 家改過財年（1.0%）**，用 `scripts/check_fye_drift.py`
+     離線量的（零網路請求，吃 `output/_spike/facts_*.json`）：
+     | 公司 | 改制 | 改制前受影響的季 | 標錯幾季 |
+     |---|---|---|---|
+     | **LHX** | 2019 年從 6 月底改成 12 月底（差 177~182 天） | 30 季 | **30 季（100%）**，一律差 2 季 |
+     | **MSCI** | 2010 年從 11/30 改成 12/31（差 31 天） | 1 季 | **0 季**（位移不足以跨季） |
+     - 其餘 199 家：181 家最大偏移 0~4 天、18 家 5~9 天，全部是 52/53 週制的正常浮動
+   - **決定：接受這個風險，不做特別處理。** 理由：① 只影響 1% 的公司，而且只影響
+     **改制以前**的申報（LHX 是 2019 年以前）；② 真的要修得為每一期存一份「當時的
+     FYE」，那要嘛下載歷史 10-K（正好抵銷零下載的意義），要嘛另建一張歷史 FYE 表；
+     ③ `cli.py` 下載後的 `label_agrees_with_fiscal_label` 旗標抓得到選進來的那幾份
+   - **⚠ 交接文件原本寫的「加一道 0~70 天 sanity check 就接得住」是恆真式**：候選季末
+     永遠相隔 89~92 天，選中的必然落在 `[-tol, 91-tol)`，tol=21 時上界剛好 70，
+     一次都攔不到（200 份實測 lag 範圍 -2~58）。程式碼保留它（`max_lag_days`），
+     擋的是參數被改壞與畸形輸入，**不是 FYE 漂移**
+   - **偵測手段仍有一個洞**：`--years` 篩在下載之前，被漂移害到而**根本沒被選中**的
+     那幾份不會被下載，也就不會被比對到。抓得到「選進來的有問題」，抓不到「該選進來
+     卻被漏掉」
+   - **重驗方式**：`./venv/Scripts/python.exe scripts/check_fye_drift.py [門檻天數]`
+     （預設 14 天）。樣本換了、或想拉更多公司進來時重跑
+   - 仍未測到的：樣本只到最近 8 季（2024~2026），更早期沒驗；2004-08 之前 Item 2.02
+     這個編號還不存在，那段本來就抓不到
 
 
 ## C. 與 financial-assistant 體系的銜接（另開對話處理）
@@ -287,10 +291,28 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（
      ① 「CS&APIC 那 7 家是 concept 層失守」錯——ABT/AMP/AXP/COP/KR/MPC/UNP 七家全部是
      `us-gaap_CommonStockValue(Outstanding)` / `std_concept=CommonEquity`，concept 層好好的；
      ② 「SLB 退到 fallback_suffix 層」錯——`us-gaap_Cash` 一樣有 `std_concept=CashAndMarketableSecurities`
-   - **① 銀行的「Cash and due from banks」7 家**（AXP/BAC/BK/C/COF/JPM/WFC）
-     ——**概念取捨題，要 CTH 決定，不是 bug**。銀行的「現金及存放同業」算不算模板意義上的
-     `Cash`？納進來只要 hint 加 `|due from banks`，但那跟一般公司的 Cash 不同質，
-     跨公司比較會混到兩種口徑
+   - **① 銀行的「Cash and due from banks」——✅ CTH 2026-08-25 決定：維持空白，
+     併入 D8 一起處理。原本 7 家，同日 `label_fallback` 上線後剩 6 家
+     （AXP/BK/C/COF/JPM/WFC）**
+     - **BAC 已自動解決，而且拿到的是正確口徑**：它在 BS 上自己列了一條小計
+       `Cash and cash equivalents` = **$229.7bn = 28.1（due from banks）+ 201.6
+       （存放同業）**，正是 ASC 230 現金流量表定義的銀行現金。JPM 沒列這條小計，
+       所以還是空的——**差別在公司有沒有在報表表面列小計，不是我們的規則**
+     - **會計原則**：Reg S-X Article 9 規定銀行 BS 第一列是 `Cash and due from banks`
+       （庫存現金、在途收款、**不生息**的存放同業）；生息的那部分（主要是存在 Fed 的
+       準備金）是另一列 `Interest-bearing deposits with banks`。而 ASC 230 現金流量表
+       底下 reconcile 的「現金及約當現金」，銀行實務上是**兩列相加**（有時再加
+       fed funds sold）。Compustat `CHE`、Bloomberg cash & near cash 對銀行也是相加
+     - **實測（JPM 2026-06-30，本專案快取的 10-Q）**：
+       ```
+       Cash and due from banks          $24.7bn
+       Deposits with banks             $285.1bn   ← 11 倍
+       Federal funds sold / resale     $446.1bn
+       ```
+       只抓 `due from banks` 等於填了真實現金的 **8%**——**比留空更糟**：留空使用者知道
+       沒資料，填 8% 看起來像正常數字，拿去算 net debt 或流動性會整個歪掉
+     - **為什麼不能直接做對**：模板一列只對到一個 XBRL 列、**不會加總**，湊不出銀行口徑
+       的 cash。這正是 **D8（金融股另一套模板）** 存在的理由，等 D8 一起做才有辦法
    - **② Common Stock & APIC 剩 COP 與 MPC**：COP 的 label 只有「Par value」、MPC 是
      「Issued – 995 million and 994 million shares (par value $0.01 per share…)」，
      **措辭裡完全沒有股票字樣**，放寬措辭救不了。要救只能改成「候選只有一列
@@ -304,19 +326,21 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（
    - **④ Cost of Revenue 那 29 家維持空白是正確行為**（AMT/AON/AXP/BAC/BK/BKNG/BLK/C/CCI/
      CME/COF/CSX/FDX/GS/HCA/ICE/JPM/MCD/MCO/MS/NDAQ/NSC/ODFL/PLD/SCHW/UNP/UPS/V/WFC）
      ——銀行／保險／交易所／鐵路／REIT 概念上沒有 COGS，與 **D8** 同一類。列在這裡只是備查
-   - **⑤ 新發現（2026-08-25 量 G10 時撞到，不在原掃描範圍內）：INTC 2022~2025 的
-     `Cash` 有 15 期抓不到，是 concept 層不是 hint**。INTC 那幾年把現金 tag 成
+   - **⑤ ~~INTC 2022~2025 的 `Cash` 有 15 期抓不到~~ ✅ 2026-08-25 已修**
+     （CTH 決定照公司報表表面的列示抓，見 CHANGELOG「Cash 補 label_fallback」）。
+     原始症狀：INTC 那幾年把現金 tag 成
      `us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`
      （std_concept 是 `CashAndCashEquivalents`），我們模板的 std 是
      `CashAndMarketableSecurities`、fallback 是 `CashAndCashEquivalents`——**注意
      那個 concept 名字裡沒有 "And"**（`CashCashEquivalents...`），所以兩層都比不中；
      label 明明就是「Cash and cash equivalents」，但這一列沒有 label_fallback。
      2026 年那幾份又改回 `CashAndCashEquivalentsAtCarryingValue`，所以只有中間那段空
-     - 三條路：① fallback 加 `|CashCashEquivalentsRestrictedCash`——但那個科目**含受限
-       現金**，跟其他公司的 Cash 不同口徑；② 這一列補 `label_fallback`（`^cash and cash
-       equivalents$`），口徑問題還在但至少抓得到；③ 維持空白
-     - **跟銀行那題是同一類的口徑取捨，要 CTH 一起決定**（實測掃描：INTC 2025-04-25
-       到 2022-04-29 連續 10 份 10-Q 全部 NO MATCH，2025-07-24 之後恢復正常）
+     - **採用②（補 `label_fallback`）**：ASU 2016-18 只要求**現金流量表**的期初期末
+       總額含受限現金，資產負債表沒有要求合併列示，INTC 印在 BS 上的那行字就是
+       「Cash and cash equivalents」——抓公司報表表面列示的那一行是對的口徑。
+       否決①（改 concept fallback）是因為它會一併吃進真的把受限現金塔得很大的公司
+     - **副作用實測（201 家最新 10-Q）：新增命中 11 家、換答案 0 家**
+       （BAC/CSX/DOV/EL/GILD/HSY/LULU/MMM/OMC/PG/SBUX）
    - **⑥ 更零星的個案**（材料不足，不建議單獨修）：`Other Non-current Assets` IBM
      「Investments and sundry assets」／ISRG「Long-term investments」、`Dividends Paid`
      AMT／CHTR（只有少數股權分配）、`Accounts Receivable` SO（gross 口徑）、
@@ -332,7 +356,7 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
 |---|---|---|---|---|
 | 1 | B2 skill 端抽取 | 否 | 是（skill 設計） | **B5 與 H6 都已於 2026-08-25 完成，見 CHANGELOG** |
-| 2 | B6（FYE 漂移要不要驗）+ H6-1（銀行 Cash 口徑） | 否（都有離線路子） | 是 | 兩條都是「要不要做」的判斷題，建議合併成一次決策 |
+| 2 | G10（`D&A` 的 concept 對照） | 否 | 否 | AMD 2/25、MRVL 0/19，根因已查清（edgartools 把 std_concept 標成 `NonoperatingIncomeExpense`），修法與 H6 同一類。**B6、銀行 Cash 口徑、INTC Cash 三題都已於 2026-08-25 決定完畢** |
 | — | ~~B2~~（已升到第 1） | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
 | 4 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
 | 5 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
@@ -369,6 +393,11 @@ D0-5. **期間標籤是公式、沒有快取值 → 來源檔關著時跨檔案 
    - **研究記錄（2026-08-12）**：兩條路——(a) 存檔後直接改 xlsx 內部 XML 把快取值塞進公式旁邊，**風險中**，動底層 XML 較脆弱；(b) 乾脆改成純值不用公式，**風險小**，但會犧牲「改 Index B4 財年起始月即時連動 1/3/4 列」這個功能（而且 B4 本來就只能在 Excel 裡改，程式端本來就抓不到那個編輯動作去重算，這個「即時連動」的價值本身也可以重新評估）。這項是取捨題不是純技術題
 
 D8. 金融股（GS/JPM 等）獨立模板：現行 IS/BS 模板對金融股部分欄位空白，需另建模板。低優先。
+   - **2026-08-25 追加一個具體需求：Cash 這一列對銀行要能「加總兩列」**
+     （`CashAndDueFromBanks` + `InterestBearingDepositsInBanks`，有時再加
+     `FederalFundsSoldAndSecuritiesPurchasedUnderAgreementsToResell`）。JPM 實測
+     24.7bn vs 285.1bn，只取第一列等於填 8%。現行模板一列只對一個 XBRL 列、不會加總
+     ——**「支援加總」是金融股模板的硬需求，不是選配**。理由與會計原則見 H6-1 第 ① 點
    - **研究記錄（2026-08-12）**：程式碼裡目前除了印一行警告訊息，**完全沒有任何金融股特殊處理**——現有科目對照表直接套用，對不上的欄位就是空，不是 bug 是模板天生沒設計給銀行股。真要做要重新研究銀行/券商專屬 US-GAAP 科目（存款、放款、備抵呆帳...），等於另建一整套模板。**風險：大**。這其實是「要不要用這工具抓銀行股」的產品決定，不是技術問題，建議先想清楚要不要再談技術
 
 D9. **外國私人發行人（Foreign Private Issuer）抓不到財報**（2026-08-20 CTH 回報）

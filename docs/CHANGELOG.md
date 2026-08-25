@@ -10,6 +10,52 @@
 ## 功能清單
 
 ### 已完成
+- [x] **Cash 補 `label_fallback`（ASU 2016-18 合併 tag）＋ 銀行現金口徑定案＋B6 FYE 漂移驗完（2026-08-25）**：
+      三件事都是 H6 收尾時 CTH 指定要用**會計原則**判斷、而不是看填滿率決定的。
+
+      **① `Cash` 補第三層 `^cash and cash equivalents$`**
+      - **成因**：ASU 2016-18 只要求**現金流量表**的期初期末總額包含 restricted cash，
+        **資產負債表沒有要求合併列示**。但有些公司把 BS 那一行 tag 成 ASU 的合併 element
+        `CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`
+        （⚠ 名字裡**沒有 "And"**，模板的 `CashAndCashEquivalents` 兩層都比不中），
+        而印出來的字仍然是「Cash and cash equivalents」
+      - **判準：抓公司印在報表表面的那一行。** 真的把受限現金併進列示的公司會寫
+        「Cash, cash equivalents and restricted cash」，窄正則吃不到，口徑不同的自動排除。
+        **否決**「fallback 加 `|CashCashEquivalentsRestrictedCash`」那條路——它會一併吃進
+        真的把受限現金塔得很大的公司
+      - **副作用實測（201 家最新 10-Q，逐家比對有／無第三層）：新增命中 11 家、
+        換答案 0 家、錯誤 0 家**——BAC/CSX/DOV/EL/GILD/HSY/LULU/MMM/OMC/PG/SBUX。
+        INTC 那 14 份實測全部命中（原本 2022-04-29 ~ 2025-04-25 連續 10 份 NO MATCH）
+
+      **② 銀行的「Cash and due from banks」：維持空白，併入 D8**
+      - **會計原則**：Reg S-X Article 9 規定銀行 BS 第一列是 `Cash and due from banks`
+        （庫存現金、在途收款、**不生息**存放同業）；生息的部分（主要是 Fed 準備金）是
+        另一列 `Interest-bearing deposits with banks`。ASC 230 現金流量表 reconcile 的
+        「現金及約當現金」，銀行實務是**兩列相加**。Compustat `CHE`、Bloomberg cash &
+        near cash 也是相加
+      - **實測（JPM 2026-06-30）**：cash and due from banks $24.7bn vs 存放同業
+        $285.1bn（**11 倍**）。只抓第一列＝填了真實現金的 **8%**，**比留空更糟**
+      - 模板一列只對一個 XBRL 列、不會加總 → **「支援加總」變成 D8 金融股模板的硬需求**
+      - **BAC 反而被 ① 自動解決，而且是正確口徑**：它自己在 BS 上列了小計
+        `Cash and cash equivalents = $229.7bn = 28.1 + 201.6`，正是 ASC 230 的銀行現金。
+        JPM 沒列這條小計所以仍是空的——**差別在公司有沒有列小計，不是我們的規則**。
+        待處理的銀行從 7 家降到 6 家（AXP/BK/C/COF/JPM/WFC）
+
+      **③ B6：FYE 漂移驗完，風險已量化，決定接受**
+      - 新增 `scripts/check_fye_drift.py`（**零網路請求**，吃 `output/_spike/facts_*.json`，
+        201 家跑幾秒）：從每份 10-K 取該年度期末日，跟最新那年的月日比，
+        超過 14 天（52/53 週制本來就會浮動 7 天）就判定改過財年
+      - **結果：201 家只有 2 家（1.0%）**——**LHX** 2019 年從 6 月底改成 12 月底
+        （改制前 30 季**全部標錯**，一律差 2 季）、**MSCI** 2010 年從 11/30 改成 12/31
+        （位移 31 天不跨季，**0 季**受影響）。其餘 199 家最大偏移都在 9 天內
+      - **決定接受不處理**：只影響 1% 的公司、且只影響改制**以前**的申報；真要修得為
+        每一期存「當時的 FYE」，那要嘛下載歷史 10-K（抵銷零下載的意義）要嘛另建歷史表。
+        `label_agrees_with_fiscal_label` 旗標仍抓得到被選進來的那幾份
+      - `docs/CLI.md` 的警告已補上這組數字
+
+      **測試**：非連線 1264 → **1270 passed**（+6，先紅後綠；含三個「不可以吃進來」的
+      反例：`Cash, cash equivalents and restricted cash` 這類合併列示不可以被第三層抓到）
+
 - [x] **H6：擴充四條 `label_hint`，救回 37 家被措辭卡住的科目（2026-08-25）**：
       - **問題**：H3（2026-08-23）那批 hint 是照 22 家調的，201 家重跑後發現對部分公司
         太窄——**concept 層明明對得上，卻被 label 措辭整層濾空**（`_match_is_row()` 的
