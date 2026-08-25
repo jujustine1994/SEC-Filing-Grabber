@@ -389,3 +389,43 @@ def test_quarter_labels_start_at_column_d(tmp_path):
     ws = _four_col_wb(tmp_path)
     assert ws["D1"].value == "FY2025Q1"
     assert ws["E1"].value == "FY2025Q2"
+
+
+def test_gap_column_survives_the_whole_excel_pipeline(tmp_path):
+    """G6（2026-08-25）：補出來的空白欄第 5 列不是完整 ISO 日期（`2025-06`），
+    `fiscal_input._apply_to_sheet()` 會跳過該欄不套公式、保留靜態標籤。
+    這條確認整條寫檔路徑不會因此炸掉，而且那一欄真的是空的。"""
+    from fetcher_gaap import _merge_financials
+    from fiscal_input import apply_fiscal_year_input
+
+    def _tbl(sheet, concept, value):
+        return StatementTable(
+            sheet_name=sheet,
+            quarter_labels=["FY2025Q1", "FY2025Q3"],
+            filing_dates=["", ""],
+            concepts=[concept], values=[[value, value]], labels=[""],
+            period_ends=["2025-03-29", "2025-09-27"],
+        )
+
+    merged = _merge_financials(_tbl("Data_IS", "Revenue", 1.0),
+                               _tbl("Data_BS", "Total Assets", 2.0),
+                               _tbl("Data_CF", "Operating Cash Flow", 3.0))
+    assert merged.quarter_labels == ["FY2025Q1", "FY2025Q2", "FY2025Q3"]
+
+    out = tmp_path / "gap.xlsx"
+    write_statements([merged], out)
+    wb = openpyxl.load_workbook(out)
+    apply_fiscal_year_input(wb, 12)
+    ws = wb["Data_Financials(Q)"]
+
+    # 資料欄從 D 欄（第 4 欄）開始：A 概念、B 中文說明、C 公司原文標籤。
+    # 三欄期間 → D/E/F，補出來的空白欄是 E。
+    gap_col = 5
+    end_row = next(r for r in range(1, 10)
+                   if ws.cell(row=r, column=1).value == "Period End")
+    assert ws.cell(row=end_row, column=gap_col).value == "2025-06"   # 反推年月，不是假日期
+    # 第 1 列：兩側有完整 ISO 日期的欄改成公式，補出來這欄保留靜態標籤
+    assert ws.cell(row=1, column=gap_col).value == "FY2025Q2"
+    rev_row = next(r for r in range(1, ws.max_row + 1)
+                   if ws.cell(row=r, column=1).value == "Revenue")
+    assert ws.cell(row=rev_row, column=gap_col).value is None
