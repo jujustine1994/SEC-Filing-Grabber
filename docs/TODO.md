@@ -32,7 +32,11 @@ B5. **8-K `--years` 篩選用的 label 有 31.5% 年份是錯的——已驗出�
      | `output/_8k_audit/audit_run.log`、`audit_oos.log` | 兩次抓取的執行紀錄 |
      - `output/` 有 gitignore，所以原始資料留在磁碟上但不進版控；報告本身在 `docs/` 進版控
      - 重跑抓取（真的需要時）：`./venv/Scripts/python.exe scripts/audit_8k_period_labels.py <out.json> --cache-dir <cache>`
-   - **順帶量出來的現況分布**（119 份可比對，`8k_period_audit.json` 的 `offset_histogram`）：現行 label 與新聞稿自述財季的偏移 `-3:16、-2:20、-1:35、0:16、1:32`——**只有 16 份是對的**。偏移量隨公司財年結構不同而不同（AAPL 全 0、MSFT 全 −1、NVDA/CRM 全 −3），所以不可能用「統一減一季」修掉
+   - **現況分布，以及「這是程式邏輯不是資料偶發」的證據**（119 份可比對，`8k_period_audit.json` 的 `offset_histogram`）：
+     - 現行 label 與新聞稿自述財季的偏移 `-3:16、-2:20、-1:35、0:16、1:32`——**只有 16 份是對的**
+     - **這組數字跟 `docs/8k-period-off-by-one.md` 裡 2026-08-07 記的每一格完全一樣**（16/20/35/16/32），而且是這次重抓 EDGAR 重跑出來的、不是照抄。隔了 18 天、多了兩季新申報，行為零漂移 → **這條 off-by-one 是純程式邏輯造成的，不是資料面偶發**
+     - 偏移量隨**公司財年結構**不同（AAPL 全 0、MSFT 全 −1、NVDA/CRM 全 −3），這是舊算法（用日曆季）造成的分布
+     - ⚠ **不要把上面那件事跟規則 A 的敗因混為一談**（兩者成因不同）：規則 A（統一往前挪一季）**已經實測過了，58.0%**，不是「推論不可行」而是「量過不可行」；它的敗因是**發布延遲跨度 4~58 天**，不是財年結構
    - **⚠ 原提案的根因判斷是錯的，不要照著做**：原本想「把 `_fy_end_month()` 提前傳進 `_list_earnings_filings()`」——就算傳進去，那裡**沒有 `period_end` 可用**。真實期末日是 `cli.py::_period_end_from_tables()`（`cli.py:283`）從新聞稿表格內文 regex 抓的，前提是 `filing.obj()` 已經把整份文件下載並解析完。`_list_earnings_filings()` 的 docstring 明寫 *"no document is downloaded here"*，照原提案改＝把 20 年上百份 8-K 全下載完才知道哪幾份落在 `--years` 區間，**正好抵銷 `--years` 存在的目的**
    - **⚠ label 不只用於年份篩選**：它同時是 `_dedupe_by_label()` 的 key 與 `_find_missing_quarters()` 缺季偵測的依據，改 label 會連動這兩處
    - **實測規模**：26 家 × 最近 8 份 Item 2.02 8-K = 200 份，SEC EDGAR 實抓，零 AI 呼叫
@@ -50,7 +54,8 @@ B5. **8-K `--years` 篩選用的 label 有 31.5% 年份是錯的——已驗出�
              套 fiscal_input.fiscal_quarter_of(候選季末, fy_start_month(fye 月))
      ```
      - **一定要傳完整 MMDD，不能只傳月份**——只傳月份就退化成規則 B 的 79.8%
-     - `tol` 允許名目季末落在發布日之後一點（COST Q3 真實 5/10 結束、名目算出來 5/30，而它 5/28 就發了）。**tol 在 3~30 天之間結果完全相同**（高原很寬），建議取 21；tol=0 掉到 95.0%
+     - `tol` 允許名目季末落在發布日之後一點（COST Q3 真實 5/10 結束、名目算出來 5/30，而它 5/28 就發了）
+     - **tol 敏感度掃過 0/3/7/10/14/18/21/25/30/35/40**：**3~30 之間命中率完全相同**（對 `stated` 基準 115/119、對 `fiscal_label` 基準 113+44），tol=0 掉到 95.0%、tol≥35 也掉到 95.0%。**高原寬達 27 天**，所以 21 不是硬調出來的魔術數字，實作時不必怕它脆
    - **驗證結果**：in-sample（調規則用的 16 家）113/113 = 100%、out-of-sample（沒調過的 WMT/TGT/KR/DE/FDX/NKE/ADBE/CSCO/HPQ/JNPR）44/44 = 100%，殘差全 0
      - 基準用 production 那條路（`cli.py::_fiscal_label()` 吐的 `fiscal_label`，`scripts/verify_8k_fiscal_labels.py` 已驗 120/120），**刻意不用 audit script 的 `stated`**——那個 regex 已知會在 PANW/TGT/KR 抓到財測或年度段落
      - 剔除的 43 份全是 audit script 期末日 regex 失敗（TGT 四份抽到年度表頭 2025-02-01、FDX 三份抽到 2024-05-31，lag > 400 天），不是規則失敗
