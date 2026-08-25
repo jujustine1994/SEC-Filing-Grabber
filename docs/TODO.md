@@ -315,8 +315,10 @@ H6. **H3 的 label_hint 修法在 201 家上重跑：多數有效，但 Capex �
      | `output/_hintsweep_201/hintsweep_201_result.txt` | **逐列、逐家的完整掃描輸出**（17KB）。下面所有結論都是讀這份得出來的 |
      | `output/_hintsweep_201/tickers_201.txt` | 201 家 ticker 清單（逐行） |
      | `output/_hintsweep_201/tickers_joined.txt` | 同一份的逗號串接版，腳本實際吃的參數格式 |
+     | `output/_hintsweep_201/classification.md` | **人工判讀後的分類表**（真缺口 vs hint 正常運作，逐家逐列，含方法論註記）。這是整輪最貴的那段人工判讀，動手前先讀它 |
      - `output/` 有 gitignore，資料留在磁碟上但不進版控
-     - **還沒落檔的**：「真缺口 vs hint 正常運作」的分類是人工判讀 `hintsweep_201_result.txt` 得出的，腳本本身只印 killed 清單、不分類。分類結論已經寫在下面這幾條，但沒有機器可讀的分類表
+     - 分類是人工判讀 `hintsweep_201_result.txt` 得出的（腳本本身只印 killed 清單、不分類），結論在 `classification.md` 與下面幾條
+     - ⚠ **分類表的方法論限制（作者自己標的）**：只讀 concept／label 文字判斷，**沒回頭核對原始 10-Q**，動手前建議抽查
    - **怎麼跑的**（重跑指令）：
      ```
      TICKERS=$(cat output/_hintsweep_201/tickers_joined.txt)
@@ -332,8 +334,10 @@ H6. **H3 的 label_hint 修法在 201 家上重跑：多數有效，但 Capex �
    - **判定為 hint 正常運作、不是 bug（不要「修」掉）**：Operating Cash Flow 22 家、Financing Cash Flow 7 家全部是 DIFF，hint 正確擋掉 `RightOfUseAssetObtainedInExchange...`、`StockIssued1`、`NoncashAcquisition...` 這類非現金揭露雜訊列；Other Current/Non-current Assets 多數案例正確避開 `NontradeReceivablesCurrent`、`PrepaidTaxes`、`DisposalGroup`；Change in Receivables／Dividends Paid 的 DIFF 案例正確避開 `IncomeTaxesPayableNetOfReceivable`、`PaymentsOfDividendsMinorityInterest`
    - **判定為真缺口，建議修（三項，成因各不相同）**：
      1. **Capex 14 家全損**（AEP/AMP/APD/AXP/BK/COF/F/GIS/HSY/ITW/KMB/MAR/PEP/UNP）——H3 才剛把 hint 改成 `propert|capital expenditure`，但很多公司寫「Capital spending」「Capital investments」「Purchases of premises and equipment」，**兩個詞根一個都不含**。含 AXP/BK/COF 這種知名公司，而且 Capex 直接影響 FCF 衍生指標。成因是「用詞不同義同」
-     2. **Common Stock & APIC 14 家全損**（ABT/ACN/AMP/AON/AXP/CB/COP/ETN/JCI/KR/LIN/MDT/MPC/UNP）——系統性模式：ACN/AON/CB/JCI/LIN/MDT 這類**外國註冊或改遷冊的公司一律寫「Ordinary shares」**，hint 只認 common stock / paid-in capital，一個詞都沒中。成因是「外國股票術語」
-     3. **Cash 4 家全損**（ETN/APD/IP/KR）——std_concept 已正確對到 `CashAndCashEquivalentsAtCarryingValue`，純粹因為公司寫「Cash and cash items」「Cash and temporary investments」而不是標準措辭，被 hint 字面卡死
+     2. **Common Stock & APIC 14 家全損，但要拆成兩半處理**（2026-08-25 分類表訂正）：
+        - **7 家是 hint 問題**：ACN/AON/CB/ETN/JCI/LIN/MDT 全寫「Ordinary shares」（愛爾蘭／英國／瑞士註冊或改遷冊；ETN 2020 遷冊愛爾蘭），hint 只認 common stock / paid-in capital，一個詞都沒中。**放寬 hint 就能解**
+        - **另外 7 家不是 hint 問題**：ABT/AMP/AXP/COP/KR/MPC/UNP 明明寫「Common shares」還是被濾掉，**代表 concept 層（`std_concept`／`fallback_suffix`）先沒對上**，退到 label_fallback 才被卡。**這幾家要先用 `diag_rowprobe.py` 查是哪一層失守，不是無腦放寬 hint**
+     3. **Cash 5 家全損**（ETN/APD/IP/KR/**SLB**）——多數 std_concept 已正確對到 `CashAndCashEquivalentsAtCarryingValue`，純粹因為公司寫「Cash and cash items」「Cash and temporary investments」而不是標準措辭，被 hint 字面卡死。**SLB 是 2026-08-25 訂正加上的**（原判讀漏看）：它的 concept 是 `us-gaap_Cash`（不是標準 std_concept，退到 fallback_suffix 層），label 只有「Cash」，被 hint 要求含 equivalents 擋掉，性質相同
    - **原始證據：實際卡住的措辭長什麼樣**（抄自 `hintsweep_201_result.txt`，寫 regex 直接照這份，不必重跑）：
      - **Capex**（現行 hint `propert|capital expenditure`，killed 15/201，其中 MCHP 是 DIFF 不是全損）。**concept 全部是對的**（`PaymentsToAcquirePropertyPlantAndEquipment` 或 `PaymentsToAcquireProductiveAssets`），純粹被 label hint 濾掉：
        | 措辭 | 公司 |
@@ -353,7 +357,7 @@ H6. **H3 的 label_hint 修法在 201 家上重跑：多數有效，但 Capex �
        - 完全沒有股票字樣：COP 寫 `Par value`、MPC 寫 `Issued – 995 million and 994 million shares (par value $0.01 per share…)`
        - ⚠ 這些 label 很長（帶授權股數、面額、日期），regex 要用「包含」不是「等於」
      - **Cash**（現行 hint `cash and (?:cash )?equivalents`，killed 20/201，但只有一部分是真缺口）：
-       - **措辭不同、concept 對的**：APD `Cash and cash items`、ETN `Cash`、IP `Cash and temporary investments`、KR `Cash and temporary cash investments`。**另外 SLB 是 `us-gaap_Cash|Cash`**——4f 的摘要只列了前四家，這一家是我讀原始輸出時多看到的，性質相同
+       - **措辭不同、concept 對的**：APD `Cash and cash items`、ETN `Cash`、IP `Cash and temporary investments`、KR `Cash and temporary cash investments`。**另外 SLB 是 `us-gaap_Cash|Cash`**（2026-08-25 訂正加入，原判讀漏看，已確認同一類）
        - **銀行 7 家**（`us-gaap_CashAndDueFromBanks`）：AXP、BAC、BK、C、COF、JPM、WFC。**概念取捨題，不是 bug**
        - **保險／其他 8 家是 hint 正常運作**：AIG、ALL、HIG、CB、MMM 被擋掉的候選是 AFS 債券／短期投資列（`DebtSecuritiesAvailableForSale…`、`OtherShortTermInvestments`），擋掉是對的；AFL、MET、CVX 是 DIFF 不是全損
    - **Cost of Revenue 36 家：多數不該修**——AXP/BAC/JPM/GS/CSX/UNP 這類銀行／保險／交易所／鐵路概念上本來就沒有 Cost of Revenue，跟 **D8** 同一類，維持空白才對。只有 CVX/COP/PSX（採購原油／商品）、AEP/EXC（採購電力燃料）、CMG（食材包材）這幾家是真實的 COGS 對應項、目前被誤擋，才是真缺口
