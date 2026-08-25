@@ -3154,6 +3154,31 @@ def test_common_stock_apic_matches_ordinary_and_common_shares(label):
     assert _match_template_row("Common Stock & APIC", df) == label
 
 
+@pytest.mark.parametrize("concept,label", [
+    # NSC 2026 Q2：普通股那一列自己就寫「net of treasury shares」。排除 treasury 時
+    # 用「label 含 treasury 就踢掉」會誤傷它——201 家重掃時實際踩到的回歸。
+    ("us-gaap_CommonStockValueOutstanding", "Common stock, net of treasury shares"),
+    ("us-gaap_CommonStockValue", "Common shares, net of treasury"),
+])
+def test_common_stock_apic_keeps_rows_that_merely_mention_treasury(concept, label):
+    df = _row_df(concept, label, "CommonEquity")
+    assert _match_template_row("Common Stock & APIC", df) == label
+
+
+@pytest.mark.parametrize("label", [
+    "Less: Treasury shares, at cost (2026 - 29,786,809 shares)",   # LIN
+    "Treasury shares, at cost (249,886,450 shares)",               # AMP
+    "Common shares held in treasury, at cost - Shares: 267,907,258",  # ABT
+    "Common shares in treasury, at cost, 1,305 shares",            # KR
+    "Treasury stock (at cost: 2026-1,054,626,440 shares)",         # COP
+])
+def test_common_stock_apic_does_not_pick_real_treasury_rows(label):
+    """這幾家的庫藏股列 std_concept 也是 `CommonEquity`（實測 LIN [28]、ABT [51]、
+    AMP [77]、KR [37]），放寬 hint 後不可以挑到它們。"""
+    df = _row_df("us-gaap_TreasuryStockCommonValue", label, "CommonEquity")
+    assert _match_template_row("Common Stock & APIC", df) is None
+
+
 def test_common_stock_apic_does_not_pick_treasury_shares():
     """LIN 實測：同一張 BS 上 `TreasuryStockCommonValue` 的 std_concept 也是
     `CommonEquity`（[28] Less: Treasury shares, at cost）。放寬 hint 後不可以挑到它。"""

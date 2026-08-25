@@ -408,13 +408,22 @@ _CAPEX_HINT = (
 # ——那是概念取捨題，CTH 還沒決定（TODO H6），H6 刻意不動。
 _CASH_HINT = r"cash and (?:cash )?equivalents|^cash\s*$|cash and cash items|cash and temporary"
 
-# Common Stock & APIC：7 家全損（ACN/AON/CB/ETN/JCI/LIN/MDT），愛爾蘭／英國／瑞士
-# 註冊或改遷冊的公司寫 Ordinary shares、CB 寫 Common Shares。concept 全部是
-# `CommonStockValue`。⚠ 排除 treasury：LIN 的 `TreasuryStockCommonValue` 的
-# std_concept 同樣是 `CommonEquity`（實測 2026-07-31 那份 BS 的 [28] 列）。
-# 另外 7 家（ABT/AMP/AXP/COP/KR/MPC/UNP）是 concept 層先失守，不是 hint 問題，
-# 診斷結果見 TODO H6。
-_COMMON_STOCK_HINT = r"^(?!.*treasury).*(?:common stock|paid-in capital|ordinary shares|common shares)"
+# Common Stock & APIC：12 家全損。愛爾蘭／英國／瑞士註冊或改遷冊的公司寫
+# Ordinary shares（ACN/AON/ETN/JCI/LIN/MDT），另一批寫 Common shares
+# （ABT/AMP/AXP/CB/KR/UNP）。concept 全部是 `CommonStockValue(Outstanding)`、
+# std_concept 全部是 `CommonEquity`——分類表原本說這批是「concept 層先失守」是
+# 錯的（2026-08-25 用 diag_rowprobe.py 逐家查過原始 10-Q）。
+#
+# ⚠ 要排除庫藏股列：LIN／ABT／AMP／KR 的 `TreasuryStockCommonValue` 的
+# std_concept 同樣是 `CommonEquity`（實測 LIN [28]、ABT [51]、AMP [77]、KR [37]）。
+# **但不可以「label 含 treasury 就踢掉」**——NSC 的普通股列自己就寫
+# 「Common stock, net of treasury shares」，那樣寫會誤傷它（201 家重掃實際踩到）。
+# 真正的庫藏股列都帶「at cost」或「in treasury」，用那個當判準。
+_TREASURY_ROW = r"(?:.*in treasury)|(?:.*treasury.{0,40}at cost)|(?:\s*less[:\s\-]+treasury)|(?:\s*treasury)"
+_COMMON_STOCK_HINT = (
+    rf"^(?!{_TREASURY_ROW})"
+    r".*(?:common stock|paid-in capital|ordinary shares|common shares)"
+)
 
 # Cost of Revenue：36 家被擋，其中**只有 6 家是真缺口**——CVX/COP/PSX（採購原油
 # 商品）、AEP/EXC（採購電力燃料）、CMG（食材包材）。其餘 29 家是銀行／保險／
