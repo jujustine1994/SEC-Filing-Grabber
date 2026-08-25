@@ -167,7 +167,17 @@ G8. **用「比較欄」當 fallback 補洞** ← **CTH 已決策，放最後做
    - 要處理的問題：① 同一期間會在多份 filing 出現（當期一次、隔年比較欄一次），取哪一版？當期優先、比較欄只補洞 ② 公司重編（restatement）時兩版數字不同，要不要標示 ③ 比較欄的欄名同樣不能採信 `(Qn)`，要走跟 D0-6 一樣的日期反推
    - 另一條路（成本較高，列為備案）：SEC Company Facts API（`data.sec.gov/api/xbrl/companyfacts/CIK##########.json`），一次拿回該公司歷來所有 XBRL fact。edgartools 的 `company.get_facts()` 已經在用來抓流通股數。交叉補洞能力更強，但 restatement 取版本的問題更嚴重
 
-G10. **`D&A` 與 `Capex` 的 concept 對照對某些公司完全失效**（2026-08-22 產六家比較檔時發現）
+G10. **`D&A` 的 concept 對照對某些公司完全失效**（2026-08-22 產六家比較檔時發現；
+   **2026-08-25 H6 之後重量，Capex 那半已經解決，D&A 沒動**）
+   - **2026-08-25 重量（AMD/NVDA/AVGO/INTC/MRVL/LITE，2020-2025 季報）**：
+     ```
+     D&A     AMD 2/25、MRVL 0/19（其餘四家滿格）   ✗ 沒變，還是這條的主題
+     Capex   六家全部滿格（NVDA 24/25）            ✓ 原本 NVDA 13/24
+     ```
+     ⚠ Capex 那半**主要是 H4 第一步（2026-08-23 的 `label_fallback`）的功勞**，
+     不全是 H6；H6 修的 14 家不在這六家裡。期數與原本記的 24 期略有出入是因為這次
+     沒設 `max_filings`，抓的期間比原本那份比較檔多
+   - 原始記錄（2026-08-22）：
    - 實測 `output/_compare/Semis_6co_2020_2025.xlsx`（AMD/NVDA/AVGO/INTC/MRVL/LITE，2020-2025 共 24 期）：
      ```
      Revenue / Gross Margin / Operating Margin   六家都 24/24   ✓
@@ -294,6 +304,19 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（
    - **④ Cost of Revenue 那 29 家維持空白是正確行為**（AMT/AON/AXP/BAC/BK/BKNG/BLK/C/CCI/
      CME/COF/CSX/FDX/GS/HCA/ICE/JPM/MCD/MCO/MS/NDAQ/NSC/ODFL/PLD/SCHW/UNP/UPS/V/WFC）
      ——銀行／保險／交易所／鐵路／REIT 概念上沒有 COGS，與 **D8** 同一類。列在這裡只是備查
+   - **⑥ 新發現（2026-08-25 量 G10 時撞到，不在原掃描範圍內）：INTC 2022~2025 的
+     `Cash` 有 15 期抓不到，是 concept 層不是 hint**。INTC 那幾年把現金 tag 成
+     `us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`
+     （std_concept 是 `CashAndCashEquivalents`），我們模板的 std 是
+     `CashAndMarketableSecurities`、fallback 是 `CashAndCashEquivalents`——**注意
+     那個 concept 名字裡沒有 "And"**（`CashCashEquivalents...`），所以兩層都比不中；
+     label 明明就是「Cash and cash equivalents」，但這一列沒有 label_fallback。
+     2026 年那幾份又改回 `CashAndCashEquivalentsAtCarryingValue`，所以只有中間那段空
+     - 三條路：① fallback 加 `|CashCashEquivalentsRestrictedCash`——但那個科目**含受限
+       現金**，跟其他公司的 Cash 不同口徑；② 這一列補 `label_fallback`（`^cash and cash
+       equivalents$`），口徑問題還在但至少抓得到；③ 維持空白
+     - **跟銀行那題是同一類的口徑取捨，要 CTH 一起決定**（實測掃描：INTC 2025-04-25
+       到 2022-04-29 連續 10 份 10-Q 全部 NO MATCH，2025-07-24 之後恢復正常）
    - **⑤ 更零星的個案**（材料不足，不建議單獨修）：`Other Non-current Assets` IBM
      「Investments and sundry assets」／ISRG「Long-term investments」、`Dividends Paid`
      AMT／CHTR（只有少數股權分配）、`Accounts Receivable` SO（gross 口徑）、
