@@ -31,6 +31,14 @@ class ComparisonResult:
     metrics: dict[str, dict[str, dict[str, float | None]]] = field(default_factory=dict)
     period_ends: dict[str, dict[str, str]] = field(default_factory=dict)
     failures: list[CompanyFetchError] = field(default_factory=list)
+    # {ticker: {日曆季: 該公司自己的財季標籤}}。欄位鍵是跨公司對齊過的日曆季，
+    # 各公司在同一欄的財季不一樣（NVDA 的 2025Q2 是 FY2026Q2、AMD 是 FY2025Q2）
+    # ——Compare_Data 最上方那張對應表就是在講這件事（G2）。
+    fiscal_labels: dict[str, dict[str, str]] = field(default_factory=dict)
+    # {ticker: {推算 Q4 的日曆季}}。季報表裡出現 Q4 一定是推算來的：SEC 沒有
+    # Q4 的 10-Q，那一欄只可能由 fetcher_gaap._synthesize_q4() 補進來
+    # （「年報 − Q1 − Q2 − Q3」）。給說明 sheet 的第 5 條打勾用（G7）。
+    synthetic_q4: dict[str, set[str]] = field(default_factory=dict)
 
 
 def _sheet_name_for(frequency: Literal["quarterly", "annual"]) -> str:
@@ -57,6 +65,17 @@ def _aligned_labels(
         convert(ends[i] if i < len(ends) else "") or label
         for i, label in enumerate(table.quarter_labels)
     ]
+
+
+def _fiscal_label_map(aligned: list[str], table: StatementTable) -> dict[str, str]:
+    """{日曆季: 原始財季標籤}。逐期從實際期末日算出來的對應關係，公司哪一年
+    改過財年，那一欄自己就會反映出來，不需要任何例外處理（G2 選對應表而不是
+    「只寫財年開始月份」的理由）。"""
+    return {
+        label: table.quarter_labels[i]
+        for i, label in enumerate(aligned)
+        if i < len(table.quarter_labels)
+    }
 
 
 def _filter_by_year(table: StatementTable, start_year: int | None, end_year: int | None) -> StatementTable:
@@ -153,6 +172,13 @@ def build_comparison(
         ratio_table = build_ratio_table(raw_table)
 
         aligned = _aligned_labels(raw_table, frequency)
+        result.fiscal_labels[ticker] = _fiscal_label_map(aligned, raw_table)
+        # 季報表的 Q4 一定是推算的（見 ComparisonResult.synthetic_q4）；年報
+        # 標籤是 `FY2025` 沒有 Q，這裡自然算出空集合，不用另外分支。
+        result.synthetic_q4[ticker] = {
+            label for label, fiscal in result.fiscal_labels[ticker].items()
+            if fiscal.endswith("Q4")
+        }
 
         period_map: dict[str, str] = {}
         for j, label in enumerate(aligned):

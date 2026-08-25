@@ -274,3 +274,86 @@ def test_build_comparison_keeps_fiscal_label_when_period_end_missing():
         )
 
     assert result.metrics["Revenue"]["NVDA"]["FY2026Q2"] == 100.0
+
+
+# ── G2：財季對應（2026-08-25）─────────────────────────────────────────────
+
+def test_build_comparison_keeps_the_original_fiscal_label_per_calendar_period():
+    """G2 對應表要用的原始財季標籤。`_aligned_labels()` 轉成日曆季之後就把
+    原標籤丟了，Compare_Data 最上方那張「日曆季 ↔ 財季」對應表沒東西可寫。"""
+    def fake_fetch(ticker, identity, **kwargs):
+        data = {
+            "NVDA": _q_table("NVDA", [46743.0, 57006.0],
+                             ["2025-07-27", "2025-10-26"],
+                             ["FY2026Q2", "FY2026Q3"]),
+            "AMD": _q_table("AMD", [7685.0, 9246.0],
+                            ["2025-06-28", "2025-09-27"],
+                            ["FY2025Q2", "FY2025Q3"]),
+        }
+        return [data[ticker]]
+
+    with patch("comparison.fetch_gaap_statements", side_effect=fake_fetch):
+        result = build_comparison(
+            ["NVDA", "AMD"], "test@example.com", ["Revenue"],
+            frequency="quarterly", start_year=None, end_year=None,
+        )
+
+    # 同一個日曆季欄位下，各公司的財季不同——這正是對應表存在的理由
+    assert result.fiscal_labels["NVDA"]["2025Q2"] == "FY2026Q2"
+    assert result.fiscal_labels["AMD"]["2025Q2"] == "FY2025Q2"
+    assert result.fiscal_labels["NVDA"]["2025Q3"] == "FY2026Q3"
+
+
+def test_fiscal_labels_reflect_a_mid_stream_fiscal_year_change_without_special_casing():
+    """公司中途改財年時，對應表那一欄自己就會反映出來——因為每一格都是逐期
+    從實際期末日算的，不是從「財年開始月份」推的（這就是選對應表而不是選
+    「只寫財年開始月份」的理由）。"""
+    def fake_fetch(ticker, identity, **kwargs):
+        # 前兩季還是舊財年編號，第三季起改制
+        return [_q_table("XYZ", [1.0, 2.0, 3.0],
+                         ["2024-03-30", "2024-06-29", "2024-09-28"],
+                         ["FY2024Q1", "FY2024Q2", "FY2025Q1"])]
+
+    with patch("comparison.fetch_gaap_statements", side_effect=fake_fetch):
+        result = build_comparison(
+            ["XYZ"], "test@example.com", ["Revenue"],
+            frequency="quarterly", start_year=None, end_year=None,
+        )
+
+    assert result.fiscal_labels["XYZ"]["2024Q1"] == "FY2024Q1"
+    assert result.fiscal_labels["XYZ"]["2024Q3"] == "FY2025Q1"
+
+
+def test_synthetic_q4_periods_are_flagged_for_the_notes_sheet():
+    """G7 第 5 條「Q4 是推算的」要靠這個旗標決定打不打勾。季報表裡的 Q4 一定
+    是推算來的——SEC 沒有 Q4 的 10-Q，那一欄只可能來自
+    `fetcher_gaap._synthesize_q4()`。"""
+    def fake_fetch(ticker, identity, **kwargs):
+        return [_q_table("AMD", [1.0, 2.0],
+                         ["2024-09-28", "2024-12-28"],
+                         ["FY2024Q3", "FY2024Q4"])]
+
+    with patch("comparison.fetch_gaap_statements", side_effect=fake_fetch):
+        result = build_comparison(
+            ["AMD"], "test@example.com", ["Revenue"],
+            frequency="quarterly", start_year=None, end_year=None,
+        )
+
+    assert result.synthetic_q4["AMD"] == {"2024Q4"}
+
+
+def test_annual_output_has_no_synthetic_q4():
+    """年報是直接抓的，沒有任何推算欄。"""
+    def fake_fetch(ticker, identity, **kwargs):
+        return [StatementTable(
+            sheet_name="Data_Financials(Y)", quarter_labels=["FY2025"],
+            filing_dates=[""], concepts=["Revenue"], values=[[10.0]],
+            ticker="AMD", labels=[""], period_ends=["2025-12-27"])]
+
+    with patch("comparison.fetch_gaap_statements", side_effect=fake_fetch):
+        result = build_comparison(
+            ["AMD"], "test@example.com", ["Revenue"],
+            frequency="annual", start_year=None, end_year=None,
+        )
+
+    assert result.synthetic_q4["AMD"] == set()

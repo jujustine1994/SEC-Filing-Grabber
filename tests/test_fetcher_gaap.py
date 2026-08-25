@@ -495,7 +495,10 @@ def test_fetch_passes_max_filings():
         MockCo.return_value = mock_co
         result = fetch_gaap_statements("AAPL", identity="Test test@test.com", max_filings=3)
     fin_tbl = next(t for t in result if t.sheet_name == "Data_Financials(Q)")
-    assert len(fin_tbl.quarter_labels) <= 3
+    # 數「真的抓到的期間」——G6（2026-08-25）之後欄位清單還會補上缺口欄
+    # （這份 mock 的三筆 filing 相隔一年，中間的季度全部補成空白欄），
+    # max_filings 限制的是抓幾份 filing，不是最後有幾欄
+    assert len([e for e in fin_tbl.period_ends if e]) <= 3
 
 
 def test_merge_financials_produces_data_financials_sheet():
@@ -2970,3 +2973,88 @@ def test_fetch_with_retry_does_not_retry_data_kind_gaps():
 
     tables = _fetch_with_retry(first_tables, led, _no_retry, sleep=_no_sleep)
     assert led.has_gaps
+
+
+# ── G6：單一公司輸出，抓不到的季度留一整欄空白（2026-08-25）───────────────
+
+def _q_tbl(sheet, labels, ends, values):
+    return StatementTable(
+        sheet_name=sheet, quarter_labels=list(labels),
+        filing_dates=[""] * len(labels),
+        concepts=["Revenue"], values=[list(values)], labels=[""],
+        period_ends=list(ends),
+    )
+
+
+def _merged_labels(labels, ends, values=None):
+    values = values if values is not None else [1.0] * len(labels)
+    merged = _merge_financials(
+        _q_tbl("Data_IS", labels, ends, values),
+        _q_tbl("Data_BS", labels, ends, values),
+        _q_tbl("Data_CF", labels, ends, values),
+    )
+    return merged
+
+
+def test_merge_financials_keeps_a_column_for_a_quarter_that_was_never_fetched():
+    """某一季掛掉整欄消失，畫面上 FY2025Q1 直接跳到 FY2025Q3，使用者與 AI 都
+    看不出中間漏了一季。改成保留欄位、內容全空，讓「有漏」看得見。"""
+    merged = _merged_labels(["FY2025Q1", "FY2025Q3"],
+                            ["2025-03-29", "2025-09-27"])
+
+    assert merged.quarter_labels == ["FY2025Q1", "FY2025Q2", "FY2025Q3"]
+    rev = merged.values[merged.concepts.index("Revenue")]
+    assert rev[1] is None
+
+
+def test_merge_financials_gap_column_falls_back_to_a_derived_period_end():
+    """補出來那一欄沒有真實期末日，只能用財季標籤反推年月（`2025-06`）。"""
+    merged = _merged_labels(["FY2025Q1", "FY2025Q3"],
+                            ["2025-03-29", "2025-09-27"])
+    end_row = merged.values[merged.concepts.index("Period End")]
+
+    assert end_row[0] == "2025-03-29"
+    assert end_row[1] == "2025-06"          # 反推，不是編一個假的完整日期
+    assert end_row[2] == "2025-09-27"
+
+
+def test_merge_financials_gap_column_rolls_over_into_the_next_fiscal_year():
+    merged = _merged_labels(["FY2025Q4", "FY2026Q2"],
+                            ["2024-12-28", "2025-06-28"])
+    assert merged.quarter_labels == ["FY2025Q4", "FY2026Q1", "FY2026Q2"]
+
+
+def test_merge_financials_does_not_invent_a_gap_for_a_sixteen_week_quarter():
+    """COSTCO 的第四季是 16 週（112~119 天）。固定門檻會把它誤判成缺一季，
+    `round(112/91) = 1` 才是對的——52 家實測 111~150 天那 16 筆全是 COSTCO。"""
+    merged = _merged_labels(
+        ["FY2024Q1", "FY2024Q2", "FY2024Q3", "FY2024Q4"],
+        ["2023-11-26", "2024-02-18", "2024-05-12", "2024-09-01"])
+    assert merged.quarter_labels == ["FY2024Q1", "FY2024Q2", "FY2024Q3", "FY2024Q4"]
+
+
+def test_merge_financials_never_generates_more_than_four_gap_columns():
+    """實測沒有任何 >210 天的缺口，真的出現就是資料異常，不該無限生欄。"""
+    merged = _merged_labels(["FY2016Q1", "FY2025Q3"],
+                            ["2016-03-26", "2025-09-27"])
+    assert merged.quarter_labels == ["FY2016Q1", "FY2025Q3"]
+
+
+def test_merge_financials_leaves_annual_tables_alone():
+    """年報欄位是 FY2025 這種年度標籤，91 天那套季度算法不適用。"""
+    merged = _merge_financials(
+        _q_tbl("Data_IS", ["FY2022", "FY2024"], ["2022-12-31", "2024-12-28"], [1.0, 2.0]),
+        _q_tbl("Data_BS", ["FY2022", "FY2024"], ["2022-12-31", "2024-12-28"], [1.0, 2.0]),
+        _q_tbl("Data_CF", ["FY2022", "FY2024"], ["2022-12-31", "2024-12-28"], [1.0, 2.0]),
+        sheet_name="Data_Financials(Y)",
+    )
+    assert merged.quarter_labels == ["FY2022", "FY2024"]
+
+
+def test_merge_financials_does_not_touch_a_complete_quarter_sequence():
+    """沒有缺口的公司，輸出必須一格都不變。"""
+    labels = ["FY2025Q1", "FY2025Q2", "FY2025Q3"]
+    ends = ["2025-03-29", "2025-06-28", "2025-09-27"]
+    merged = _merged_labels(labels, ends, [1.0, 2.0, 3.0])
+    assert merged.quarter_labels == labels
+    assert merged.values[merged.concepts.index("Revenue")] == [1.0, 2.0, 3.0]

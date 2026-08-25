@@ -10,22 +10,425 @@ Sheet 結構（見 docs/superpowers/specs/2026-08-20-cross-company-comparison-de
 from __future__ import annotations
 
 import datetime
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable
 
 from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
 from openpyxl.chart.data_source import AxDataSource, StrRef
 from openpyxl.chart.layout import Layout
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from comparison import ComparisonResult
+from data_quality import missing_quarters
 from excel_formatter import FMT_FINANCIAL, unit_format_for
+from fiscal_input import calendarized_quarter_of
 from i18n import t
 
 _HEADER_FONT = Font(bold=True)
 _BLOCK_GAP = 1  # 區塊之間空幾列
 _YELLOW_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+
+
+# ── 說明 sheet（G7，2026-08-25）────────────────────────────────────────────
+#
+# 「這份檔案用了哪些定義」一次講清楚，不要讓使用者自己猜。CTH 明講這張表
+# **未來會擴充**（開發中發現新的定義問題就往裡加），所以做成資料驅動：新增
+# 一條只要在 NOTE_ITEMS 加一行 + 四個 locale 各加兩條，不可以把文字寫死在
+# 版面程式裡。
+#
+# 每一條都帶「這份檔案是否真的踩到」的勾選——使用者不必讀完十二條去猜哪條
+# 跟他有關。判定一律由實際資料算出來，結構性的條目（單位、符號慣例）永遠勾。
+
+_CHECK_MARK = "✓"
+# 13 週 × 7 天。用來由某一季的期末日往後推算財年結束月，跟
+# `data_quality._QUARTER_DAYS` 是同一個數字、同一個理由（不是隨手取的數字）。
+_QUARTER_DAYS = 91
+_CALENDAR_QUARTER = re.compile(r"^\d{4}Q[1-4]$")
+# 單一缺口最多補幾欄。實測 52 家沒有任何 >210 天（>2 季）的缺口，真的出現就是
+# 資料異常，不該讓程式生出一長串假期間。跟 `data_quality._MAX_GAP_QUARTERS`
+# 同一個理由、同一個值（那邊是判定上限，這邊是版面上限）。
+_MAX_GAP_COLUMNS = 4
+_WRAP = Alignment(vertical="top", wrap_text=True)
+
+
+@dataclass(frozen=True)
+class NoteItem:
+    """說明 sheet 的一條。`applies` 拿算好的事實回傳 (要不要勾, 實際情況文字)。"""
+    title_key: str
+    body_key: str
+    applies: Callable[["NotesFacts"], tuple[bool, str]]
+    # True 時「沒踩到就整列不出現」。目前只有「本檔案缺少的公司」用得上——
+    # 沒有公司失敗時列一條空的警告只會讓人以為出了事。
+    hide_when_clear: bool = False
+
+
+@dataclass(frozen=True)
+class NotesFacts:
+    """說明 sheet 每一條的判定材料，從 ComparisonResult 一次算完。"""
+    companies: list[str] = field(default_factory=list)
+    periods: list[str] = field(default_factory=list)
+    fy_end_months: dict[str, int] = field(default_factory=dict)
+    end_spread: tuple[int, str] | None = None      # (最大天數差, 差最多的那一欄)
+    synthetic_periods: list[str] = field(default_factory=list)
+    blank_cells: int = 0
+    total_cells: int = 0
+    failures: list = field(default_factory=list)
+
+
+def _parse_iso(value: str) -> datetime.date | None:
+    try:
+        return datetime.date.fromisoformat((value or "").strip())
+    except ValueError:
+        return None
+
+
+def _fy_end_month(fiscal_map: dict[str, str], ends: dict[str, str]) -> int | None:
+    """這家公司的財年結束月。算不出來回 None。
+
+    有 Q4（或年報）那一期就直接取它的期末日月份；沒有就拿任一季往後推
+    13 週 × 剩餘季數。**不走 `fiscal_input` 那套「內縮 15 天」**：那是為了
+    判斷「結束在哪一個日曆季」，用在這裡會把 AVGO（財年結束在 11-03 這種
+    月初）算成 10 月，跟公司自己講的月份對不上。
+    """
+    dated = [(fiscal, ends.get(period, ""))
+             for period, fiscal in fiscal_map.items()]
+    for fiscal, end in dated:
+        d = _parse_iso(end)
+        if d is not None and (fiscal.endswith("Q4") or "Q" not in fiscal):
+            return d.month
+    for fiscal, end in dated:
+        d = _parse_iso(end)
+        if d is None or "Q" not in fiscal or not fiscal[-1].isdigit():
+            continue
+        return (d + datetime.timedelta(days=_QUARTER_DAYS * (4 - int(fiscal[-1])))).month
+    return None
+
+
+def collect_notes_facts(
+    result: ComparisonResult, metric_names: list[str],
+    companies: list[str], periods: list[str],
+) -> NotesFacts:
+    """把說明 sheet 需要的判定材料一次算完——版面程式只負責畫，不做判斷。"""
+    fy_end_months: dict[str, int] = {}
+    for company in companies:
+        month = _fy_end_month(result.fiscal_labels.get(company, {}),
+                              result.period_ends.get(company, {}))
+        if month is not None:
+            fy_end_months[company] = month
+
+    # 同一欄各公司期末日差幾天。取全表差最多的那一欄當代表——要講的是「這件事
+    # 在這份檔案裡有多嚴重」，不是逐欄列表。
+    end_spread: tuple[int, str] | None = None
+    for period in periods:
+        dates = [d for d in (_parse_iso(result.period_ends.get(c, {}).get(period, ""))
+                             for c in companies) if d is not None]
+        if len(dates) < 2:
+            continue
+        days = (max(dates) - min(dates)).days
+        if days and (end_spread is None or days > end_spread[0]):
+            end_spread = (days, period)
+
+    synthetic = sorted({
+        period
+        for company in companies
+        for period in result.synthetic_q4.get(company, set())
+        if period in periods
+    })
+
+    blank = total = 0
+    for metric_name in metric_names:
+        metric_data = result.metrics.get(metric_name, {})
+        for company in companies:
+            company_data = metric_data.get(company, {})
+            for period in periods:
+                total += 1
+                if company_data.get(period) is None:
+                    blank += 1
+
+    return NotesFacts(
+        companies=list(companies),
+        periods=list(periods),
+        fy_end_months=fy_end_months,
+        end_spread=end_spread,
+        synthetic_periods=synthetic,
+        blank_cells=blank,
+        total_cells=total,
+        failures=list(result.failures),
+    )
+
+
+def _always(_facts: NotesFacts) -> tuple[bool, str]:
+    return True, ""
+
+
+def _fiscal_years_differ(facts: NotesFacts) -> tuple[bool, str]:
+    months = facts.fy_end_months
+    if len(set(months.values())) <= 1:
+        return False, t("compare.xls.notes.detail_same_fy_month")
+    detail = "、".join(
+        t("compare.xls.notes.detail_fy_month", ticker=c, month=months[c])
+        for c in sorted(months, key=lambda c: (months[c], c))
+    )
+    return True, detail
+
+
+def _fiscal_years_differ_quietly(facts: NotesFacts) -> tuple[bool, str]:
+    """跟上一條同一個判定，實際情況那欄不重複寫一次。"""
+    return _fiscal_years_differ(facts)[0], ""
+
+
+def _period_ends_differ(facts: NotesFacts) -> tuple[bool, str]:
+    if facts.end_spread is None:
+        return False, t("compare.xls.notes.detail_same_period_end")
+    days, period = facts.end_spread
+    return True, t("compare.xls.notes.detail_end_spread", days=days, period=period)
+
+
+def _has_synthetic_q4(facts: NotesFacts) -> tuple[bool, str]:
+    if not facts.synthetic_periods:
+        return False, t("compare.xls.notes.detail_no_synth_q4")
+    return True, t("compare.xls.notes.detail_synth_q4",
+                   periods="、".join(facts.synthetic_periods))
+
+
+def _has_blanks(facts: NotesFacts) -> tuple[bool, str]:
+    if not facts.blank_cells:
+        return False, t("compare.xls.notes.detail_no_blank")
+    return True, t("compare.xls.notes.detail_blank",
+                   blank=facts.blank_cells, total=facts.total_cells)
+
+
+def _period_span(facts: NotesFacts) -> tuple[bool, str]:
+    if not facts.periods:
+        return True, ""
+    return True, t("compare.xls.notes.detail_period_span",
+                   first=facts.periods[0], last=facts.periods[-1])
+
+
+def _missing_companies(facts: NotesFacts) -> tuple[bool, str]:
+    """整家抓不到的公司。這條講的**就是「本份 Excel 有沒有缺東西」**——
+    實例：`INTC_NVDA_AMD_TSM_v3.xlsx` 檔名有 TSM、使用者也選了 TSM，但檔案裡
+    只有三家（TSM 報 20-F 不是 10-K），而從檔案完全看不出來：沒有錯誤訊息、
+    沒有空欄位、圖上就是三條線。失敗紀錄原本只寫進 GUI log。"""
+    if not facts.failures:
+        return False, ""
+    return True, "、".join(
+        t("compare.xls.notes.detail_failure", ticker=f.ticker, error=f.error_type)
+        for f in facts.failures
+    )
+
+
+# 順序就是 Excel 上的順序。新增一條：這裡加一行，四個 locale 各加標題與內文兩條。
+NOTE_ITEMS: tuple[NoteItem, ...] = (
+    NoteItem("compare.xls.notes.timeline", "compare.xls.notes.timeline_body", _always),
+    NoteItem("compare.xls.notes.not_fiscal", "compare.xls.notes.not_fiscal_body",
+             _fiscal_years_differ),
+    NoteItem("compare.xls.notes.not_period_end", "compare.xls.notes.not_period_end_body",
+             _fiscal_years_differ_quietly),
+    NoteItem("compare.xls.notes.period_end_row", "compare.xls.notes.period_end_row_body",
+             _period_ends_differ),
+    NoteItem("compare.xls.notes.synth_q4", "compare.xls.notes.synth_q4_body",
+             _has_synthetic_q4),
+    NoteItem("compare.xls.notes.blanks", "compare.xls.notes.blanks_body", _has_blanks),
+    NoteItem("compare.xls.notes.source", "compare.xls.notes.source_body", _period_span),
+    NoteItem("compare.xls.notes.units", "compare.xls.notes.units_body", _always),
+    NoteItem("compare.xls.notes.scope", "compare.xls.notes.scope_body", _always),
+    NoteItem("compare.xls.notes.missing_companies",
+             "compare.xls.notes.missing_companies_body", _missing_companies,
+             hide_when_clear=True),
+    NoteItem("compare.xls.notes.sign", "compare.xls.notes.sign_body", _always),
+    NoteItem("compare.xls.notes.as_reported", "compare.xls.notes.as_reported_body",
+             _always),
+)
+
+_NOTES_COL_WIDTHS = (6, 26, 78, 40)
+
+
+def write_notes_sheet(
+    wb: Workbook, result: ComparisonResult, metric_names: list[str]
+) -> None:
+    """說明 sheet。擺在 Compare_Data 之後——定義要看得到，但不佔掉開檔的第一眼。
+
+    sheet 名稱固定英文 `Notes`（跟其他 sheet 名稱一樣是機器鍵，不隨語言變），
+    表內文字才跟著語言走。
+    """
+    companies, periods = visible_layout(result, metric_names)
+    facts = collect_notes_facts(result, metric_names, companies, periods)
+
+    ws = wb.create_sheet("Notes", 1)
+    for i, width in enumerate(_NOTES_COL_WIDTHS, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+    ws.cell(row=1, column=1, value=t("compare.xls.notes.title")).font = _HEADER_FONT
+
+    headers = (t("compare.xls.notes.col_check"), t("compare.xls.notes.col_item"),
+               t("compare.xls.notes.col_body"), t("compare.xls.notes.col_detail"))
+    for col, text in enumerate(headers, start=1):
+        ws.cell(row=2, column=col, value=text).font = _HEADER_FONT
+
+    row = 3
+    for item in NOTE_ITEMS:
+        applies, detail = item.applies(facts)
+        if item.hide_when_clear and not applies:
+            continue
+        ws.cell(row=row, column=1, value=_CHECK_MARK if applies else None)
+        ws.cell(row=row, column=2, value=t(item.title_key))
+        ws.cell(row=row, column=3, value=t(item.body_key)).alignment = _WRAP
+        ws.cell(row=row, column=4, value=detail or None).alignment = _WRAP
+        row += 1
+
+
+# ── G6：抓不到的季度留一整欄空白（2026-08-25）────────────────────────────
+#
+# 現況欄位清單是「成功抓到什麼就放什麼」，某一季掛掉整欄消失，畫面上 2025Q1
+# 直接跳到 2025Q3，使用者與 AI 都看不出中間漏了一季。改成保留欄位、內容全空，
+# 讓「有漏」這件事看得見。
+#
+# **判定不能用固定門檻**，要用 `round(天數差 / 91) - 1`（`_QUARTER_DAYS`）。
+# 52 家 1,482 對相鄰期間實測：111~150 天那 16 筆全部是 COSTCO 的 16 週第四季
+# （112~119 天），固定門檻（例如「>120 天算缺」）會把它們全部誤判成缺一季，
+# 而 `round(112/91) = 1` 正確判為沒缺。這條規則跟單一公司那條線共用同一份
+# 實作（`data_quality.missing_quarters()`），不要在這裡另外寫一份。
+
+_ANNUAL_LABEL = re.compile(r"^\d{4}$")
+
+
+def _fill_annual_gaps(periods: list[str]) -> list[str]:
+    """年度輸出：欄位是純年份，缺的那一年補一欄。"""
+    years = [int(p) for p in periods]
+    filled = set(years)
+    for a, b in zip(years, years[1:]):
+        gap = b - a - 1
+        if 0 < gap <= _MAX_GAP_COLUMNS:
+            filled.update(range(a + 1, b))
+    return [str(y) for y in sorted(filled)]
+
+
+def _fill_quarter_gaps(result: ComparisonResult, periods: list[str]) -> list[str]:
+    """季度輸出：由各公司自己的期末日序列算缺口，缺的那一季補一欄。
+
+    為什麼要逐公司算、不能直接看「日曆季標籤有沒有連號」：COSTCO 的 16 週
+    第四季在對齊季上本來就會跳過一格（沒有任何一季的中點落在那一個日曆季），
+    照標籤連號補會補出一堆假缺口。天數差才是判準。
+
+    只補在最早與最新之間（CTH 已定），而且只補**沒有任何公司抓到**的那一季
+    ——別家有抓到的話那一欄本來就在。
+    """
+    first, last = periods[0], periods[-1]
+    extra: set[str] = set()
+    for company_ends in result.period_ends.values():
+        ends = [e for e in company_ends.values() if e]
+        for gap in missing_quarters(ends):
+            after = datetime.date.fromisoformat(gap.after)
+            for k in range(1, gap.count + 1):
+                label = calendarized_quarter_of(
+                    (after + datetime.timedelta(days=_QUARTER_DAYS * k)).isoformat())
+                if label and first < label < last:
+                    extra.add(label)
+    return sorted(set(periods) | extra)
+
+
+def _fill_period_gaps(result: ComparisonResult, periods: list[str]) -> list[str]:
+    """期間欄位清單 → 補上缺口欄之後的清單。"""
+    if len(periods) < 2:
+        return periods
+    if all(_ANNUAL_LABEL.match(p) for p in periods):
+        return _fill_annual_gaps(periods)
+    if not all(_CALENDAR_QUARTER.match(p) for p in periods):
+        # 期末日抓不到而退回財季標籤（`FY2009Q4`）的殘骸欄混在裡面時不補洞——
+        # 那種標籤算不出日曆位置，補出來的欄位擺哪裡都是錯的。
+        return periods
+    return _fill_quarter_gaps(result, periods)
+
+
+def visible_layout(
+    result: ComparisonResult, metric_names: list[str]
+) -> tuple[list[str], list[str]]:
+    """這份檔案實際會出現在表上的 (公司清單, 期間欄位清單)。
+
+    Compare_Data 的對應表、各指標區塊與說明 sheet 都吃這一份——三邊各算一次
+    的話，哪天篩選規則改了就會有一邊沒跟上（而且是靜默不一致）。
+
+    所有公司、所有指標都沒值的期間整欄拿掉。合成 Q4 時年報沒有期末日的那幾欄
+    （`comparison._aligned_labels()` 算不出日曆季，退回 `FY2009Q4` 這種財季
+    標籤）值全是空的，排序時又會被排到日曆季後面，圖表 X 軸就多出兩格最新一期
+    之後的空白，看起來像資料抓錯。**判斷要跨所有指標一起做**：每個區塊各自篩
+    會讓區塊之間欄數不同，而 write_chart_sheets() 用的是全表 `max_column`，
+    窄的區塊會被讀到別人的欄位。
+    """
+    companies = sorted({
+        company
+        for metric_data in result.metrics.values()
+        for company in metric_data
+    })
+    seen = {
+        label
+        for metric_data in result.metrics.values()
+        for company_data in metric_data.values()
+        for label in company_data
+    }
+    with_values = {
+        label
+        for metric_data in result.metrics.values()
+        for company_data in metric_data.values()
+        for label, value in company_data.items()
+        if value is not None
+    }
+    # 對應表與說明 sheet 只看 metric_names 選到的指標，跟指標區塊同一個範圍
+    selected = {
+        label
+        for metric_name in metric_names
+        for company_data in result.metrics.get(metric_name, {}).values()
+        for label in company_data
+    }
+    periods = sorted((seen & selected) - (seen - with_values))
+    return companies, _fill_period_gaps(result, periods)
+
+
+def _fiscal_map_cell(fiscal_label: str, period_end: str) -> str | None:
+    """對應表的一格：`FY2026Q2 (0727)`。財季標籤缺了就整格留空——寧可空白，
+    也不要寫一個看不出是哪一季的日期。"""
+    if not fiscal_label:
+        return None
+    mmdd = period_end.replace("-", "")[4:8] if period_end else ""
+    return f"{fiscal_label} ({mmdd})" if mmdd else fiscal_label
+
+
+def _write_fiscal_map_block(
+    ws, result: ComparisonResult, all_companies: list[str], all_periods: list[str]
+) -> int:
+    """Compare_Data 最上方的「日曆季 ↔ 財季」對應表。回傳下一個可用的列號。
+
+    為什麼是對應表而不是「每家公司的財年開始月份」一行帶過：對應表的每一格
+    都是**逐期從實際期末日算出來的**，公司哪一年改過財年，那一欄自己就會反映
+    出來，不需要任何例外處理。財年開始月份只寫得下一個值，公司改過財年就直接
+    失效（G2，設計書 2026-08-22）。
+
+    下面的財務指標區塊只給日曆季、不重複財季——財季這件事在這裡一次講完。
+    """
+    title = ws.cell(row=1, column=1, value=t("compare.xls.fiscal_map_title"))
+    title.font = _HEADER_FONT
+
+    header_row = 2
+    ws.cell(row=header_row, column=1, value=t("compare.xls.company"))
+    for col, period in enumerate(all_periods, start=2):
+        ws.cell(row=header_row, column=col, value=period)
+
+    for offset, company in enumerate(all_companies):
+        r = header_row + 1 + offset
+        ws.cell(row=r, column=1, value=company)
+        fiscal_map = result.fiscal_labels.get(company, {})
+        ends = result.period_ends.get(company, {})
+        for col, period in enumerate(all_periods, start=2):
+            value = _fiscal_map_cell(fiscal_map.get(period, ""), ends.get(period, ""))
+            if value is not None:
+                ws.cell(row=r, column=col, value=value)
+
+    return header_row + len(all_companies) + 1 + _BLOCK_GAP
 
 
 def write_compare_data_sheet(
@@ -36,42 +439,18 @@ def write_compare_data_sheet(
     ws = wb.active
     ws.title = "Compare_Data"
 
-    all_companies = sorted({
-        company
-        for metric_data in result.metrics.values()
-        for company in metric_data
-    })
-
-    # 所有公司、所有指標都沒值的期間整欄拿掉。合成 Q4 時年報沒有期末日的那幾
-    # 欄（`comparison._aligned_labels()` 算不出日曆季，退回 `FY2009Q4` 這種財季
-    # 標籤）值全是空的，排序時又會被排到日曆季後面，圖表 X 軸就多出兩格最新
-    # 一期之後的空白，看起來像資料抓錯。**判斷要跨所有指標一起做**：每個區塊
-    # 各自篩會讓區塊之間欄數不同，而 write_chart_sheets() 用的是全表
-    # `max_column`，窄的區塊會被讀到別人的欄位。
-    empty_periods = {
-        label
-        for metric_data in result.metrics.values()
-        for company_data in metric_data.values()
-        for label in company_data
-    } - {
-        label
-        for metric_data in result.metrics.values()
-        for company_data in metric_data.values()
-        for label, value in company_data.items()
-        if value is not None
-    }
+    all_companies, all_periods = visible_layout(result, metric_names)
 
     block_ranges: dict[str, tuple[int, int]] = {}
-    row = 1
+    row = _write_fiscal_map_block(ws, result, all_companies, all_periods)
     for metric_name in metric_names:
         metric_data = result.metrics.get(metric_name, {})
         fmt, divisor = unit_format_for(metric_name)
 
-        # 收集這個指標出現過的所有期間標籤，依標籤字串排序（日曆季 `2025Q2`
-        # 與財季 `FY2025Q2` 都天然可字串排序）
-        periods: list[str] = sorted({
-            label for company_data in metric_data.values() for label in company_data
-        } - empty_periods)
+        # 每個指標區塊的欄位跟最上方的對應表對齊（同一份 visible_layout），
+        # 區塊之間欄數不同的話 write_chart_sheets() 用的全表 `max_column`
+        # 會讓窄的區塊讀到別人的欄位。
+        periods: list[str] = list(all_periods)
 
         # 標題列
         title_cell = ws.cell(row=row, column=1, value=metric_name)
@@ -96,7 +475,10 @@ def write_compare_data_sheet(
                  for company in all_companies),
                 default="",
             )
-            ws.cell(row=end_date_row, column=col, value=end_date.replace("-", ""))
+            # 沒有任何公司抓到那一期（G6 補出來的空白欄）就整格留空——不編一個
+            # 不存在的結算日出來，那會讓 Snapshot 與圖表把假日期當成真的期間
+            ws.cell(row=end_date_row, column=col,
+                    value=end_date.replace("-", "") or None)
 
         # 公司資料列
         data_start = end_date_row + 1
@@ -371,6 +753,7 @@ def write_comparison_workbook(
     """組出完整跨公司比較 Excel 並存檔。"""
     wb = Workbook()
     block_ranges = write_compare_data_sheet(wb, result, metric_names)
+    write_notes_sheet(wb, result, metric_names)
     write_snapshot_sheets(wb, result, metric_names, block_ranges, default_date=snapshot_date)
     write_chart_sheets(wb, metric_names, block_ranges)
     output_path.parent.mkdir(parents=True, exist_ok=True)

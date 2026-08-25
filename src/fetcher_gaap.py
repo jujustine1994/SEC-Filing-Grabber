@@ -1714,6 +1714,47 @@ OVERFLOW_SECTION = "Other (as reported)"
 SECTION_GAP = 5
 
 
+def _next_fiscal_label(label: str) -> str:
+    """`FY2025Q3` → `FY2025Q4` → `FY2026Q1`。不是財季標籤回空字串。"""
+    m = re.match(r"^FY(\d{4})Q([1-4])$", label)
+    if m is None:
+        return ""
+    year, quarter = int(m.group(1)), int(m.group(2))
+    return f"FY{year + 1}Q1" if quarter == 4 else f"FY{year}Q{quarter + 1}"
+
+
+def _with_gap_columns(all_qs: list[str], period_ends: list[str]) -> list[str]:
+    """抓不到的季度不要整欄消失，補一個空白欄位進去（G6，2026-08-25）。
+
+    現況欄位清單是「成功抓到什麼就放什麼」，某一季掛掉整欄消失，畫面上
+    FY2025Q1 直接跳到 FY2025Q3，使用者與 AI 都看不出中間漏了一季。補出來的
+    欄位沒有任何值，第 5 列期末日退回由財季標籤反推的年月（`2025-06`），
+    在 Excel 上就是一整欄空白——「有漏」這件事因此看得見。
+
+    缺口判定沿用 `data_quality.missing_quarters()`（`round(天數差/91) - 1`，
+    單一缺口上限 4 季），**不要在這裡另外寫一份**：那條公式與上限是 52 家、
+    1,482 對相鄰期間實測定下來的，固定門檻會把 COSTCO 的 16 週第四季誤判成
+    缺一季。
+
+    年度表（`FY2025` 這種標籤）不處理——季度那套天數算法不適用。
+    """
+    from data_quality import missing_quarters
+
+    if not all(re.match(r"^FY\d{4}Q[1-4]$", q) for q in all_qs):
+        return all_qs
+
+    end_to_label = {end: q for q, end in zip(all_qs, period_ends) if end}
+    filled = set(all_qs)
+    for gap in missing_quarters(period_ends):
+        label = end_to_label.get(gap.after, "")
+        for _ in range(gap.count):
+            label = _next_fiscal_label(label)
+            if not label:
+                break
+            filled.add(label)
+    return sorted(filled)
+
+
 def _merge_financials(is_tbl: StatementTable,
                        bs_tbl: StatementTable,
                        cf_tbl: StatementTable,
@@ -1745,6 +1786,15 @@ def _merge_financials(is_tbl: StatementTable,
             if end:
                 end_map[lbl] = end
     period_ends = [end_map.get(q, "") for q in all_qs]
+
+    # 抓不到的季度留一整欄空白（G6）。要放在 filing_dates / period_ends 算完
+    # **之後**——缺口判定吃的就是那份期末日序列；補進來的欄位在兩個 map 裡都
+    # 查不到，自然落成空字串，第 5 列再由標籤反推年月。
+    with_gaps = _with_gap_columns(all_qs, period_ends)
+    if with_gaps != all_qs:
+        all_qs = with_gaps
+        filing_dates = [date_map.get(q, "") for q in all_qs]
+        period_ends = [end_map.get(q, "") for q in all_qs]
 
     concepts:    list[str]        = []
     labels_col:  list[str]        = []

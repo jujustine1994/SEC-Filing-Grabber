@@ -6,6 +6,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 
 from comparison import ComparisonResult
+from i18n import t
 from comparison_writer import (
     write_compare_data_sheet,
     write_snapshot_sheets,
@@ -33,13 +34,15 @@ def _sample_result():
 # ── Compare_Data ─────────────────────────────────────────────────────────
 
 def test_compare_data_sheet_has_metric_header_and_period_columns():
+    """列號是相對的——最上方還有一張 G2 對應表，區塊位置以 block_ranges 為準。"""
     wb = Workbook()
     result = _sample_result()
-    write_compare_data_sheet(wb, result, ["Revenue"])
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
     ws = wb["Compare_Data"]
+    data_start, _ = ranges["Revenue"]
 
-    assert ws["A1"].value == "Revenue"
-    header_row = [c.value for c in ws[2]]
+    assert ws.cell(row=data_start - 3, column=1).value == "Revenue"
+    header_row = [c.value for c in ws[data_start - 2]]
     assert "FY2024Q1" in header_row
     assert "FY2024Q2" in header_row
 
@@ -47,14 +50,15 @@ def test_compare_data_sheet_has_metric_header_and_period_columns():
 def test_compare_data_sheet_has_static_period_end_row():
     wb = Workbook()
     result = _sample_result()
-    write_compare_data_sheet(wb, result, ["Revenue"])
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
     ws = wb["Compare_Data"]
+    end_date_row = ranges["Revenue"][0] - 1
 
     # 原始 period_ends 是 "2024-03-31" 這種帶連字號格式，寫進表裡要轉成
     # 不帶分隔符的 "YYYYMMDD"，跟 Snapshot 輸入格要求的格式一致
-    row3 = [c.value for c in ws[3]]
+    row3 = [c.value for c in ws[end_date_row]]
     assert "20240331" in row3
-    for cell in ws[3]:
+    for cell in ws[end_date_row]:
         if cell.value:
             assert not str(cell.value).startswith("=")
 
@@ -396,7 +400,8 @@ def test_write_comparison_workbook_produces_all_expected_sheets():
 
         assert out_path.exists()
         wb = load_workbook(out_path)
-        assert wb.sheetnames == ["Compare_Data", "Snapshot", "Snapshot_Manual", "Chart_Revenue"]
+        assert wb.sheetnames == ["Compare_Data", "Notes", "Snapshot",
+                                 "Snapshot_Manual", "Chart_Revenue"]
 
 
 # ── 同一日曆季、各公司期末日不同（2026-08-22）───────────────────────────────
@@ -414,9 +419,10 @@ def test_period_end_row_takes_the_latest_date_in_the_calendar_quarter():
         failures=[],
     )
     wb = Workbook()
-    write_compare_data_sheet(wb, result, ["Revenue"])
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    end_date_row = ranges["Revenue"][0] - 1
 
-    assert wb["Compare_Data"]["B3"].value == "20250727"
+    assert wb["Compare_Data"].cell(row=end_date_row, column=2).value == "20250727"
 
 
 def test_compare_data_sheet_drops_periods_with_no_data_at_all():
@@ -499,3 +505,427 @@ def test_chart_title_overlay_is_written_into_the_saved_file():
     # layout 只有三個標題有（圖例的版面由 legendPos 決定）
     assert xml.count('<overlay val="0"/>') == 4
     assert xml.count("<layout/>") == 3
+
+
+# ── G2 日曆季 ↔ 財季對應表（2026-08-25）────────────────────────────────────
+
+def _fiscal_result():
+    """NVDA（財年二月起算）與 AMD（日曆年）同一波財報，財季標籤不同。"""
+    return ComparisonResult(
+        metrics={"Revenue": {
+            "NVDA": {"2025Q2": 46743.0, "2025Q3": 57006.0},
+            "AMD": {"2025Q2": 7685.0, "2025Q3": 9246.0},
+        }},
+        period_ends={
+            "NVDA": {"2025Q2": "2025-07-27", "2025Q3": "2025-10-26"},
+            "AMD": {"2025Q2": "2025-06-28", "2025Q3": "2025-09-27"},
+        },
+        failures=[],
+        fiscal_labels={
+            "NVDA": {"2025Q2": "FY2026Q2", "2025Q3": "FY2026Q3"},
+            "AMD": {"2025Q2": "FY2025Q2", "2025Q3": "FY2025Q3"},
+        },
+        synthetic_q4={"NVDA": set(), "AMD": set()},
+    )
+
+
+def test_compare_data_starts_with_the_calendar_to_fiscal_map():
+    """整張 Compare_Data 最上方是對應表，在第一個指標區塊之前。一格講完
+    「這一欄對這家公司是哪一財季、期末日幾號」。"""
+    wb = Workbook()
+    write_compare_data_sheet(wb, _fiscal_result(), ["Revenue"])
+    ws = wb["Compare_Data"]
+
+    header = [c.value for c in ws[2]]
+    assert header[1:] == ["2025Q2", "2025Q3"]
+
+    rows = {ws.cell(row=r, column=1).value: [ws.cell(row=r, column=c).value for c in (2, 3)]
+            for r in (3, 4)}
+    assert rows["NVDA"] == ["FY2026Q2 (0727)", "FY2026Q3 (1026)"]
+    assert rows["AMD"] == ["FY2025Q2 (0628)", "FY2025Q3 (0927)"]
+
+
+def test_calendar_to_fiscal_map_sits_above_the_first_metric_block():
+    wb = Workbook()
+    ranges = write_compare_data_sheet(wb, _fiscal_result(), ["Revenue"])
+    ws = wb["Compare_Data"]
+    data_start, _ = ranges["Revenue"]
+
+    # 指標區塊的標題列（Revenue）在對應表下方，不是第 1 列
+    title_row = data_start - 3
+    assert ws.cell(row=title_row, column=1).value == "Revenue"
+    assert title_row > 4
+
+
+def test_metric_blocks_still_show_calendar_quarters_only():
+    """對應表講完財季之後，下面的指標區塊只給日曆季，不重複財季。"""
+    wb = Workbook()
+    ranges = write_compare_data_sheet(wb, _fiscal_result(), ["Revenue"])
+    ws = wb["Compare_Data"]
+    data_start, _ = ranges["Revenue"]
+
+    block_header = [c.value for c in ws[data_start - 2]]
+    assert block_header[1:] == ["2025Q2", "2025Q3"]
+
+
+def test_calendar_to_fiscal_map_leaves_a_blank_cell_when_a_company_lacks_the_period():
+    wb = Workbook()
+    result = _fiscal_result()
+    del result.metrics["Revenue"]["AMD"]["2025Q3"]
+    del result.period_ends["AMD"]["2025Q3"]
+    del result.fiscal_labels["AMD"]["2025Q3"]
+    write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+
+    amd_row = next(r for r in (3, 4) if ws.cell(row=r, column=1).value == "AMD")
+    assert ws.cell(row=amd_row, column=3).value is None
+
+
+def test_calendar_to_fiscal_map_reflects_a_mid_stream_fiscal_year_change():
+    """公司中途改財年，那一欄自己就會反映出來——每一格都是逐期從實際期末日
+    算的，不是從一個「財年開始月份」推的，所以不需要任何例外處理。"""
+    result = ComparisonResult(
+        metrics={"Revenue": {"XYZ": {"2024Q1": 1.0, "2024Q2": 2.0, "2024Q3": 3.0}}},
+        period_ends={"XYZ": {"2024Q1": "2024-03-30", "2024Q2": "2024-06-29",
+                             "2024Q3": "2024-09-28"}},
+        failures=[],
+        fiscal_labels={"XYZ": {"2024Q1": "FY2024Q1", "2024Q2": "FY2024Q2",
+                               "2024Q3": "FY2025Q1"}},
+    )
+    wb = Workbook()
+    write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+
+    assert [ws.cell(row=3, column=c).value for c in (2, 3, 4)] == [
+        "FY2024Q1 (0330)", "FY2024Q2 (0629)", "FY2025Q1 (0928)"]
+
+
+def test_snapshot_formulas_still_point_at_the_right_rows_after_the_map_is_inserted():
+    """最容易壞的地方：對應表把所有列號往下推，Snapshot 公式必須跟著走。
+    這裡不比對列號常數，直接回頭查那個列號在 Compare_Data 上是誰。"""
+    import re
+
+    wb = Workbook()
+    result = _fiscal_result()
+    block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    write_snapshot_sheets(wb, result, ["Revenue"], block_ranges, default_date="20250727")
+
+    data_ws = wb["Compare_Data"]
+    snap = wb["Snapshot"]
+    for r in range(3, 5):
+        company = snap.cell(row=r, column=1).value
+        formula = snap.cell(row=r, column=2).value
+        rows = {int(m) for m in re.findall(r"Compare_Data!\$B\$(\d+):", formula)}
+        assert rows, formula
+        for row_no in rows:
+            first = data_ws.cell(row=row_no, column=1).value
+            # 公式只會指到兩種列：這家公司的資料列，或期末結算日列
+            assert first in (company, t("compare.xls.period_end")), (
+                f"{company} 的公式指到第 {row_no} 列，那是 {first!r}")
+        # 資料列的確有值（不是指到對應表那幾列）
+        data_row = next(row_no for row_no in rows
+                        if data_ws.cell(row=row_no, column=1).value == company)
+        assert isinstance(data_ws.cell(row=data_row, column=2).value, (int, float))
+
+
+def test_chart_categories_still_point_at_the_period_end_row_after_the_map():
+    wb = Workbook()
+    result = _fiscal_result()
+    block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    write_chart_sheets(wb, ["Revenue"], block_ranges)
+
+    data_start, _ = block_ranges["Revenue"]
+    data_ws = wb["Compare_Data"]
+    assert data_ws.cell(row=data_start - 1, column=2).value == "20250727"
+    chart = wb["Chart_Revenue"]._charts[0]
+    assert f"${data_start - 1}" in chart.series[0].cat.strRef.f
+
+
+# ── G7 說明 sheet（2026-08-25）────────────────────────────────────────────
+
+def _notes_rows(ws):
+    """(勾選, 標題, 內文, 實際情況) 的資料列，跳過標題與表頭。"""
+    return [tuple(ws.cell(row=r, column=c).value for c in range(1, 5))
+            for r in range(3, ws.max_row + 1)
+            if ws.cell(row=r, column=2).value]
+
+
+def test_notes_sheet_sits_right_after_compare_data():
+    result = _fiscal_result()
+    with tempfile.TemporaryDirectory() as tmp:
+        out = Path(tmp) / "notes.xlsx"
+        write_comparison_workbook(result, ["Revenue"], out)
+        wb = load_workbook(out)
+    assert wb.sheetnames[:2] == ["Compare_Data", "Notes"]
+
+
+def test_notes_sheet_lists_every_item_with_a_checkbox_column():
+    from comparison_writer import NOTE_ITEMS, write_notes_sheet
+
+    wb = Workbook()
+    wb.active.title = "Compare_Data"
+    write_notes_sheet(wb, _fiscal_result(), ["Revenue"])
+    rows = _notes_rows(wb["Notes"])
+
+    # 沒有抓取失敗的公司時第 10 條不出現（只在真的踩到時才佔一列）
+    assert len(rows) == len(NOTE_ITEMS) - 1
+    for check, title, body, _detail in rows:
+        assert check in ("✓", None)
+        assert title and body
+
+
+def test_notes_sheet_always_ticks_the_structural_items():
+    """「時間軸怎麼定的」「單位」「符號」這幾條是結構性的，任何一份檔案都成立。"""
+    from comparison_writer import write_notes_sheet
+
+    wb = Workbook()
+    wb.active.title = "Compare_Data"
+    write_notes_sheet(wb, _fiscal_result(), ["Revenue"])
+    rows = {title: check for check, title, _b, _d in _notes_rows(wb["Notes"])}
+
+    for key in ("compare.xls.notes.timeline", "compare.xls.notes.units",
+                "compare.xls.notes.sign", "compare.xls.notes.as_reported"):
+        assert rows[t(key)] == "✓", key
+
+
+def test_notes_sheet_ticks_fiscal_year_difference_only_when_it_exists():
+    from comparison_writer import write_notes_sheet
+
+    def _checks(result):
+        wb = Workbook()
+        wb.active.title = "Compare_Data"
+        write_notes_sheet(wb, result, ["Revenue"])
+        return {title: check for check, title, _b, _d in _notes_rows(wb["Notes"])}
+
+    differing = _checks(_fiscal_result())          # NVDA 1 月結算、AMD 12 月
+    assert differing[t("compare.xls.notes.not_fiscal")] == "✓"
+    assert differing[t("compare.xls.notes.not_period_end")] == "✓"
+
+    same = _fiscal_result()
+    same.period_ends["NVDA"] = dict(same.period_ends["AMD"])
+    same.fiscal_labels["NVDA"] = dict(same.fiscal_labels["AMD"])
+    assert _checks(same)[t("compare.xls.notes.not_fiscal")] is None
+
+
+def test_notes_sheet_reports_the_period_end_spread_within_a_column():
+    from comparison_writer import write_notes_sheet
+
+    wb = Workbook()
+    wb.active.title = "Compare_Data"
+    write_notes_sheet(wb, _fiscal_result(), ["Revenue"])
+    rows = {title: (check, detail) for check, title, _b, detail in _notes_rows(wb["Notes"])}
+
+    check, detail = rows[t("compare.xls.notes.period_end_row")]
+    assert check == "✓"
+    assert "29" in detail and "2025Q2" in detail   # 07-27 與 06-28 差 29 天
+
+
+def test_notes_sheet_ticks_synthetic_q4_only_when_the_file_has_one():
+    from comparison_writer import write_notes_sheet
+
+    def _row(result):
+        wb = Workbook()
+        wb.active.title = "Compare_Data"
+        write_notes_sheet(wb, result, ["Revenue"])
+        return {title: (check, detail)
+                for check, title, _b, detail in _notes_rows(wb["Notes"])
+                }[t("compare.xls.notes.synth_q4")]
+
+    assert _row(_fiscal_result())[0] is None
+
+    with_q4 = _fiscal_result()
+    with_q4.synthetic_q4["NVDA"] = {"2025Q3"}
+    check, detail = _row(with_q4)
+    assert check == "✓"
+    assert "2025Q3" in detail
+
+
+def test_notes_sheet_ticks_blanks_only_when_a_cell_is_empty():
+    from comparison_writer import write_notes_sheet
+
+    def _check(result):
+        wb = Workbook()
+        wb.active.title = "Compare_Data"
+        write_notes_sheet(wb, result, ["Revenue"])
+        return {title: check for check, title, _b, _d
+                in _notes_rows(wb["Notes"])}[t("compare.xls.notes.blanks")]
+
+    assert _check(_fiscal_result()) is None
+
+    holed = _fiscal_result()
+    holed.metrics["Revenue"]["AMD"]["2025Q3"] = None
+    assert _check(holed) == "✓"
+
+
+def test_notes_sheet_names_the_companies_that_are_missing_from_this_file():
+    """最重要的一條：抓取失敗現在只寫進 GUI log，檔案裡完全看不出來——
+    檔名有 TSM、使用者也選了 TSM，但表上只有三家，沒有錯誤訊息也沒有空欄位。"""
+    from comparison import CompanyFetchError
+    from comparison_writer import write_notes_sheet
+
+    result = _fiscal_result()
+    result.failures = [CompanyFetchError(ticker="TSM", error_type="NoDataForFrequency")]
+    wb = Workbook()
+    wb.active.title = "Compare_Data"
+    write_notes_sheet(wb, result, ["Revenue"])
+    rows = {title: (check, detail) for check, title, _b, detail in _notes_rows(wb["Notes"])}
+
+    check, detail = rows[t("compare.xls.notes.missing_companies")]
+    assert check == "✓"
+    assert "TSM" in detail and "NoDataForFrequency" in detail
+
+
+def test_notes_items_are_data_driven_and_translated_in_every_language():
+    """CTH 明講這張表未來會擴充：新增一條只要在 NOTE_ITEMS 加一行 + 四個
+    locale 各加兩條，不可以把文字寫死在版面程式裡。"""
+    import i18n
+    from comparison_writer import NOTE_ITEMS
+
+    try:
+        for lang, _, _ in i18n.LANGUAGES:
+            table = i18n._strings(lang)
+            for item in NOTE_ITEMS:
+                assert item.title_key in table, f"{lang} 缺 {item.title_key}"
+                assert item.body_key in table, f"{lang} 缺 {item.body_key}"
+    finally:
+        i18n.set_lang("zh_tw")
+
+
+# ── G6 抓不到的季度留一整欄空白（2026-08-25）──────────────────────────────
+
+def _gap_result(period_ends_by_company, values_by_company):
+    metrics = {"Revenue": {
+        c: {p: v for p, v in vals.items()} for c, vals in values_by_company.items()}}
+    return ComparisonResult(
+        metrics=metrics,
+        period_ends=period_ends_by_company,
+        failures=[],
+        fiscal_labels={c: {p: "" for p in ends} for c, ends in period_ends_by_company.items()},
+        synthetic_q4={c: set() for c in period_ends_by_company},
+    )
+
+
+def test_a_quarter_nobody_fetched_still_gets_a_column():
+    """現況是「成功抓到什麼就放什麼」，某一季掛掉整欄消失，畫面上 2025Q1 直接
+    跳到 2025Q3，使用者與 AI 都看不出中間漏了一季。改成保留欄位、內容全空。"""
+    result = _gap_result(
+        {"AMD": {"2025Q1": "2025-03-29", "2025Q3": "2025-09-27"}},
+        {"AMD": {"2025Q1": 7438.0, "2025Q3": 9246.0}},
+    )
+    wb = Workbook()
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+    data_start, _ = ranges["Revenue"]
+
+    header = [c.value for c in ws[data_start - 2]]
+    assert header[1:] == ["2025Q1", "2025Q2", "2025Q3"]
+    # 缺的那一欄整欄空白：資料格與期末結算日都沒有，欄位本身留著
+    assert ws.cell(row=data_start, column=3).value is None
+    assert ws.cell(row=data_start - 1, column=3).value is None
+
+
+def test_a_sixteen_week_fourth_quarter_is_not_mistaken_for_a_missing_quarter():
+    """COSTCO 的第四季是 16 週（112~119 天）。用固定門檻（例如「>120 天算缺」）
+    會把它誤判成缺一季——`round(112/91) = 1` 才是對的。52 家 1,482 對相鄰期間
+    實測，111~150 天那 16 筆全部是 COSTCO。"""
+    result = _gap_result(
+        {"COST": {"2024Q1": "2024-02-18", "2024Q2": "2024-05-12",
+                  "2024Q3": "2024-09-01", "2024Q4": "2024-11-24"}},
+        {"COST": {"2024Q1": 1.0, "2024Q2": 2.0, "2024Q3": 3.0, "2024Q4": 4.0}},
+    )
+    wb = Workbook()
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+
+    header = [c.value for c in ws[ranges["Revenue"][0] - 2]]
+    assert header[1:] == ["2024Q1", "2024Q2", "2024Q3", "2024Q4"]
+
+
+def test_only_one_company_missing_a_quarter_does_not_add_a_column():
+    """另一家有抓到，那一欄本來就在——不需要補，也不該補出重複欄。"""
+    result = _gap_result(
+        {"AMD": {"2025Q1": "2025-03-29", "2025Q3": "2025-09-27"},
+         "NVDA": {"2025Q1": "2025-04-27", "2025Q2": "2025-07-27",
+                  "2025Q3": "2025-10-26"}},
+        {"AMD": {"2025Q1": 7438.0, "2025Q3": 9246.0},
+         "NVDA": {"2025Q1": 44062.0, "2025Q2": 46743.0, "2025Q3": 57006.0}},
+    )
+    wb = Workbook()
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+
+    header = [c.value for c in ws[ranges["Revenue"][0] - 2]]
+    assert header[1:] == ["2025Q1", "2025Q2", "2025Q3"]
+
+
+def test_a_single_gap_never_generates_more_than_four_columns():
+    """實測 52 家沒有任何 >210 天（>2 季）的缺口，真的出現就是資料異常，
+    不該讓程式無限生欄。"""
+    result = _gap_result(
+        {"AMD": {"2016Q1": "2016-03-26", "2025Q3": "2025-09-27"}},
+        {"AMD": {"2016Q1": 1.0, "2025Q3": 2.0}},
+    )
+    wb = Workbook()
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+
+    header = [c.value for c in ws[ranges["Revenue"][0] - 2]]
+    assert header[1:] == ["2016Q1", "2025Q3"]
+
+
+def test_gap_columns_never_extend_past_the_earliest_or_latest_period():
+    """只補在「最早抓到的那一季」與「最新」之間，不往更早補（CTH 已定）。"""
+    result = _gap_result(
+        {"AMD": {"2025Q1": "2025-03-29", "2025Q3": "2025-09-27"}},
+        {"AMD": {"2025Q1": 7438.0, "2025Q3": 9246.0}},
+    )
+    wb = Workbook()
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+
+    header = [c.value for c in ws[ranges["Revenue"][0] - 2] if c.value]
+    assert header[1] == "2025Q1" and header[-1] == "2025Q3"
+
+
+def test_annual_output_fills_a_missing_year():
+    """年度輸出的欄位是年份，缺的那一年同樣要留一欄空白。"""
+    result = _gap_result(
+        {"AMD": {"2022": "2022-12-31", "2024": "2024-12-28"}},
+        {"AMD": {"2022": 1.0, "2024": 2.0}},
+    )
+    wb = Workbook()
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+
+    header = [c.value for c in ws[ranges["Revenue"][0] - 2]]
+    assert header[1:] == ["2022", "2023", "2024"]
+
+
+def test_the_fiscal_map_shows_the_gap_column_too():
+    """對應表跟下面的區塊同一組欄位——缺的那一欄在對應表上也是空的。"""
+    result = _gap_result(
+        {"AMD": {"2025Q1": "2025-03-29", "2025Q3": "2025-09-27"}},
+        {"AMD": {"2025Q1": 7438.0, "2025Q3": 9246.0}},
+    )
+    result.fiscal_labels["AMD"] = {"2025Q1": "FY2025Q1", "2025Q3": "FY2025Q3"}
+    wb = Workbook()
+    write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+
+    assert [c.value for c in ws[2]][1:] == ["2025Q1", "2025Q2", "2025Q3"]
+    assert ws.cell(row=3, column=3).value is None
+
+
+def test_the_notes_sheet_counts_the_gap_column_as_blank():
+    """補出來的空白欄就是「有缺」，說明 sheet 的「空白代表什麼」要打勾。"""
+    from comparison_writer import write_notes_sheet
+
+    result = _gap_result(
+        {"AMD": {"2025Q1": "2025-03-29", "2025Q3": "2025-09-27"}},
+        {"AMD": {"2025Q1": 7438.0, "2025Q3": 9246.0}},
+    )
+    wb = Workbook()
+    wb.active.title = "Compare_Data"
+    write_notes_sheet(wb, result, ["Revenue"])
+    rows = {title: check for check, title, _b, _d in _notes_rows(wb["Notes"])}
+    assert rows[t("compare.xls.notes.blanks")] == "✓"
