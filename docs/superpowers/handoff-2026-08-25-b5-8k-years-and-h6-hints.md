@@ -9,9 +9,15 @@
 1. ~~**B5**：8-K `--years` 篩選用的 label 有 31.5% 年份是錯的 → 換成已驗證 100% 的零下載規則~~
    ✅ **2026-08-25 完成**（CTH 中途指示「本對話先做完 B5 即可」，所以下面 2~4 項還沒做）。
    內容見 `docs/CHANGELOG.md` 的 B5 條目、`docs/8k-period-off-by-one.md`「零下載規則」一節
-2. **H6 第一批**：Capex / Cash / Ordinary shares 的 label hint 太窄，擴充正則
-3. **H6 第二批**：只**診斷**、不修（見下方「刻意不做」）
-4. **順帶重新量 G10**：H6 修完重跑六家比較檔，看 D&A／Capex 的覆蓋率變多少
+2. ~~**H6 第一批**：Capex / Cash / Ordinary shares 的 label hint 太窄，擴充正則~~
+   ✅ **2026-08-25 完成**（連同決策表指定的 Cost of Revenue 6 家）
+3. ~~**H6 第二批**：只**診斷**、不修~~ ✅ **2026-08-25 完成**，診斷結果寫進
+   `docs/TODO.md` 的 **H6-1**。⚠ 診斷推翻了分類表的判讀：那 7 家**不是** concept 層
+   失守，全部是 `CommonStockValue`／`CommonEquity`，放寬 hint 後 5 家自動修好，
+   只剩 COP／MPC 的 label 完全沒有股票字樣
+4. ~~**順帶重新量 G10**~~ ✅ **2026-08-25 量完**：Capex 六家全滿（NVDA 13/24 → 24/25，
+   但那主要是 H4 第一步的功勞，H6 修的 14 家不在這六家裡）；**D&A 沒變**
+   （AMD 2/25、MRVL 0/19），G10 的主題縮成 D&A
 
 **規格全部寫在 `docs/TODO.md` 的 B5 與 H6 兩條**，含實測數字、原始證據、風險。
 那兩條是這輪的規格書，動手前整條讀完。B5 另有完整報告
@@ -66,6 +72,9 @@
 - **CS&APIC 那 7 家的 concept 層**：只用 `scripts/diag_rowprobe.py` 查「是哪一層先失守」，
   **把結果寫進 `docs/TODO.md` 就好，不要動 concept 對照**。那會影響所有公司，風險等級跟
   這輪不同
+  - ✅ 照做了，而且**查出來根本不是 concept 層的問題**（見上）。concept 對照一格沒動
+  - 同一個原則套用到 2026-08-25 新撞到的 INTC Cash 缺口（15 期，concept 是
+    `CashCashEquivalentsRestrictedCash...`）：只記錄，不動對照，見 TODO H6-1 第 6 點
 - **G8**（比較欄 fallback 補洞）：風險最高，會動所有既有期間的資料來源優先序
 - **H1**（companyfacts 的 CF YTD 拆算）：G11 已定案不切換到 facts，現在做等於白做
 - **H4 第二步**（數值指紋自動連結）：已量化，理論上限 15.3% 且多數是假候選，**已決定不做，

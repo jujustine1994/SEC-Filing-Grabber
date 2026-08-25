@@ -335,15 +335,54 @@ match:      "first"（預設）= 最早那行；"last" = 最後那行（用於 C
 先確認它擋的是什麼（例：`Operating Cash Flow` 的 hint 是為了擋現金流量表最下面
 的租賃補充揭露列，那個 hint 有存在的必要），並且用實測掃一遍再收工。
 
+### H6（2026-08-25）：hint 太窄與太寬各是什麼下場
+
+H3 那批 hint 是照 **22 家**調的，擴到 **201 家**重掃後有四條明顯太窄
+（`scripts/diag_hintsweep.py`，killed 前 → 後）：
+
+| 模板列 | 前 | 後 | 症狀 |
+|---|---|---|---|
+| Capex | 15 | 3 | 公司寫 Capital spending／investments／premises and equipment |
+| Common Stock & APIC | 14 | 2 | 外國註冊公司寫 Ordinary shares、另一批寫 Common shares |
+| Cash | 20 | 15 | 寫 Cash／Cash and cash items／and temporary investments |
+| Cost of Revenue | 36 | 30 | 能源公用餐飲寫 Purchased crude oil／power／Food, beverage |
+
+四條 hint 現在寫成 `fetcher_gaap` 頂端的具名常數（`_CAPEX_HINT`、`_CASH_HINT`、
+`_COMMON_STOCK_HINT`、`_COGS_HINT`），每條旁邊註記它擋的是什麼、為什麼不能再寬。
+
+**放寬的同時要擋住的鄰居（都是實測踩到的，不是假想）**：
+
+| 模板列 | 一放寬就會吃到 | 為什麼不能吃 |
+|---|---|---|
+| Capex | `CapitalExpendituresIncurredButNotYetPaid`（UNP [32]／AMD／NEE） | 非現金揭露，**`std_concept` 同樣是 `CapitalExpenses`**，混進來會重複計算 |
+| Common Stock & APIC | `TreasuryStockCommonValue`（LIN [28]／ABT [51]／AMP [77]／KR [37]） | 庫藏股，**std_concept 同樣是 `CommonEquity`** |
+| Cost of Revenue | `LaborAndRelatedExpense`（銀行／鐵路的人事費） | 那 29 家概念上沒有 COGS（同 D8），**留空比填錯好** |
+| Cash | `CashAndDueFromBanks`（銀行 7 家） | 口徑不同質，是產品決定不是 bug（TODO H6-1） |
+
+**兩個排除條件本身也會出錯，寫的時候要挑判準**：
+- 「label 含 treasury 就踢掉」會誤傷 NSC 的普通股列（它自己寫
+  `Common stock, net of treasury shares`）。真正的庫藏股列都帶「at cost」或
+  「in treasury」，用那個當判準才分得開
+- Capex 的排除詞要放在 negative lookahead（`^(?!.*(?:accrued|not yet paid|payable))`），
+  不是在正向 pattern 裡想辦法避開
+
+**擋掉之後那一格會變空，而空白有時候才是對的**：NEE 的 Capex 在 H6 之前抓到的就是
+「Accrued property additions」——**填的是錯的數字**。H6 之後那格留空。判斷一個 hint
+改得對不對，不能只看「填滿的格子有沒有變多」。
+
 ## Template 行數摘要
 
 | 報表 | 行數 | 格式 |
 |------|------|------|
-| IS_TEMPLATE | 22 | 6-tuple (label, std_concept, fallback_suffix, source, match, label_hint) |
+| IS_TEMPLATE | 22 | 7-tuple (label, std_concept, fallback_suffix, source, match, label_hint, label_fallback) |
 | BS_TEMPLATE | 44 | 同上（含 Total Non-current Assets/Liabilities，2026-08-12 新增） |
 | CF_TEMPLATE | 26 | 同上（第 26 行為 Free Cash Flow，DERIVED = OCF − |Capex|） |
 
 source 欄位值：`"IS"` / `"BS"` / `"CF"` = 從哪個 DataFrame 取值；`"DERIVED"` = 不做 XBRL 比對，由 post-processing 計算。
+
+第 7 欄 `label_fallback` 是 2026-08-23（H4 第一步）加的第三層，**公司自訂延伸 tag
+（`nvda_` / `nee_` 這種）唯一抓得到的方式**——那種 concept 名字每家自己取，只有 label
+對得上。第三層後面沒有任何東西再擋它，所以寫得下去就要窄。
 
 ## B1 Overflow Rows（三表 GAAP / NG 分流）
 

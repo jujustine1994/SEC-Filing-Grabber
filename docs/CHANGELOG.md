@@ -66,8 +66,30 @@
       - **沒動的**：銀行的 `CashAndDueFromBanks` 7 家（概念取捨題，等 CTH 決定，見 TODO H6-1）、
         Cost of Revenue 那 29 家、COP／MPC、`Other Non-current Assets` IBM/ISRG、
         `Dividends Paid` AMT/CHTR、`Accounts Receivable` SO 等零星個案
+      - **順帶量了 G10（交接文件第 4 步）**：六家半導體（AMD/NVDA/AVGO/INTC/MRVL/LITE，
+        2020-2025 季報）——**Capex 六家全部滿格**（NVDA 原記 13/24 → 24/25），
+        **D&A 沒變**（AMD 2/25、MRVL 0/19）。⚠ Capex 那半**主要是 H4 第一步
+        （2026-08-23 的 `label_fallback`）的功勞，不是 H6**——H6 修的 14 家不在這六家裡。
+        G10 這條的主題因此縮成 D&A
+      - **量 G10 時撞到一個新缺口，只記錄沒修**：INTC 2022~2025 有 15 期的 `Cash` 抓不到，
+        concept 是 `CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`
+        （**名字裡沒有 "And"**，模板的 std 與 fallback 兩層都比不中），2026 年那幾份又改回
+        標準 tag。那是 concept 層 + 「含受限現金算不算 Cash」的口徑題，跟銀行那題同類，
+        寫進 TODO H6-1 第 6 點等 CTH 決定
       - **測試**：非連線 1213 → **1264 passed**（+51，全部 TDD 先紅後綠）。每個測試釘住
         真實公司的真實措辭，含「不可以吃進來」的反例
+      - **這輪自己做的判斷**（交接文件沒寫死、實作時決定的）：
+        1. **Capex hint 加 negative lookahead 排除 accrued／not yet paid／payable**——
+           交接文件只說「擴充正則」。不加就會吃到非現金揭露列（重複計算）
+        2. **NEE 的 Capex 讓它變空白，不為了填滿而放行**——那格原本填的是錯的數字。
+           **填滿率不是目標，正確才是**
+        3. **COP／MPC 不修**：要救得改成「候選只有一列 `CommonStockValue` 時不套 hint」
+           這種結構性規則，會影響所有公司，風險等級跟這輪不同
+        4. **treasury 的排除判準改用「at cost／in treasury」而不是「含 treasury」**——
+           後者誤傷 NSC 的普通股列
+        5. **INTC 那個新缺口只記錄不修**：沿用交接文件對 concept 層的原則（不動對照）
+        6. **抽查抽了 UNP／IP／LIN／EXC**（四類各一家），另外把 CS&APIC 那 7 家逐家查過
+           ——就是這一步推翻了分類表的判讀
 
 - [x] **B5：8-K 季度標籤改走零下載規則，`--years` 不再標錯年份（2026-08-25）**：
       - **修的是什麼**：Item 2.02 8-K 的 `period_of_report` 放的是**發布日**不是財期
@@ -117,6 +139,19 @@
         「每家各自的常數偏移（-3~+1）」改成**全部 0**（B5 之後兩條路本來就該對齊），
         舊值留在 `LEGACY_OFFSETS` 當對照。`fiscal_label` 那一側沒動，偏移非 0 就是
         其中一條路壞了
+      - **這輪自己做的判斷**（交接文件沒寫死、實作時決定的）：
+        1. **`_recover_missing_quarters()` 一起換成同一套 label**——缺季比對的兩邊必須是
+           同一個命名空間，只改列清單那半的話回補掃描會把每一季都判成「缺」
+        2. **新增 `label_agrees_with_fiscal_label` 旗標**——交接文件那道 sanity check 是
+           恆真式（見上），FYE 漂移原本等於零對策。這個旗標是目前唯一的偵測手段，
+           但它涵蓋不到「該被 `--years` 選進來卻被漏掉」的那一類
+        3. **`label_source` 逐份判定**而不是整批貼同一個值：cli 重算一次同一條規則，
+           與列清單給的 label 一致才標成新規則，退回舊算法那幾季照樣帶原本的
+           off-by-one 警告
+        4. **`_fy_end_month()` 刪掉**（改完沒有任何呼叫端），呼叫端改吃
+           `_fiscal_year_end()` + `_fy_end_month_from_mmdd()`，一個 ticker 只打一次 EDGAR
+        5. **`verify_8k_fiscal_labels.py` 的期望值改成偏移全 0**，舊的每家常數偏移留在
+           `LEGACY_OFFSETS` 當對照——那支腳本同時是 B5 的端對端驗收與 `fiscal_label` 的回歸
       - 資料與完整報告：`output/_8k_audit/`（199 份新聞稿快取，改規則重算不必連 SEC）、
         `docs/superpowers/report-2026-08-25-8k-years-zero-download-rule.md`、
         `docs/8k-period-off-by-one.md` 的「零下載規則」一節

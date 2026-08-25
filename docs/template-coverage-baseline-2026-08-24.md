@@ -1,5 +1,14 @@
 # 模板體檢：201 家公司的逐列覆蓋率（2026-08-24 產出）
 
+
+> ⚠ **這份是 H6（2026-08-25）之前的數字。** H6 放寬了 Capex／Cash／
+> Common Stock & APIC／Cost of Revenue 四條 `label_hint`，201 家實測多救回 37 家，
+> 但**這份基線沒有跟著更新**——`gen_template_coverage_baseline.py` 吃的是
+> `output/_spike/gaap_*.pkl`，那些 pkl 存的是**已經比對完的結果**，不是原始
+> dataframe，所以不重跑 `spike_derive_mapping.py`（201 家、要真的抓 SEC）就反映不出
+> hint 的改動。下次有理由重建那批 pkl 時再一起更新這份。H6 的前後數字看
+> `docs/CHANGELOG.md` 與 `output/_hintsweep_201/`。
+
 **這份是自動產出的基線，不是手寫的。** 資料來源 `output/_spike/`（201 家的
 companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。
 

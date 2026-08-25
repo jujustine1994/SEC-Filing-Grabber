@@ -304,7 +304,7 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（
    - **④ Cost of Revenue 那 29 家維持空白是正確行為**（AMT/AON/AXP/BAC/BK/BKNG/BLK/C/CCI/
      CME/COF/CSX/FDX/GS/HCA/ICE/JPM/MCD/MCO/MS/NDAQ/NSC/ODFL/PLD/SCHW/UNP/UPS/V/WFC）
      ——銀行／保險／交易所／鐵路／REIT 概念上沒有 COGS，與 **D8** 同一類。列在這裡只是備查
-   - **⑥ 新發現（2026-08-25 量 G10 時撞到，不在原掃描範圍內）：INTC 2022~2025 的
+   - **⑤ 新發現（2026-08-25 量 G10 時撞到，不在原掃描範圍內）：INTC 2022~2025 的
      `Cash` 有 15 期抓不到，是 concept 層不是 hint**。INTC 那幾年把現金 tag 成
      `us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`
      （std_concept 是 `CashAndCashEquivalents`），我們模板的 std 是
@@ -317,7 +317,7 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（
        equivalents$`），口徑問題還在但至少抓得到；③ 維持空白
      - **跟銀行那題是同一類的口徑取捨，要 CTH 一起決定**（實測掃描：INTC 2025-04-25
        到 2022-04-29 連續 10 份 10-Q 全部 NO MATCH，2025-07-24 之後恢復正常）
-   - **⑤ 更零星的個案**（材料不足，不建議單獨修）：`Other Non-current Assets` IBM
+   - **⑥ 更零星的個案**（材料不足，不建議單獨修）：`Other Non-current Assets` IBM
      「Investments and sundry assets」／ISRG「Long-term investments」、`Dividends Paid`
      AMT／CHTR（只有少數股權分配）、`Accounts Receivable` SO（gross 口徑）、
      `Change in Inventories` AEP、`Finance Lease Liabilities, LT` ON、`Other Current Assets` CVX
