@@ -32,11 +32,11 @@ for tk in TKS:
             try: dfs[key] = getattr(fin, g)().to_dataframe()
             except Exception: pass
         for T in (fg.IS_TEMPLATE, fg.BS_TEMPLATE, fg.CF_TEMPLATE):
-            for name, std, fb, src, match, hint in T:
+            for name, std, fb, src, match, hint, label_fb in T:
                 if not hint or src not in dfs: continue
                 df = dfs[src]
-                with_hint = fg._match_is_row(df, std, fb, match=match, label_hint=hint)
-                without   = fg._match_is_row(df, std, fb, match=match, label_hint=None)
+                with_hint = fg._match_is_row(df, std, fb, label_fb, match=match, label_hint=hint)
+                without   = fg._match_is_row(df, std, fb, label_fb, match=match, label_hint=None)
                 if with_hint is None and without is not None:
                     killed[(name, hint)].append(f"{tk}:{df.loc[without,'concept']}|{df.loc[without,'label']}")
                 elif with_hint is not None and without is not None and with_hint != without:
