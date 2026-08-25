@@ -642,10 +642,14 @@ Index 那份最重要——GUI 的 log 關掉就沒了，而使用者真正會�
 
 | 指令 | 時間 | 測試數 | 用途 |
 |------|------|--------|------|
-| `python -m pytest -m "not slow"` | ~20-35 秒 | 1264（2026-08-25，B5+H6 後） | Unit tests（每次改 code 後跑） |
+| `python -m pytest -m "not slow"` | ~20-35 秒 | 1288（2026-08-25，B5/H6/G10 後） | Unit tests（每次改 code 後跑） |
 | `pytest -m "slow and b1"` | ~12 分鐘 | 24 | B1 overflow live 驗證（8 tickers） |
 | `pytest -m "slow and cf_overflow"` | ~5 分鐘 | 15 | CF YTD overflow 驗收（COHR/LITE/AAPL/NVDA/GOOGL） |
-| `pytest -m slow` | ~31 分鐘 | 58 passed / 7 skipped（2026-08-25） | 完整 live 驗收 |
+| `pytest -m slow` | ~12-31 分鐘 | 58 passed / 7 skipped（2026-08-25） | 完整 live 驗收 |
+
+> ⚠ **slow 紅燈先看是不是逾時。** 2026-08-25 同一天連跑三輪 201 家掃描之後 SEC 開始
+> 限流，slow 出現 6 條 `httpx.ReadTimeout`（JPM 5 條 + ARLO 1 條），單獨重跑就全過。
+> **失敗訊息裡是 `ReadTimeout` 而不是數字對不上，就不是回歸**——重跑那幾條確認即可。
 
 **Markers：**
 - `slow` — 需要網路，排除於預設 CI
