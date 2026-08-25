@@ -169,7 +169,7 @@ def _fiscal_years_differ(facts: NotesFacts) -> tuple[bool, str]:
     months = facts.fy_end_months
     if len(set(months.values())) <= 1:
         return False, t("compare.xls.notes.detail_same_fy_month")
-    detail = "、".join(
+    detail = t("compare.xls.notes.list_sep").join(
         t("compare.xls.notes.detail_fy_month", ticker=c, month=months[c])
         for c in sorted(months, key=lambda c: (months[c], c))
     )
@@ -192,7 +192,7 @@ def _has_synthetic_q4(facts: NotesFacts) -> tuple[bool, str]:
     if not facts.synthetic_periods:
         return False, t("compare.xls.notes.detail_no_synth_q4")
     return True, t("compare.xls.notes.detail_synth_q4",
-                   periods="、".join(facts.synthetic_periods))
+                   periods=t("compare.xls.notes.list_sep").join(facts.synthetic_periods))
 
 
 def _has_blanks(facts: NotesFacts) -> tuple[bool, str]:
@@ -216,7 +216,7 @@ def _missing_companies(facts: NotesFacts) -> tuple[bool, str]:
     沒有空欄位、圖上就是三條線。失敗紀錄原本只寫進 GUI log。"""
     if not facts.failures:
         return False, ""
-    return True, "、".join(
+    return True, t("compare.xls.notes.list_sep").join(
         t("compare.xls.notes.detail_failure", ticker=f.ticker, error=f.error_type)
         for f in facts.failures
     )
@@ -551,7 +551,8 @@ def write_snapshot_sheets(
     snap.cell(row=1, column=3,
               value=t("compare.xls.snapshot_format_hint"))
     snap.cell(row=1, column=4,
-              value=t("compare.xls.snapshot_available_dates", dates="、".join(available_dates)))
+              value=t("compare.xls.snapshot_available_dates",
+                      dates=t("compare.xls.notes.list_sep").join(available_dates)))
 
     header_row = 2
     snap.cell(row=header_row, column=1, value=t("compare.xls.company"))

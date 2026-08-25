@@ -470,6 +470,9 @@ STRINGS: dict[str, str] = {
     'compare.xls.notes.detail_blank': '{total} 格中有 {blank} 格空白',
     'compare.xls.notes.detail_period_span': '本档期间 {first} ~ {last}',
     'compare.xls.notes.detail_failure': '{ticker}（{error}）',
+    # 條列項目之間的分隔符號。中日文用頓號、英文用逗號加空格——
+    # 這是標點符號，跟著語言走，不可以寫死在程式裡。
+    'compare.xls.notes.list_sep': '、',
     'compare.xls.timepoint': '时间点',
     'compare.xls.snapshot_format_hint': '← 请输入日期（如 2025/12/31），会自动抓不晚于这天的最近一期资料',
     'compare.xls.snapshot_available_dates': '各期期末结算日：{dates}',

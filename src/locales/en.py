@@ -503,6 +503,9 @@ STRINGS: dict[str, str] = {
     'compare.xls.notes.detail_blank': '{blank} of {total} cells are blank',
     'compare.xls.notes.detail_period_span': 'covers {first} - {last}',
     'compare.xls.notes.detail_failure': '{ticker} ({error})',
+    # 條列項目之間的分隔符號。中日文用頓號、英文用逗號加空格——
+    # 這是標點符號，跟著語言走，不可以寫死在程式裡。
+    'compare.xls.notes.list_sep': ', ',
     'compare.xls.timepoint': 'Date',
     'compare.xls.snapshot_format_hint': '← Enter any date (e.g. 2025/12/31) — picks the most recent period on or before it',
     'compare.xls.snapshot_available_dates': 'Period-end dates: {dates}',
