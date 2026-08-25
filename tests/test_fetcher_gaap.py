@@ -3058,3 +3058,144 @@ def test_merge_financials_does_not_touch_a_complete_quarter_sequence():
     merged = _merged_labels(labels, ends, [1.0, 2.0, 3.0])
     assert merged.quarter_labels == labels
     assert merged.values[merged.concepts.index("Revenue")] == [1.0, 2.0, 3.0]
+
+
+# ── H6 label_hint 擴充（2026-08-25，201 家掃描的三項真缺口 + Cost of Revenue 子集）──
+#
+# 每個 label 都是從 `output/_hintsweep_201/hintsweep_201_result.txt` 逐字抄的真實
+# 措辭（201 家最新 10-Q 實測），不是編的。四類各抽一家用 `scripts/diag_rowprobe.py`
+# 回頭核對過原始 10-Q 的 dataframe（UNP / IP / LIN / EXC）。
+# 分類與證據見 `output/_hintsweep_201/classification.md` 與 TODO H6。
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_PaymentsToAcquireProductiveAssets",          "Capital spending"),                    # F / KMB / PEP
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Capital investments"),                 # UNP
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Capital additions (including software)"),   # HSY
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Capital and technology expenditures"),  # MAR
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Purchase of premises and equipment, net of sales"),  # AXP
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Purchases of premises and equipment/capitalized software"),  # BK
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Changes in premises and equipment"),    # COF
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Additions to plant and equipment, including long-term deposits"),  # APD
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Additions to plant and equipment"),     # ITW
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Purchases of land, buildings, and equipment"),  # GIS
+    ("us-gaap_PaymentsToAcquireProductiveAssets",          "Purchase of land, buildings, equipment and software"),  # AMP
+    ("us-gaap_PaymentsToAcquireProductiveAssets",          "Acquisitions of Generation Facilities"),  # AEP
+    ("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Purchases of property and equipment"),  # AMD（原本就過，防改壞）
+])
+def test_capex_matches_regardless_of_label_wording(concept, label):
+    """H3 把 hint 改成 `propert|capital expenditure` 後，201 家裡 14 家全損——
+    這些公司寫 Capital spending／investments／premises and equipment，兩個詞根一個都不含。
+    concept 層本來就對得上（`PaymentsToAcquire(Productive|PropertyPlantAndEquipment)`）。"""
+    df = _row_df(concept, label, "CapitalExpenses")
+    assert _match_template_row("Capex", df) == label
+
+
+def test_capex_skips_the_accrued_but_not_paid_row_unp():
+    """UNP／AMD 的現金流量表有兩列 `std_concept=CapitalExpenses`，第二列是
+    「已發生但尚未付款」的非現金揭露，**加總會重複計算**（TODO G10 記過）。
+    實測 UNP 2026-07-23：[17] Capital investments、[32] Capital investments accrued
+    but not yet paid。hint 放寬後仍然不可以挑到後者。"""
+    df = _row_df("us-gaap_PaymentsToAcquirePropertyPlantAndEquipment", "Capital investments",
+                 "CapitalExpenses",
+                 extra=[("us-gaap_CapitalExpendituresIncurredButNotYetPaid",
+                         "Capital investments accrued but not yet paid", "CapitalExpenses")])
+    assert _match_template_row("Capex", df) == "Capital investments"
+
+
+def test_capex_does_not_match_an_accrued_only_row():
+    """整張表只有「accrued but not yet paid」那列時要留空，不可以拿它當 Capex。"""
+    df = _row_df("us-gaap_CapitalExpendituresIncurredButNotYetPaid",
+                 "Capital investments accrued but not yet paid", "CapitalExpenses")
+    assert _match_template_row("Capex", df) is None
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_CashAndCashEquivalentsAtCarryingValue", "Cash"),                              # ETN
+    ("us-gaap_Cash",                                  "Cash"),                              # SLB
+    ("us-gaap_CashAndCashEquivalentsAtCarryingValue", "Cash and cash items"),               # APD
+    ("us-gaap_CashAndCashEquivalentsAtCarryingValue", "Cash and temporary investments"),    # IP
+    ("us-gaap_CashAndCashEquivalentsAtCarryingValue", "Cash and temporary cash investments"),  # KR
+    ("us-gaap_CashAndCashEquivalentsAtCarryingValue", "Cash and cash equivalents"),         # 多數公司（防改壞）
+])
+def test_cash_matches_non_standard_wording(concept, label):
+    """std_concept 已經正確命中，卻被 hint 的字面要求濾掉——hint 在這裡幫倒忙。
+
+    SLB 那筆的 std_concept 也是 `CashAndMarketableSecurities`（2026-07-29 那份 BS
+    的 [2] 列實測）——TODO H6 原本記「SLB 退到 fallback_suffix 層」是錯的，
+    `us-gaap_Cash` 這個 concept 一樣被 edgartools 標成標準 std_concept。
+    """
+    df = _row_df(concept, label, "CashAndMarketableSecurities")
+    assert _match_template_row("Cash", df) == label
+
+
+def test_cash_still_excludes_cash_and_due_from_banks():
+    """銀行的 `CashAndDueFromBanks`（AXP/BAC/BK/C/COF/JPM/WFC 7 家）是**概念取捨題**，
+    CTH 還沒決定要不要算進 Cash——H6 刻意不動它，放寬 hint 時不可以順手吃進來。"""
+    df = _row_df("us-gaap_CashAndDueFromBanks", "Cash and due from banks", float("nan"))
+    assert _match_template_row("Cash", df) is None
+
+
+@pytest.mark.parametrize("label", [
+    "Ordinary shares, value",                                          # ACN
+    "Ordinary shares - $0.01 nominal value",                           # AON
+    "Common Shares (CHF 0.50 par value; 435,331,832 shares issued)",   # CB
+    "Ordinary shares (388.4 million outstanding)",                     # ETN
+    "Ordinary shares, $0.01 par value",                                # JCI
+    "Ordinary shares, €0.001 par value, authorized 1,750,000,000 shares",  # LIN
+    "Ordinary shares— par value $0.0001",                              # MDT
+    "Common stock, $0.00001 par value",                                # 多數美國公司（防改壞）
+])
+def test_common_stock_apic_matches_ordinary_and_common_shares(label):
+    """愛爾蘭／英國／瑞士註冊（或改遷冊）的公司寫 Ordinary shares，
+    現行 hint 只認 common stock / paid-in capital，7 家全損。concept 全部是
+    `CommonStockValue`，本來就對得上。"""
+    df = _row_df("us-gaap_CommonStockValue", label, "CommonEquity")
+    assert _match_template_row("Common Stock & APIC", df) == label
+
+
+def test_common_stock_apic_does_not_pick_treasury_shares():
+    """LIN 實測：同一張 BS 上 `TreasuryStockCommonValue` 的 std_concept 也是
+    `CommonEquity`（[28] Less: Treasury shares, at cost）。放寬 hint 後不可以挑到它。"""
+    df = _row_df("us-gaap_TreasuryStockCommonValue",
+                 "Less: Treasury common shares, at cost (29,786,809 shares)", "CommonEquity")
+    assert _match_template_row("Common Stock & APIC", df) is None
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_CostOfGoodsAndServicesSold", "Purchased crude oil and products"),   # CVX / PSX
+    ("us-gaap_CostOfGoodsAndServicesSold", "Purchased commodities"),              # COP
+    ("us-gaap_CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization",
+     "Purchased Electricity, Fuel and Other Consumables Used for Electric Generation"),  # AEP
+    ("us-gaap_CostDirectMaterial",         "Purchased power and/or fuel"),        # EXC
+    ("us-gaap_CostDirectMaterial",         "Food, beverage and packaging"),       # CMG
+    ("us-gaap_CostOfGoodsAndServicesSold", "Cost of sales"),                      # 多數公司（防改壞）
+])
+def test_cost_of_revenue_matches_energy_utility_and_restaurant_wording(concept, label):
+    """採購原油／電力燃料／食材包材是這幾家真實的 COGS 對應項，目前被 hint 誤擋。"""
+    df = _row_df(concept, label, "CostOfGoodsAndServicesSold")
+    assert _match_template_row("Cost of Revenue", df) == label
+
+
+@pytest.mark.parametrize("concept,label", [
+    ("us-gaap_LaborAndRelatedExpense", "Compensation and benefits"),        # AXP/BAC/C/BK/BLK/CME/COF
+    ("us-gaap_LaborAndRelatedExpense", "Salaries and employee benefits"),
+    ("us-gaap_LaborAndRelatedExpense", "Labor and Fringe"),                 # CSX
+    ("us-gaap_DirectCostsOfLeasedAndRentedPropertyOrEquipment", "Rental expense"),  # AMT/CCI
+])
+def test_cost_of_revenue_still_excludes_labour_and_rent(concept, label):
+    """銀行／保險／鐵路／REIT 概念上沒有 Cost of Revenue（D8 同一類），維持空白才對。
+    放寬 hint 吃進人事費就是**製造錯誤數字**，比留空更糟。"""
+    df = _row_df(concept, label, "CostOfGoodsAndServicesSold")
+    assert _match_template_row("Cost of Revenue", df) is None
+
+
+def test_cost_of_revenue_prefers_purchased_fuel_over_operating_and_maintenance_exc():
+    """EXC 實測：同一個 std_concept 底下有 [208] Purchased power and/or fuel 與
+    [246] Operating and maintenance 兩列。hint 要挑前者——這正是這一列不能乾脆
+    拿掉 hint 的理由。"""
+    df = _row_df("us-gaap_CostDirectMaterial", "Purchased power and/or fuel",
+                 "CostOfGoodsAndServicesSold",
+                 extra=[("us-gaap_UtilitiesOperatingExpenseMaintenanceOperationsAndOtherCostsAndExpenses",
+                         "Operating and maintenance", "CostOfGoodsAndServicesSold")])
+    assert _match_template_row("Cost of Revenue", df) == "Purchased power and/or fuel"

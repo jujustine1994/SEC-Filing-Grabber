@@ -382,11 +382,52 @@ def _filter_filings_by_year(
 #                   **公司自訂延伸 tag（`nvda_...`）唯一抓得到的方式**——那種 concept
 #                   名字每家自己取，只有 label 對得上。寫得下去就要窄，第三層沒有
 #                   任何東西再擋它了（見 H4 spec）
+# ── H6（2026-08-25）：四條 label_hint 的措辭清單 ────────────────────────────
+#
+# 201 家最新 10-Q 實測掃出來的（`scripts/diag_hintsweep.py`，原始輸出與人工分類在
+# `output/_hintsweep_201/`）。下面每個措辭都對應到具體公司，不是想像出來的。
+# **hint 只在該優先層有候選時才過濾**，濾空整層就跳過——所以放太寬會吃到錯的列，
+# 放太窄會整家全損。這四條都是「concept 層本來就對得上、純粹被 hint 卡住」。
+
+# Capex：14 家全損（AEP/AMP/APD/AXP/BK/COF/F/GIS/HSY/ITW/KMB/MAR/PEP/UNP），
+# 它們寫 Capital spending／Capital investments／Purchases of premises and equipment，
+# 舊 hint 的 `propert|capital expenditure` 兩個詞根一個都不含。
+# ⚠ 前面那段 negative lookahead 是必要的：UNP／AMD 的現金流量表底下另有一列
+# `CapitalExpendituresIncurredButNotYetPaid`（std_concept 同樣是 `CapitalExpenses`），
+# 那是非現金揭露，**加總會重複計算**。
+_CAPEX_HINT = (
+    r"^(?!.*(?:accrued|not yet paid|payable))"
+    r".*(?:propert|capital expenditure|capital spending|capital investment"
+    r"|capital addition|capital and technology|premises and equipment"
+    r"|plant and equipment|land, buildings|generation facilities)"
+)
+
+# Cash：5 家全損（ETN/APD/IP/KR/SLB）。std_concept 多數已經正確命中
+# `CashAndCashEquivalentsAtCarryingValue`，純粹被措辭卡掉。
+# ⚠ 不可以放寬到吃進銀行的 `CashAndDueFromBanks`（AXP/BAC/BK/C/COF/JPM/WFC 7 家）
+# ——那是概念取捨題，CTH 還沒決定（TODO H6），H6 刻意不動。
+_CASH_HINT = r"cash and (?:cash )?equivalents|^cash\s*$|cash and cash items|cash and temporary"
+
+# Common Stock & APIC：7 家全損（ACN/AON/CB/ETN/JCI/LIN/MDT），愛爾蘭／英國／瑞士
+# 註冊或改遷冊的公司寫 Ordinary shares、CB 寫 Common Shares。concept 全部是
+# `CommonStockValue`。⚠ 排除 treasury：LIN 的 `TreasuryStockCommonValue` 的
+# std_concept 同樣是 `CommonEquity`（實測 2026-07-31 那份 BS 的 [28] 列）。
+# 另外 7 家（ABT/AMP/AXP/COP/KR/MPC/UNP）是 concept 層先失守，不是 hint 問題，
+# 診斷結果見 TODO H6。
+_COMMON_STOCK_HINT = r"^(?!.*treasury).*(?:common stock|paid-in capital|ordinary shares|common shares)"
+
+# Cost of Revenue：36 家被擋，其中**只有 6 家是真缺口**——CVX/COP/PSX（採購原油
+# 商品）、AEP/EXC（採購電力燃料）、CMG（食材包材）。其餘 29 家是銀行／保險／
+# 交易所／鐵路／REIT，概念上本來就沒有 COGS（與 D8 同一類），維持空白才對。
+# ⚠ 所以只加「purchased」與 CMG 那個措辭，**不可以放寬到吃進
+# `LaborAndRelatedExpense`（Compensation and benefits／Labor and Fringe）**。
+_COGS_HINT = r"cost|^purchased|food, beverage"
+
 _T = tuple[str, str | None, str, str, str, str | None, str | None]
 
 IS_TEMPLATE: list[_T] = [
     ("Revenue",                    "Revenue",                        r"RevenueFromContractWithCustomer|SalesRevenueNet|SalesRevenueGoodsNet|_Revenues$|^Revenues$", "IS", "first", None, None),
-    ("Cost of Revenue",            "CostOfGoodsAndServicesSold",     "CostOfGoodsSold",                                       "IS", "first", "cost", None),
+    ("Cost of Revenue",            "CostOfGoodsAndServicesSold",     "CostOfGoodsSold",                                       "IS", "first", _COGS_HINT, None),
     ("Gross Profit",               "GrossProfit",                    "GrossProfit",                                            "IS", "first", None, None),
     ("R&D Expense",                "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment",                                 "IS", "first", None, None),
     ("SG&A Expense",               "SellingGeneralAndAdminExpenses", "SellingGeneralAndAdmin",                                 "IS", "first", None, None),
@@ -415,7 +456,7 @@ IS_TEMPLATE: list[_T] = [
 
 BS_TEMPLATE: list[_T] = [
     # ── Assets ──────────────────────────────────────────────────────────
-    ("Cash",                           "CashAndMarketableSecurities",             "CashAndCashEquivalents",                                    "BS", "first", r"cash and (?:cash )?equivalents", None),
+    ("Cash",                           "CashAndMarketableSecurities",             "CashAndCashEquivalents",                                    "BS", "first", _CASH_HINT, None),
     ("Short-term Investments",         "ShortTermInvestments",                    "ShortTermInvestments",                                      "BS", "first", None, None),
     ("Accounts Receivable",            "TradeReceivables",                        "AccountsReceivable",                                        "BS", "first", "receivable", None),
     ("Inventories",                    "Inventories",                             "Inventories",                                               "BS", "first", None, None),
@@ -451,7 +492,7 @@ BS_TEMPLATE: list[_T] = [
     ("Total Liabilities",              "Liabilities",                             "Liabilities",                                               "BS", "last",  None, None),
     # ── Equity ──────────────────────────────────────────────────────────
     ("Preferred Stock",                "PreferredStock",                          "PreferredStockValue",                                       "BS", "first", None, None),
-    ("Common Stock & APIC",            "CommonEquity",                            "CommonStockValue",                                          "BS", "first", "common stock|paid-in capital", None),
+    ("Common Stock & APIC",            "CommonEquity",                            "CommonStockValue",                                          "BS", "first", _COMMON_STOCK_HINT, None),
     ("Additional Paid-in Capital",     "AdditionalPaidInCapital",                 "AdditionalPaidInCapitalCommonStock",                        "BS", "first", None, None),
     ("Treasury Stock",                 "TreasuryShares",                          "TreasuryStockValue",                                        "BS", "first", None, None),
     ("Retained Earnings",              "RetainedEarnings",                        "RetainedEarningsAccumulatedDeficit",                        "BS", "first", None, None),
@@ -486,7 +527,7 @@ CF_TEMPLATE: list[_T] = [
     # concept 兩層都比不到，年報那格空掉之後連 Q4 都合成不出來（見 H4 spec）。
     # **刻意用 `^purchases` 錨在開頭**——第三層後面沒有任何東西再擋它了，寫寬一點
     # 就會吃到「Proceeds from sales of property」與「Depreciation of property」。
-    ("Capex",                      "CapitalExpenses",                    "PaymentsToAcquirePropertyPlantAndEquipment",            "CF", "first", "propert|capital expenditure", r"^purchases (?:of|related to).*propert"),
+    ("Capex",                      "CapitalExpenses",                    "PaymentsToAcquirePropertyPlantAndEquipment",            "CF", "first", _CAPEX_HINT, r"^purchases (?:of|related to).*propert"),
     ("Acquisitions",               "AcquisitionsNet",                    "PaymentsToAcquireBusinessesNetOfCashAcquired",          "CF", "first", None, None),
     ("Investment Purchases",       "InvestmentPurchases",                "PaymentsToAcquireInvestments",                          "CF", "first", None, None),
     ("Investment Proceeds",        "InvestmentProceeds",                 "ProceedsFromSaleOfInvestments",                         "CF", "first", None, None),
