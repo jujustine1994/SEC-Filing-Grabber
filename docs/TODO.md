@@ -302,12 +302,6 @@ H3-1. **剩下的模板列缺漏：多數是「公司沒在報表表面單獨列
    - **重啟這條的時機**：(a) 使用者實際回報這幾列的空白造成困擾；(b) 之後有其他理由要動 `fetcher_facts` 的接線時順手一起做
    - **受影響的列（Index 會一直標紅，這是預期行為不是 bug）**：`Op. Lease Liabilities, current` 14 家、`Change in Inventories` 10 家、`Op. Lease Liabilities, LT` 4 家；另外 `Accrued Compensation`、`Operating Lease ROU Assets`、`Amortization of Intangibles`、`Finance Lease Liabilities, LT` 的覆蓋率偏低也是同一個成因
 
-H3-2. **「中間有洞」對流量列會過度報警**（2026-08-23 發現，需 CTH 決定要不要調整判準）
-   - `Acquisitions` 25/52、`Debt Proceeds` 24 家、`Short-term Debt` 15 家仍在榜首，但這些是**episodic 流量列**——公司沒併購、沒借款的那一季，通常是整條列不寫，不是寫 0
-   - 拿 companyfacts 交叉驗證 `Acquisitions` 的 290 個洞：**只有 42% 在 companyfacts 裡找得到那個期末日的數字**，其餘 58% 是真的那季沒有併購
-   - `data_quality` 的 B 判斷（首末有值之間不能有空格）對存量列（資產負債表）誤判率確實是 0，但對流量列不是。**選項**：(a) 維持現狀、接受這幾列一直標紅；(b) 給流量列另一套判準；(c) 只在洞的比例超過某個門檻才報
-   - 不建議直接把這些列從 B 拿掉——那會連真的抓漏一起藏掉
-
 H6. **H3 的 label_hint 修法在 201 家上重跑：多數有效，但 Capex 修得不夠廣，另外掃出兩個 H3 沒看到的列**（2026-08-25 由另一個 session 掃描產出，**等 CTH 決定要修哪幾項**）
    - **⚠ 掃描結果已經留檔，下次不要重跑**（2026-08-25 從系統 TEMP 複製進專案，TEMP 隨時會被 OS 清掉）：
      | 放在哪 | 是什麼 |
