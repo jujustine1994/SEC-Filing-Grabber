@@ -264,64 +264,41 @@ H3-1. **剩下的模板列缺漏：多數是「公司沒在報表表面單獨列
    - **重啟這條的時機**：(a) 使用者實際回報這幾列的空白造成困擾；(b) 之後有其他理由要動 `fetcher_facts` 的接線時順手一起做
    - **受影響的列（Index 會一直標紅，這是預期行為不是 bug）**：`Op. Lease Liabilities, current` 14 家、`Change in Inventories` 10 家、`Op. Lease Liabilities, LT` 4 家；另外 `Accrued Compensation`、`Operating Lease ROU Assets`、`Amortization of Intangibles`、`Finance Lease Liabilities, LT` 的覆蓋率偏低也是同一個成因
 
-H6. **H3 的 label_hint 修法在 201 家上重跑：多數有效，但 Capex 修得不夠廣，另外掃出兩個 H3 沒看到的列**（2026-08-25 由另一個 session 掃描產出，**等 CTH 決定要修哪幾項**）
-   - **⚠ 掃描結果已經留檔，下次不要重跑**（2026-08-25 從系統 TEMP 複製進專案，TEMP 隨時會被 OS 清掉）：
-     | 放在哪 | 是什麼 |
-     |---|---|
-     | `output/_hintsweep_201/hintsweep_201_result.txt` | **逐列、逐家的完整掃描輸出**（17KB）。下面所有結論都是讀這份得出來的 |
-     | `output/_hintsweep_201/tickers_201.txt` | 201 家 ticker 清單（逐行） |
-     | `output/_hintsweep_201/tickers_joined.txt` | 同一份的逗號串接版，腳本實際吃的參數格式 |
-     | `output/_hintsweep_201/classification.md` | **人工判讀後的分類表**（真缺口 vs hint 正常運作，逐家逐列，含方法論註記）。這是整輪最貴的那段人工判讀，動手前先讀它 |
-     - `output/` 有 gitignore，資料留在磁碟上但不進版控
-     - 分類是人工判讀 `hintsweep_201_result.txt` 得出的（腳本本身只印 killed 清單、不分類），結論在 `classification.md` 與下面幾條
-     - ⚠ **分類表的方法論限制（作者自己標的）**：只讀 concept／label 文字判斷，**沒回頭核對原始 10-Q**，動手前建議抽查
-   - **怎麼跑的**（重跑指令）：
+H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（2026-08-25，H6 主體
+   已完成並移入 `docs/CHANGELOG.md`，前後數字看那條）
+   - 原始資料仍在（**不要重跑**，一輪 12 分鐘）：`output/_hintsweep_201/hintsweep_201_result.txt`
+     （201 家逐列逐家掃描）、`classification.md`（人工分類表，⚠ 見下方訂正）
+   - 重跑指令：
      ```
      TICKERS=$(cat output/_hintsweep_201/tickers_joined.txt)
      ./venv/Scripts/python.exe scripts/diag_hintsweep.py "$TICKERS" > out.txt 2>&1
      ```
-     - 全程約 12 分鐘，H3（2026-08-23）當時只測 22 家
-     - **輸入不是 `output/_spike/` 的 pkl**（很容易誤會）：那批是模板比對**之後**的結果，沒有 concept / label / standard_concept 三欄，拿不來做 hint 比對。腳本會對每個 ticker 重新 `Company(tk).get_filings(form="10-Q")` 取最新一份 10-Q，即時解析 XBRL dataframe——只是網路請求多半命中 `~/.edgar` 的本機快取（H0 跑 201 家時建立的），所以才 12 分鐘而不是重抓一輪。**那份快取被清掉的話重跑會慢很多**
-     - 201 家清單本身是從 `output/_spike/gaap_*.pkl` 的檔名反推的，也就是 H0 體檢那批
-   - **順手修好的**：`scripts/diag_hintsweep.py` 的 7 欄解包——H4 把模板 tuple 從 6 欄加到 7 欄之後這支腳本沒同步更新。**這筆修正已經套在正式腳本上**（工作區裡 `scripts/diag_hintsweep.py` 是改過的狀態）
-   - **怎麼讀輸出**：`DIFF hint=X vs Y` 代表 hint 換了答案（**不一定是壞事**）；`concept|label` 代表 hint 把候選整個濾空（**才是真的遺失資料**）
-   - **H3 已修的列，201 家驗證乾淨（0 新案例）**：Cash Taxes Paid、Deferred Revenue current、Share Repurchases、Long-term Debt
-   - **H3 已修但仍有零星殘留**：Change in Inventories（22 家時 4 → 201 家時 1）、Accounts Receivable（8 → 2）、Cash Interest Paid（6 → 1）
-   - **判定為 hint 正常運作、不是 bug（不要「修」掉）**：Operating Cash Flow 22 家、Financing Cash Flow 7 家全部是 DIFF，hint 正確擋掉 `RightOfUseAssetObtainedInExchange...`、`StockIssued1`、`NoncashAcquisition...` 這類非現金揭露雜訊列；Other Current/Non-current Assets 多數案例正確避開 `NontradeReceivablesCurrent`、`PrepaidTaxes`、`DisposalGroup`；Change in Receivables／Dividends Paid 的 DIFF 案例正確避開 `IncomeTaxesPayableNetOfReceivable`、`PaymentsOfDividendsMinorityInterest`
-   - **判定為真缺口，建議修（三項，成因各不相同）**：
-     1. **Capex 14 家全損**（AEP/AMP/APD/AXP/BK/COF/F/GIS/HSY/ITW/KMB/MAR/PEP/UNP）——H3 才剛把 hint 改成 `propert|capital expenditure`，但很多公司寫「Capital spending」「Capital investments」「Purchases of premises and equipment」，**兩個詞根一個都不含**。含 AXP/BK/COF 這種知名公司，而且 Capex 直接影響 FCF 衍生指標。成因是「用詞不同義同」
-     2. **Common Stock & APIC 14 家全損，但要拆成兩半處理**（2026-08-25 分類表訂正）：
-        - **7 家是 hint 問題**：ACN/AON/CB/ETN/JCI/LIN/MDT 全寫「Ordinary shares」（愛爾蘭／英國／瑞士註冊或改遷冊；ETN 2020 遷冊愛爾蘭），hint 只認 common stock / paid-in capital，一個詞都沒中。**放寬 hint 就能解**
-        - **另外 7 家不是 hint 問題**：ABT/AMP/AXP/COP/KR/MPC/UNP 明明寫「Common shares」還是被濾掉，**代表 concept 層（`std_concept`／`fallback_suffix`）先沒對上**，退到 label_fallback 才被卡。**這幾家要先用 `diag_rowprobe.py` 查是哪一層失守，不是無腦放寬 hint**
-     3. **Cash 5 家全損**（ETN/APD/IP/KR/**SLB**）——多數 std_concept 已正確對到 `CashAndCashEquivalentsAtCarryingValue`，純粹因為公司寫「Cash and cash items」「Cash and temporary investments」而不是標準措辭，被 hint 字面卡死。**SLB 是 2026-08-25 訂正加上的**（原判讀漏看）：它的 concept 是 `us-gaap_Cash`（不是標準 std_concept，退到 fallback_suffix 層），label 只有「Cash」，被 hint 要求含 equivalents 擋掉，性質相同
-   - **原始證據：實際卡住的措辭長什麼樣**（抄自 `hintsweep_201_result.txt`，寫 regex 直接照這份，不必重跑）：
-     - **Capex**（現行 hint `propert|capital expenditure`，killed 15/201，其中 MCHP 是 DIFF 不是全損）。**concept 全部是對的**（`PaymentsToAcquirePropertyPlantAndEquipment` 或 `PaymentsToAcquireProductiveAssets`），純粹被 label hint 濾掉：
-       | 措辭 | 公司 |
-       |---|---|
-       | `Capital spending` | F、KMB、PEP |
-       | `Capital investments` | UNP |
-       | `Capital additions (including software)` | HSY |
-       | `Capital and technology expenditures` | MAR |
-       | `Purchase(s) of premises and equipment` | AXP、BK（BK 是 `…/capitalized software`） |
-       | `Changes in premises and equipment` | COF |
-       | `Additions to plant and equipment` | APD、ITW |
-       | `Purchases of land, buildings, and equipment` | GIS、AMP（`Purchase of land, buildings, equipment and software`） |
-       | `Acquisitions of Generation Facilities` | AEP |
-     - **Common Stock & APIC**（現行 hint `common stock|paid-in capital`，killed 14/201，**全部是 `CommonStockValue` / `CommonStockValueOutstanding`，concept 也全對**）：
-       - `Ordinary shares`：ACN、AON、CB（`Common Shares (CHF 0.50 par value…)`）、ETN、JCI、LIN、MDT
-       - `Common shares`（複數 shares，不是 stock）：ABT、AMP、AXP、KR、UNP
-       - 完全沒有股票字樣：COP 寫 `Par value`、MPC 寫 `Issued – 995 million and 994 million shares (par value $0.01 per share…)`
-       - ⚠ 這些 label 很長（帶授權股數、面額、日期），regex 要用「包含」不是「等於」
-     - **Cash**（現行 hint `cash and (?:cash )?equivalents`，killed 20/201，但只有一部分是真缺口）：
-       - **措辭不同、concept 對的**：APD `Cash and cash items`、ETN `Cash`、IP `Cash and temporary investments`、KR `Cash and temporary cash investments`。**另外 SLB 是 `us-gaap_Cash|Cash`**（2026-08-25 訂正加入，原判讀漏看，已確認同一類）
-       - **銀行 7 家**（`us-gaap_CashAndDueFromBanks`）：AXP、BAC、BK、C、COF、JPM、WFC。**概念取捨題，不是 bug**
-       - **保險／其他 8 家是 hint 正常運作**：AIG、ALL、HIG、CB、MMM 被擋掉的候選是 AFS 債券／短期投資列（`DebtSecuritiesAvailableForSale…`、`OtherShortTermInvestments`），擋掉是對的；AFL、MET、CVX 是 DIFF 不是全損
-   - **Cost of Revenue 36 家：多數不該修**——AXP/BAC/JPM/GS/CSX/UNP 這類銀行／保險／交易所／鐵路概念上本來就沒有 Cost of Revenue，跟 **D8** 同一類，維持空白才對。只有 CVX/COP/PSX（採購原油／商品）、AEP/EXC（採購電力燃料）、CMG（食材包材）這幾家是真實的 COGS 對應項、目前被誤擋，才是真缺口
-     - 原始輸出裡那幾家的樣子：`CVX:us-gaap_CostOfGoodsAndServicesSold|Purchased crude oil and products`、`COP:us-gaap_CostOfGoodsAndServicesSold|Purchased commodities`、`EXC:us-gaap_CostDirectMaterial|Purchased power and/or fuel`、`AEP:us-gaap_CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization|Purchased Electricity, Fuel and Other Consumables Used for Electric Generation`、`CMG:us-gaap_CostDirectMaterial|Food, beverage and packaging`
-     - 不該修的那批長這樣（幾乎全是 `us-gaap_LaborAndRelatedExpense`，公司把人事費當主要成本列）：AXP/BAC/C/BK/BLK/CME/COF/CSX `Compensation and benefits`／`Salaries and employee benefits`／`Labor and Fringe`；AMT/CCI 是 `DirectCostsOfLeasedAndRentedPropertyOrEquipment`（REIT 的場地租金）
-   - **低優先、個案，不急著動**：銀行的「Cash and due from banks」7 家（**概念取捨題**——算不算「Cash」見仁見智，要 CTH 決定，不是 bug）；Change in Receivables／Dividends Paid／AR 剩下的 1~2 家零星案例（ALL/AMT/CHTR/SO）
-   - **建議動手順序**：先修 Capex 與 Common Stock & APIC（樣本大、模式清楚、修法就是擴充 hint 正則），Cash 4 家一併；Cost of Revenue 只挑能源／公用／餐飲那個子集；銀行那批全部擱置
-   - 修完 `docs/CHANGELOG.md` 要補一筆「H3 後續驗證」：201 家重跑證實多數列修法有效，同時揭露 Capex 修法不完整、發現兩個 H3 沒掃到的新列
+   - **⚠ 分類表有兩處是錯的（2026-08-25 查原始 10-Q 訂正）**：
+     ① 「CS&APIC 那 7 家是 concept 層失守」錯——ABT/AMP/AXP/COP/KR/MPC/UNP 七家全部是
+     `us-gaap_CommonStockValue(Outstanding)` / `std_concept=CommonEquity`，concept 層好好的；
+     ② 「SLB 退到 fallback_suffix 層」錯——`us-gaap_Cash` 一樣有 `std_concept=CashAndMarketableSecurities`
+   - **① 銀行的「Cash and due from banks」7 家**（AXP/BAC/BK/C/COF/JPM/WFC）
+     ——**概念取捨題，要 CTH 決定，不是 bug**。銀行的「現金及存放同業」算不算模板意義上的
+     `Cash`？納進來只要 hint 加 `|due from banks`，但那跟一般公司的 Cash 不同質，
+     跨公司比較會混到兩種口徑
+   - **② Common Stock & APIC 剩 COP 與 MPC**：COP 的 label 只有「Par value」、MPC 是
+     「Issued – 995 million and 994 million shares (par value $0.01 per share…)」，
+     **措辭裡完全沒有股票字樣**，放寬措辭救不了。要救只能改成「候選只有一列
+     `CommonStockValue` 時不套 hint」這種結構性規則，那會影響所有公司，風險等級跟這輪不同
+   - **③ NEE 的 Capex 現在是空的（H6 之前是錯的數字）**：它唯一的 `CapitalExpenses`
+     候選是「Accrued property additions」（非現金揭露），真正的 capex 在
+     `nee_CapitalExpendituresOfPublicUtilitiesFPLConsolidated` 這個延伸 tag。要救屬於
+     **H4 第二步**（label_fallback／延伸 tag）的範圍，而且 NEE 同一張表上還有
+     `nee_CapitalExpendituresOfFPL`（子公司）與 `Other capital expenditures` 兩個相似候選，
+     不能無腦用 `^capital expenditures` 當 label_fallback
+   - **④ Cost of Revenue 那 29 家維持空白是正確行為**（AMT/AON/AXP/BAC/BK/BKNG/BLK/C/CCI/
+     CME/COF/CSX/FDX/GS/HCA/ICE/JPM/MCD/MCO/MS/NDAQ/NSC/ODFL/PLD/SCHW/UNP/UPS/V/WFC）
+     ——銀行／保險／交易所／鐵路／REIT 概念上沒有 COGS，與 **D8** 同一類。列在這裡只是備查
+   - **⑤ 更零星的個案**（材料不足，不建議單獨修）：`Other Non-current Assets` IBM
+     「Investments and sundry assets」／ISRG「Long-term investments」、`Dividends Paid`
+     AMT／CHTR（只有少數股權分配）、`Accounts Receivable` SO（gross 口徑）、
+     `Change in Inventories` AEP、`Finance Lease Liabilities, LT` ON、`Other Current Assets` CVX
+
 
 ## 執行順序建議（2026-08-22 更新）
 
@@ -331,9 +308,9 @@ H6. **H3 的 label_hint 修法在 201 家上重跑：多數有效，但 Capex �
 
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
 |---|---|---|---|---|
-| 1 | H6（Capex／Ordinary shares／Cash 的 hint） | 否 | 是（要修哪幾項） | 修法就是擴充 hint 正則，Cost of Revenue 那 36 家多數不該修。**B5 已於 2026-08-25 完成，見 CHANGELOG** |
-| 2 | B6（FYE 漂移要不要驗） | 否（有離線路子） | 是 | B5 唯一沒有對策的殘留風險。不驗也能過日子，驗的話成本低 |
-| 3 | B2 skill 端抽取 | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
+| 1 | B2 skill 端抽取 | 否 | 是（skill 設計） | **B5 與 H6 都已於 2026-08-25 完成，見 CHANGELOG** |
+| 2 | B6（FYE 漂移要不要驗）+ H6-1（銀行 Cash 口徑） | 否（都有離線路子） | 是 | 兩條都是「要不要做」的判斷題，建議合併成一次決策 |
+| — | ~~B2~~（已升到第 1） | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
 | 4 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
 | 5 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
 | — | G4 overflow 標示 | 否 | 是 | 建議只做標示，不做 synonym 合併 |

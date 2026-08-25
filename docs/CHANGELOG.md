@@ -10,6 +10,65 @@
 ## 功能清單
 
 ### 已完成
+- [x] **H6：擴充四條 `label_hint`，救回 37 家被措辭卡住的科目（2026-08-25）**：
+      - **問題**：H3（2026-08-23）那批 hint 是照 22 家調的，201 家重跑後發現對部分公司
+        太窄——**concept 層明明對得上，卻被 label 措辭整層濾空**（`_match_is_row()` 的
+        設計是 hint 濾空就跳過該優先層，不會退而求其次）
+      - **201 家實測，改前 → 改後**（`scripts/diag_hintsweep.py`，兩次都是真解 10-Q）：
+
+        | 模板列 | killed 前 | killed 後 | 救回 |
+        |---|---|---|---|
+        | Capex | 15 | **3** | **14 家**（AEP/AMP/APD/AXP/BK/COF/F/GIS/HSY/ITW/KMB/MAR/PEP/UNP） |
+        | Common Stock & APIC | 14 | **2** | **12 家**（Ordinary shares 6 家 + Common shares 6 家） |
+        | Cash | 20 | **15** | **5 家**（ETN/APD/IP/KR/SLB） |
+        | Cost of Revenue | 36 | **30** | **6 家**（CVX/COP/PSX/AEP/EXC/CMG） |
+
+        其餘 10 條有 hint 的模板列 killed 數**一筆都沒變**（Operating/Financing Cash Flow、
+        Other Current/Non-current Assets、Change in Receivables、Dividends Paid、
+        Accounts Receivable、Change in Inventories、Finance Lease Liabilities LT、
+        Cash Interest Paid）——沒有波及到別列
+      - **Capex 的 negative lookahead 是必要的，不是保險**：UNP／AMD 的現金流量表底下
+        另有一列 `CapitalExpendituresIncurredButNotYetPaid`，**`std_concept` 同樣是
+        `CapitalExpenses`**（實測 UNP 2026-07-23 的 [17] 與 [32]）。那是非現金揭露，
+        混進來會重複計算
+      - **順手修掉一筆本來就是錯的資料**：NEE 的 Capex 以前抓到的就是那列
+        「Accrued property additions」（唯一的 `CapitalExpenses` 候選），H6 之後那格
+        **改為留空**——錯的數字變空白。NEE 真正的 capex 在 `nee_` 延伸 tag
+        （`nee_CapitalExpendituresOfPublicUtilitiesFPLConsolidated`），屬於 H4 第二步
+        的範圍，這輪不處理
+      - **Cost of Revenue 刻意只放寬到 `^purchased|food, beverage`**：剩下的 29 家銀行／
+        保險／交易所／鐵路／REIT 概念上本來就沒有 COGS（與 D8 同一類），**維持空白才是
+        對的**。放寬到吃進 `LaborAndRelatedExpense`（Compensation and benefits／
+        Salaries and employee benefits／Labor and Fringe）等於製造錯誤數字，比留空更糟，
+        有四個反例測試釘住
+      - **EXC 證明這一列不能乾脆拿掉 hint**：同一個 std_concept 底下有
+        [208] `Purchased power and/or fuel` 與 [246] `Operating and maintenance`，
+        靠 hint 才挑得到前者
+      - **⚠ 分類表兩處訂正（實際查原始 10-Q 才發現的）**：
+        1. 「CS&APIC 那 7 家（ABT/AMP/AXP/COP/KR/MPC/UNP）是 concept 層先失守」——**不對**。
+           `diag_rowprobe.py` 逐家查過，七家全部是 `us-gaap_CommonStockValue(Outstanding)`
+           / `std_concept=CommonEquity`，concept 層好好的，純粹被 hint 卡住。放寬後 5 家
+           自動修好，只剩 COP（label 只有「Par value」）與 MPC（「Issued – 995 million
+           shares…」）措辭裡完全沒有股票字樣
+        2. 「SLB 退到 fallback_suffix 層」——**不對**，SLB 的 `us-gaap_Cash` 一樣被
+           edgartools 標成 `std_concept=CashAndMarketableSecurities`（Priority 1 就中）
+      - **改的過程踩到兩個坑，都已被測試釘住**：
+        1. **treasury 排除誤傷 NSC**：原本寫「label 含 treasury 就踢掉」，NSC 的普通股列
+           自己就寫「Common stock, net of treasury shares」。改成看「at cost／in treasury」
+           才分得開真正的庫藏股列（LIN [28]／ABT [51]／AMP [77]／KR [37] 的
+           `TreasuryStockCommonValue` 的 std_concept 也是 `CommonEquity`）
+        2. **regex 的 `\b` 被寫成真的 backspace 位元組**（用 heredoc 產生程式碼時的跳脫
+           問題），四條 word boundary 分支整個失效。結果碰巧沒錯（真實案例都帶「at cost」），
+           所以補了兩筆不帶 at cost 的測試案例才擋得住這種壞法
+      - **抽查**：四類各抽一家用 `scripts/diag_rowprobe.py` 回頭核對原始 10-Q 的
+        dataframe——UNP（Capex）、IP（Cash）、LIN（CS&APIC）、EXC（Cost of Revenue），
+        確認那一列真的是我們要的科目，不是字面沾邊
+      - **沒動的**：銀行的 `CashAndDueFromBanks` 7 家（概念取捨題，等 CTH 決定，見 TODO H6-1）、
+        Cost of Revenue 那 29 家、COP／MPC、`Other Non-current Assets` IBM/ISRG、
+        `Dividends Paid` AMT/CHTR、`Accounts Receivable` SO 等零星個案
+      - **測試**：非連線 1213 → **1264 passed**（+51，全部 TDD 先紅後綠）。每個測試釘住
+        真實公司的真實措辭，含「不可以吃進來」的反例
+
 - [x] **B5：8-K 季度標籤改走零下載規則，`--years` 不再標錯年份（2026-08-25）**：
       - **修的是什麼**：Item 2.02 8-K 的 `period_of_report` 放的是**發布日**不是財期
         結束日，`_period_to_quarter_label()` 直接取它的日曆季。200 份實測

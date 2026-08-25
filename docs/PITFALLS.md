@@ -333,3 +333,34 @@ def _xl_str(s: str) -> str:
 **判斷準則：** 這個字串會不會被寫進檔案、或被拿去跟檔案裡的值比對？會的話
 它是**資料**不是介面文字，不進 i18n。同樣的判斷也適用於 Excel A 欄的機器鍵。
 
+
+---
+
+## 地雷二十：用 heredoc／腳本產生程式碼時，regex 的 `\b` 會變成真的 backspace
+
+**問題：** 2026-08-25 改 `_COMMON_STOCK_HINT` 時，是用
+`python - <<'PY'` 這種 heredoc 腳本把新的 regex 寫進 `fetcher_gaap.py`。
+腳本裡那段字串是**非 raw** 的 Python 字串，`\b` 在寫檔前就被求值成
+**0x08 backspace 位元組**，落檔後長這樣（看起來完全正常，grep 也看不出來）：
+
+```python
+_TREASURY_ROW = r"(?:.*<BS>in treasury<BS>)|..."   # <BS> 是 0x08，不是 \b
+```
+
+於是四條 word boundary 分支變成「比對一個 backspace 字元」，**永遠不會命中**。
+
+**為什麼難發現：** 剩下那條沒有 `\b` 的分支（`treasury.{0,40}at cost`）照樣
+運作，而真實案例（LIN／ABT／AMP／KR／COP 的庫藏股列）**全部都帶「at cost」**
+——所以 201 家實測結果完全正確，單元測試也全綠。壞的是那些沒有 at cost 的
+寫法（`Common shares in treasury`、`Treasury common shares`）。
+
+**做法：**
+1. 寫含 regex 的程式碼**不要走 heredoc**，用 Write 工具直接寫檔；非用不可時
+   heredoc 內的字串要加 `r` 前綴，或寫成 `chr(92) + "b"`
+2. 改完立刻 `python -c "import 模組; print(repr(模組.那個常數))"` 看一眼——
+   repr 會把 `\x08` 印出來，肉眼分得出 `\b` 與 `\x08`
+3. 測試案例要**涵蓋每一條分支**。只測「有 at cost」的案例，等於沒測到 `\b`
+   那幾條
+
+**同類風險：** `\d`、`\s`、`\w` 不會出事（Python 沒有這些跳脫，只會發
+SyntaxWarning），但 `\b`、`\n`、`\t`、`\a`、`\f`、`\v` 都會**靜默**被求值。
