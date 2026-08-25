@@ -3171,6 +3171,11 @@ def test_common_stock_apic_keeps_rows_that_merely_mention_treasury(concept, labe
     "Common shares held in treasury, at cost - Shares: 267,907,258",  # ABT
     "Common shares in treasury, at cost, 1,305 shares",            # KR
     "Treasury stock (at cost: 2026-1,054,626,440 shares)",         # COP
+    # 下面兩個沒有「at cost」字樣，靠 word boundary 那幾條分支擋。2026-08-25 踩過：
+    # 用 heredoc 寫 regex 時 `` 被當跳脫字元寫成真的 backspace 位元組，那幾條
+    # 分支整個失效，而上面帶 at cost 的案例照樣過——這兩筆才擋得住那種壞法。
+    "Common shares in treasury",
+    "Treasury common shares",
 ])
 def test_common_stock_apic_does_not_pick_real_treasury_rows(label):
     """這幾家的庫藏股列 std_concept 也是 `CommonEquity`（實測 LIN [28]、ABT [51]、

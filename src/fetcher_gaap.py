@@ -419,7 +419,7 @@ _CASH_HINT = r"cash and (?:cash )?equivalents|^cash\s*$|cash and cash items|cash
 # **但不可以「label 含 treasury 就踢掉」**——NSC 的普通股列自己就寫
 # 「Common stock, net of treasury shares」，那樣寫會誤傷它（201 家重掃實際踩到）。
 # 真正的庫藏股列都帶「at cost」或「in treasury」，用那個當判準。
-_TREASURY_ROW = r"(?:.*in treasury)|(?:.*treasury.{0,40}at cost)|(?:\s*less[:\s\-]+treasury)|(?:\s*treasury)"
+_TREASURY_ROW = r"(?:.*\bin treasury\b)|(?:.*treasury.{0,40}at cost)|(?:\s*less[:\s\-]+treasury\b)|(?:\s*treasury\b)"
 _COMMON_STOCK_HINT = (
     rf"^(?!{_TREASURY_ROW})"
     r".*(?:common stock|paid-in capital|ordinary shares|common shares)"
