@@ -18,6 +18,48 @@ B4. **最新法說會資料能不能自動更新**（2026-08-12 CTH 提出）
    - 預期方向：自動抓最新 8-K（尤其 Item 2.02 財報發布 8-K）來補即時數字，而不是等 10-Q/10-K 才更新——跟 B1 的 `cli.py press-release` 子指令、B3 的 `press_release_tables.py` 應該是同一條路線，需要研究怎麼接
    - **待研究，未動手**
 
+B5. **8-K `--years` 篩選用的 label 有 31.5% 年份是錯的——已驗出一條零下載規則，實測 100%**（2026-08-25 由另一個 session 純驗證產出，**未動任何專案檔案**，等 CTH 決定要不要實作）
+   - **完整報告**：`C:\Users\CTH\AppData\Local\Temp\claude\C--Users-CTH-Documents-Code-SEC-Financial-Tools\6961a7d0-c815-494c-b3be-f1438b787d3c\scratchpad\8k-years-filter-verification.md`（原始資料 `8k_period_audit.json` / `8k_period_audit_oos.json` / `final_check.json`；新聞稿原文快取 `8k_audit_html/` 共 200 份，改規則重算不必重抓）。**那份是暫存目錄，要動手前先把它與腳本收進專案**
+   - **⚠ 原提案的根因判斷是錯的，不要照著做**：原本想「把 `_fy_end_month()` 提前傳進 `_list_earnings_filings()`」——就算傳進去，那裡**沒有 `period_end` 可用**。真實期末日是 `cli.py::_period_end_from_tables()`（`cli.py:283`）從新聞稿表格內文 regex 抓的，前提是 `filing.obj()` 已經把整份文件下載並解析完。`_list_earnings_filings()` 的 docstring 明寫 *"no document is downloaded here"*，照原提案改＝把 20 年上百份 8-K 全下載完才知道哪幾份落在 `--years` 區間，**正好抵銷 `--years` 存在的目的**
+   - **⚠ label 不只用於年份篩選**：它同時是 `_dedupe_by_label()` 的 key 與 `_find_missing_quarters()` 缺季偵測的依據，改 label 會連動這兩處
+   - **實測規模**：26 家 × 最近 8 份 Item 2.02 8-K = 200 份，SEC EDGAR 實抓，零 AI 呼叫
+   - **三版規則的比較（這是重點，別再重試前兩版）**：
+     | 規則 | 命中率 | 敗因 |
+     |---|---|---|
+     | A. `fiscal_quarter_of(period_of_report) − 1 季` | 58.0% | `fiscal_quarter_of()` 內建「往前推 15 天」是為**期末日**設計的，而實測發布延遲跨度 **4~58 天**，減 15 天後有時落回本季有時落到下一季 |
+     | B. 名目季末＝財季結束月的**當月最後一天** | 79.8% | 52/53 週制真實季末落在名目月底前後最多 20 天（WDC 季末 1/2、COST Q3 季末 5/10），MU/WDC/QRVO/COST 整家偏一季 |
+     | **C. 名目季末＝EDGAR `Company.fiscal_year_end` 的完整 MMDD 往前推 3/6/9 個月** | **100%** | — |
+   - **規則 C**：
+     ```
+     fye = Company(ticker).fiscal_year_end        # 例 WDC "0703"、COST "0830"、MU "0903"
+     候選季末 = fye 日期往前推 0/3/6/9 個月（該月沒那天就退到當月最後一天）
+     label = 「不晚於（發布日 + tol）」的最新一個候選季末，
+             套 fiscal_input.fiscal_quarter_of(候選季末, fy_start_month(fye 月))
+     ```
+     - **一定要傳完整 MMDD，不能只傳月份**——只傳月份就退化成規則 B 的 79.8%
+     - `tol` 允許名目季末落在發布日之後一點（COST Q3 真實 5/10 結束、名目算出來 5/30，而它 5/28 就發了）。**tol 在 3~30 天之間結果完全相同**（高原很寬），建議取 21；tol=0 掉到 95.0%
+   - **驗證結果**：in-sample（調規則用的 16 家）113/113 = 100%、out-of-sample（沒調過的 WMT/TGT/KR/DE/FDX/NKE/ADBE/CSCO/HPQ/JNPR）44/44 = 100%，殘差全 0
+     - 基準用 production 那條路（`cli.py::_fiscal_label()` 吐的 `fiscal_label`，`scripts/verify_8k_fiscal_labels.py` 已驗 120/120），**刻意不用 audit script 的 `stated`**——那個 regex 已知會在 PANW/TGT/KR 抓到財測或年度段落
+     - 剔除的 43 份全是 audit script 期末日 regex 失敗（TGT 四份抽到年度表頭 2025-02-01、FDX 三份抽到 2024-05-31，lag > 400 天），不是規則失敗
+     - **INTC 8 份全部抽不到期末日**（新聞稿內文從不寫 "ended <日期>"）——**這正是規則 C 的賣點：抽不到期末日的公司，零下載規則照樣算得出正確 label**
+   - **影響量化（200 份）**：
+     - **新舊 label 年份不同 →`--years` 會選錯的：63 份 = 31.5%**，不是只有邊界一兩份。CRM 6、NVDA 6、WMT 6、TGT 5、KR 5、ORCL 4、QRVO 4、FDX 3、NKE 3
+     - 新舊 label 有任何差異（含只差季）：160 份 = 80.0%
+     - dedupe 碰撞：舊 6 組 → **新 7 組（沒有消失，`_dedupe_by_label()` 仍然必要）**。現行 dedupe 規則（有 Item 9.01 優先、其次取最新，2026-08-09 修好的）與 label 算法獨立**不用改**，但改完要重跑確認那 7 組挑對（QRVO FY2026Q2、WDC FY2025Q2、TGT FY2026Q4、KR FY2025Q4、FDX FY2026Q4、NKE FY2026Q4、HPQ FY2026Q1）
+   - **實作步驟（建議 TDD）**：
+     1. 新增純函式（放 `fiscal_input.py`，與 `fiscal_quarter_of()` 同一支）：`quarter_label_from_announcement(announce_date, fiscal_year_end_mmdd, tol=21) -> str`，純日期運算零 I/O
+     2. `_list_earnings_filings()` 加參數 `fiscal_year_end: str | None = None`（**傳 MMDD 原字串**），拿得到就走新規則，**拿不到退回現行 `_period_to_quarter_label()`**（26 家實測都拿得到，但不要讓 EDGAR 缺欄位變成整批失敗）
+     3. `cli.py::_fy_end_month()` 改成也回傳 MMDD（或另加 `_fiscal_year_end()`），查詢移到 `_earnings_filings()` 之前。成本是每個 ticker 一次 submissions 請求，本來就要查
+     4. `label_source` 由 `"period_of_report"` 改成 `"announcement+fiscal_year_end"`，`_LABEL_WARNING` 那段警告會過期要改寫。**這是對外行為改變，`docs/CLI.md` 要同步**
+     5. **`fiscal_label`（下載後從真實期末日算的）不動**——它仍然最準，新規則只是讓「還沒下載時」的 label 跟它一致
+   - **驗收**：單元測試至少涵蓋 WDC（季末 1/2 跨年）、COST（需要 tol）、MU（FYE 0903，名目月底法會錯）、NVDA/TGT（1/2 月結算的財年編號慣例）——這四家正是三版規則的分水嶺；端對端跑 `--years 2023-2023`；回歸跑 `scripts/verify_8k_fiscal_labels.py` 確認 `fiscal_label` 沒被動到
+   - **⚠ 還沒驗、實作前要確認**：
+     - **`Company.fiscal_year_end` 會不會隨時間變？** EDGAR 只給「現在」的值，拿去回推 10 年前的申報會整段偏掉。26 家沒遇到，但**這是規則 C 最大的結構性風險**，建議先掃一批改過財年的公司
+     - 樣本只到最近 8 季（2024~2026），更早期沒測；2004-08 之前 Item 2.02 這個編號還不存在
+     - 最大發布延遲實測 58 天，超過約 70 天（重編、延遲申報）規則會標到下一季，可加 sanity check
+   - **文件要一起改**：`docs/8k-period-off-by-one.md` 加一節「零下載規則（2026-08-25 驗證）」，**原本的「修法建議」三選項要更新**——當初 A 的成本評估是「要下載文件才知道期間」，現在證明不必下載，那個成本假設已經不成立
+   - 附帶確認（不是這次引入的）：1/2 月結算的零售股，本專案慣例會比公司自稱財年多一年（TGT 結束在 2026-05-02 那季本專案標 FY2027Q1，Target 自己叫 fiscal 2025 Q1），與 `_col_to_quarter_label()`、NVDA/CRM 一致，`8k-period-off-by-one.md` 已明白接受。規則 C 沿用同一套，不製造新的不一致
+
 ## C. 與 financial-assistant 體系的銜接（另開對話處理）
 
 C1. `finance-analysis.md` 第二步的作業類型表加一列「SEC 財報抓取（美股）」指向本專案。
@@ -248,6 +290,22 @@ H3-2. **「中間有洞」對流量列會過度報警**（2026-08-23 發現，�
    - `data_quality` 的 B 判斷（首末有值之間不能有空格）對存量列（資產負債表）誤判率確實是 0，但對流量列不是。**選項**：(a) 維持現狀、接受這幾列一直標紅；(b) 給流量列另一套判準；(c) 只在洞的比例超過某個門檻才報
    - 不建議直接把這些列從 B 拿掉——那會連真的抓漏一起藏掉
 
+H6. **H3 的 label_hint 修法在 201 家上重跑：多數有效，但 Capex 修得不夠廣，另外掃出兩個 H3 沒看到的列**（2026-08-25 由另一個 session 掃描產出，**等 CTH 決定要修哪幾項**）
+   - **怎麼跑的**：`scripts/diag_hintsweep.py` 對 `output/_spike/` 已有的 **201 家** 重跑 hint 掃描，多數命中本機 edgartools 快取，全程約 12 分鐘。H3（2026-08-23）當時只測 22 家
+   - **順手修好的**：`scripts/diag_hintsweep.py` 的 7 欄解包——H4 把模板 tuple 從 6 欄加到 7 欄之後這支腳本沒同步更新。**這筆修正已經套在正式腳本上**（工作區裡 `scripts/diag_hintsweep.py` 是改過的狀態）
+   - **怎麼讀輸出**：`DIFF hint=X vs Y` 代表 hint 換了答案（**不一定是壞事**）；`concept|label` 代表 hint 把候選整個濾空（**才是真的遺失資料**）
+   - **H3 已修的列，201 家驗證乾淨（0 新案例）**：Cash Taxes Paid、Deferred Revenue current、Share Repurchases、Long-term Debt
+   - **H3 已修但仍有零星殘留**：Change in Inventories（22 家時 4 → 201 家時 1）、Accounts Receivable（8 → 2）、Cash Interest Paid（6 → 1）
+   - **判定為 hint 正常運作、不是 bug（不要「修」掉）**：Operating Cash Flow 22 家、Financing Cash Flow 7 家全部是 DIFF，hint 正確擋掉 `RightOfUseAssetObtainedInExchange...`、`StockIssued1`、`NoncashAcquisition...` 這類非現金揭露雜訊列；Other Current/Non-current Assets 多數案例正確避開 `NontradeReceivablesCurrent`、`PrepaidTaxes`、`DisposalGroup`；Change in Receivables／Dividends Paid 的 DIFF 案例正確避開 `IncomeTaxesPayableNetOfReceivable`、`PaymentsOfDividendsMinorityInterest`
+   - **判定為真缺口，建議修（三項，成因各不相同）**：
+     1. **Capex 14 家全損**（AEP/AMP/APD/AXP/BK/COF/F/GIS/HSY/ITW/KMB/MAR/PEP/UNP）——H3 才剛把 hint 改成 `propert|capital expenditure`，但很多公司寫「Capital spending」「Capital investments」「Purchases of premises and equipment」，**兩個詞根一個都不含**。含 AXP/BK/COF 這種知名公司，而且 Capex 直接影響 FCF 衍生指標。成因是「用詞不同義同」
+     2. **Common Stock & APIC 14 家全損**（ABT/ACN/AMP/AON/AXP/CB/COP/ETN/JCI/KR/LIN/MDT/MPC/UNP）——系統性模式：ACN/AON/CB/JCI/LIN/MDT 這類**外國註冊或改遷冊的公司一律寫「Ordinary shares」**，hint 只認 common stock / paid-in capital，一個詞都沒中。成因是「外國股票術語」
+     3. **Cash 4 家全損**（ETN/APD/IP/KR）——std_concept 已正確對到 `CashAndCashEquivalentsAtCarryingValue`，純粹因為公司寫「Cash and cash items」「Cash and temporary investments」而不是標準措辭，被 hint 字面卡死
+   - **Cost of Revenue 36 家：多數不該修**——AXP/BAC/JPM/GS/CSX/UNP 這類銀行／保險／交易所／鐵路概念上本來就沒有 Cost of Revenue，跟 **D8** 同一類，維持空白才對。只有 CVX/COP/PSX（採購原油／商品）、AEP/EXC（採購電力燃料）、CMG（食材包材）這幾家是真實的 COGS 對應項、目前被誤擋，才是真缺口
+   - **低優先、個案，不急著動**：銀行的「Cash and due from banks」7 家（**概念取捨題**——算不算「Cash」見仁見智，要 CTH 決定，不是 bug）；Change in Receivables／Dividends Paid／AR 剩下的 1~2 家零星案例（ALL/AMT/CHTR/SO）
+   - **建議動手順序**：先修 Capex 與 Common Stock & APIC（樣本大、模式清楚、修法就是擴充 hint 正則），Cash 4 家一併；Cost of Revenue 只挑能源／公用／餐飲那個子集；銀行那批全部擱置
+   - 修完 `docs/CHANGELOG.md` 要補一筆「H3 後續驗證」：201 家重跑證實多數列修法有效，同時揭露 Capex 修法不完整、發現兩個 H3 沒掃到的新列
+
 ## 執行順序建議（2026-08-22 更新）
 
 > **維護規則**：做完的條目**直接從本檔刪除**，內容搬進 `docs/CHANGELOG.md`。
@@ -256,9 +314,11 @@ H3-2. **「中間有洞」對流量列會過度報警**（2026-08-23 發現，�
 
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
 |---|---|---|---|---|
-| 1 | B2 skill 端抽取 | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
-| 2 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
-| 3 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
+| 1 | B5（8-K `--years` 零下載規則） | 否（驗證已做完） | 是（要不要改對外行為） | 規則已驗到 100%，現行 31.5% 的 label 年份是錯的；風險是 `fiscal_year_end` 會不會隨時間變 |
+| 2 | H6（Capex／Ordinary shares／Cash 的 hint） | 否 | 是（要修哪幾項） | 修法就是擴充 hint 正則，Cost of Revenue 那 36 家多數不該修 |
+| 3 | B2 skill 端抽取 | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
+| 4 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
+| 5 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
 | — | G4 overflow 標示 | 否 | 是 | 建議只做標示，不做 synonym 合併 |
 | — | G8／G10 | — | — | **G11 已定案不切換，這兩項不會白做**（G1/G2/G3/G6/G7/G9 都已完成） |
 | — | F2 估值倍數 | 是（要股價來源） | 是 | 待研究，未確認方向 |
