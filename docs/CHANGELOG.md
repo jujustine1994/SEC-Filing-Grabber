@@ -10,6 +10,58 @@
 ## 功能清單
 
 ### 已完成
+- [x] **B5：8-K 季度標籤改走零下載規則，`--years` 不再標錯年份（2026-08-25）**：
+      - **修的是什麼**：Item 2.02 8-K 的 `period_of_report` 放的是**發布日**不是財期
+        結束日，`_period_to_quarter_label()` 直接取它的日曆季。200 份實測
+        （26 家 × 最近 8 份），**63 份 = 31.5% 連年份都是錯的**——`--years 2023-2023`
+        會選到別年的財報；有任何差異（含只差季）的是 160 份 = 80.0%
+      - **新規則（規則 C）**：`fiscal_input.quarter_label_from_announcement()`，
+        用 EDGAR `Company.fiscal_year_end` 的**完整 MMDD** 往前推 0/3/6/9 個月當
+        名目季末，取「不晚於 發布日 + tol」的最新一個，再套 `fiscal_quarter_of()`。
+        純日期運算、零 I/O
+      - **驗收數字**：對 production 的 `fiscal_label` 基準，in-sample 113/113、
+        out-of-sample（WMT/TGT/KR/DE/FDX/NKE/ADBE/CSCO/HPQ/JNPR，沒調過規則）
+        44/44，**兩段都 100%，殘差全 0**。改前 119 份可比對只有 16 份對（13%）
+      - **`tol=21`**：掃過 0~40，**3~30 之間命中率完全相同**（高原 27 天寬），
+        tol=0 與 tol>=35 都掉到 95.0%。不是硬調出來的魔術數字
+      - **一定要傳完整 MMDD**：只傳月份、名目季末取當月最後一天（規則 B）實測 79.8%
+        ——52/53 週制的真實季末離月底最多 20 天（WDC 季末 1/2、COST Q3 季末 5/10）。
+        規則 A（發布日的財季往前推一季）58.0%，敗因是發布延遲跨度 4~58 天。
+        **這兩版都量過了，不要重試**
+      - **零下載仍然成立**：`_list_earnings_filings()` 從「純 listing metadata」變成
+        「listing metadata + 一次 company 層級查詢」，多的成本是每個 ticker 一次
+        submissions 請求，而財年結束月本來就要查。一份文件都沒多下載
+      - **退路是逐份的**：拿不到 `fiscal_year_end`、日期畸形、sanity check 沒過，
+        那一份退回 `_period_to_quarter_label()`，不讓 EDGAR 少一個欄位變成整批失敗
+      - **`_recover_missing_quarters()` 一起換成同一套 label**（交接文件沒寫到，
+        實作時判斷要加）：缺季比對的兩邊必須是同一個命名空間，只改列清單那半的話
+        回補掃描會把每一季都判成「缺」
+      - **`fiscal_label` 一格沒動**——它是下載後從真實期末日算的，仍然最準。新規則
+        只是讓「還沒下載時」的 label 跟它一致
+      - **對外行為改變（`docs/CLI.md` 已同步）**：`label_source` 多了
+        `"announcement+fiscal_year_end"`（退回舊算法時仍是 `"period_of_report"`）、
+        警告文字依來源分兩種、payload 頂層多 `fiscal_year_end`（MMDD）、每一季多
+        `label_agrees_with_fiscal_label`（`true`/`false`/`null`）
+      - **⚠ 交接文件那道「0~70 天 sanity check」是恆真式，記在這裡免得下一輪照抄**：
+        候選季末永遠相隔 89~92 天，規則取「不晚於 發布日+tol 的最新候選」，選中的
+        必然落在 `[-tol, 91-tol)`——tol=21 時上界剛好 70，攔不到任何東西
+        （200 份實測 lag 範圍 -2~58）。程式碼保留這道檢查（`max_lag_days` 參數），
+        但它擋的是**參數被改壞與畸形輸入**（實測 tol=0 時 COST 那份會被它攔下來
+        退回舊算法，而不是吐一個錯標籤），**不是 `fiscal_year_end` 漂移**
+      - **FYE 漂移目前沒有對策**，只有下載後 label 與 `fiscal_label` 的比對旗標，
+        而且它涵蓋不到「該被 `--years` 選進來卻被漏掉」的那一類。留成 TODO B6
+      - **測試**：非連線 1170 → **1213 passed**（+43，`fiscal_input` 22 / `cli` 12 /
+        `fetcher_nongaap` 9，全部 TDD 先紅後綠）。單元測試釘住 WDC（季末 1/2 跨年）、
+        COST（需要 tol）、MU（FYE 0903）、NVDA/TGT（1-2 月結算的財年編號慣例）
+        這四家——正是三版規則的分水嶺
+      - **回歸**：`scripts/verify_8k_fiscal_labels.py` 15 家 120 份重跑，期望值從
+        「每家各自的常數偏移（-3~+1）」改成**全部 0**（B5 之後兩條路本來就該對齊），
+        舊值留在 `LEGACY_OFFSETS` 當對照。`fiscal_label` 那一側沒動，偏移非 0 就是
+        其中一條路壞了
+      - 資料與完整報告：`output/_8k_audit/`（199 份新聞稿快取，改規則重算不必連 SEC）、
+        `docs/superpowers/report-2026-08-25-8k-years-zero-download-rule.md`、
+        `docs/8k-period-off-by-one.md` 的「零下載規則」一節
+
 - [x] **G6：抓不到的季度不再整欄消失，留一整欄空白（2026-08-25）**：
       - **CTH 原話**：「要做，我寧願他是空白欄」。現況欄位清單是「成功抓到什麼就放
         什麼」，某一季掛掉整欄消失，畫面上 2025Q1 直接跳到 2025Q3，使用者與 AI 都

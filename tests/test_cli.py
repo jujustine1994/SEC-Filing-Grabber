@@ -150,7 +150,7 @@ def fake_pr(monkeypatch):
     monkeypatch.setattr(cli, "_earnings_filings",
                         lambda **kw: [("FY2026Q3", _FakeFiling())])
     monkeypatch.setattr(cli, "_press_release_html", lambda filing: _HTML)
-    monkeypatch.setattr(cli, "_fy_end_month", lambda ticker, identity: 12)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "1231")
 
 
 @pytest.fixture
@@ -158,7 +158,7 @@ def fake_pr_with_periods(monkeypatch):
     monkeypatch.setattr(cli, "_earnings_filings",
                         lambda **kw: [("FY2026Q3", _FakeFiling())])
     monkeypatch.setattr(cli, "_press_release_html", lambda filing: _HTML_WITH_PERIODS)
-    monkeypatch.setattr(cli, "_fy_end_month", lambda ticker, identity: 12)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "1231")
 
 
 def test_press_release_json_has_filtered_tables(fake_pr, capsys):
@@ -173,9 +173,10 @@ def test_press_release_json_has_filtered_tables(fake_pr, capsys):
 
 
 def test_press_release_reports_the_known_label_offset(fake_pr, capsys):
-    """季度標籤來自 period_of_report（＝發布日），已知晚一季。
+    """退回舊算法時（label 不是零下載規則算的），仍要帶著 off-by-one 警告。
 
-    下游 skill 不能無條件相信這個標籤，所以每一季都要帶著原始日期與警告。
+    這個 fixture 的 label 是寫死的 FY2026Q3，跟零下載規則對同一份申報算出的
+    FY2026Q2 不一致 → cli 判定這個 label 不是新規則來的，警告照舊。
     見 docs/8k-period-off-by-one.md。
     """
     cli.main(["press-release", "ARLO", "--json", "-", "--identity", "T t@e.com"])
@@ -246,7 +247,7 @@ def test_press_release_period_end_survives_a_date_split_across_rows(
     monkeypatch.setattr(cli, "_earnings_filings",
                         lambda **kw: [("FY2026Q2", _FakeFiling())])
     monkeypatch.setattr(cli, "_press_release_html", lambda filing: html)
-    monkeypatch.setattr(cli, "_fy_end_month", lambda ticker, identity: 1)   # NVDA
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "0131")  # NVDA
     cli.main(["press-release", "NVDA", "--json", "-", "--identity", "T t@e.com"])
     quarter = json.loads(capsys.readouterr().out)["quarters"][0]
     assert quarter["period_end"] == "2026-04-26"
@@ -276,7 +277,7 @@ def test_press_release_period_end_beats_a_release_date_in_a_footnote(
     monkeypatch.setattr(cli, "_earnings_filings",
                         lambda **kw: [("FY2026Q3", _FakeFiling())])
     monkeypatch.setattr(cli, "_press_release_html", lambda filing: html)
-    monkeypatch.setattr(cli, "_fy_end_month", lambda ticker, identity: 12)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "1231")
     cli.main(["press-release", "AMD", "--json", "-", "--identity", "T t@e.com"])
     quarter = json.loads(capsys.readouterr().out)["quarters"][0]
     assert quarter["period_end"] == "2026-06-27"
@@ -307,7 +308,7 @@ def test_press_release_period_end_beats_a_balance_sheet_comparative_date(
     monkeypatch.setattr(cli, "_earnings_filings",
                         lambda **kw: [("FY2026Q3", _FakeFiling())])
     monkeypatch.setattr(cli, "_press_release_html", lambda filing: html)
-    monkeypatch.setattr(cli, "_fy_end_month", lambda ticker, identity: 12)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "1231")
     cli.main(["press-release", "INTC", "--json", "-", "--identity", "T t@e.com"])
     quarter = json.loads(capsys.readouterr().out)["quarters"][0]
     assert quarter["period_end"] == "2026-06-27"
@@ -315,7 +316,7 @@ def test_press_release_period_end_beats_a_balance_sheet_comparative_date(
 
 
 def test_press_release_keeps_the_legacy_label_untouched(fake_pr_with_periods, capsys):
-    """`label` 是既有介面，B+ 只加欄位不改舊值——下游 skill 不會因升級而壞掉。"""
+    """`label` 的值原樣吐出，cli 不會自己改寫列清單給的標籤。"""
     cli.main(["press-release", "ARLO", "--json", "-", "--identity", "T t@e.com"])
     quarter = json.loads(capsys.readouterr().out)["quarters"][0]
     assert quarter["label"] == "FY2026Q3"           # 發布日換算的舊標籤，仍偏一季
@@ -344,7 +345,7 @@ def test_press_release_fiscal_label_empty_when_fy_end_month_unknown(
     monkeypatch.setattr(cli, "_earnings_filings",
                         lambda **kw: [("FY2026Q3", _FakeFiling())])
     monkeypatch.setattr(cli, "_press_release_html", lambda filing: _HTML_WITH_PERIODS)
-    monkeypatch.setattr(cli, "_fy_end_month", lambda ticker, identity: None)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: None)
     cli.main(["press-release", "ARLO", "--json", "-", "--identity", "T t@e.com"])
     payload = json.loads(capsys.readouterr().out)
     assert payload["fy_end_month"] is None
@@ -385,7 +386,7 @@ def test_fiscal_label_survives_a_52_53_week_period_end():
 
 def test_press_release_skips_quarter_that_fails_to_download(monkeypatch, capsys):
     """一季下載失敗不能拖垮整趟——其餘季照常輸出。"""
-    monkeypatch.setattr(cli, "_fy_end_month", lambda ticker, identity: 12)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "1231")
     monkeypatch.setattr(cli, "_earnings_filings", lambda **kw: [
         ("FY2026Q3", _FakeFiling()), ("FY2026Q2", _FakeFiling())])
 
@@ -407,7 +408,7 @@ def test_press_release_skips_quarter_that_fails_to_download(monkeypatch, capsys)
 
 def test_press_release_error_message_hides_exception_text(monkeypatch, capsys):
     """例外訊息會挾帶 URL/金鑰，只能記類型。"""
-    monkeypatch.setattr(cli, "_fy_end_month", lambda ticker, identity: 12)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "1231")
     monkeypatch.setattr(cli, "_earnings_filings",
                         lambda **kw: [("FY2026Q3", _FakeFiling())])
     monkeypatch.setattr(cli, "_press_release_html",
@@ -460,3 +461,78 @@ def test_gaap_checks_the_output_file_before_fetching(tmp_path, monkeypatch):
                    "--identity", "T t@e.com"])
     assert rc != 0
     assert calls == [], "應該在抓取前就擋下來"
+
+
+# ── B5：label 改由「發布日 + fiscal_year_end」算 ─────────────────────────────
+
+
+def test_press_release_passes_the_fiscal_year_end_into_the_listing(monkeypatch, capsys):
+    """財年結束日要在列清單**之前**查好並傳下去——`--years` 是在那裡篩的。"""
+    seen = {}
+
+    def _fake(**kw):
+        seen.update(kw)
+        return []
+
+    monkeypatch.setattr(cli, "_earnings_filings", _fake)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "0703")
+    cli.main(["press-release", "WDC", "--json", "-", "--identity", "T t@e.com"])
+    assert seen["fiscal_year_end"] == "0703"
+
+
+def test_press_release_label_source_says_when_the_new_rule_produced_the_label(
+        monkeypatch, capsys):
+    """label 與零下載規則算出來的一致 → `label_source` 要講清楚是新規則。"""
+    monkeypatch.setattr(cli, "_earnings_filings",
+                        lambda **kw: [("FY2026Q2", _FakeFiling())])
+    monkeypatch.setattr(cli, "_press_release_html", lambda filing: _HTML)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "1231")
+    cli.main(["press-release", "ARLO", "--json", "-", "--identity", "T t@e.com"])
+    quarter = json.loads(capsys.readouterr().out)["quarters"][0]
+    assert quarter["label"] == "FY2026Q2"
+    assert quarter["label_source"] == "announcement+fiscal_year_end"
+    assert "off-by-one" not in quarter["label_warning"]
+    assert "fiscal_label" in quarter["label_warning"]
+
+
+def test_press_release_flags_when_the_label_disagrees_with_the_fiscal_label(
+        monkeypatch, capsys):
+    """下載後的 `fiscal_label` 是最準的。兩邊不一致就標出來——這是唯一能偵測
+    `fiscal_year_end` 隨時間改變（規則 C 最大的結構性風險）的訊號。"""
+    monkeypatch.setattr(cli, "_earnings_filings",
+                        lambda **kw: [("FY2026Q2", _FakeFiling())])
+    monkeypatch.setattr(cli, "_press_release_html", lambda filing: _HTML_WITH_PERIODS)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "1231")
+    cli.main(["press-release", "ARLO", "--json", "-", "--identity", "T t@e.com"])
+    quarter = json.loads(capsys.readouterr().out)["quarters"][0]
+    assert quarter["fiscal_label"] == "FY2026Q2"       # 期末日 2026-06-28
+    assert quarter["label_agrees_with_fiscal_label"] is True
+
+
+def test_press_release_label_agreement_is_none_without_a_fiscal_label(
+        fake_pr, capsys):
+    """抓不到期末日就沒得比，要吐 null 而不是 false。"""
+    cli.main(["press-release", "ARLO", "--json", "-", "--identity", "T t@e.com"])
+    quarter = json.loads(capsys.readouterr().out)["quarters"][0]
+    assert quarter["fiscal_label"] == ""
+    assert quarter["label_agrees_with_fiscal_label"] is None
+
+
+def test_press_release_label_agreement_false_when_they_differ(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_earnings_filings",
+                        lambda **kw: [("FY2026Q3", _FakeFiling())])
+    monkeypatch.setattr(cli, "_press_release_html", lambda filing: _HTML_WITH_PERIODS)
+    monkeypatch.setattr(cli, "_fiscal_year_end", lambda ticker, identity: "1231")
+    cli.main(["press-release", "ARLO", "--json", "-", "--identity", "T t@e.com"])
+    quarter = json.loads(capsys.readouterr().out)["quarters"][0]
+    assert quarter["fiscal_label"] == "FY2026Q2"
+    assert quarter["label_agrees_with_fiscal_label"] is False
+
+
+@pytest.mark.parametrize("mmdd, expected", [
+    ("1231", 12), ("0703", 7), ("0131", 1), ("0926", 9),
+    ("", None), (None, None), ("13xx", None), ("1331", None), ("0000", None),
+])
+def test_fy_end_month_from_mmdd(mmdd, expected):
+    """MMDD → 月份。查不到就回 None，不可以預設 12（非 12 月結算會整批標錯）。"""
+    assert cli._fy_end_month_from_mmdd(mmdd) == expected

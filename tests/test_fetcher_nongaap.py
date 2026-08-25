@@ -1535,3 +1535,59 @@ def test_is_quota_error_detects_429():
     from fetcher_nongaap import _is_quota_error
     assert _is_quota_error(_Quota429("x")) is True
     assert _is_quota_error(RuntimeError("boom")) is False
+
+
+# ── B5：列清單階段改用「發布日 + fiscal_year_end」算 label ───────────────────
+
+
+def test_list_earnings_filings_uses_the_zero_download_rule_when_fye_is_known():
+    """WDC 實抓的四份（FYE 0703）。舊算法用發布日的日曆季，整家偏一季。"""
+    company = FakeCompany([
+        FakeFiling("2.02,9.01", "2026-08-05"),
+        FakeFiling("2.02,9.01", "2026-04-30"),
+        FakeFiling("2.02,9.01", "2026-01-29"),
+        FakeFiling("2.02,9.01", "2025-10-30"),
+    ])
+    result = _list_earnings_filings(company, fiscal_year_end="0703")
+    assert [label for label, _ in result] == [
+        "FY2026Q4", "FY2026Q3", "FY2026Q2", "FY2026Q1"]
+    # 對照：沒有 fiscal_year_end 時的舊標籤（發布日的日曆季）全部不一樣
+    assert [label for label, _ in _list_earnings_filings(company)] == [
+        "FY2026Q3", "FY2026Q2", "FY2026Q1", "FY2025Q4"]
+
+
+def test_list_earnings_filings_falls_back_when_fye_is_missing():
+    """EDGAR 少一個欄位不可以讓整批列清單失敗，退回舊算法。"""
+    company = FakeCompany([FakeFiling("2.02", "2026-01-29")])
+    for fye in (None, "", "13xx"):
+        assert [l for l, _ in _list_earnings_filings(company, fiscal_year_end=fye)] \
+            == ["FY2026Q1"]
+
+
+def test_list_earnings_filings_falls_back_per_filing_when_the_rule_fails():
+    """sanity check 沒過的那一份退回舊算法，其餘照樣走新規則。"""
+    company = FakeCompany([
+        FakeFiling("2.02", "2026-01-29"),
+        FakeFiling("2.02", "1999-01-29"),
+    ])
+    result = _list_earnings_filings(company, fiscal_year_end="0703")
+    assert [label for label, _ in result] == ["FY2026Q2", "FY1999Q2"]
+
+
+def test_list_earnings_filings_still_never_downloads_with_the_new_rule():
+    """新規則只吃 listing metadata + 一個 MMDD 字串，仍然零下載。"""
+    filings = [FakeFiling("2.02,9.01", "2026-01-29")]
+    _list_earnings_filings(FakeCompany(filings), fiscal_year_end="0703")
+    assert all(f.obj_called is False for f in filings)
+
+
+def test_list_earnings_filings_dedupes_on_the_new_labels():
+    """dedupe 的 key 是算出來的 label，換算法後碰撞組會變，規則本身不變
+    （有 Item 9.01 優先，其次取最新）。"""
+    company = FakeCompany([
+        FakeFiling("2.02",      "2026-01-29", accession="NO-EXHIBIT"),
+        FakeFiling("2.02,9.01", "2026-01-15", accession="WITH-EXHIBIT"),
+    ])
+    result = _list_earnings_filings(company, fiscal_year_end="0703")
+    assert [label for label, _ in result] == ["FY2026Q2"]
+    assert result[0][1].accession_no == "WITH-EXHIBIT"

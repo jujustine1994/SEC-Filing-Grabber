@@ -20,6 +20,7 @@ import metric_rules
 import nongaap_layout
 from errsafe import _exc_status
 from fetcher_gaap import StatementTable
+from fiscal_input import quarter_label_from_announcement
 
 CACHE_FILENAME = "nongaap_cache.json"
 
@@ -100,6 +101,22 @@ def _period_to_quarter_label(period_of_report: str) -> str:
     else:
         suffix = "Q4"
     return f"FY{year}{suffix}"
+
+
+def _label_for_listing(period_of_report: str, fiscal_year_end: str | None) -> str:
+    """列清單階段的季度標籤：拿得到 `fiscal_year_end` 就走零下載規則（B5）。
+
+    `period_of_report` 在 Item 2.02 8-K 上放的是**發布日**不是財期結束日，
+    `_period_to_quarter_label()` 直接取它的日曆季，實測 200 份裡 31.5% 連年份
+    都是錯的（`--years` 就會篩錯）。`fiscal_input.quarter_label_from_announcement()`
+    改用 EDGAR 的 `fiscal_year_end`（MMDD）回推名目季末，實測 157/157 = 100%
+    與下載後算出的 `fiscal_label` 一致。
+
+    新規則算不出來（EDGAR 沒給 MMDD、日期畸形、sanity check 沒過）就**逐份**
+    退回舊算法——標籤偏一季仍然比整批失敗好。
+    """
+    label = quarter_label_from_announcement(period_of_report, fiscal_year_end)
+    return label or _period_to_quarter_label(period_of_report)
 
 
 # ── StatementTable builders ──────────────────────────────────────────────────
@@ -635,12 +652,20 @@ def _list_earnings_filings(
     start_year: int | None = None,
     end_year: int | None = None,
     max_filings: int = 80,
+    fiscal_year_end: str | None = None,
 ) -> list[tuple[str, Any]]:
     """Return [(quarter_label, filing)] for earnings 8-Ks, newest first.
 
     Filters entirely on listing metadata (``items`` and ``period_of_report``),
     which EDGAR supplies with the filing index — no document is downloaded here.
     Callers download only the filings they actually need.
+
+    ``fiscal_year_end`` is EDGAR's ``Company.fiscal_year_end`` as the raw MMDD
+    string (``"0703"``); pass the full MMDD, not just the month. With it the
+    label comes from the zero-download rule (B5, 100% on 157 verifiable
+    filings); without it labels fall back to the calendar quarter of the
+    announcement date, which is wrong for 31.5% of filings. One company-level
+    lookup, still no document download.
 
     Item 2.02 is "Results of Operations and Financial Condition", i.e. the
     earnings release. SEC adopted that numbering on 2004-08-23; earlier filings
@@ -656,7 +681,7 @@ def _list_earnings_filings(
         if len(period) < 8:
             continue
         try:
-            label = _period_to_quarter_label(period)
+            label = _label_for_listing(period, fiscal_year_end)
         except Exception as exc:
             print(
                 f"[fetcher_nongaap] listing skip {period}: "
@@ -703,12 +728,17 @@ def _find_missing_quarters(labels: list[str]) -> list[str]:
     ]
 
 
-def _recover_missing_quarters(company, missing: list[str]) -> list[tuple[str, Any]]:
+def _recover_missing_quarters(company, missing: list[str],
+                              fiscal_year_end: str | None = None) -> list[tuple[str, Any]]:
     """Deep-scan only the quarters the listing filter came up short on.
 
     Downloads a filing only when its period falls in a missing quarter and it was
     not already tagged Item 2.02 — typically a handful of filings, versus the
     hundreds a full historical scan would fetch.
+
+    ``fiscal_year_end`` must be the same MMDD passed to
+    ``_list_earnings_filings()``: the labels compared here come from that
+    listing, so both sides have to be computed the same way (B5).
     """
     if not missing:
         return []
@@ -723,7 +753,7 @@ def _recover_missing_quarters(company, missing: list[str]) -> list[tuple[str, An
         if len(period) < 8:
             continue
         try:
-            label = _period_to_quarter_label(period)
+            label = _label_for_listing(period, fiscal_year_end)
         except Exception as exc:
             print(
                 f"[fetcher_nongaap] gap scan skip {period}: "
@@ -781,13 +811,17 @@ def fetch_nongaap_statements(
     cache_path = Path(output_dir) / CACHE_FILENAME
 
     cache = _load_cache(cache_path, ticker)
-    filings = _list_earnings_filings(company, start_year, end_year, max_filings)
+    # 財年結束日（MMDD）決定列清單階段的季度標籤怎麼算（B5）。一個 ticker 一次
+    # submissions 請求，拿不到就傳 None，label 自動退回舊算法。
+    fiscal_year_end = str(getattr(company, "fiscal_year_end", "") or "").strip() or None
+    filings = _list_earnings_filings(company, start_year, end_year, max_filings,
+                                     fiscal_year_end=fiscal_year_end)
 
     # A hole in the quarter sequence means the listing filter missed a release —
     # scan just that range rather than every 8-K the company ever filed.
     missing = _find_missing_quarters([label for label, _ in filings])
     if missing:
-        recovered = _recover_missing_quarters(company, missing)
+        recovered = _recover_missing_quarters(company, missing, fiscal_year_end)
         if recovered:
             filings = sorted(
                 filings + recovered,

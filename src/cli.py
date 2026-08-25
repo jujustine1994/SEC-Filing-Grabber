@@ -31,7 +31,8 @@ from config import load_config
 import i18n
 from errsafe import _exc_status
 from excel_writer import check_output_writable, write_statements
-from fiscal_input import fiscal_quarter_of, fy_start_month
+from fiscal_input import (fiscal_quarter_of, fy_start_month,
+                          quarter_label_from_announcement)
 from output_tables import append_ratio_table, has_any_data
 from press_release_tables import PressTable, filter_nongaap, parse_tables
 
@@ -85,30 +86,40 @@ def _gaap_tables(**kwargs) -> list:
 
 
 def _earnings_filings(ticker: str, identity: str, start_year: int | None,
-                      end_year: int | None, max_filings: int) -> list[tuple[str, Any]]:
+                      end_year: int | None, max_filings: int,
+                      fiscal_year_end: str | None = None) -> list[tuple[str, Any]]:
     from edgar import Company, set_identity
     from fetcher_nongaap import _list_earnings_filings
 
     set_identity(identity)
     return _list_earnings_filings(Company(ticker), start_year=start_year,
-                                  end_year=end_year, max_filings=max_filings)
+                                  end_year=end_year, max_filings=max_filings,
+                                  fiscal_year_end=fiscal_year_end)
 
 
-def _fy_end_month(ticker: str, identity: str) -> int | None:
-    """公司財年結束月（1-12）。查不到回 None。
+def _fiscal_year_end(ticker: str, identity: str) -> str | None:
+    """公司財年結束日，EDGAR 的原始 MMDD 字串（`"0926"` = 9 月 26 日）。查不到回 None。
 
-    走 EDGAR submissions 的 `fiscalYearEnd`（`"0926"` = 9 月 26 日），
-    **一個 ticker 一次請求**，不必為了問財年而下載 10-K。
-    `fetcher_gaap._detect_fy_end_month()` 是另一條路，但它要 `filing.obj()`
-    最多三份 10-K，慢得多。
+    走 EDGAR submissions 的 `fiscalYearEnd`，**一個 ticker 一次請求**，不必為了
+    問財年而下載 10-K。`fetcher_gaap._detect_fy_end_month()` 是另一條路，但它要
+    `filing.obj()` 最多三份 10-K，慢得多。
 
-    查不到就回 None 而不是預設 12：非 12 月結算的公司會被整批標錯一到三季，
-    而那正是這次要修的錯誤。
+    **回傳完整 MMDD 不是只有月份**：列清單階段的季度標籤靠這個「日」回推名目
+    季末（B5），只給月份會退化——52/53 週制的真實季末離月底最多 20 天。
     """
     from edgar import Company, set_identity
 
     set_identity(identity)
     raw = str(getattr(Company(ticker), "fiscal_year_end", "") or "").strip()
+    return raw if len(raw) == 4 and raw.isdigit() else None
+
+
+def _fy_end_month_from_mmdd(mmdd: str | None) -> int | None:
+    """`"0926"` → 9。認不得回 None。
+
+    查不到就回 None 而不是預設 12：非 12 月結算的公司會被整批標錯一到三季。
+    """
+    raw = str(mmdd or "").strip()
     if len(raw) != 4 or not raw.isdigit():
         return None
     month = int(raw[:2])
@@ -197,9 +208,9 @@ def cmd_gaap(args: argparse.Namespace) -> int:
 
 # ── press-release 子指令 ────────────────────────────────────────────────────
 
-# 每一季都帶著這句。季度標籤是用 Item 2.02 8-K 的 period_of_report 換算的，
-# 而 EDGAR 那欄放的是**發布日**不是財期結束日，實測 12 家有 11 家晚一季。
-# 調查報告：docs/8k-period-off-by-one.md。修法會動到快取 key，尚未修。
+# 退回舊算法（EDGAR 給不出 fiscal_year_end）的那幾季才帶這句。標籤是用 Item
+# 2.02 8-K 的 period_of_report 換算的，而 EDGAR 那欄放的是**發布日**不是財期
+# 結束日，實測 119 份只有 16 份對。調查報告：docs/8k-period-off-by-one.md。
 _LABEL_WARNING = (
     # 全形／特殊符號要避開：Windows 主控台是 cp950，U+2212（真減號）與 ⚠ 都
     # 編不進去，`--json -` 印到 stdout 會整個 UnicodeEncodeError 掛掉。
@@ -208,6 +219,17 @@ _LABEL_WARNING = (
     "（由 period_end + 財年結束月算出，與 Data_Q 的財季同一套慣例）；"
     "fiscal_label 是空的才退回看表格裡的期間表頭。"
 )
+
+# 走零下載規則（B5）的那幾季帶這句。label 已經與 fiscal_label 對齊——200 份
+# 實測、157 份基準可信全部一致——但下載後算的 fiscal_label 仍然是最準的那個。
+_LABEL_NOTE = (
+    "label 由發布日 + EDGAR fiscal_year_end 回推名目季末算出（零下載規則，"
+    "157 份實測與 fiscal_label 100% 一致）。fiscal_label 是下載後從新聞稿的"
+    "期末日算的，仍然最準；兩者一致與否看 label_agrees_with_fiscal_label。"
+)
+
+_LABEL_SOURCE_ANNOUNCEMENT = "announcement+fiscal_year_end"
+_LABEL_SOURCE_PERIOD = "period_of_report"
 
 
 _MONTHS = {
@@ -308,12 +330,21 @@ def _fiscal_label(period_end: str, fy_end_month: int | None) -> str:
 
 
 def _quarter_payload(label: str, filing, html: str, raw: bool,
-                     fy_end_month: int | None) -> dict[str, Any]:
+                     fy_end_month: int | None,
+                     fiscal_year_end: str | None = None) -> dict[str, Any]:
+    period_of_report = str(getattr(filing, "period_of_report", ""))
+
+    # label 是列清單階段算好的（`_list_earnings_filings()`）。這裡重算一次同一
+    # 條規則，只為了判斷那個 label 是新規則來的、還是逐份退回了舊算法——兩者
+    # 要帶不同的警告。純日期運算，不打網路。
+    from_rule = quarter_label_from_announcement(period_of_report, fiscal_year_end)
+    by_rule = bool(from_rule) and from_rule == label
+
     entry: dict[str, Any] = {
         "label": label,
-        "label_source": "period_of_report",
-        "label_warning": _LABEL_WARNING,
-        "period_of_report": str(getattr(filing, "period_of_report", "")),
+        "label_source": _LABEL_SOURCE_ANNOUNCEMENT if by_rule else _LABEL_SOURCE_PERIOD,
+        "label_warning": _LABEL_NOTE if by_rule else _LABEL_WARNING,
+        "period_of_report": period_of_report,
         "filing_date": str(getattr(filing, "filing_date", "")),
         "accession": str(getattr(filing, "accession_no", "")),
     }
@@ -325,6 +356,15 @@ def _quarter_payload(label: str, filing, html: str, raw: bool,
     entry["period_end"] = _period_end_from_tables(tables, not_after)
     entry["fiscal_label"] = _fiscal_label(entry["period_end"], fy_end_month)
     entry["fiscal_label_source"] = "period_end"
+
+    # 兩條路算出來的財季一致嗎？`fiscal_label` 是下載後從真實期末日算的，是最準
+    # 的基準。不一致代表零下載規則對這一份不成立，最可能的成因是公司改過財年
+    # （EDGAR 只給「現在」的 fiscal_year_end）——那是規則 C 唯一沒有對策的結構
+    # 性風險。⚠ 這個旗標只抓得到「選進來的有問題」：`--years` 篩在下載之前，
+    # 被漂移害到而根本沒被選中的那幾份不會走到這裡。
+    entry["label_agrees_with_fiscal_label"] = (
+        entry["label"] == entry["fiscal_label"] if entry["fiscal_label"] else None
+    )
 
     if raw:
         entry["text"] = html
@@ -359,16 +399,18 @@ def cmd_press_release(args: argparse.Namespace) -> int:
     identity = resolve_identity(args.identity)
     start_year, end_year = parse_years(args.years)
 
+    # 一個 ticker 問一次，不是每份申報問一次。**要在列清單之前查**：`--years`
+    # 就是在列清單那裡篩的，而季度標籤靠這個 MMDD 才算得準（B5）。
+    fiscal_year_end = _fiscal_year_end(args.ticker, identity)
+    fy_end_month = _fy_end_month_from_mmdd(fiscal_year_end)
+    if fy_end_month is None:
+        print(f"[{args.ticker}] 查不到財年結束月，label 退回發布日換算、"
+              f"fiscal_label 留空", file=sys.stderr)
+
     filings = _earnings_filings(ticker=args.ticker, identity=identity,
                                 start_year=start_year, end_year=end_year,
-                                max_filings=args.max_filings)
-
-    # 一個 ticker 問一次，不是每份申報問一次。查不到就是 None，`fiscal_label`
-    # 留空——寧可沒有標籤也不要一個錯的。
-    fy_end_month = _fy_end_month(args.ticker, identity)
-    if fy_end_month is None:
-        print(f"[{args.ticker}] 查不到財年結束月，fiscal_label 留空",
-              file=sys.stderr)
+                                max_filings=args.max_filings,
+                                fiscal_year_end=fiscal_year_end)
 
     quarters: list[dict[str, Any]] = []
     skipped: list[dict[str, str]] = []
@@ -384,9 +426,11 @@ def cmd_press_release(args: argparse.Namespace) -> int:
         if not html:
             skipped.append({"label": label, "error": "no_press_release"})
             continue
-        quarters.append(_quarter_payload(label, filing, html, args.raw, fy_end_month))
+        quarters.append(_quarter_payload(label, filing, html, args.raw,
+                                         fy_end_month, fiscal_year_end))
 
     payload = {"ticker": args.ticker, "fy_end_month": fy_end_month,
+               "fiscal_year_end": fiscal_year_end,
                "quarters": quarters, "skipped": skipped}
 
     if args.json:

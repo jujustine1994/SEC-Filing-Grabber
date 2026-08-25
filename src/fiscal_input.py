@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import math
 import re
+from calendar import monthrange
 from datetime import date, timedelta
 
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -105,6 +106,96 @@ def fiscal_quarter_of(period_end: str | None, start_month: int) -> str:
         return ""
     quarter = (d.month - start_month) % 12 // 3 + 1
     return f"FY{_fiscal_year(d, start_month)}Q{quarter}"
+
+
+# ── 零下載規則：發布日 + EDGAR fiscal_year_end → 財季（B5）──────────────────
+#
+# Item 2.02 8-K 的 `period_of_report` 放的是**發布日**不是財期結束日，直接換算
+# 有系統性 off-by-one（實測 119 份只有 16 份對，偏 -3 到 +1 季）。這條規則改成
+# 從 EDGAR 的 `Company.fiscal_year_end`（完整 MMDD，例 WDC "0703"）往前推
+# 3/6/9 個月得到「名目季末」，再取不晚於發布日的最新一個。
+#
+#   200 份 Item 2.02 8-K 實測：in-sample 113/113、out-of-sample 44/44，**皆 100%**
+#   （基準是下載新聞稿抓期末日算出的 `fiscal_label`）。完整驗證見
+#   `docs/superpowers/report-2026-08-25-8k-years-zero-download-rule.md`。
+#
+# **一定要傳完整 MMDD**：只傳月份、名目季末取當月最後一天的話會掉到 79.8%
+# （52/53 週制的真實季末離月底最多 20 天，WDC 季末 1/2、COST Q3 季末 5/10）。
+
+# 名目季末可以比發布日晚幾天仍然採用。COST Q3 真實 5/10 結束、名目算出來 5/30，
+# 而它 5/28 就發了。實測 tol 在 3~30 之間命中率完全相同（高原 27 天寬），
+# tol=0 與 tol>=35 都掉到 95.0%，所以 21 不是硬調出來的魔術數字。
+_ANNOUNCE_TOL_DAYS = 21
+
+# sanity check：選中的名目季末離發布日超過這麼多天就不採用（回空字串）。
+# 實測最大發布延遲 58 天（200 份，範圍 -2~58），70 留了緩衝。
+#
+# ⚠ 這道檢查**擋不住「公司改過財年」**那個風險：候選季末永遠相隔 89~92 天，
+# 所以選中的那個必然落在 [-tol, 70] 內，tol=21 時門檻算術上碰不到。它擋的是
+# 參數被改壞（tol 被放大）與畸形輸入，不是 fiscal_year_end 漂移。真的要偵測
+# 漂移，靠的是下載後 `fiscal_label` 與這個 label 對不對得起來（cli.py 有比對）。
+_MAX_ANNOUNCE_LAG_DAYS = 70
+
+_MMDD_RE = re.compile(r"^(\d{2})(\d{2})$")
+
+
+def _month_shifted(year: int, month: int, day: int) -> date | None:
+    """`year-month-day` 往前推月份後的日期。該月沒有那一天就退到當月最後一天。"""
+    while month < 1:
+        year, month = year - 1, month + 12
+    try:
+        return date(year, month, min(day, monthrange(year, month)[1]))
+    except ValueError:
+        return None
+
+
+def _to_date(value: str | date | None) -> date | None:
+    """`"20260129"`／`"2026-01-29"`／`date` → `date`。認不得回 None。"""
+    if isinstance(value, date):
+        return value
+    raw = str(value or "").strip().replace("-", "")
+    if len(raw) != 8 or not raw.isdigit():
+        return None
+    try:
+        return date(int(raw[:4]), int(raw[4:6]), int(raw[6:8]))
+    except ValueError:
+        return None
+
+
+def quarter_label_from_announcement(
+    announce_date: str | date | None,
+    fiscal_year_end_mmdd: str | None,
+    tol: int = _ANNOUNCE_TOL_DAYS,
+    max_lag_days: int = _MAX_ANNOUNCE_LAG_DAYS,
+) -> str:
+    """發布日 + EDGAR `fiscal_year_end`（MMDD）→ `FY2026Q2`。零 I/O、純日期運算。
+
+    算不出來一律回**空字串**，呼叫端要自己退回舊算法——EDGAR 少一個欄位不該
+    讓整批列清單失敗。回空字串的情況：MMDD 不合法、發布日不合法、或選中的
+    名目季末離發布日超過 `max_lag_days`（sanity check，見上方常數註解）。
+    """
+    m = _MMDD_RE.match(str(fiscal_year_end_mmdd or "").strip())
+    announced = _to_date(announce_date)
+    if m is None or announced is None:
+        return ""
+    fye_month, fye_day = int(m.group(1)), int(m.group(2))
+    if not (1 <= fye_month <= 12) or not (1 <= fye_day <= 31):
+        return ""
+    if _month_shifted(2000, fye_month, fye_day) is None:
+        return ""
+
+    limit = announced + timedelta(days=tol)
+    best: date | None = None
+    for year in (limit.year + 1, limit.year, limit.year - 1):
+        for shift in (0, 3, 6, 9):
+            cand = _month_shifted(year, fye_month - shift, fye_day)
+            if cand is not None and cand <= limit and (best is None or cand > best):
+                best = cand
+    if best is None:
+        return ""
+    if not -tol <= (announced - best).days <= max_lag_days:
+        return ""
+    return fiscal_quarter_of(best.isoformat(), fy_start_month(fye_month))
 
 
 def fiscal_year_of(period_end: str | None, start_month: int) -> str:

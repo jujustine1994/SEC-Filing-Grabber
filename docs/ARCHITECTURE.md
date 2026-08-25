@@ -76,11 +76,14 @@ fetcher_gaap.py
     └─ _build_meta_table()              → Data_Meta
 
 fetcher_nongaap.py（勾選 Non-GAAP 時，完全獨立於 GAAP fetcher）
-    ├─ _list_earnings_filings()   → 在 SEC 申報清單階段以 items（2.02）+ period_of_report 篩選、去重、套年份與 max_filings，零下載
+    ├─ _list_earnings_filings(fiscal_year_end=MMDD) → 在 SEC 申報清單階段以 items（2.02）+ period_of_report 篩選、去重、套年份與 max_filings，零下載
+    │       ├─ _label_for_listing() → 季度標籤：拿得到 fiscal_year_end 就走零下載規則（B5），否則逐份退回 _period_to_quarter_label()
     │       └─ _dedupe_by_label() → 同標籤只留一份：有 Item 9.01（＝有新聞稿附件）優先，其次取最新。仍只讀 listing metadata
     ├─ _find_missing_quarters()   → 偵測季度序列缺口
-    ├─ _recover_missing_quarters()→ 只對缺季區間逐筆 obj() 深掃，用 has_earnings 找回未標 2.02 的財報
-    ├─（以上皆不下載；filing.obj() 移進 fetch_nongaap_statements() 的逐季迴圈，
+    ├─ _recover_missing_quarters(fiscal_year_end)→ 只對缺季區間逐筆 obj() 深掃，用 has_earnings 找回未標 2.02 的財報（label 與列清單同一套）
+    ├─（以上皆不下載**文件**；B5 之後多一次 company 層級的 fiscal_year_end 查詢，
+    │   一個 ticker 一次 submissions 請求，本來就要查財年結束月。
+    │   filing.obj() 移進 fetch_nongaap_statements() 的逐季迴圈，
     │   只對 nongaap_cache.json 尚未收錄的季度下載，且包在 try 內——下載失敗只損失該季）
     ├─ _extract_eps_recon()       → edgartools eps_reconciliation
     ├─ _extract_nongaap_metrics() → AI 解析 EX-99.1 press release
@@ -555,7 +558,7 @@ Index 那份最重要——GUI 的 log 關掉就沒了，而使用者真正會�
 
 | 指令 | 時間 | 測試數 | 用途 |
 |------|------|--------|------|
-| `python -m pytest -m "not slow"` | ~20-35 秒 | 1170（2026-08-25） | Unit tests（每次改 code 後跑） |
+| `python -m pytest -m "not slow"` | ~20-35 秒 | 1213（2026-08-25，B5 後） | Unit tests（每次改 code 後跑） |
 | `pytest -m "slow and b1"` | ~12 分鐘 | 24 | B1 overflow live 驗證（8 tickers） |
 | `pytest -m "slow and cf_overflow"` | ~5 分鐘 | 15 | CF YTD overflow 驗收（COHR/LITE/AAPL/NVDA/GOOGL） |
 | `pytest -m slow` | ~31 分鐘 | 58 passed / 7 skipped（2026-08-25） | 完整 live 驗收 |
@@ -646,6 +649,33 @@ filings 是新到舊排序，`_build_*_table()` 的 dedup（`if label in periods
 
 現在 `(Qn)` 只用來分辨「季度欄 vs 年度欄」，編號一律交給
 `fiscal_input.fiscal_quarter_of()` 用實際期末日算。
+
+### 8-K 季度標籤：零下載規則（B5，2026-08-25）
+
+Item 2.02 8-K 的 `period_of_report` 是**發布日**不是財期結束日，直接取它的日曆季
+實測 31.5% 連年份都錯（`--years` 就篩錯）。修法是在**不下載任何文件**的前提下算對：
+
+```
+fiscal_input.quarter_label_from_announcement(發布日, fiscal_year_end MMDD, tol=21)
+    候選季末 = MMDD 往前推 0/3/6/9 個月（該月沒那天 → 當月最後一天）
+    取「不晚於 發布日 + tol」的最新候選，再套 fiscal_quarter_of()
+```
+
+- **界線變了**：`_list_earnings_filings()` 從「純 listing metadata」變成
+  「listing metadata + **一次 company 層級查詢**」。仍然零文件下載，
+  多的成本是每個 ticker 一次 submissions 請求（`Company.fiscal_year_end`），
+  而財年結束月本來就要查
+- 傳的是**完整 MMDD**（`"0703"`）不是月份。只給月份會退化到 79.8%
+- 算不出來（沒有 MMDD／日期畸形／sanity check 沒過）→ **逐份**退回舊算法，
+  不讓 EDGAR 少一個欄位變成整批失敗
+- `_recover_missing_quarters()` 也吃同一個 MMDD：缺季比對的兩邊必須是同一個
+  命名空間，否則整組都會被判成「缺季」
+- 200 份實測，157 份基準可信全部與下載後算的 `fiscal_label` 一致（100%）
+- **`fiscal_label` 沒動**，它仍然最準；`cli.py` 會把兩者比對後吐
+  `label_agrees_with_fiscal_label`
+- **已知風險**：EDGAR 只給現在的 `fiscal_year_end`，公司改過財年的舊申報會整段
+  偏掉，目前沒有對策（交接文件原本提的 0~70 天 sanity check 是恆真式，攔不到）。
+  細節見 `docs/8k-period-off-by-one.md`
 
 ### 結算季 vs 對齊季：一份實作、兩個具名基準點
 

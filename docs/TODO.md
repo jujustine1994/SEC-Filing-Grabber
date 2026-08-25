@@ -18,65 +18,27 @@ B4. **最新法說會資料能不能自動更新**（2026-08-12 CTH 提出）
    - 預期方向：自動抓最新 8-K（尤其 Item 2.02 財報發布 8-K）來補即時數字，而不是等 10-Q/10-K 才更新——跟 B1 的 `cli.py press-release` 子指令、B3 的 `press_release_tables.py` 應該是同一條路線，需要研究怎麼接
    - **待研究，未動手**
 
-B5. **8-K `--years` 篩選用的 label 有 31.5% 年份是錯的——已驗出一條零下載規則，實測 100%**（2026-08-25 由另一個 session 純驗證產出，**未動任何專案檔案**，等 CTH 決定要不要實作）
-   - **⚠ 資料已經抓好了，下次不要重抓**（2026-08-25 已從那個 session 的暫存目錄複製進專案，暫存目錄隨時會被清掉）：
-     | 放在哪 | 是什麼 |
-     |---|---|
-     | `docs/superpowers/report-2026-08-25-8k-years-zero-download-rule.md` | **完整報告**（進版控）。三版規則比較、100%/100% 的驗證表、影響量化、實作步驟、風險 |
-     | `output/_8k_audit/8k_audit_html/` | **199 份新聞稿原文快取**（12MB）。改規則重算**完全不必再連 SEC** |
-     | `output/_8k_audit/8k_period_audit.json` | in-sample 16 家的逐份稽核結果（128 份、可比對 119 份）+ offset 直方圖 + 逐家分布 |
-     | `output/_8k_audit/8k_period_audit_oos.json` | out-of-sample 10 家（WMT TGT KR DE FDX NKE ADBE CSCO HPQ JNPR）同格式 |
-     | `output/_8k_audit/rule_check.json` / `rule2_check.json` / `rule3_check.json` | 規則 A / B / C 各自的**逐份**比對結果（含 `lag_days`、`match`），要重新分析敗因直接讀這三份 |
-     | `output/_8k_audit/final_check.json` | 最終驗證：零下載規則 vs production `fiscal_label` 的逐份對照（in_sample / out_of_sample 兩段） |
-     | `output/_8k_audit/check_rule*.py`、`check_final.py`、`impact.py` | 產生上面那些 json 的腳本，可直接重跑改規則 |
-     | `output/_8k_audit/audit_run.log`、`audit_oos.log` | 兩次抓取的執行紀錄 |
-     - `output/` 有 gitignore，所以原始資料留在磁碟上但不進版控；報告本身在 `docs/` 進版控
-     - 重跑抓取（真的需要時）：`./venv/Scripts/python.exe scripts/audit_8k_period_labels.py <out.json> --cache-dir <cache>`
-   - **現況分布，以及「這是程式邏輯不是資料偶發」的證據**（119 份可比對，`8k_period_audit.json` 的 `offset_histogram`）：
-     - 現行 label 與新聞稿自述財季的偏移 `-3:16、-2:20、-1:35、0:16、1:32`——**只有 16 份是對的**
-     - **這組數字跟 `docs/8k-period-off-by-one.md` 裡 2026-08-07 記的每一格完全一樣**（16/20/35/16/32），而且是這次重抓 EDGAR 重跑出來的、不是照抄。隔了 18 天、多了兩季新申報，行為零漂移 → **這條 off-by-one 是純程式邏輯造成的，不是資料面偶發**
-     - 偏移量隨**公司財年結構**不同（AAPL 全 0、MSFT 全 −1、NVDA/CRM 全 −3），這是舊算法（用日曆季）造成的分布
-     - ⚠ **不要把上面那件事跟規則 A 的敗因混為一談**（兩者成因不同）：規則 A（統一往前挪一季）**已經實測過了，58.0%**，不是「推論不可行」而是「量過不可行」；它的敗因是**發布延遲跨度 4~58 天**，不是財年結構
-   - **⚠ 原提案的根因判斷是錯的，不要照著做**：原本想「把 `_fy_end_month()` 提前傳進 `_list_earnings_filings()`」——就算傳進去，那裡**沒有 `period_end` 可用**。真實期末日是 `cli.py::_period_end_from_tables()`（`cli.py:283`）從新聞稿表格內文 regex 抓的，前提是 `filing.obj()` 已經把整份文件下載並解析完。`_list_earnings_filings()` 的 docstring 明寫 *"no document is downloaded here"*，照原提案改＝把 20 年上百份 8-K 全下載完才知道哪幾份落在 `--years` 區間，**正好抵銷 `--years` 存在的目的**
-   - **⚠ label 不只用於年份篩選**：它同時是 `_dedupe_by_label()` 的 key 與 `_find_missing_quarters()` 缺季偵測的依據，改 label 會連動這兩處
-   - **實測規模**：26 家 × 最近 8 份 Item 2.02 8-K = 200 份，SEC EDGAR 實抓，零 AI 呼叫
-   - **三版規則的比較（這是重點，別再重試前兩版）**：
-     | 規則 | 命中率 | 敗因 |
-     |---|---|---|
-     | A. `fiscal_quarter_of(period_of_report) − 1 季` | 58.0% | `fiscal_quarter_of()` 內建「往前推 15 天」是為**期末日**設計的，而實測發布延遲跨度 **4~58 天**，減 15 天後有時落回本季有時落到下一季 |
-     | B. 名目季末＝財季結束月的**當月最後一天** | 79.8% | 52/53 週制真實季末落在名目月底前後最多 20 天（WDC 季末 1/2、COST Q3 季末 5/10），MU/WDC/QRVO/COST 整家偏一季 |
-     | **C. 名目季末＝EDGAR `Company.fiscal_year_end` 的完整 MMDD 往前推 3/6/9 個月** | **100%** | — |
-   - **規則 C**：
-     ```
-     fye = Company(ticker).fiscal_year_end        # 例 WDC "0703"、COST "0830"、MU "0903"
-     候選季末 = fye 日期往前推 0/3/6/9 個月（該月沒那天就退到當月最後一天）
-     label = 「不晚於（發布日 + tol）」的最新一個候選季末，
-             套 fiscal_input.fiscal_quarter_of(候選季末, fy_start_month(fye 月))
-     ```
-     - **一定要傳完整 MMDD，不能只傳月份**——只傳月份就退化成規則 B 的 79.8%
-     - `tol` 允許名目季末落在發布日之後一點（COST Q3 真實 5/10 結束、名目算出來 5/30，而它 5/28 就發了）
-     - **tol 敏感度掃過 0/3/7/10/14/18/21/25/30/35/40**：**3~30 之間命中率完全相同**（對 `stated` 基準 115/119、對 `fiscal_label` 基準 113+44），tol=0 掉到 95.0%、tol≥35 也掉到 95.0%。**高原寬達 27 天**，所以 21 不是硬調出來的魔術數字，實作時不必怕它脆
-   - **驗證結果**：in-sample（調規則用的 16 家）113/113 = 100%、out-of-sample（沒調過的 WMT/TGT/KR/DE/FDX/NKE/ADBE/CSCO/HPQ/JNPR）44/44 = 100%，殘差全 0
-     - 基準用 production 那條路（`cli.py::_fiscal_label()` 吐的 `fiscal_label`，`scripts/verify_8k_fiscal_labels.py` 已驗 120/120），**刻意不用 audit script 的 `stated`**——那個 regex 已知會在 PANW/TGT/KR 抓到財測或年度段落
-     - 剔除的 43 份全是 audit script 期末日 regex 失敗（TGT 四份抽到年度表頭 2025-02-01、FDX 三份抽到 2024-05-31，lag > 400 天），不是規則失敗
-     - **INTC 8 份全部抽不到期末日**（新聞稿內文從不寫 "ended <日期>"）——**這正是規則 C 的賣點：抽不到期末日的公司，零下載規則照樣算得出正確 label**
-   - **影響量化（200 份）**：
-     - **新舊 label 年份不同 →`--years` 會選錯的：63 份 = 31.5%**，不是只有邊界一兩份。CRM 6、NVDA 6、WMT 6、TGT 5、KR 5、ORCL 4、QRVO 4、FDX 3、NKE 3
-     - 新舊 label 有任何差異（含只差季）：160 份 = 80.0%
-     - dedupe 碰撞：舊 6 組 → **新 7 組（沒有消失，`_dedupe_by_label()` 仍然必要）**。現行 dedupe 規則（有 Item 9.01 優先、其次取最新，2026-08-09 修好的）與 label 算法獨立**不用改**，但改完要重跑確認那 7 組挑對（QRVO FY2026Q2、WDC FY2025Q2、TGT FY2026Q4、KR FY2025Q4、FDX FY2026Q4、NKE FY2026Q4、HPQ FY2026Q1）
-   - **實作步驟（建議 TDD）**：
-     1. 新增純函式（放 `fiscal_input.py`，與 `fiscal_quarter_of()` 同一支）：`quarter_label_from_announcement(announce_date, fiscal_year_end_mmdd, tol=21) -> str`，純日期運算零 I/O
-     2. `_list_earnings_filings()` 加參數 `fiscal_year_end: str | None = None`（**傳 MMDD 原字串**），拿得到就走新規則，**拿不到退回現行 `_period_to_quarter_label()`**（26 家實測都拿得到，但不要讓 EDGAR 缺欄位變成整批失敗）
-     3. `cli.py::_fy_end_month()` 改成也回傳 MMDD（或另加 `_fiscal_year_end()`），查詢移到 `_earnings_filings()` 之前。成本是每個 ticker 一次 submissions 請求，本來就要查
-     4. `label_source` 由 `"period_of_report"` 改成 `"announcement+fiscal_year_end"`，`_LABEL_WARNING` 那段警告會過期要改寫。**這是對外行為改變，`docs/CLI.md` 要同步**
-     5. **`fiscal_label`（下載後從真實期末日算的）不動**——它仍然最準，新規則只是讓「還沒下載時」的 label 跟它一致
-   - **驗收**：單元測試至少涵蓋 WDC（季末 1/2 跨年）、COST（需要 tol）、MU（FYE 0903，名目月底法會錯）、NVDA/TGT（1/2 月結算的財年編號慣例）——這四家正是三版規則的分水嶺；端對端跑 `--years 2023-2023`；回歸跑 `scripts/verify_8k_fiscal_labels.py` 確認 `fiscal_label` 沒被動到
-   - **⚠ 還沒驗、實作前要確認**：
-     - **`Company.fiscal_year_end` 會不會隨時間變？** EDGAR 只給「現在」的值，拿去回推 10 年前的申報會整段偏掉。26 家沒遇到，但**這是規則 C 最大的結構性風險**，建議先掃一批改過財年的公司
-     - 樣本只到最近 8 季（2024~2026），更早期沒測；2004-08 之前 Item 2.02 這個編號還不存在
-     - 最大發布延遲實測 58 天，超過約 70 天（重編、延遲申報）規則會標到下一季，可加 sanity check
-   - **文件要一起改**：`docs/8k-period-off-by-one.md` 加一節「零下載規則（2026-08-25 驗證）」，**原本的「修法建議」三選項要更新**——當初 A 的成本評估是「要下載文件才知道期間」，現在證明不必下載，那個成本假設已經不成立
-   - 附帶確認（不是這次引入的）：1/2 月結算的零售股，本專案慣例會比公司自稱財年多一年（TGT 結束在 2026-05-02 那季本專案標 FY2027Q1，Target 自己叫 fiscal 2025 Q1），與 `_col_to_quarter_label()`、NVDA/CRM 一致，`8k-period-off-by-one.md` 已明白接受。規則 C 沿用同一套，不製造新的不一致
+B6. **8-K 零下載規則的剩餘風險：`fiscal_year_end` 會不會隨時間變**（2026-08-25，
+   B5 實作完後留下的唯一未決事項，**要 CTH 決定要不要驗**）
+   - 背景：B5 已上線（見 `docs/CHANGELOG.md`），列清單階段的季度標籤改用
+     EDGAR `Company.fiscal_year_end` 回推。**EDGAR 只給「現在」的值**，公司改過
+     財年的話，拿現值去回推改制以前的申報會整段偏掉
+   - **⚠ 交接文件原本寫的「加一道 0~70 天 sanity check 就接得住」是錯的，那是恆真式**：
+     候選季末永遠相隔 89~92 天，規則取「不晚於 發布日+tol 的最新候選」，選中的必然
+     落在 `[-tol, 91-tol)`，tol=21 時上界剛好 70。200 份實測 lag 範圍 -2~58，
+     那道檢查一次都沒攔到過。程式碼保留它（`max_lag_days`），但它擋的是參數被改壞
+     與畸形輸入，**不是 FYE 漂移**
+   - **現有的唯一偵測手段有個洞**：`cli.py` 下載後把 label 與 `fiscal_label` 比對，
+     不一致就在 payload 標 `label_agrees_with_fiscal_label: false`。但 `--years`
+     **篩在下載之前**——被漂移害到而根本沒被選中的那幾份不會被下載，也就永遠不會被
+     比對到。抓得到「選進來的有問題」，抓不到「該選進來卻被漏掉」
+   - **想真的驗的話，有一條不打網路的路子**（成本低，先記著省下次的力氣）：
+     `output/_spike/` 有 201 家的 facts 快取，裡面帶歷年期末日。拿「歷年 10-K 期末日
+     推出來的財年結束月日」跟 `Company.fiscal_year_end` 現值比，**漂超過兩週的就是
+     改過財年的公司**，再看那幾家的 8-K label 會不會出錯
+   - 另外沒測到的：樣本只到最近 8 季（2024~2026），更早期沒驗；2004-08 之前
+     Item 2.02 這個編號還不存在，那段本來就抓不到
+
 
 ## C. 與 financial-assistant 體系的銜接（另開對話處理）
 
@@ -369,8 +331,8 @@ H6. **H3 的 label_hint 修法在 201 家上重跑：多數有效，但 Capex �
 
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
 |---|---|---|---|---|
-| 1 | B5（8-K `--years` 零下載規則） | 否（驗證已做完） | 是（要不要改對外行為） | 規則已驗到 100%，現行 31.5% 的 label 年份是錯的；風險是 `fiscal_year_end` 會不會隨時間變 |
-| 2 | H6（Capex／Ordinary shares／Cash 的 hint） | 否 | 是（要修哪幾項） | 修法就是擴充 hint 正則，Cost of Revenue 那 36 家多數不該修 |
+| 1 | H6（Capex／Ordinary shares／Cash 的 hint） | 否 | 是（要修哪幾項） | 修法就是擴充 hint 正則，Cost of Revenue 那 36 家多數不該修。**B5 已於 2026-08-25 完成，見 CHANGELOG** |
+| 2 | B6（FYE 漂移要不要驗） | 否（有離線路子） | 是 | B5 唯一沒有對策的殘留風險。不驗也能過日子，驗的話成本低 |
 | 3 | B2 skill 端抽取 | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
 | 4 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
 | 5 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |

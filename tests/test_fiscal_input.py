@@ -326,3 +326,84 @@ def test_calendarized_quarter_of_is_a_thin_wrapper_over_span():
     """跨公司那兩個薄包裝要跟 basis="span" 完全等價，不可以各自演化。"""
     for pe in ["2025-07-27", "2026-01-25", "2025-06-28", "2023-04-01"]:
         assert fi.calendarized_quarter_of(pe) == fi.calendar_quarter_of(pe, basis="span")
+
+
+# ── 零下載規則：發布日 + EDGAR fiscal_year_end → 財季（B5）──────────────────
+#
+# 下面每一組都是 SEC EDGAR 實抓的 Item 2.02 8-K（`output/_8k_audit/final_check.json`，
+# 200 份）。`expected` 是 production 那條路算出來的 `fiscal_label`
+# （＝下載新聞稿抓期末日再換算），也就是這條零下載規則要對齊的基準。
+
+@pytest.mark.parametrize("announce, fye, expected", [
+    # WDC：52/53 週制，FY2026 Q2 真實結束在 2026-01-02（跨年）
+    ("20260129", "0703", "FY2026Q2"),
+    ("20251030", "0703", "FY2026Q1"),
+    ("20260805", "0703", "FY2026Q4"),
+    # COST：Q3 真實 5/10 就結束、5/28 就發布，名目季末 5/30 落在發布日之後 → 靠 tol
+    ("20260528", "0830", "FY2026Q3"),
+    ("20250529", "0830", "FY2025Q3"),
+    # MU：FYE 0903，名目「月底」法（規則 B）會整家偏一季
+    ("20260318", "0903", "FY2026Q2"),
+    ("20250625", "0903", "FY2025Q3"),
+    # NVDA / TGT：1-2 月結算的財年編號慣例（本專案比公司自稱多一年）
+    ("20260520", "0131", "FY2027Q1"),
+    ("20260225", "0131", "FY2026Q4"),
+    ("20260819", "0201", "FY2027Q2"),
+    # AAPL：12 月以外但非 52/53 週制的對照組
+    ("20260731", "0926", "FY2026Q3"),
+])
+def test_quarter_label_from_announcement(announce, fye, expected):
+    assert fi.quarter_label_from_announcement(announce, fye) == expected
+
+
+def test_quarter_label_from_announcement_accepts_iso_dates():
+    assert fi.quarter_label_from_announcement("2026-01-29", "0703") == "FY2026Q2"
+
+
+def test_quarter_label_from_announcement_uses_the_day_not_the_month_end():
+    """名目季末用 MMDD 的那一天，不是當月最後一天。
+
+    差別在名目季末落在發布日之後、要靠 tol 吃下去的那幾份：COST FYE 0830 的
+    Q3 名目季末是 5/30，比發布日 5/28 晚 2 天，tol=21 吃得下；若改用月底 5/31
+    則要 tol>=3。報告實測的規則 B（名目季末一律取財季結束月的月底）只有 79.8%。
+    """
+    assert fi.quarter_label_from_announcement("20260528", "0830", tol=2) == "FY2026Q3"
+    assert fi.quarter_label_from_announcement("20260528", "0831", tol=2) == ""
+
+
+def test_quarter_label_from_announcement_tol_zero_falls_back_instead_of_mislabelling():
+    """tol=0 時 COST 這一份選不到 5/30，退而選到上一季末 2/28（相距 89 天）
+    → sanity check 攔下來回空字串，呼叫端退回舊算法，而不是吐一個錯的標籤。"""
+    assert fi.quarter_label_from_announcement("20260528", "0830", tol=0) == ""
+
+
+@pytest.mark.parametrize("announce, fye", [
+    ("20260129", ""),          # EDGAR 沒給 fiscalYearEnd
+    ("20260129", "07"),        # 只有月份
+    ("20260129", "0732"),      # 不合法的日
+    ("20260129", "1303"),      # 不合法的月
+    ("20260129", "ABCD"),
+    ("", "0703"),
+    ("2026", "0703"),
+    ("20261340", "0703"),      # 不合法的發布日
+])
+def test_quarter_label_from_announcement_returns_empty_on_bad_input(announce, fye):
+    """算不出來一律回空字串，讓呼叫端退回舊算法——不可以整批失敗。"""
+    assert fi.quarter_label_from_announcement(announce, fye) == ""
+
+
+def test_quarter_label_from_announcement_sanity_check_rejects_a_far_away_quarter_end():
+    """sanity check：名目季末離發布日太遠就不採用這條規則，回空字串讓呼叫端退回舊算法。
+
+    WDC 這一份的名目季末是 2026-01-03、發布日 2026-01-29，相距 26 天：
+    門檻放 70 天（實測最大發布延遲 58 天）過得了，門檻收到 10 天就過不了。
+    """
+    assert fi.quarter_label_from_announcement("20260129", "0703") == "FY2026Q2"
+    assert fi.quarter_label_from_announcement("20260129", "0703", max_lag_days=10) == ""
+
+
+def test_quarter_label_from_announcement_month_without_that_day():
+    """FYE 的「日」在往前推的月份不存在（09-31）→ 退到當月最後一天。"""
+    # FYE 1231 → 候選季末 12-31 / 09-30 / 06-30 / 03-31
+    assert fi.quarter_label_from_announcement("20260210", "1231") == "FY2025Q4"
+    assert fi.quarter_label_from_announcement("20261105", "1231") == "FY2026Q3"

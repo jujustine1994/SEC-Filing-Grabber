@@ -8,7 +8,7 @@
 |------|------|------|
 | `smoke_test_10.py` | 批次 live smoke test：10 間公司各抓 GAAP，自動檢查 Revenue/Gross Profit/Operating Income/Net Income/OCF/Capex/FCF 是否有值，輸出彙總表 | 啟用 |
 | `audit_8k_period_labels.py` | 量化 Item 2.02 8-K 季度標籤的 off-by-one（TODO D4 前半）。用新聞稿內文判定實際財期，與 `_period_to_quarter_label()` 現行標籤比對；同時查 dedupe「保留最舊」丟掉哪些財報。**純文字比對，不呼叫 AI**。結論見 `docs/8k-period-off-by-one.md` | 啟用 |
-| `verify_8k_fiscal_labels.py` | 驗證 `src/cli.py press-release` 的 `fiscal_label`（TODO D4 後半）。15 家 × 8 季，檢查期末日抓取率，並確認新舊標籤的偏移**同一家是常數**且等於 `docs/8k-period-off-by-one.md` 獨立推出的值。**不呼叫 AI**，約 3 分鐘。沒填過進階設定時第一個參數當 identity | 啟用 |
+| `verify_8k_fiscal_labels.py` | 驗證 `src/cli.py press-release` 的 `fiscal_label`（TODO D4 後半）。15 家 × 8 季，檢查期末日抓取率，並確認列清單的 `label` 與 `fiscal_label` **偏移全部是 0**（B5 之後兩條路本來就該對齊；B5 前每家各自是常數偏移 -3~+1，舊值留在腳本的 `LEGACY_OFFSETS`）。同時是 B5 的端對端驗收與 `fiscal_label` 的回歸。**不呼叫 AI**，約 3 分鐘。沒填過進階設定時第一個參數當 identity | 啟用 |
 | `excel_golden.py` | **Excel 輸出的逐格回歸驗收。改 `excel_writer` / `excel_formatter` / `ratios` / `fiscal_input` 之前先 `make` 一份基準，改完再 `make` + `check`。** 把 `output/_final/*.xlsx` 讀回成 StatementTable 走真正的寫檔流程重產，比對值＋數字格式＋字型＋粗體＋底色。不打網路。2026-08-14 多語言遷移就是靠它確認 480 條字串搬完後繁中輸出逐格不變 | 啟用 |
 | `gen_zh_cn.py` | 從 `src/locales/zh_tw.py` 重產 `zh_cn.py`（OpenCC tw2s + 自訂詞彙表）。**一次性工具，平常不跑**，且會覆蓋手改過的用詞。需要 `uv pip install opencc-python-reimplemented`（不在 requirements，執行期用不到） | 啟用 |
 | `打包.bat` + `pack.ps1` | **打包散布用 zip，雙擊 `打包.bat` 即可，不必開 PowerShell、不必叫 AI。** 白名單複製 → 壓成 `dist\SEC-Financial-Fetcher-YYYYMMDD.zip` → 解到暫存目錄跑 **12 項自我驗證**（機敏檔、`.xlsx`、金鑰樣式、非預期 email、內部文件外流…）。**任一項沒過就刪掉 zip 並 exit 1**，不會產出一包不能傳的東西。是 `docs/PACKAGING.md` 的可執行版本，兩邊改動必須同步 | (停用，2026-08-18 CTH：GitHub 連得回來了，改走 clone/pull 發布，zip 打包暫不用；腳本保留待日後需要) |

@@ -400,7 +400,7 @@ def test_live_listing_filter_matches_deep_scan_arlo():
     """
     import edgar
     import config as cfgmod
-    from fetcher_nongaap import _list_earnings_filings, _period_to_quarter_label
+    from fetcher_nongaap import _list_earnings_filings, _label_for_listing
 
     cfg = cfgmod.load_config()
     if not cfg.get("identity"):
@@ -408,7 +408,11 @@ def test_live_listing_filter_matches_deep_scan_arlo():
     edgar.set_identity(cfg["identity"])
 
     company = edgar.Company("ARLO")
-    fast_labels = {label for label, _ in _list_earnings_filings(company)}
+    # 兩邊都要走同一套 label 換算（B5 之後 production 是傳 fiscal_year_end 的），
+    # 否則比對的是兩個不同的命名空間，整組都會「缺季」。
+    fiscal_year_end = str(getattr(company, "fiscal_year_end", "") or "").strip() or None
+    fast_labels = {label for label, _ in
+                   _list_earnings_filings(company, fiscal_year_end=fiscal_year_end)}
 
     deep_labels = set()
     for filing in company.get_filings(form="8-K", amendments=False):
@@ -417,11 +421,11 @@ def test_live_listing_filter_matches_deep_scan_arlo():
             continue
         items = str(getattr(filing, "items", "") or "")
         if "2.02" in items:
-            deep_labels.add(_period_to_quarter_label(period))
+            deep_labels.add(_label_for_listing(period, fiscal_year_end))
             continue
         try:
             if getattr(filing.obj(), "has_earnings", False):
-                deep_labels.add(_period_to_quarter_label(period))
+                deep_labels.add(_label_for_listing(period, fiscal_year_end))
         except Exception:
             continue
 
