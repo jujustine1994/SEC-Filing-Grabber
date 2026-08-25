@@ -280,7 +280,7 @@ edgar/xbrl/standardization/company_mappings/       公司專屬 override 共 3 �
 | `EquityExpenseIncome(BuybackIssued)` | 模板寫的名字沒有括號 | 優先層變成死碼 |
 | `IncomeTaxes` ← `DeferredIncomeTaxExpenseBenefit` | 遞延所得稅費用 | 「現金稅」抓到完全不同的東西 |
 | `NetCashFromFinancingActivities` ← `ProceedsFromDebtNetOfIssuanceCosts`（GOOGL） | 借款收入 | 語意完全不對 |
-| `NonoperatingIncomeExpense` ← D&A（AMD/MRVL） | 折舊攤銷 | 靠 `label_hint` 退路才救得回來 |
+| `NonoperatingIncomeExpense` ← D&A（AMD/MRVL，concept 是 `OtherDepreciationAndAmortization`） | 折舊攤銷 | **兩層一起失守**：標錯的 std 擋掉第一層，concept 名字又不含舊的 `DepreciationDepletionAndAmortization`。2026-08-25（G10）把第二層放寬成 `Depreciation\w*Amortization`、補上第三層 `^depreciation` 才救回來 |
 
 **這就是模板要寫成 `(std_concept, fallback, label_hint)` 三層的原因**：
 `std_concept` 只是去碰它那張 163 筆的表，碰不到（或碰錯）才靠我們自己的 fallback。
@@ -369,6 +369,33 @@ H3 那批 hint 是照 **22 家**調的，擴到 **201 家**重掃後有四條明
 **擋掉之後那一格會變空，而空白有時候才是對的**：NEE 的 Capex 在 H6 之前抓到的就是
 「Accrued property additions」——**填的是錯的數字**。H6 之後那格留空。判斷一個 hint
 改得對不對，不能只看「填滿的格子有沒有變多」。
+
+### D&A：延伸 tag 是常態，不是特例（G10，2026-08-25）
+
+`D&A` 這一列的第三層（`^depreciation`）**救回的家數比第二層還多**。201 家最新
+10-Q 實測新增命中 13 家，其中 9 家用的是公司自訂延伸 tag：
+
+```
+msft_DepreciationAmortizationAndOther          csco_DepreciationAmortizationAndOther
+tsla_DepreciationAmortizationAndImpairment     gm_DepreciationAmortizationAndImpairmentChargesOnProperty
+acn_DepreciationAmortizationAndOther           mar_DepreciationAmortizationAndOther
+odfl_DepreciationAndAmortizationIncludingDebtIssuanceCosts
+schw_DepreciationAndAmortizationExcludingAmortizationOfIntangibleAssets
+isrg_DepreciationandGainLossonDispositionofPropertyPlantEquipment
+```
+
+**MSFT／TSLA 這種規模的公司也在裡面**——延伸 tag 不是小公司才有的邊角情況。
+剩下 4 家是 us-gaap 標準 tag 但名字不同（`OtherDepreciationAndAmortization` ←
+AMD/MRVL、`UtilitiesOperatingExpenseDepreciationAndAmortization` ← AEP、
+`amt_...IncludingDiscontinuedOperations` ← AMT）。
+
+⚠ **第三層一定要 `^depreciation` 開頭錨定**：現金流量表上另外有「Amortization of
+acquisition-related intangibles」（AMD/MRVL 都有獨立一列）、債務發行成本攤銷、
+遞延佣金攤銷——只寫 `amortization` 會把無形資產攤銷當成 D&A，那是兩個不同科目。
+
+**幾家抓到的是「口徑略寬」的行**，這是接受公司報表表面列示的必然結果，記在這裡
+不是 bug：SCHW 那行明講 excluding intangibles、ISRG 那行含處分損益、GM／TSLA 含
+減損。都是公司自己在現金流量表上列的那一行。
 
 ### 什麼時候該用第三層（label_fallback）而不是放寬 concept
 

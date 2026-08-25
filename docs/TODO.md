@@ -144,14 +144,14 @@ F2. **估值倍數（P/E、EV/EBITDA、P/B 等）**（2026-08-20 CTH 提出，�
    - 前提：需要先有股價/市值資料來源，工具目前完全沒有市場數據，是比 F1 更大的擴充（要接股價 API/資料源）
    - **待研究，未動手**，等 F1 做完再說
 
-## G. 2026-08-22 期間對齊／缺值／效能系列（G1／G2／G3／G6／G7／G9 已完成並移入 CHANGELOG）
+## G. 2026-08-22 期間對齊／缺值／效能系列（G1／G2／G3／G6／G7／G9／G10 已完成並移入 CHANGELOG）
 
 > **⚠ 動手前必讀：`docs/superpowers/design-2026-08-22-period-alignment-and-gaps.md`**
 > 那份是 CTH 逐項確認過的**完整規格**（每項含：為什麼、規格、動哪些檔案、測試要釘什麼、
 > 怎麼驗收、風險、最容易踩的坑）。下面剩下的 G 條目只是索引與決策結論，細節不重複寫，
 > 兩邊有出入時**以設計書為準**。
 
-G0. **執行順序與相依性**（2026-08-25 更新：G1／G2／G3／G6／G7／G9 已完成並移入 CHANGELOG）
+G0. **執行順序與相依性**（2026-08-25 更新：G1／G2／G3／G6／G7／G9／G10 已完成並移入 CHANGELOG）
    - 剩下的順序：**G8 → G4/G5**
    - G8 會改變所有既有期間的資料來源優先序，前面幾項的驗收基準會跟著漂，所以排在最後
 
@@ -170,35 +170,6 @@ G8. **用「比較欄」當 fallback 補洞** ← **CTH 已決策，放最後做
    - 撿回來大約可以往前多補一年，也能讓 2009 的 Q4 合成成立
    - 要處理的問題：① 同一期間會在多份 filing 出現（當期一次、隔年比較欄一次），取哪一版？當期優先、比較欄只補洞 ② 公司重編（restatement）時兩版數字不同，要不要標示 ③ 比較欄的欄名同樣不能採信 `(Qn)`，要走跟 D0-6 一樣的日期反推
    - 另一條路（成本較高，列為備案）：SEC Company Facts API（`data.sec.gov/api/xbrl/companyfacts/CIK##########.json`），一次拿回該公司歷來所有 XBRL fact。edgartools 的 `company.get_facts()` 已經在用來抓流通股數。交叉補洞能力更強，但 restatement 取版本的問題更嚴重
-
-G10. **`D&A` 的 concept 對照對某些公司完全失效**（2026-08-22 產六家比較檔時發現；
-   **2026-08-25 H6 之後重量，Capex 那半已經解決，D&A 沒動**）
-   - **2026-08-25 重量（AMD/NVDA/AVGO/INTC/MRVL/LITE，2020-2025 季報）**：
-     ```
-     D&A     AMD 2/25、MRVL 0/19（其餘四家滿格）   ✗ 沒變，還是這條的主題
-     Capex   六家全部滿格（NVDA 24/25）            ✓ 原本 NVDA 13/24
-     ```
-     ⚠ Capex 那半**主要是 H4 第一步（2026-08-23 的 `label_fallback`）的功勞**，
-     不全是 H6；H6 修的 14 家不在這六家裡。期數與原本記的 24 期略有出入是因為這次
-     沒設 `max_filings`，抓的期間比原本那份比較檔多
-   - 原始記錄（2026-08-22）：
-   - 實測 `output/_compare/Semis_6co_2020_2025.xlsx`（AMD/NVDA/AVGO/INTC/MRVL/LITE，2020-2025 共 24 期）：
-     ```
-     Revenue / Gross Margin / Operating Margin   六家都 24/24   ✓
-     D&A     AMD 2/24、MRVL 0/24（其餘四家 24/24）  ✗
-     Capex   NVDA 13/24（其餘五家 24/24）           ✗
-     ```
-   - **跟 G3 是不同問題**：G3 是 IS 區的 `D&A (CF memo)` 走錯路徑；這裡 CF 區的 `D&A` 對 NVDA 是滿的，對 AMD/MRVL 幾乎全空 → 是那兩家的現金流量表用了 `CF_TEMPLATE` 沒收錄的 XBRL concept
-   - **2026-08-22 已排查完，根因跟原本推測的不一樣**：不是「公司用了我們沒收錄的 concept」，是 **edgartools 把 `standard_concept` 標錯了**。實測 AMD 2026-06-27 與 MRVL 2026-05-02 的 10-Q 現金流量表：
-     ```
-     AMD   standard_concept = NonoperatingIncomeExpense   label = "Depreciation and amortization"
-     MRVL  standard_concept = NonoperatingIncomeExpense   label = "Depreciation and amortization"
-     兩家的 Capex   standard_concept = CapitalExpenses    label = "Purchases of property and equipment"
-     ```
-     `NonoperatingIncomeExpense` 跟折舊攤銷毫無關係，但 `label` 寫得清清楚楚。`_match_is_row()` 優先比對 `std_concept`，比不中就漏掉
-   - 另外看到 AMD 有兩列 `standard_concept` 是 `nan`（`Purchases of property and equipment`、`Stock repurchases for tax withholding...`），以及 `CapitalExpenses` 在 AMD 出現兩次（第二次是 "accrued but not paid"，**不可以加總，會重複計算**）
-   - **修法選項**：① 幫 `D&A` 在 `CF_TEMPLATE` 補 `label_hint`，讓 std_concept 比不中時退回 label 比對（成本最低）；② 走 `SYNONYM_MAP`。**注意 ①/② 都要處理「同一個 concept 出現兩次」的去重**
-   - **G11 已定案不切換（2026-08-23，主力維持 edgartools）**，這一類問題不會自動消失，**要在現行路徑這邊修**——`修法選項` 那行的做法可以直接動手
 
 > **G11（改用 companyfacts API 取數）已於 2026-08-23 定案：不切換，主力維持
 > edgartools。** 決策理由與完整報告見 `docs/CHANGELOG.md`（搜尋「G11 決策」）與
@@ -356,12 +327,12 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
 |---|---|---|---|---|
 | 1 | B2 skill 端抽取 | 否 | 是（skill 設計） | **B5 與 H6 都已於 2026-08-25 完成，見 CHANGELOG** |
-| 2 | G10（`D&A` 的 concept 對照） | 否 | 否 | AMD 2/25、MRVL 0/19，根因已查清（edgartools 把 std_concept 標成 `NonoperatingIncomeExpense`），修法與 H6 同一類。**B6、銀行 Cash 口徑、INTC Cash 三題都已於 2026-08-25 決定完畢** |
+| 2 | G8（比較欄補洞） | — | 部分 | 風險最高，會動所有既有期間的資料來源優先序。**G10、B6、銀行 Cash 口徑、INTC Cash 都已於 2026-08-25 收掉** |
 | — | ~~B2~~（已升到第 1） | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
 | 4 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
 | 5 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
 | — | G4 overflow 標示 | 否 | 是 | 建議只做標示，不做 synonym 合併 |
-| — | G8／G10 | — | — | **G11 已定案不切換，這兩項不會白做**（G1/G2/G3/G6/G7/G9 都已完成） |
+| — | G8 | — | — | **G11 已定案不切換，不會白做**（G1/G2/G3/G6/G7/G9/G10 都已完成） |
 | — | F2 估值倍數 | 是（要股價來源） | 是 | 待研究，未確認方向 |
 
 ## D. 待 CTH 決定的已知限制

@@ -10,6 +10,54 @@
 ## 功能清單
 
 ### 已完成
+- [x] **G10：`D&A` 的 concept 對照修好，201 家多救回 13 家（2026-08-25）**：
+      - **症狀**：六家半導體比較檔裡 `D&A` 對 AMD 只有 2/25 期、MRVL **0/19 期**，
+        其餘四家滿格。D&A 空著會讓 EBITDA 相關衍生指標算不出來
+      - **根因（兩層一起失守）**：AMD／MRVL 的現金流量表用
+        `us-gaap_OtherDepreciationAndAmortization`——
+        ① edgartools 把它的 `standard_concept` 標成 **`NonoperatingIncomeExpense`**
+        （跟折舊攤銷毫無關係）→ 第一層比不中；
+        ② 那個 concept 名字裡沒有舊 fallback 的 `DepreciationDepletionAndAmortization`
+        → 第二層也比不中；③ 這一列當時沒有第三層 → 整列全損
+      - **修法**：第二層放寬成 `Depreciation\w*Amortization`（收進
+        `OtherDepreciationAndAmortization`、`DepreciationAmortizationAndAccretionNet`
+        這一整個家族），並補上第三層 `label_fallback = ^depreciation`。
+        `CF_TEMPLATE` 的 `D&A` 與 `IS_TEMPLATE` 的 `D&A (CF memo)` 兩列一起改，
+        它們取的本來就是同一個東西
+      - **⚠ 第三層一定要 `^depreciation` 錨定**：現金流量表上另外有「Amortization of
+        acquisition-related intangibles」（AMD／MRVL 都有獨立一列）、債務發行成本攤銷、
+        遞延佣金攤銷。只寫 `amortization` 會把無形資產攤銷當成 D&A——那是兩個不同科目，
+        有四個反例測試釘住
+      - **副作用實測（201 家最新 10-Q，逐家比對新舊規則）：新增命中 13 家、
+        換答案 0 家、錯誤 0 家**
+      - **最重要的發現：13 家裡有 9 家用的是公司自訂延伸 tag**，而且包含 MSFT／TSLA／
+        CSCO／GM 這種規模的公司——**延伸 tag 不是小公司才有的邊角情況**：
+        ```
+        msft_DepreciationAmortizationAndOther      tsla_DepreciationAmortizationAndImpairment
+        csco_DepreciationAmortizationAndOther      gm_DepreciationAmortizationAndImpairmentChargesOnProperty
+        acn_DepreciationAmortizationAndOther       mar_DepreciationAmortizationAndOther
+        odfl_DepreciationAndAmortizationIncludingDebtIssuanceCosts
+        schw_DepreciationAndAmortizationExcludingAmortizationOfIntangibleAssets
+        isrg_DepreciationandGainLossonDispositionofPropertyPlantEquipment
+        ```
+        另外 4 家是 us-gaap 標準 tag 但名字不同（AMD／MRVL 的
+        `OtherDepreciationAndAmortization`、AEP 的
+        `UtilitiesOperatingExpenseDepreciationAndAmortization`、AMT 的
+        `...IncludingDiscontinuedOperations`）
+      - **幾家抓到的是「口徑略寬」的那一行**，這是「接受公司報表表面列示」的必然結果，
+        記錄下來不是 bug：SCHW 那行明講 excluding intangibles、ISRG 那行含處分損益、
+        GM／TSLA 含減損
+      - **驗收（六家半導體，2020-2025 季報重量）**：
+        ```
+        D&A    AMD 2/25 → 24/31、MRVL 0/19 → 19/19，六家全部與 Revenue 同覆蓋
+        Capex  六家維持滿格（H4 第一步的成果，這輪沒動）
+        ```
+        分母 31/32 是跨公司對齊後的欄數，Revenue 也是 24/31——那幾欄是別家才有的期間，
+        不是缺漏
+      - **測試**：非連線 1270 → **1288 passed**（+18，先紅後綠；兩列 × 三種 concept 家族
+        × 四個反例）
+      - **G10 這條到此結案**，TODO 整條刪掉
+
 - [x] **Cash 補 `label_fallback`（ASU 2016-18 合併 tag）＋ 銀行現金口徑定案＋B6 FYE 漂移驗完（2026-08-25）**：
       三件事都是 H6 收尾時 CTH 指定要用**會計原則**判斷、而不是看填滿率決定的。
 

@@ -444,6 +444,26 @@ _COMMON_STOCK_HINT = (
 # `LaborAndRelatedExpense`（Compensation and benefits／Labor and Fringe）**。
 _COGS_HINT = r"cost|^purchased|food, beverage"
 
+# D&A（`CF_TEMPLATE` 的 `D&A` 與 `IS_TEMPLATE` 的 `D&A (CF memo)` 共用，兩列取的
+# 是同一個東西）。2026-08-25（G10）實測 AMD／MRVL：
+#
+#   concept = us-gaap_OtherDepreciationAndAmortization
+#   standard_concept = NonoperatingIncomeExpense   ← edgartools 標錯，跟折舊攤銷無關
+#   label = "Depreciation and amortization"
+#
+# 第一層（std_concept）被標錯的值擋掉，第二層舊的 `DepreciationDepletionAnd
+# Amortization` 又比不中那個 concept 名字 → 整列全損（AMD 2/25 期、MRVL 0/19 期）。
+# 放寬成整個 Depreciation…Amortization 家族，把 `OtherDepreciationAndAmortization`
+# 與 `DepreciationAmortizationAndAccretionNet` 都收進來。
+_DA_FALLBACK = r"Depreciation\w*Amortization"
+
+# 第三層：公司自訂延伸 tag 只有 label 對得上（TSLA 用
+# `tsla_DepreciationAmortizationAndImpairment`，std_concept 是 nan）。
+# ⚠ 一定要 `^depreciation` 開頭，不可以只寫 `amortization`——現金流量表上另外還有
+# 「Amortization of acquisition-related intangibles」（AMD/MRVL 都有獨立一列）、
+# 債務發行成本攤銷、遞延佣金攤銷，吃進來會變成拿無形資產攤銷當 D&A。
+_DA_LABEL_FALLBACK = r"^depreciation"
+
 _T = tuple[str, str | None, str, str, str, str | None, str | None]
 
 IS_TEMPLATE: list[_T] = [
@@ -452,7 +472,7 @@ IS_TEMPLATE: list[_T] = [
     ("Gross Profit",               "GrossProfit",                    "GrossProfit",                                            "IS", "first", None, None),
     ("R&D Expense",                "ResearchAndDevelopmentExpenses", "ResearchAndDevelopment",                                 "IS", "first", None, None),
     ("SG&A Expense",               "SellingGeneralAndAdminExpenses", "SellingGeneralAndAdmin",                                 "IS", "first", None, None),
-    ("D&A (CF memo)",              "DepreciationExpense",            "DepreciationDepletionAndAmortization",                   "CF", "first", None, None),
+    ("D&A (CF memo)",              "DepreciationExpense",            _DA_FALLBACK,                                             "CF", "first", None, _DA_LABEL_FALLBACK),
     ("Other Operating Expense",    None,                             "OtherCostAndExpenseOperating|OtherOperatingIncomeExpenseNet|OtherOperatingExpense", "IS", "first", None, None),
     ("Total Operating Expense",    "TotalOperatingExpenses",         "OperatingExpenses",                                      "IS", "first", None, None),
     ("Total Costs and Expenses",   None,                             "^us-gaap_CostsAndExpenses$",                             "IS", "first", None, None),
@@ -530,7 +550,7 @@ BS_TEMPLATE: list[_T] = [
 CF_TEMPLATE: list[_T] = [
     # ── Operating ────────────────────────────────────────────────────────
     ("Net Income",                 "NetIncome",                          "NetIncomeLoss|ProfitLoss",                              "CF", "first", None, None),
-    ("D&A",                        "DepreciationExpense",                "DepreciationDepletionAndAmortization",                  "CF", "first", None, None),
+    ("D&A",                        "DepreciationExpense",                _DA_FALLBACK,                                            "CF", "first", None, _DA_LABEL_FALLBACK),
     ("SBC",                        "StockBasedCompensationExpense",      "ShareBasedCompensation",                                "CF", "first", None, None),
     ("Amortization of Intangibles","AmortizationOfIntangibles",          "AmortizationOfIntangibleAssets",                        "CF", "first", None, None),
     ("Change in Receivables",      "ChangeInReceivables",                "IncreaseDecreaseInAccountsReceivable",                  "CF", "first", "receivable", None),

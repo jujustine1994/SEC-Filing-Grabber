@@ -3270,3 +3270,63 @@ def test_cash_label_fallback_does_not_override_the_concept_layers():
                  extra=[("us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents",
                          "Cash and cash equivalents", float("nan"))])
     assert _match_template_row("Cash", df) == "Cash and cash equivalents"
+
+
+# ── G10：D&A 的 concept 對照（2026-08-25）─────────────────────────────────
+#
+# AMD／MRVL 的現金流量表用 `us-gaap_OtherDepreciationAndAmortization`，而 edgartools
+# 把它的 `standard_concept` 標成 `NonoperatingIncomeExpense`（跟折舊攤銷毫無關係）
+# → 第一層失守；那個 concept 名字裡又沒有 `DepreciationDepletionAndAmortization`
+# → 第二層也失守。實測 AMD 2/25 期、MRVL 0/19 期。
+# 下面的 concept / std / label 都是從真實 10-Q 逐字抄的（2026-08-25 實測）。
+
+
+@pytest.mark.parametrize("row_name", ["D&A", "D&A (CF memo)"])
+@pytest.mark.parametrize("concept,std,label", [
+    # AMD 2026-08-05 / MRVL 2026-05-28：std_concept 被標錯，concept 也不含舊的 fallback
+    ("us-gaap_OtherDepreciationAndAmortization", "NonoperatingIncomeExpense",
+     "Depreciation and amortization"),
+    # NVDA 2026-05-20（原本就過，防止改壞）
+    ("us-gaap_DepreciationDepletionAndAmortization", "DepreciationExpense",
+     "Depreciation and amortization"),
+    # 另一種常見寫法
+    ("us-gaap_DepreciationAmortizationAndAccretionNet", float("nan"),
+     "Depreciation, amortization and accretion"),
+])
+def test_da_matches_the_whole_depreciation_amortization_family(row_name, concept, std, label):
+    df = _row_df(concept, label, std)
+    assert _match_template_row(row_name, df) == label
+
+
+@pytest.mark.parametrize("row_name", ["D&A", "D&A (CF memo)"])
+def test_da_falls_back_to_label_for_company_extension_tags_tsla(row_name):
+    """TSLA 用自訂延伸 tag `tsla_DepreciationAmortizationAndImpairment`，
+    std_concept 是 nan——只有 label 對得上。"""
+    df = _row_df("tsla_DepreciationAmortizationAndImpairment",
+                 "Depreciation, amortization and impairment", float("nan"))
+    assert _match_template_row(row_name, df) == "Depreciation, amortization and impairment"
+
+
+@pytest.mark.parametrize("row_name", ["D&A", "D&A (CF memo)"])
+@pytest.mark.parametrize("concept,label", [
+    # 無形資產攤銷是**另外一列**（AMD [6]／MRVL [7] 都有），不可以被 D&A 吃掉,
+    # 否則 D&A 會少算或重複計算
+    ("us-gaap_AmortizationOfIntangibleAssets", "Amortization of acquisition-related intangibles"),
+    ("us-gaap_AmortizationOfIntangibleAssets", "Amortization of acquired intangible assets"),
+    # 債務發行成本攤銷、股酬攤銷都不是 D&A
+    ("us-gaap_AmortizationOfFinancingCostsAndDiscounts", "Amortization of debt discount and issuance costs"),
+    ("us-gaap_AmortizationOfDeferredSalesCommissions", "Amortization of deferred commissions"),
+])
+def test_da_does_not_swallow_other_amortization_rows(row_name, concept, label):
+    df = _row_df(concept, label, float("nan"))
+    assert _match_template_row(row_name, df) is None
+
+
+@pytest.mark.parametrize("row_name", ["D&A", "D&A (CF memo)"])
+def test_da_prefers_the_combined_row_over_a_standalone_intangibles_row(row_name):
+    """同一張現金流量表上「D&A」與「無形資產攤銷」並存時要挑前者（AMD/MRVL 實際版面）。"""
+    df = _row_df("us-gaap_OtherDepreciationAndAmortization", "Depreciation and amortization",
+                 "NonoperatingIncomeExpense",
+                 extra=[("us-gaap_AmortizationOfIntangibleAssets",
+                         "Amortization of acquisition-related intangibles", "AmortizationOfIntangibles")])
+    assert _match_template_row(row_name, df) == "Depreciation and amortization"
