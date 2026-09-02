@@ -18,32 +18,6 @@ B4. **最新法說會資料能不能自動更新**（2026-08-12 CTH 提出）
    - 預期方向：自動抓最新 8-K（尤其 Item 2.02 財報發布 8-K）來補即時數字，而不是等 10-Q/10-K 才更新——跟 B1 的 `cli.py press-release` 子指令、B3 的 `press_release_tables.py` 應該是同一條路線，需要研究怎麼接
    - **待研究，未動手**
 
-B6. ~~**8-K 零下載規則的剩餘風險：`fiscal_year_end` 會不會隨時間變**~~
-   ✅ **2026-08-25 驗完，風險已量化，決定接受**（CTH 決定「驗」）
-   - **結果：201 家裡只有 2 家改過財年（1.0%）**，用 `scripts/check_fye_drift.py`
-     離線量的（零網路請求，吃 `output/_spike/facts_*.json`）：
-     | 公司 | 改制 | 改制前受影響的季 | 標錯幾季 |
-     |---|---|---|---|
-     | **LHX** | 2019 年從 6 月底改成 12 月底（差 177~182 天） | 30 季 | **30 季（100%）**，一律差 2 季 |
-     | **MSCI** | 2010 年從 11/30 改成 12/31（差 31 天） | 1 季 | **0 季**（位移不足以跨季） |
-     - 其餘 199 家：181 家最大偏移 0~4 天、18 家 5~9 天，全部是 52/53 週制的正常浮動
-   - **決定：接受這個風險，不做特別處理。** 理由：① 只影響 1% 的公司，而且只影響
-     **改制以前**的申報（LHX 是 2019 年以前）；② 真的要修得為每一期存一份「當時的
-     FYE」，那要嘛下載歷史 10-K（正好抵銷零下載的意義），要嘛另建一張歷史 FYE 表；
-     ③ `cli.py` 下載後的 `label_agrees_with_fiscal_label` 旗標抓得到選進來的那幾份
-   - **⚠ 交接文件原本寫的「加一道 0~70 天 sanity check 就接得住」是恆真式**：候選季末
-     永遠相隔 89~92 天，選中的必然落在 `[-tol, 91-tol)`，tol=21 時上界剛好 70，
-     一次都攔不到（200 份實測 lag 範圍 -2~58）。程式碼保留它（`max_lag_days`），
-     擋的是參數被改壞與畸形輸入，**不是 FYE 漂移**
-   - **偵測手段仍有一個洞**：`--years` 篩在下載之前，被漂移害到而**根本沒被選中**的
-     那幾份不會被下載，也就不會被比對到。抓得到「選進來的有問題」，抓不到「該選進來
-     卻被漏掉」
-   - **重驗方式**：`./venv/Scripts/python.exe scripts/check_fye_drift.py [門檻天數]`
-     （預設 14 天）。樣本換了、或想拉更多公司進來時重跑
-   - 仍未測到的：樣本只到最近 8 季（2024~2026），更早期沒驗；2004-08 之前 Item 2.02
-     這個編號還不存在，那段本來就抓不到
-
-
 ## C. 與 financial-assistant 體系的銜接（另開對話處理）
 
 C1. `finance-analysis.md` 第二步的作業類型表加一列「SEC 財報抓取（美股）」指向本專案。
@@ -261,70 +235,29 @@ H3-1. **剩下的模板列缺漏：多數是「公司沒在報表表面單獨列
    - **重啟這條的時機**：(a) 使用者實際回報這幾列的空白造成困擾；(b) 之後有其他理由要動 `fetcher_facts` 的接線時順手一起做
    - **受影響的列（Index 會一直標紅，這是預期行為不是 bug）**：`Op. Lease Liabilities, current` 14 家、`Change in Inventories` 10 家、`Op. Lease Liabilities, LT` 4 家；另外 `Accrued Compensation`、`Operating Lease ROU Assets`、`Amortization of Intangibles`、`Finance Lease Liabilities, LT` 的覆蓋率偏低也是同一個成因
 
-H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（2026-08-25，H6 主體
-   已完成並移入 `docs/CHANGELOG.md`，前後數字看那條）
+H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不要修**（2026-08-25，
+   H6 主體與已決定的部分都在 `docs/CHANGELOG.md`）
    - 原始資料仍在（**不要重跑**，一輪 12 分鐘）：`output/_hintsweep_201/hintsweep_201_result.txt`
-     （201 家逐列逐家掃描）、`classification.md`（人工分類表，⚠ 見下方訂正）
+     （201 家逐列逐家掃描）、`classification.md`（人工分類表）
    - 重跑指令：
      ```
      TICKERS=$(cat output/_hintsweep_201/tickers_joined.txt)
      ./venv/Scripts/python.exe scripts/diag_hintsweep.py "$TICKERS" > out.txt 2>&1
      ```
-   - **⚠ 分類表有兩處是錯的（2026-08-25 查原始 10-Q 訂正）**：
+   - **⚠ 那份分類表有兩處判讀是錯的**（2026-08-25 查原始 10-Q 訂正，照著用之前先看這段）：
      ① 「CS&APIC 那 7 家是 concept 層失守」錯——ABT/AMP/AXP/COP/KR/MPC/UNP 七家全部是
      `us-gaap_CommonStockValue(Outstanding)` / `std_concept=CommonEquity`，concept 層好好的；
      ② 「SLB 退到 fallback_suffix 層」錯——`us-gaap_Cash` 一樣有 `std_concept=CashAndMarketableSecurities`
-   - **① 銀行的「Cash and due from banks」——✅ CTH 2026-08-25 決定：維持空白，
-     併入 D8 一起處理。原本 7 家，同日 `label_fallback` 上線後剩 6 家
-     （AXP/BK/C/COF/JPM/WFC）**
-     - **BAC 已自動解決，而且拿到的是正確口徑**：它在 BS 上自己列了一條小計
-       `Cash and cash equivalents` = **$229.7bn = 28.1（due from banks）+ 201.6
-       （存放同業）**，正是 ASC 230 現金流量表定義的銀行現金。JPM 沒列這條小計，
-       所以還是空的——**差別在公司有沒有在報表表面列小計，不是我們的規則**
-     - **會計原則**：Reg S-X Article 9 規定銀行 BS 第一列是 `Cash and due from banks`
-       （庫存現金、在途收款、**不生息**的存放同業）；生息的那部分（主要是存在 Fed 的
-       準備金）是另一列 `Interest-bearing deposits with banks`。而 ASC 230 現金流量表
-       底下 reconcile 的「現金及約當現金」，銀行實務上是**兩列相加**（有時再加
-       fed funds sold）。Compustat `CHE`、Bloomberg cash & near cash 對銀行也是相加
-     - **實測（JPM 2026-06-30，本專案快取的 10-Q）**：
-       ```
-       Cash and due from banks          $24.7bn
-       Deposits with banks             $285.1bn   ← 11 倍
-       Federal funds sold / resale     $446.1bn
-       ```
-       只抓 `due from banks` 等於填了真實現金的 **8%**——**比留空更糟**：留空使用者知道
-       沒資料，填 8% 看起來像正常數字，拿去算 net debt 或流動性會整個歪掉
-     - **為什麼不能直接做對**：模板一列只對到一個 XBRL 列、**不會加總**，湊不出銀行口徑
-       的 cash。這正是 **D8（金融股另一套模板）** 存在的理由，等 D8 一起做才有辦法
-   - **② Common Stock & APIC 剩 COP 與 MPC**：COP 的 label 只有「Par value」、MPC 是
+   - **① Common Stock & APIC 剩 COP 與 MPC**：COP 的 label 只有「Par value」、MPC 是
      「Issued – 995 million and 994 million shares (par value $0.01 per share…)」，
      **措辭裡完全沒有股票字樣**，放寬措辭救不了。要救只能改成「候選只有一列
-     `CommonStockValue` 時不套 hint」這種結構性規則，那會影響所有公司，風險等級跟這輪不同
-   - **③ NEE 的 Capex 現在是空的（H6 之前是錯的數字）**：它唯一的 `CapitalExpenses`
+     `CommonStockValue` 時不套 hint」這種結構性規則，那會影響所有公司，風險等級不同
+   - **② NEE 的 Capex 是空的**（H6 之前抓到的是錯的數字）：它唯一的 `CapitalExpenses`
      候選是「Accrued property additions」（非現金揭露），真正的 capex 在
      `nee_CapitalExpendituresOfPublicUtilitiesFPLConsolidated` 這個延伸 tag。要救屬於
-     **H4 第二步**（label_fallback／延伸 tag）的範圍，而且 NEE 同一張表上還有
-     `nee_CapitalExpendituresOfFPL`（子公司）與 `Other capital expenditures` 兩個相似候選，
-     不能無腦用 `^capital expenditures` 當 label_fallback
-   - **④ Cost of Revenue 那 29 家維持空白是正確行為**（AMT/AON/AXP/BAC/BK/BKNG/BLK/C/CCI/
-     CME/COF/CSX/FDX/GS/HCA/ICE/JPM/MCD/MCO/MS/NDAQ/NSC/ODFL/PLD/SCHW/UNP/UPS/V/WFC）
-     ——銀行／保險／交易所／鐵路／REIT 概念上沒有 COGS，與 **D8** 同一類。列在這裡只是備查
-   - **⑤ ~~INTC 2022~2025 的 `Cash` 有 15 期抓不到~~ ✅ 2026-08-25 已修**
-     （CTH 決定照公司報表表面的列示抓，見 CHANGELOG「Cash 補 label_fallback」）。
-     原始症狀：INTC 那幾年把現金 tag 成
-     `us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents`
-     （std_concept 是 `CashAndCashEquivalents`），我們模板的 std 是
-     `CashAndMarketableSecurities`、fallback 是 `CashAndCashEquivalents`——**注意
-     那個 concept 名字裡沒有 "And"**（`CashCashEquivalents...`），所以兩層都比不中；
-     label 明明就是「Cash and cash equivalents」，但這一列沒有 label_fallback。
-     2026 年那幾份又改回 `CashAndCashEquivalentsAtCarryingValue`，所以只有中間那段空
-     - **採用②（補 `label_fallback`）**：ASU 2016-18 只要求**現金流量表**的期初期末
-       總額含受限現金，資產負債表沒有要求合併列示，INTC 印在 BS 上的那行字就是
-       「Cash and cash equivalents」——抓公司報表表面列示的那一行是對的口徑。
-       否決①（改 concept fallback）是因為它會一併吃進真的把受限現金塔得很大的公司
-     - **副作用實測（201 家最新 10-Q）：新增命中 11 家、換答案 0 家**
-       （BAC/CSX/DOV/EL/GILD/HSY/LULU/MMM/OMC/PG/SBUX）
-   - **⑥ 更零星的個案**（材料不足，不建議單獨修）：`Other Non-current Assets` IBM
+     **H4 第二步**的範圍，而且同一張表上還有 `nee_CapitalExpendituresOfFPL`（子公司）
+     與 `Other capital expenditures` 兩個相似候選，不能無腦用 `^capital expenditures`
+   - **③ 更零星的個案**（材料不足，不建議單獨修）：`Other Non-current Assets` IBM
      「Investments and sundry assets」／ISRG「Long-term investments」、`Dividends Paid`
      AMT／CHTR（只有少數股權分配）、`Accounts Receivable` SO（gross 口徑）、
      `Change in Inventories` AEP、`Finance Lease Liabilities, LT` ON、`Other Current Assets` CVX
@@ -340,7 +273,6 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，待 CTH 決定**（
 |---|---|---|---|---|
 | 1 | B2 skill 端抽取 | 否 | 是（skill 設計） | **B5 與 H6 都已於 2026-08-25 完成，見 CHANGELOG** |
 | 2 | G8（比較欄補洞） | — | 部分 | 風險最高，會動所有既有期間的資料來源優先序。**G10、B6、銀行 Cash 口徑、INTC Cash 都已於 2026-08-25 收掉** |
-| — | ~~B2~~（已升到第 1） | 否 | 是（skill 設計） | 介面是 `cli.py press-release --json`。Non-GAAP 現在整個關閉，E2 等後續 GUI 工作卡在這條後面 |
 | 4 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
 | 5 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
 | — | G4 overflow 標示 | 否 | 是 | 建議只做標示，不做 synonym 合併 |
@@ -379,8 +311,16 @@ D8. 金融股（GS/JPM 等）獨立模板：現行 IS/BS 模板對金融股部�
    - **2026-08-25 追加一個具體需求：Cash 這一列對銀行要能「加總兩列」**
      （`CashAndDueFromBanks` + `InterestBearingDepositsInBanks`，有時再加
      `FederalFundsSoldAndSecuritiesPurchasedUnderAgreementsToResell`）。JPM 實測
-     24.7bn vs 285.1bn，只取第一列等於填 8%。現行模板一列只對一個 XBRL 列、不會加總
-     ——**「支援加總」是金融股模板的硬需求，不是選配**。理由與會計原則見 H6-1 第 ① 點
+     24.7bn vs 285.1bn，只取第一列等於填 8%（比留空更糟）。現行模板一列只對一個
+     XBRL 列、不會加總——**「支援加總」是金融股模板的硬需求，不是選配**。
+     會計原則（Reg S-X Article 9 / ASC 230）與實測數字見 `docs/CHANGELOG.md`
+     「銀行現金口徑定案」那條
+     - 現在仍空白的 6 家：AXP／BK／C／COF／JPM／WFC。**BAC 已經有值且口徑正確**
+       ——它自己在 BS 上列了小計（229.7 = 28.1 + 201.6），不是我們特別處理的
+   - **這些空白是正確行為，不要「修」**（2026-08-25 H6 確認，避免下次重做一次分析）：
+     銀行／保險／交易所／鐵路／REIT 的 `Cost of Revenue` 共 29 家（AMT/AON/AXP/BAC/BK/
+     BKNG/BLK/C/CCI/CME/COF/CSX/FDX/GS/HCA/ICE/JPM/MCD/MCO/MS/NDAQ/NSC/ODFL/PLD/
+     SCHW/UNP/UPS/V/WFC）——概念上本來就沒有 COGS，填進人事費就是製造錯誤數字
    - **研究記錄（2026-08-12）**：程式碼裡目前除了印一行警告訊息，**完全沒有任何金融股特殊處理**——現有科目對照表直接套用，對不上的欄位就是空，不是 bug 是模板天生沒設計給銀行股。真要做要重新研究銀行/券商專屬 US-GAAP 科目（存款、放款、備抵呆帳...），等於另建一整套模板。**風險：大**。這其實是「要不要用這工具抓銀行股」的產品決定，不是技術問題，建議先想清楚要不要再談技術
 
 D9. **外國私人發行人（Foreign Private Issuer）抓不到財報**（2026-08-20 CTH 回報）
