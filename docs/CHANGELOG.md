@@ -27,6 +27,14 @@
       **③ ticker 建議清單沒輸入時是一個大白框**
       - 常駐 `Listbox(height=4)` 就算空的也占著版面。改成沒比中就 `pack_forget()`
         收起來，有比中才展開，高度跟著筆數走（上限 5 列）
+      - **⚠ 這裡改出一個回歸，同日修掉（CTH 第二張截圖）**：`pack()` 預設排到父容器
+        **最後面**，所以動態顯示時清單掉到整個視窗最底下（跑到「快照時間點」下面）。
+        修法是 `pack(after=ticker_row)`——順便讓它比原本更合直覺：**候選清單緊跟在
+        輸入框底下**，而不是像原本擠在已選公司 chip 的下面
+      - 兩條回歸測試把「顯示時機」與「排版位置」都釘住（`pack_slaves()` 的索引順序
+        ——位置類 bug 靠「有沒有例外」是測不出來的）。順手修掉 Tk fixture 的偶發
+        skip：同一個 pytest session 連續建/毀 Tk root，Windows 上偶爾會失敗一次，
+        變成「隨機少跑一條測試」而且看起來完全正常
 
       **④ log 顯示「這次跑了多久」，三條線都補齊**
       - 新增 `format_elapsed()`：`48s` / `1m 54s` / `2h 02m 05s`。原本
@@ -58,7 +66,10 @@
       === 2026-09-02 22:42:14 Compare 0 companies | quarterly | 2024-2025 | 1 metrics ===
       [22:42:14] [FAIL ] Compare FAILED (nothing fetched), elapsed 0s
       ```
-      非連線測試 1288 → **1305 passed**（+17，新檔 `tests/test_gui_helpers.py`）
+      另外實測打字流程：輸入 `INTEL` → 清單出現在輸入框正下方（`pack_slaves()` 裡
+      輸入框是第 1、清單是第 2）、第一筆是 `INTC  INTEL CORP`、清空後收起來。
+
+      非連線測試 1288 → **1307 passed**（+19，新檔 `tests/test_gui_helpers.py`）
 
 - [x] **G10：`D&A` 的 concept 對照修好，201 家多救回 13 家（2026-08-25）**：
       - **症狀**：六家半導體比較檔裡 `D&A` 對 AMD 只有 2/25 期、MRVL **0/19 期**，

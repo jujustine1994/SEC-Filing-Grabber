@@ -1710,7 +1710,11 @@ class SECFetcherApp:
                 suggest_listbox.insert("end", f"{tk_}  {name}")
             # 高度跟著比中筆數走（上限 5 列），不要固定佔 4 列高
             suggest_listbox.config(height=min(len(matches), 5))
-            suggest_listbox.pack(fill="x", padx=10)
+            # ⚠ `after=ticker_row` 不能省：`pack()` 預設排到父容器的**最後面**，
+            # 動態顯示時清單會掉到整個視窗最底下（2026-09-02 CTH 截圖回報，
+            # 打 INTEL 候選清單跑到「快照時間點」下面）。候選清單要緊跟在輸入框
+            # 底下才符合直覺——輸入什麼、下面就跳什麼。
+            suggest_listbox.pack(fill="x", padx=10, after=ticker_row)
 
         ticker_var.trace_add("write", _on_ticker_type)
 

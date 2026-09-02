@@ -8,6 +8,8 @@
 
 耗時格式化（log 顯示「這次跑了幾分幾秒」）也在這裡測——它是純函式。
 """
+import time
+
 import pytest
 
 import main
@@ -64,15 +66,27 @@ def test_company_chip_entries_keeps_order_and_handles_missing_names():
 @pytest.fixture
 def tk_root():
     """真的開一個 Tk root——`pack_wrapped_chips()` 要量 widget 實際寬度，
-    沒有辦法用假物件測。沒有顯示裝置的環境（headless CI）直接跳過。"""
+    沒有辦法用假物件測。沒有顯示裝置的環境（headless CI）直接跳過。
+
+    ⚠ 重試三次不是防禦性程式碼：同一個 pytest session 內連續建/毀 Tk root，
+    Windows 上偶爾會有一次 `TclError`（實測 2026-09-02，同一批測試跑兩次，
+    skip 的是不同那條）。不重試的話會變成「隨機少跑一條測試」，而且因為它是
+    skip 不是 fail，看起來完全正常——這種抖動比失敗更難發現。
+    """
     tkinter = pytest.importorskip("tkinter")
-    try:
-        root = tkinter.Tk()
-    except tkinter.TclError as exc:            # 沒有 display
-        pytest.skip(f"no display: {exc}")
-    root.withdraw()
-    yield root
-    root.destroy()
+    last_exc = None
+    for _ in range(3):
+        try:
+            root = tkinter.Tk()
+        except tkinter.TclError as exc:
+            last_exc = exc
+            time.sleep(0.2)
+            continue
+        root.withdraw()
+        yield root
+        root.destroy()
+        return
+    pytest.skip(f"no display after 3 attempts: {last_exc}")
 
 
 def _chips(container):
@@ -131,3 +145,64 @@ def test_pack_wrapped_chips_clears_previous_chips(tk_root):
     labels = [w.cget("text") for chip in _chips(container)
               for w in chip.winfo_children() if w.winfo_class() == "TLabel"]
     assert labels == ["C"]
+
+
+# ── ticker 候選清單的位置與顯示時機 ────────────────────────────────────────
+#
+# 2026-09-02 CTH 連續回報兩次：① 沒輸入時它是一個常駐的大白框；② 改成動態顯示
+# 之後，清單跑到整個視窗最底下（`pack()` 預設排到父容器最後面）。這條測試把
+# 「打字→清單出現在輸入框正下方；清空→收起來」整段釘住。
+
+@pytest.fixture
+def compare_window(tk_root):
+    """真的把「選擇比較內容」視窗建起來。tkinter 版面沒有辦法用假物件驗——
+    這兩個 bug 都是版面問題，不開視窗就測不到。"""
+    import main as main_mod
+
+    app = main_mod.SECFetcherApp(tk_root)
+    app.compare_selected_tickers = [("NVDA", "NVIDIA CORP")]
+    app._open_compare_selection_window()
+    tk_root.update_idletasks()
+    import tkinter
+    win = [w for w in tk_root.winfo_children() if isinstance(w, tkinter.Toplevel)][-1]
+    yield win
+    win.destroy()
+
+
+def _walk(widget):
+    for child in widget.winfo_children():
+        yield child
+        yield from _walk(child)
+
+
+def test_ticker_suggestions_hidden_until_something_matches(tk_root, compare_window):
+    listbox = next(w for w in _walk(compare_window) if w.winfo_class() == "Listbox")
+    entry = next(w for w in _walk(compare_window) if w.winfo_class() == "TEntry")
+    var = entry.cget("textvariable")
+
+    assert not listbox.winfo_manager(), "沒輸入時候選清單不該占版面"
+
+    tk_root.setvar(var, "INTEL")
+    tk_root.update_idletasks()
+    assert listbox.winfo_manager(), "打了字、有比中就該顯示"
+    assert listbox.size() > 0
+
+    tk_root.setvar(var, "")
+    tk_root.update_idletasks()
+    assert not listbox.winfo_manager(), "清空後要收起來"
+
+
+def test_ticker_suggestions_appear_right_below_the_input(tk_root, compare_window):
+    """`pack()` 預設排到父容器**最後面**——動態顯示時不指定 `after=`，
+    清單會掉到整個視窗最底下（CTH 截圖：跑到「快照時間點」下面）。"""
+    listbox = next(w for w in _walk(compare_window) if w.winfo_class() == "Listbox")
+    entry = next(w for w in _walk(compare_window) if w.winfo_class() == "TEntry")
+
+    tk_root.setvar(entry.cget("textvariable"), "INTEL")
+    tk_root.update_idletasks()
+
+    slaves = listbox.master.pack_slaves()
+    ticker_row = next(w for w in slaves if entry in w.winfo_children())
+    assert slaves.index(listbox) == slaves.index(ticker_row) + 1, (
+        "候選清單必須緊跟在輸入框那一列後面，"
+        f"實際排在第 {slaves.index(listbox)} 個、輸入框在第 {slaves.index(ticker_row)} 個")
