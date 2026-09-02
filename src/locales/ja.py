@@ -393,6 +393,8 @@ STRINGS: dict[str, str] = {
     "gui.msg.ticker_not_found": 'ティッカー「{ticker}」が見つかりません。コードをご確認ください。',
     "gui.msg.wait_for_current_run": '実行中の取得が終わってからスキャンしてください',
     "gui.msg.year_range_reversed": '開始年（{start}）は終了年（{end}）より後にできません',
+    "gui.msg.invalid_period_format": '期間の形式が正しくありません。YYYY、YYYY-MM、YYYY-MM-DD のいずれかで入力してください（例：2024、2024-06、2024-06-15）',
+    "gui.msg.period_range_reversed": '開始期間（{start}）は終了期間（{end}）より後にできません',
 
     # ── GUI：ステータス ─────────────────────────────────────────────────
     "gui.status.batch_done": '完了：{total} 銘柄を処理しました',
@@ -459,8 +461,8 @@ STRINGS: dict[str, str] = {
     "gui.compare.unknown_ticker_title": '企業が見つかりません',
     "gui.compare.unknown_ticker_msg": '{ticker} はキャッシュに存在しません。銘柄コードを確認してください',
     "gui.compare.step2_metrics": '② 比較指標を選択',
-    "gui.compare.start_year": '開始年',
-    "gui.compare.end_year": '終了年',
+    "gui.compare.start_year": '開始（YYYY/YYYY-MM/YYYY-MM-DD）',
+    "gui.compare.end_year": '終了',
     "gui.compare.frequency": '頻度',
     "gui.compare.metric_category": '指標カテゴリ',
     "gui.compare.snapshot_date": 'スナップショット日付、YYYYMMDD形式で入力（例：20251231）：',

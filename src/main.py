@@ -1780,10 +1780,10 @@ class SECFetcherApp:
         period_row = ttk.Frame(content)
         period_row.pack(fill="x", padx=10, pady=4)
         ttk.Label(period_row, text=t("gui.compare.start_year")).pack(side="left")
-        ttk.Entry(period_row, textvariable=self.compare_start_year, width=6).pack(
+        ttk.Entry(period_row, textvariable=self.compare_start_year, width=12).pack(
             side="left", padx=(2, 8))
         ttk.Label(period_row, text=t("gui.compare.end_year")).pack(side="left")
-        ttk.Entry(period_row, textvariable=self.compare_end_year, width=6).pack(
+        ttk.Entry(period_row, textvariable=self.compare_end_year, width=12).pack(
             side="left", padx=(2, 8))
         ttk.Label(period_row, text=t("gui.compare.frequency")).pack(side="left")
         freq_combo = ttk.Combobox(period_row, textvariable=self.compare_frequency,
@@ -1886,6 +1886,25 @@ class SECFetcherApp:
             messagebox.showwarning(t("gui.compare.select_title"), t("gui.lbl.identity_missing"))
             return
 
+        # F7（2026-09-03）：起始／結束兩格改吃 YYYY／YYYY-MM／YYYY-MM-DD，先在
+        # 這裡驗證格式與順序——壞在這裡直接跳訊息框，不用等背景執行緒打完
+        # SEC 才發現輸入打錯。
+        from comparison import parse_period_bound
+        try:
+            start_bound = parse_period_bound(self.compare_start_year.get(), is_end=False)
+            end_bound = parse_period_bound(self.compare_end_year.get(), is_end=True)
+        except ValueError:
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.invalid_period_format"))
+            return
+        if start_bound is not None and end_bound is not None and start_bound > end_bound:
+            messagebox.showerror(
+                t("gui.dlg.error_title"),
+                t("gui.msg.period_range_reversed",
+                  start=self.compare_start_year.get().strip(),
+                  end=self.compare_end_year.get().strip()),
+            )
+            return
+
         self.compare_run_btn.config(state="disabled")
         threading.Thread(target=self._compare_worker, daemon=True).start()
 
@@ -1896,8 +1915,10 @@ class SECFetcherApp:
         identity = self.cfg.get("identity", "")
         tickers = [t_ for t_, _ in self.compare_selected_tickers]
         metrics = list(self.compare_selected_metrics)
-        start_year = int(self.compare_start_year.get()) if self.compare_start_year.get().strip() else None
-        end_year = int(self.compare_end_year.get()) if self.compare_end_year.get().strip() else None
+        # F7：不再轉 int——現在可以是 YYYY／YYYY-MM／YYYY-MM-DD，解析交給
+        # comparison.parse_period_bound()（build_comparison() 內部會呼叫）。
+        start_year = self.compare_start_year.get().strip() or None
+        end_year = self.compare_end_year.get().strip() or None
         frequency = self.compare_frequency.get()
 
         # 2026-09-02：這條線原本**完全沒有落檔 log**——沒有任務起始行、沒有

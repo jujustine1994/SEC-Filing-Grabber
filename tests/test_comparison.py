@@ -4,7 +4,46 @@ from unittest.mock import patch
 import pytest
 
 from fetcher_gaap import StatementTable
-from comparison import build_comparison, ComparisonResult, CompanyFetchError
+from comparison import build_comparison, parse_period_bound, ComparisonResult, CompanyFetchError
+
+
+# ── F7：期間邊界解析（2026-09-03）───────────────────────────────────────────
+
+def test_parse_period_bound_year_only():
+    assert parse_period_bound("2024", is_end=False) == "2024-01-01"
+    assert parse_period_bound("2024", is_end=True) == "2024-12-31"
+
+
+def test_parse_period_bound_year_month():
+    assert parse_period_bound("2024-06", is_end=False) == "2024-06-01"
+    assert parse_period_bound("2024-06", is_end=True) == "2024-06-30"
+    # 二月要吃到當年是否閏年，不能寫死 28/29
+    assert parse_period_bound("2024-02", is_end=True) == "2024-02-29"
+    assert parse_period_bound("2023-02", is_end=True) == "2023-02-28"
+
+
+def test_parse_period_bound_full_date_passthrough():
+    assert parse_period_bound("2024-06-15", is_end=False) == "2024-06-15"
+    assert parse_period_bound("2024-06-15", is_end=True) == "2024-06-15"
+
+
+def test_parse_period_bound_empty_and_none():
+    assert parse_period_bound("", is_end=False) is None
+    assert parse_period_bound(None, is_end=True) is None
+
+
+def test_parse_period_bound_legacy_int_still_works():
+    """舊 config 存的是純年份 int，F7 不能破壞既有設定。"""
+    assert parse_period_bound(2024, is_end=False) == "2024-01-01"
+
+
+def test_parse_period_bound_rejects_garbage():
+    with pytest.raises(ValueError):
+        parse_period_bound("banana", is_end=False)
+    with pytest.raises(ValueError):
+        parse_period_bound("2024-13", is_end=True)  # 月份不合法
+    with pytest.raises(ValueError):
+        parse_period_bound("2024-02-30", is_end=True)  # 日期不合法（二月沒有 30 號）
 
 
 def _fake_q_table(ticker, revenue, gross_profit, period_ends):
@@ -137,6 +176,54 @@ def test_build_comparison_filters_by_year_range():
         )
 
     assert list(result.metrics["Revenue"]["NVDA"].keys()) == ["2023Q1"]
+
+
+def test_build_comparison_filters_by_month_granularity():
+    """F7：期間輸入可以細到月，篩的是期末日落在該月內，不是整年。"""
+    def fake_fetch(ticker, identity, **kwargs):
+        labels = ["FY2024Q1", "FY2024Q2", "FY2024Q3"]
+        return [StatementTable(
+            sheet_name="Data_Financials(Q)", quarter_labels=labels,
+            filing_dates=[""] * 3, concepts=["Revenue"], values=[[10.0, 20.0, 30.0]],
+            ticker=ticker, labels=[""],
+            period_ends=["2024-03-31", "2024-06-30", "2024-09-30"],
+        )]
+
+    with patch("comparison.fetch_gaap_statements", side_effect=fake_fetch):
+        result = build_comparison(
+            ["NVDA"], "test@example.com", ["Revenue"],
+            frequency="quarterly", start_year="2024-04", end_year="2024-08",
+        )
+
+    assert list(result.metrics["Revenue"]["NVDA"].keys()) == ["2024Q2"]
+
+
+def test_build_comparison_filters_by_day_granularity():
+    """F7：期間輸入可以細到日，邊界那天要精確含入／排除。"""
+    def fake_fetch(ticker, identity, **kwargs):
+        labels = ["FY2024Q1", "FY2024Q2", "FY2024Q3"]
+        return [StatementTable(
+            sheet_name="Data_Financials(Q)", quarter_labels=labels,
+            filing_dates=[""] * 3, concepts=["Revenue"], values=[[10.0, 20.0, 30.0]],
+            ticker=ticker, labels=[""],
+            period_ends=["2024-03-31", "2024-06-30", "2024-09-30"],
+        )]
+
+    with patch("comparison.fetch_gaap_statements", side_effect=fake_fetch):
+        result = build_comparison(
+            ["NVDA"], "test@example.com", ["Revenue"],
+            frequency="quarterly", start_year="2024-03-31", end_year="2024-06-30",
+        )
+
+    assert list(result.metrics["Revenue"]["NVDA"].keys()) == ["2024Q1", "2024Q2"]
+
+
+def test_build_comparison_rejects_unparseable_period():
+    with pytest.raises(ValueError):
+        build_comparison(
+            ["NVDA"], "test@example.com", ["Revenue"],
+            frequency="quarterly", start_year="not-a-date", end_year=None,
+        )
 
 
 def test_build_comparison_calls_on_company_start_for_every_ticker_in_order():

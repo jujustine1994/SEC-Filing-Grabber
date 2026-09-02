@@ -9,7 +9,9 @@
 
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Callable, Literal
 
 from fetcher_gaap import StatementTable, fetch_gaap_statements, report_progress
@@ -78,25 +80,56 @@ def _fiscal_label_map(aligned: list[str], table: StatementTable) -> dict[str, st
     }
 
 
-def _filter_by_year(table: StatementTable, start_year: int | None, end_year: int | None) -> StatementTable:
-    """依 period_ends 的年份篩選欄位。沒有 period_ends 資料的欄一律保留
-    （不因為篩不了就整欄丟掉，寧可多顯示也不要漏資料）。"""
-    if start_year is None and end_year is None:
+def parse_period_bound(value: str | int | None, *, is_end: bool) -> str | None:
+    """把使用者輸入的期間邊界轉成用來比對 `period_ends` 的 ISO 日期字串
+    （`period_ends` 本身就是 `YYYY-MM-DD`，字典序比較即等於日期先後）。
+
+    接受 `YYYY`／`YYYY-MM`／`YYYY-MM-DD`（也接受 `int`，向後相容舊 config
+    存的純年份）。起始邊界取當期第一天、結束邊界取當期最後一天，好讓
+    `2024` 涵蓋整年、`2024-06` 涵蓋整月——跟這格「快照時間點」YYYYMMDD
+    輸入是同一個 tkinter 沒有原生日期選擇器的取捨，純文字＋容錯解析。
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+
+    parts = text.split("-")
+    try:
+        if len(parts) == 1:
+            year = int(parts[0])
+            return f"{year:04d}-12-31" if is_end else f"{year:04d}-01-01"
+        if len(parts) == 2:
+            year, month = int(parts[0]), int(parts[1])
+            if is_end:
+                last_day = calendar.monthrange(year, month)[1]
+                return f"{year:04d}-{month:02d}-{last_day:02d}"
+            return f"{year:04d}-{month:02d}-01"
+        if len(parts) == 3:
+            year, month, day = int(parts[0]), int(parts[1]), int(parts[2])
+            date(year, month, day)  # 只借來驗證日期合法，值本身仍用字串格式化
+            return f"{year:04d}-{month:02d}-{day:02d}"
+    except ValueError:
+        pass
+    raise ValueError(f"Cannot parse period {text!r}; expected YYYY, YYYY-MM, or YYYY-MM-DD")
+
+
+def _filter_by_period_end(table: StatementTable, start: str | None, end: str | None) -> StatementTable:
+    """依 period_ends（期末日）篩選欄位，比對的是 `parse_period_bound()` 算出來的
+    ISO 日期字串邊界。沒有 period_ends 資料的欄一律保留（不因為篩不了就整欄
+    丟掉，寧可多顯示也不要漏資料）。"""
+    if start is None and end is None:
         return table
 
     keep = []
-    for i, end in enumerate(table.period_ends or []):
-        if not end:
+    for i, period_end in enumerate(table.period_ends or []):
+        if not period_end:
             keep.append(i)
             continue
-        try:
-            year = int(end[:4])
-        except (TypeError, ValueError):
-            keep.append(i)
+        if start is not None and period_end < start:
             continue
-        if start_year is not None and year < start_year:
-            continue
-        if end_year is not None and year > end_year:
+        if end is not None and period_end > end:
             continue
         keep.append(i)
 
@@ -118,14 +151,18 @@ def build_comparison(
     metric_names: list[str],
     *,
     frequency: Literal["quarterly", "annual"],
-    start_year: int | None,
-    end_year: int | None,
+    start_year: str | int | None,
+    end_year: str | int | None,
     max_filings: int = 80,
     max_annual_filings: int = 20,
     on_company_start: Callable[[str, int, int], None] | None = None,
     progress_cb: Callable[[int, int, str], None] | None = None,
 ) -> ComparisonResult:
     """對每個 ticker 抓資料、抽出選定指標，重組成跨公司比較用的資料結構。
+
+    `start_year`／`end_year`（參數名沿用舊稱，實際接受 `YYYY`／`YYYY-MM`／
+    `YYYY-MM-DD` 三種寫法，見 `parse_period_bound()`；F7，2026-09-03）篩的是
+    **期末日**落在區間內，不是純年份比較。
 
     `on_company_start(ticker, current, total)` 在每家公司開始抓之前呼叫一次
     （就算後面失敗了也會呼叫過），讓呼叫端知道現在正在試哪一家，不會整段
@@ -136,6 +173,8 @@ def build_comparison(
     """
     result = ComparisonResult(metrics={name: {} for name in metric_names})
     sheet_name = _sheet_name_for(frequency)
+    start_bound = parse_period_bound(start_year, is_end=False)
+    end_bound = parse_period_bound(end_year, is_end=True)
 
     valid_tickers = [t.strip().upper() for t in tickers if t.strip()]
     total = len(valid_tickers)
@@ -168,7 +207,7 @@ def build_comparison(
             result.failures.append(CompanyFetchError(ticker=ticker, error_type="NoDataForFrequency"))
             continue
 
-        raw_table = _filter_by_year(raw_table, start_year, end_year)
+        raw_table = _filter_by_period_end(raw_table, start_bound, end_bound)
         ratio_table = build_ratio_table(raw_table)
 
         aligned = _aligned_labels(raw_table, frequency)

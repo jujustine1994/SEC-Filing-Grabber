@@ -10,6 +10,34 @@
 ## 功能清單
 
 ### 已完成
+- [x] **跨公司比較的期間篩選改支援月／日（F7，2026-09-03）**：
+      - **現況**：原本「起始／結束」兩格只吃 4 位數年份，`comparison._filter_by_year()`
+        也只比對年份，篩不到月或日
+      - **改法**：兩格改成接受 `YYYY`／`YYYY-MM`／`YYYY-MM-DD` 三種寫法（純文字，
+        tkinter 沒有原生日期選擇器，跟 Snapshot 那格「打 YYYYMMDD」同一個取捨）。
+        新增 `comparison.parse_period_bound()` 把三種寫法轉成 ISO 日期字串邊界
+        （起始取當期第一天、結束取當期最後一天，好讓 `2024` 涵蓋整年、`2024-06`
+        涵蓋整月），`_filter_by_year()` 改名 `_filter_by_period_end()`，直接用
+        `period_ends`（`YYYY-MM-DD`）做字典序比較即可（字典序＝日期序）
+      - `build_comparison()` 的 `start_year`／`end_year` 參數名沿用舊稱，但型別放寬成
+        `str | int | None`——舊 config 存的純年份 int 一樣是合法輸入，不會破壞既有設定
+      - GUI（`main.py`）：`_run_comparison()` 先驗證格式與起訖順序再開背景執行緒
+        （壞了直接跳訊息框，不用等打完 SEC 才發現打錯），不再把輸入 `int()` 轉型；
+        Entry 欄寬從 6 加大到 12（要塞得下 `YYYY-MM-DD`）；新增
+        `gui.msg.invalid_period_format`／`gui.msg.period_range_reversed` 兩個 i18n key
+        （四個 locale 都補齊），`gui.compare.start_year`／`end_year` 標籤文字改成
+        「起始（YYYY/YYYY-MM/YYYY-MM-DD）」／「結束」
+      - **抓取窗沒有跟著動**：`build_comparison()` 本來就沒有把 `start_year`／
+        `end_year` 傳給 `fetch_gaap_statements()`（只在拿到完整表之後才用
+        `period_ends` 篩），所以設計書提到的「抓取窗要放寬」不適用——沒有窄窗
+        可放寬
+      - 測試：`tests/test_comparison.py` 新增 11 條（`parse_period_bound()` 的
+        年／月／日／空值／舊 int／不合法輸入，以及 `build_comparison()` 的月級與
+        日級篩選邊界）
+      - **驗收（真的打了 SEC）**：AAPL 季度資料，`2023-09` ~ `2023-12` 抓到
+        2023Q3（期末 2023-09-30）與 2023Q4（期末 2023-12-30）；把結束邊界收緊到
+        `2023-12-29`（day-level，卡在 2023Q4 期末日前一天）2023Q4 就被排除、
+        2023Q3 仍保留——月級與日級的進出邊界都用真實資料核對過
 - [x] **跨公司比較視窗的顯示修正 ＋ log 顯示耗時、全面改英文（2026-09-02）**：
       **① 已選公司的 chip 只顯示 ticker**（CTH 截圖回報）
       - 原本是 `NVDA NVIDIA CORP`，三家就把兩行塞爆。公司全名在選的當下已經
