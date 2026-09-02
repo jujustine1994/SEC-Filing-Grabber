@@ -221,6 +221,37 @@ def match_company_cache(text: str, cache: dict[str, str], limit: int = 8) -> lis
     return matches[:limit]
 
 
+def format_elapsed(seconds: float) -> str:
+    """耗時秒數 → `48s` / `1m 54s` / `2h 02m 05s`。
+
+    **畫面與 `logs/app.log` 共用這一個格式**（2026-09-02）：log 檔一律英文
+    （見 `_write_log()` 的說明），而秒/分/時的符號在中文介面上一樣讀得懂，
+    所以不為了介面語言再做第二套格式——多一套就是多一個會漂掉的地方。
+
+    不足一分鐘不寫成 `0m 48s`；系統時間被調過導致負值時回 `0s`，不吐
+    `-1m -3s` 這種東西出來。
+    """
+    total = int(seconds)
+    if total <= 0:
+        return "0s"
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {secs:02d}s"
+    if minutes:
+        return f"{minutes}m {secs:02d}s"
+    return f"{secs}s"
+
+
+def company_chip_entries(selected: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """已選公司 → `pack_wrapped_chips()` 吃的 `[(顯示文字, 移除用的 key)]`。
+
+    **只顯示 ticker**（2026-09-02 CTH 決定）：原本是 `NVDA NVIDIA CORP`，
+    三家就把兩行塞爆，而公司全名在選的當下已經在建議清單裡看過了。
+    """
+    return [(ticker, ticker) for ticker, _name in selected]
+
+
 def pack_wrapped_chips(
     container: tk.Widget,
     entries: list[tuple[str, str]],
@@ -248,19 +279,31 @@ def pack_wrapped_chips(
     rows = [ttk.Frame(container)]
     rows[0].pack(fill="x", anchor="w")
     used_width = 0
-    for text, key in entries:
-        chip = ttk.Frame(container, relief="raised", borderwidth=1)
+
+    def _build(parent, text, key):
+        chip = ttk.Frame(parent, relief="raised", borderwidth=1)
         ttk.Label(chip, text=text).pack(side="left", padx=(4, 0))
         ttk.Button(chip, text="✕", width=2,
                    command=lambda k=key: remove_cmd(k)).pack(side="left")
         chip.update_idletasks()
-        chip_width = chip.winfo_reqwidth() + 4  # +4 約略估 padx
+        return chip, chip.winfo_reqwidth() + 4      # +4 約略估 padx
+
+    for text, key in entries:
+        # chip 的**父元件必須就是排版它的那一行**。2026-09-02 之前是建成
+        # `container` 的子元件、再用 `in_=rows[-1]` 借行 frame 排版：父子關係
+        # 與排版容器不一致，第二行以後的 chip 位置會歪掉（CTH 截圖回報第三個
+        # chip 跑到視窗右邊）。寬度要建出來才量得到，所以先建在目前這一行，
+        # 量完發現放不下就砍掉、開新行重建——chip 數量是個位數到二十幾，
+        # 重建一次的成本可以忽略。
+        chip, chip_width = _build(rows[-1], text, key)
         if used_width + chip_width > max_width and used_width > 0:
+            chip.destroy()
             new_row = ttk.Frame(container)
             new_row.pack(fill="x", anchor="w")
             rows.append(new_row)
             used_width = 0
-        chip.pack(in_=rows[-1], side="left", padx=2, pady=2)
+            chip, chip_width = _build(rows[-1], text, key)
+        chip.pack(side="left", padx=2, pady=2)
         used_width += chip_width
     return len(rows)
 
@@ -305,7 +348,15 @@ def make_scrollable_frame(parent: tk.Widget) -> tuple[tk.Canvas, ttk.Frame]:
 
 
 def _write_log(msg: str, level: str = "INFO"):
-    """寫一行到 logs/app.log。每次開檔→寫→關檔，不持有 handle（地雷十）。"""
+    """寫一行到 logs/app.log。每次開檔→寫→關檔，不持有 handle（地雷十）。
+
+    **訊息一律英文**（2026-09-02 CTH 決定，取代原本的「固定繁中」）。三個理由：
+    ① 這個檔同時被 `launcher.ps1`（PowerShell）與這裡寫，而 Windows 主控台是
+    cp950，中文＋特殊符號在這條路徑上炸過（見 `docs/PITFALLS.md`）——全英文
+    整類避開；② 不跟著介面語言漂，切日文介面時 log 格式不變、`grep` 得到同一組
+    關鍵字；③ 這份 log 的讀者是維護者與 AI，不是使用者。
+    **畫面上的訊息仍然走 `t()` 跟著介面語言**，兩者分工不同，不要混。
+    """
     try:
         os.makedirs(LOG_DIR, exist_ok=True)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -1639,13 +1690,27 @@ class SECFetcherApp:
         suggest_listbox = tk.Listbox(content, height=4)
         cache = self._load_company_cache()
 
+        def _hide_suggestions():
+            """沒有東西可建議就整個收起來。2026-09-02 CTH 截圖回報：這個
+            Listbox 是常駐的，沒輸入時就是一個大白框卡在已選公司下面。"""
+            suggest_listbox.delete(0, "end")
+            suggest_listbox.pack_forget()
+
         def _on_ticker_type(*_):
             text = ticker_var.get().strip()
             suggest_listbox.delete(0, "end")
             if not text or "," in text:
+                suggest_listbox.pack_forget()
                 return
-            for tk_, name in match_company_cache(text, cache):
+            matches = match_company_cache(text, cache)
+            if not matches:
+                suggest_listbox.pack_forget()
+                return
+            for tk_, name in matches:
                 suggest_listbox.insert("end", f"{tk_}  {name}")
+            # 高度跟著比中筆數走（上限 5 列），不要固定佔 4 列高
+            suggest_listbox.config(height=min(len(matches), 5))
+            suggest_listbox.pack(fill="x", padx=10)
 
         ticker_var.trace_add("write", _on_ticker_type)
 
@@ -1653,8 +1718,9 @@ class SECFetcherApp:
         chips_frame.pack(fill="x", padx=10, pady=(4, 0))
 
         def _refresh_company_chips():
-            entries = [(f"{tk_} {name}", tk_) for tk_, name in self.compare_selected_tickers]
-            pack_wrapped_chips(chips_frame, entries, _remove_company)
+            pack_wrapped_chips(chips_frame,
+                               company_chip_entries(self.compare_selected_tickers),
+                               _remove_company)
 
         def _add_company(ticker: str):
             ticker = ticker.strip().upper()
@@ -1683,7 +1749,7 @@ class SECFetcherApp:
             else:
                 _add_company(text)
             ticker_var.set("")
-            suggest_listbox.delete(0, "end")
+            _hide_suggestions()
 
         ticker_entry.bind("<Return>", _on_ticker_submit)
 
@@ -1694,10 +1760,10 @@ class SECFetcherApp:
             picked = suggest_listbox.get(selection[0]).split()[0]
             _add_company(picked)
             ticker_var.set("")
-            suggest_listbox.delete(0, "end")
+            _hide_suggestions()
 
         suggest_listbox.bind("<<ListboxSelect>>", _on_suggest_pick)
-        suggest_listbox.pack(fill="x", padx=10)
+        # 一開始不 pack——沒輸入就沒有建議，等 _on_ticker_type() 有比中才展開
 
         _refresh_company_chips()
 
@@ -1830,8 +1896,21 @@ class SECFetcherApp:
         end_year = int(self.compare_end_year.get()) if self.compare_end_year.get().strip() else None
         frequency = self.compare_frequency.get()
 
+        # 2026-09-02：這條線原本**完全沒有落檔 log**——沒有任務起始行、沒有
+        # 結果行、當然也沒有耗時，出事只能靠使用者口述。專案規則要求每個任務
+        # 記起訖各一行，設定塞在起始那行（出錯時要知道當時是什麼設定）。
+        task_start = time.time()
+        period = f"{start_year or '?'}-{end_year or '?'}"
+        _write_log_header(f"Compare {len(tickers)} companies {','.join(tickers)} | "
+                          f"{frequency} | {period} | {len(metrics)} metrics")
         self._log(t("gui.compare.log_start", n=len(tickers)))
         self._set_progress(0, len(tickers), t("gui.compare.log_start", n=len(tickers)))
+
+        def _fail_log(reason: str):
+            """比較失敗的結果行：畫面與 log 檔各一份（畫面跟語言、檔案固定英文）。"""
+            elapsed = format_elapsed(time.time() - task_start)
+            self._log(t("gui.compare.log_failed_elapsed", elapsed=elapsed), "FAIL")
+            _write_log(f"Compare FAILED ({reason}), elapsed {elapsed}", "FAIL")
 
         def _on_company_start(ticker, current, total):
             self._log(t("gui.compare.log_fetching_ticker", ticker=ticker, current=current, total=total))
@@ -1852,6 +1931,7 @@ class SECFetcherApp:
                 progress_cb=_on_filing_progress,
             )
         except Exception as e:
+            _fail_log(f"{type(e).__name__}{_exc_status(e)}")
             self.msg_queue.put(("compare_error", f"{type(e).__name__}{_exc_status(e)}"))
             return
 
@@ -1860,6 +1940,7 @@ class SECFetcherApp:
                          ticker=failure.ticker, error_type=failure.error_type), "WARN")
 
         if not any(result.metrics.get(m) for m in metrics):
+            _fail_log("nothing fetched")
             self.msg_queue.put(("compare_error", t("gui.compare.nothing_fetched")))
             return
 
@@ -1874,6 +1955,7 @@ class SECFetcherApp:
                 result, metrics, out_path, snapshot_date=self.compare_snapshot_date.get().strip()
             )
         except Exception as e:
+            _fail_log(f"write: {type(e).__name__}{_exc_status(e)}")
             self.msg_queue.put(("compare_error", f"{type(e).__name__}{_exc_status(e)}"))
             return
 
@@ -1883,6 +1965,9 @@ class SECFetcherApp:
         # （main.py 2647 附近）／批次抓取（2758 附近）一致的「全部做完」更新，
         # 不然「Excel 已產出」訊息會在進度條視覺上還沒跑完時就先跳出來。
         self._set_progress(len(tickers), len(tickers), t("gui.status.done"))
+        _elapsed = format_elapsed(time.time() - task_start)
+        self._log(t("gui.compare.log_done_elapsed", elapsed=_elapsed), "OK")
+        _write_log(f"Compare OK, elapsed {_elapsed} -> {out_path.name}", "OK")
         self.msg_queue.put(("compare_done", str(out_path)))
 
     # =========================================================
@@ -2457,13 +2542,13 @@ class SECFetcherApp:
         環境重現不了）。原本這段完全沒寫 log，出事只能用猜的。現在起訖都記一
         行，耗時異常長的話 `logs/app.log` 就看得出來，不用再靠使用者口述秒數。
         """
-        _write_log_header(f"查可用期間 {ticker}")
+        _write_log_header(f"Scan periods {ticker}")
         t_start = time.time()
         try:
             from fetcher_gaap import preview_sheets
             result = preview_sheets(ticker, identity)
             elapsed = time.time() - t_start
-            _write_log(f"{ticker} 查可用期間完成，耗時 {elapsed:.1f} 秒", "OK")
+            _write_log(f"{ticker} scan OK, elapsed {format_elapsed(elapsed)}", "OK")
             self.msg_queue.put(("preview_scan_done", result))
         except Exception as e:
             elapsed = time.time() - t_start
@@ -2471,7 +2556,8 @@ class SECFetcherApp:
             # 挾帶 "Tip: Search by name with find_company(...)" 這種給開發者看的 API
             # 建議，使用者看了只會更困惑。只留類型名，UI 端自己組使用者看得懂的話。
             # log 檔不受這個限制，寫完整例外內容方便事後查根因。
-            _write_log(f"{ticker} 查可用期間失敗，耗時 {elapsed:.1f} 秒 -> {type(e).__name__}: {e}", "ERROR")
+            _write_log(f"{ticker} scan FAILED, elapsed {format_elapsed(elapsed)} "
+                       f"-> {type(e).__name__}: {e}", "ERROR")
             self.msg_queue.put(("preview_scan_error", (ticker, type(e).__name__)))
 
     _FIXED_SHEETS = frozenset({"Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"})
@@ -2561,7 +2647,8 @@ class SECFetcherApp:
             kinds = [k for k, on in (("10-Q", fetch_q), ("10-K", fetch_k)) if on]
             scope = f"{start_year or ''}-{end_year or ''}" if (start_year or end_year) else f"max{max_filings}筆"
             task_start = time.time()
-            _write_log_header(f"抓取 {ticker} | {'+'.join(srcs) or '無'} | {'/'.join(kinds) or '無'} | {scope}")
+            _write_log_header(f"Fetch {ticker} | {'+'.join(srcs) or 'none'} | "
+                              f"{'/'.join(kinds) or 'none'} | {scope}")
 
             tables = []
             output_path = self._build_output_path(ticker)
@@ -2573,7 +2660,7 @@ class SECFetcherApp:
             lock_msg = check_output_writable(output_path)
             if lock_msg:
                 self._log(f"[{ticker}] ✗ {lock_msg}")
-                _write_log(f"{ticker} 輸出檔無法寫入，未開始抓取", "ERROR")
+                _write_log(f"{ticker} output file not writable, fetch not started", "ERROR")
                 return
 
             total_steps = sum([fetch_gaap, fetch_nongaap]) + 1  # +1 for write
@@ -2652,8 +2739,11 @@ class SECFetcherApp:
             self._log(t("gui.log.done_file", ticker=ticker, name=output_path.name))
             self._set_progress(total_steps, total_steps, t("gui.status.done"))
             # ---- 任務結果行：成功 + 耗時 ----
-            _elapsed = int(time.time() - task_start)
-            _write_log(f"{ticker} 成功，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "OK")
+            _elapsed = format_elapsed(time.time() - task_start)
+            # 畫面與 log 檔同一個呼叫：規則「不要維護兩套呼叫，否則一定會有
+            # 地方漏記」。畫面走 t() 跟著語言，log 檔那份由 _write_log 收下。
+            self._log(t("gui.log.done_elapsed", ticker=ticker, elapsed=_elapsed), "OK")
+            _write_log(f"{ticker} OK, elapsed {_elapsed}", "OK")
             self.msg_queue.put(("last_output_folder", output_path.parent))
             self._done(True)
 
@@ -2662,8 +2752,9 @@ class SECFetcherApp:
             self._log(t("gui.log.fetch_failed", ticker=ticker,
                                 exc=f"{type(e).__name__}{_exc_status(e)}"), "ERROR", to_file=True)
             try:
-                _elapsed = int(time.time() - task_start)
-                _write_log(f"{ticker} 失敗，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "FAIL")
+                _elapsed = format_elapsed(time.time() - task_start)
+                self._log(t("gui.log.failed_elapsed", ticker=ticker, elapsed=_elapsed), "FAIL")
+                _write_log(f"{ticker} FAILED, elapsed {_elapsed}", "FAIL")
             except NameError:
                 pass  # 例外發生在 task_start 賦值前（identity 檢查等）
             self._done(False)
@@ -2691,7 +2782,8 @@ class SECFetcherApp:
             self._log("\n" + t("gui.log.starting", ticker=ticker))
             # ---- 任務起始行：只記 ticker + 設定 ----
             task_start = time.time()
-            _write_log_header(f"批量抓取 {ticker} ({i}/{total}) | {srcs} | {'/'.join(kinds) or '無'} | {scope}")
+            _write_log_header(f"Batch fetch {ticker} ({i}/{total}) | {srcs} | "
+                              f"{'/'.join(kinds) or 'none'} | {scope}")
             try:
                 # 批次一樣會卡在單一 ticker 抓很久（TODO E12），同一顆 callback
                 # 沿用單一公司那邊的做法：抓這個 ticker 期間暫時把進度條換成
@@ -2737,7 +2829,7 @@ class SECFetcherApp:
                     # 批次不中斷整批，只跳過這一家（跟輸出檔被鎖同樣處理）
                     self._log(f"[{ticker}] {t('gui.log.nothing_to_write')}",
                               "ERROR", to_file=True)
-                    _write_log(f"{ticker} 一期都沒抓到，未寫出檔案", "FAIL")
+                    _write_log(f"{ticker} nothing fetched, no file written", "FAIL")
                     continue
 
                 _append_ratio_table(tables)
@@ -2746,20 +2838,22 @@ class SECFetcherApp:
                 if lock_msg:
                     # 批次模式不中斷整批，只跳過這一家
                     self._log(f"[{ticker}] ✗ {lock_msg}")
-                    _write_log(f"{ticker} 輸出檔無法寫入，已跳過", "ERROR")
+                    _write_log(f"{ticker} output file not writable, skipped", "ERROR")
                     continue
                 tpl = self.cfg.get("template_path", "") or None
                 write_statements(tables, output_path, template_path=tpl)
                 self._log(t("gui.log.done_count", ticker=ticker, n=len(tables)))
                 # ---- 任務結果行：成功 + 耗時 ----
-                _elapsed = int(time.time() - task_start)
-                _write_log(f"{ticker} 成功，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "OK")
+                _elapsed = format_elapsed(time.time() - task_start)
+                self._log(t("gui.log.done_elapsed", ticker=ticker, elapsed=_elapsed), "OK")
+                _write_log(f"{ticker} OK, elapsed {_elapsed}", "OK")
             except Exception as e:
                 # ---- 錯誤行：只記 type + status，禁止 {e} 全文 ----
                 self._log(t("gui.log.fetch_failed", ticker=ticker,
                                 exc=f"{type(e).__name__}{_exc_status(e)}"), "ERROR", to_file=True)
-                _elapsed = int(time.time() - task_start)
-                _write_log(f"{ticker} 失敗，耗時 {_elapsed // 60}分{_elapsed % 60}秒", "FAIL")
+                _elapsed = format_elapsed(time.time() - task_start)
+                self._log(t("gui.log.failed_elapsed", ticker=ticker, elapsed=_elapsed), "FAIL")
+                _write_log(f"{ticker} FAILED, elapsed {_elapsed}", "FAIL")
 
         self._set_progress(total, total, t("gui.status.batch_done", total=total))
         self.msg_queue.put(("last_output_folder", self._build_output_path(tickers[-1]).parent))

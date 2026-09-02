@@ -458,6 +458,8 @@ STRINGS: dict[str, str] = {
     "gui.compare.log_company_failed": '[{ticker}] 抓取失敗，跳過 -> {error_type}',
     "gui.compare.nothing_fetched": '所有公司都抓取失敗，沒有可輸出的資料',
     "gui.compare.log_done": '比較 Excel 已產出：{path}',
+    "gui.compare.log_done_elapsed": '比較完成，耗時 {elapsed}',
+    "gui.compare.log_failed_elapsed": '比較失敗，耗時 {elapsed}',
 
     # gui.wl.*
     "gui.wl.cache_absent": '公司名稱快取：尚未建立——用來把 Ticker 自動轉成公司全名（Watchlist、抓取時都會用到）。沒建立也能用，新增公司時會即時查詢單筆，只是慢幾秒；建議先點「更新名稱庫」一次抓齊',
@@ -476,6 +478,8 @@ STRINGS: dict[str, str] = {
     "gui.lbl.preview": '預覽：{name}',
     "gui.log.done_count": '[{ticker}] 完成（{n} 份財報）',
     "gui.log.done_file": '[{ticker}] 完成 → {name}',
+    "gui.log.done_elapsed": '[{ticker}] 完成，耗時 {elapsed}',
+    "gui.log.failed_elapsed": '[{ticker}] 失敗，耗時 {elapsed}',
     "gui.log.fetch_failed": '[{ticker}] 抓取失敗 -> {exc}',
     "gui.log.fetching_gaap": '[{ticker}] 抓取 GAAP 財報中...',
     "gui.log.fetching_nongaap": '[{ticker}] 抓取 Non-GAAP 財報中...',

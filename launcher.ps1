@@ -14,6 +14,9 @@ $LogFile = Join-Path $ScriptDir "logs\app.log"
 New-Item -ItemType Directory -Force (Split-Path $LogFile) | Out-Null
 $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
 
+# log 檔的訊息一律英文（2026-09-02 CTH 決定）：這個檔 PowerShell 與 Python
+# 兩邊都在寫，主控台是 cp950，中文＋符號在這條路徑上炸過；而且 log 的讀者是
+# 維護者與 AI。**畫面上給使用者看的中文完全不動**，只有寫進 app.log 的字改。
 function Write-Log {
     param([string]$Msg, [string]$Level = "INFO")
     $line = "[{0}] [{1,-5}] {2}`r`n" -f (Get-Date -Format "HH:mm:ss"), $Level, $Msg
@@ -34,11 +37,11 @@ function Write-Step {
     Write-Host "[$(Get-Date -Format 'HH:mm:ss')] $Msg" -ForegroundColor $Color
 }
 
-Write-LogHeader "啟動"
+Write-LogHeader "App start"
 
 # 攔截所有未預期例外，防止視窗直接閃退
 trap {
-    Write-Log "[CRASH] $($_.Exception.Message) @ 第 $($_.InvocationInfo.ScriptLineNumber) 行" "FATAL"
+    Write-Log "[CRASH] $($_.Exception.Message) @ line $($_.InvocationInfo.ScriptLineNumber)" "FATAL"
     Write-Host ""
     Write-Host "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" -ForegroundColor Red
     Write-Host "[CRASH] 意外錯誤，程式無法繼續執行" -ForegroundColor Red
@@ -69,7 +72,7 @@ Write-Host ""
 # ======================================
 Write-Host "[1/2] 檢查 uv 套件管理工具..." -ForegroundColor Cyan
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-    Write-Log "找不到 uv，準備安裝" "WARN"
+    Write-Log "uv not found, installing" "WARN"
     Write-Step "找不到 uv，開始下載安裝程式（astral.sh）..." "Yellow"
     # 較舊的 Win10 上 PowerShell 5.1 可能仍預設 TLS 1.0/1.1，astral.sh 只收 1.2 以上，
     # 不先指定會在下載那行直接連線失敗
@@ -77,11 +80,11 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
     try {
         Invoke-RestMethod https://astral.sh/uv/install.ps1 | Invoke-Expression
     } catch {
-        Write-Log "uv 下載失敗 -> $($_.Exception.GetType().Name)" "ERROR"
+        Write-Log "uv download failed -> $($_.Exception.GetType().Name)" "ERROR"
     }
     $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "User") + ";" + $env:PATH
     if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
-        Write-Log "uv 安裝失敗" "ERROR"
+        Write-Log "uv install failed" "ERROR"
         Write-Host "[ERROR] uv 安裝失敗，多半是連不上網路。請確認網路連線後關閉視窗，" -ForegroundColor Red
         Write-Host "        重新點兩下啟動檔再試一次。" -ForegroundColor Red
         Read-Host "按 Enter 關閉"; exit 1
@@ -130,7 +133,7 @@ if (-not (Test-Path "venv")) {
         # 寫了版號，本機有 3.13 就用本機的，沒有才下載 uv 自管版本。
         uv venv venv --python 3.13
         if ($LASTEXITCODE -ne 0) {
-            Write-Log "建立虛擬環境失敗（uv venv 回傳 $LASTEXITCODE）" "ERROR"
+            Write-Log "venv creation failed (uv venv exit $LASTEXITCODE)" "ERROR"
             Write-Host "[ERROR] 建立虛擬環境失敗，多半是下載 Python 時連不上網路。" -ForegroundColor Red
             Write-Host "        請確認網路連線後關閉視窗，重新點兩下啟動檔再試一次。" -ForegroundColor Red
             Read-Host "按 Enter 關閉"; exit 1
@@ -142,7 +145,7 @@ if (-not (Test-Path "venv")) {
         #    畫面，不可靜音。
         uv pip install -r requirements.txt --python venv\Scripts\python.exe
         if ($LASTEXITCODE -ne 0) {
-            Write-Log "套件安裝失敗（uv pip install 回傳 $LASTEXITCODE）" "ERROR"
+            Write-Log "package install failed (uv pip install exit $LASTEXITCODE)" "ERROR"
             Write-Host "[ERROR] 套件安裝失敗，請確認網路連線後重新執行。" -ForegroundColor Red
             Read-Host "按 Enter 關閉"; exit 1
         }
@@ -169,7 +172,7 @@ if (-not (Test-Path "venv")) {
 
 # $pyVer 改成問 venv 自己（原本問的是系統 Python，現在已經不一定存在）
 $pyVer = (& ".\venv\Scripts\python.exe" --version 2>&1 | Out-String).Trim()
-Write-Log "環境就緒 | $pyVer | $uvVer"
+Write-Log "Environment ready | $pyVer | $uvVer"
 
 Write-Host ""
 Write-Host "[START] 啟動中，請保持此視窗開啟..." -ForegroundColor Green
@@ -189,7 +192,7 @@ foreach ($pc in @("__pycache__", "src\__pycache__", "src\locales\__pycache__")) 
 }
 
 if ($exitCode -ne 0) {
-    Write-Log "主程式異常結束（exit code $exitCode）" "ERROR"
+    Write-Log "app exited abnormally (exit code $exitCode)" "ERROR"
     Write-Host ""
     Write-Host "[ERROR] 程式意外停止，請回報上方錯誤訊息。" -ForegroundColor Red
     Read-Host "按 Enter 關閉"

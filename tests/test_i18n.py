@@ -76,9 +76,10 @@ ALLOWLIST = {
     # 語言選單顯示名（「繁體中文」「日本語」）本來就該用各語言自稱，
     # 而且它們住在 i18n.py 自己身上，沒有更上層可以查。
     "i18n.py",
-    # logs/app.log 的內容依設計永遠繁中：log 是給維護者除錯用的，
-    # 跟著使用者語言變等於自廢。main.py 只剩 _write_log* 的字面與
-    # UNCATEGORIZED（存進 config.json 的群組名稱，是資料不是介面文字）。
+    # 2026-09-02 起 logs/app.log 的內容一律英文（見 docs/ARCHITECTURE.md
+    # 「logs/app.log 的語言與格式」），所以 _write_log* 那些字面已經不是中文。
+    # main.py 仍在名單上的原因只剩 UNCATEGORIZED（存進 config.json 的群組
+    # 名稱，是資料不是介面文字）與少數維護者導向的主控台訊息。
     "main.py",
     # 給 skill 與維護者的開發者介面，不是產品 UI。輸出 Excel 的語言由
     # --lang 控制（見 cli.py 的 --lang 說明）。

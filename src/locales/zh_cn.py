@@ -350,6 +350,8 @@ STRINGS: dict[str, str] = {
     'gui.lbl.preview': '预览：{name}',
     'gui.log.done_count': '[{ticker}] 完成（{n} 份财报）',
     'gui.log.done_file': '[{ticker}] 完成 → {name}',
+    'gui.log.done_elapsed': '[{ticker}] 完成，耗时 {elapsed}',
+    'gui.log.failed_elapsed': '[{ticker}] 失败，耗时 {elapsed}',
     'gui.log.fetch_failed': '[{ticker}] 抓取失败 -> {exc}',
     'gui.log.fetching_gaap': '[{ticker}] 抓取 GAAP 财报中...',
     'gui.log.fetching_nongaap': '[{ticker}] 抓取 Non-GAAP 财报中...',
@@ -481,4 +483,6 @@ STRINGS: dict[str, str] = {
     'gui.compare.log_company_failed': '[{ticker}] 抓取失败，跳过 -> {error_type}',
     'gui.compare.nothing_fetched': '所有公司都抓取失败，没有可输出的数据',
     'gui.compare.log_done': '比较 Excel 已产出：{path}',
+    'gui.compare.log_done_elapsed': '比较完成，耗时 {elapsed}',
+    'gui.compare.log_failed_elapsed': '比较失败，耗时 {elapsed}',
 }

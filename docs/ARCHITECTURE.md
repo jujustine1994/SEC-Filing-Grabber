@@ -638,6 +638,25 @@ Index 那份最重要——GUI 的 log 關掉就沒了，而使用者真正會�
 是實測貼齊值——停在這裡 Notebook 維持 393px、log 保有約 10 行；拉到 360 就
 頂到 410px、log 掉一行。**改任何一頁的版面後要重量**。
 
+## `logs/app.log` 的語言與格式（2026-09-02 改）
+
+**訊息一律英文。** `launcher.ps1`（PowerShell）與 `main.py` 兩邊寫同一個檔，
+靠來源標籤區分；一個任務兩行（起始 `===` 行帶設定、結束行帶結果與耗時）。
+
+```
+=== 2026-09-02 22:42:13 Fetch NVDA | GAAP | 10-Q/10-K | max80 ===
+[22:42:13] [OK   ] NVDA OK, elapsed 1m 54s
+=== 2026-09-02 22:42:14 Compare 3 companies NVDA,MSFT,INTC | quarterly | 2020-2025 | 4 metrics ===
+[22:50:26] [FAIL ] Compare FAILED (ReadTimeout), elapsed 8m 12s
+```
+
+為什麼英文：① 主控台是 cp950，中文＋符號在 PowerShell/Python 混寫這條路徑上
+炸過；② 不跟著介面語言漂，`grep` 永遠是同一組關鍵字；③ 讀者是維護者與 AI。
+**畫面上的訊息仍然走 `t()` 跟著介面語言**——兩者分工不同，共用的只有
+`format_elapsed()` 產生的 `1m 54s` 這種與語言無關的字串。
+
+⚠ 這與全域規則「log 檔固定用母語言」牴觸，是**本專案的例外**；全域規則檔沒有動。
+
 ## 測試分層
 
 | 指令 | 時間 | 測試數 | 用途 |

@@ -360,6 +360,8 @@ STRINGS: dict[str, str] = {
     # ── GUI：進捗ログ ───────────────────────────────────────────────────
     "gui.log.done_count": '[{ticker}] 完了（{n} 件）',
     "gui.log.done_file": '[{ticker}] 完了 → {name}',
+    "gui.log.done_elapsed": '[{ticker}] 完了、所要時間 {elapsed}',
+    "gui.log.failed_elapsed": '[{ticker}] 失敗、所要時間 {elapsed}',
     "gui.log.fetch_failed": '[{ticker}] 取得失敗 -> {exc}',
     "gui.log.fetching_gaap": '[{ticker}] GAAP 財務諸表を取得中...',
     "gui.log.fetching_nongaap": '[{ticker}] Non-GAAP を取得中...',
@@ -530,4 +532,6 @@ STRINGS: dict[str, str] = {
     "gui.compare.log_company_failed": '[{ticker}] 取得失敗、スキップ -> {error_type}',
     "gui.compare.nothing_fetched": '全社の取得に失敗しました。出力するデータがありません',
     "gui.compare.log_done": '比較 Excel を生成しました：{path}',
+    "gui.compare.log_done_elapsed": '比較完了、所要時間 {elapsed}',
+    "gui.compare.log_failed_elapsed": '比較失敗、所要時間 {elapsed}',
 }

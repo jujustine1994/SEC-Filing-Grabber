@@ -350,6 +350,8 @@ STRINGS: dict[str, str] = {
     'gui.lbl.year_to': 'to',
     'gui.log.done_count': '[{ticker}] done ({n} filings)',
     'gui.log.done_file': '[{ticker}] done → {name}',
+    'gui.log.done_elapsed': '[{ticker}] done, elapsed {elapsed}',
+    'gui.log.failed_elapsed': '[{ticker}] failed, elapsed {elapsed}',
     'gui.log.fetch_failed': '[{ticker}] fetch failed -> {exc}',
     'gui.log.fetching_gaap': '[{ticker}] fetching GAAP financials...',
     'gui.log.fetching_nongaap': '[{ticker}] fetching Non-GAAP financials...',
@@ -514,4 +516,6 @@ STRINGS: dict[str, str] = {
     'gui.compare.log_company_failed': '[{ticker}] fetch failed, skipped -> {error_type}',
     'gui.compare.nothing_fetched': 'All companies failed to fetch, nothing to output',
     'gui.compare.log_done': 'Comparison Excel produced: {path}',
+    'gui.compare.log_done_elapsed': 'Comparison done, elapsed {elapsed}',
+    'gui.compare.log_failed_elapsed': 'Comparison failed, elapsed {elapsed}',
 }
