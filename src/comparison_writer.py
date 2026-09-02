@@ -17,7 +17,7 @@ from typing import Callable
 
 from openpyxl import Workbook
 from openpyxl.chart import LineChart, Reference
-from openpyxl.chart.data_source import AxDataSource, StrRef
+from openpyxl.chart.axis import DateAxis
 from openpyxl.chart.layout import Layout
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -332,6 +332,28 @@ def _fill_quarter_gaps(result: ComparisonResult, periods: list[str]) -> list[str
     return sorted(set(periods) | extra)
 
 
+# F6（2026-09-03，CTH 選方案 B）：圖表 X 軸的真日期序列值，只給
+# write_chart_sheets() 用，不動 Compare_Data 既有的期末結算日文字列（Snapshot
+# 的 SUMPRODUCT/MATCH 靠那一列是文字才對得起來，見 write_snapshot_sheets()）。
+_QUARTER_MID_MONTH_DAY = {1: (2, 15), 2: (5, 15), 3: (8, 15), 4: (11, 15)}
+
+
+def _approx_period_date(period: str) -> datetime.date | None:
+    """G6 補出來的空白欄（沒有任何公司抓到那一期）沒有真正的期末日可用。
+    日期軸的類別留空會被 Excel 塌成 1899-12-30，把整條時間軸拉爆——give it a
+    粗略的季／年中點代表日就好，反正這種欄位本來就沒有任何一家公司的資料，
+    折線在這裡是斷點（`display_blanks="gap"`），近似值只影響 X 軸上的位置，
+    不影響任何看得到的數字。算不出日曆季／年格式（退回財季標籤的殘骸欄）
+    就回 None，交給呼叫端整格留空。"""
+    if _ANNUAL_LABEL.match(period):
+        return datetime.date(int(period), 6, 30)
+    if _CALENDAR_QUARTER.match(period):
+        year = int(period[:4])
+        month, day = _QUARTER_MID_MONTH_DAY[int(period[-1])]
+        return datetime.date(year, month, day)
+    return None
+
+
 def _fill_period_gaps(result: ComparisonResult, periods: list[str]) -> list[str]:
     """期間欄位清單 → 補上缺口欄之後的清單。"""
     if len(periods) < 2:
@@ -460,23 +482,41 @@ def write_compare_data_sheet(
         for col, period in enumerate(periods, start=2):
             ws.cell(row=header_row, column=col, value=period)
 
-        # 期末結算日列（靜態文字，供 Snapshot 用）。fetcher_gaap 給的原始格式是
-        # "YYYY-MM-DD"，這裡去掉分隔符轉成 "YYYYMMDD"——跟 Snapshot 黃底輸入格
-        # 要求使用者打的格式一致，MATCH 才對得起來，不用在公式裡另外做轉換。
-        end_date_row = header_row + 1
-        ws.cell(row=end_date_row, column=1, value=t("compare.xls.period_end"))
         # 期間鍵是日曆季（跨公司對齊，見 comparison._aligned_labels()），同一欄
         # 各公司的實際期末日不會一樣——NVDA 那一季結束在 7/27，AMD 是 6/28。
         # 這一格只放得下一個日期，取**最晚**的：Snapshot 拿它做「不晚於 B1」
         # 的判斷，取早的那個會讓 B1 設在 7/1 就顯示 NVDA 還沒結算完的數字。
-        for col, period in enumerate(periods, start=2):
-            end_date = max(
+        end_dates = [
+            max(
                 (result.period_ends.get(company, {}).get(period, "")
                  for company in all_companies),
                 default="",
             )
+            for period in periods
+        ]
+
+        # F6（2026-09-03，方案 B）：另外加一列真日期序列值，只給圖表當 X 軸類別
+        # 用，不動下面那列文字——Snapshot 的 SUMPRODUCT/MATCH 靠那列是文字才
+        # 對得起來（見 write_snapshot_sheets()），兩件事分開比同時改風險低。
+        # 隱藏起來，不佔使用者眼球，但仍在檔案裡（不是不存在）。
+        chart_date_row = header_row + 1
+        ws.cell(row=chart_date_row, column=1, value=t("compare.xls.period_end_chart_date"))
+        ws.row_dimensions[chart_date_row].hidden = True
+        for col, (period, end_date) in enumerate(zip(periods, end_dates), start=2):
+            date_value = (_parse_iso(end_date) if end_date
+                          else _approx_period_date(period))
+            if date_value is not None:
+                cell = ws.cell(row=chart_date_row, column=col, value=date_value)
+                cell.number_format = "yyyy-mm-dd"
+
+        # 期末結算日列（靜態文字，供 Snapshot 用）。fetcher_gaap 給的原始格式是
+        # "YYYY-MM-DD"，這裡去掉分隔符轉成 "YYYYMMDD"——跟 Snapshot 黃底輸入格
+        # 要求使用者打的格式一致，MATCH 才對得起來，不用在公式裡另外做轉換。
+        end_date_row = chart_date_row + 1
+        ws.cell(row=end_date_row, column=1, value=t("compare.xls.period_end"))
+        for col, end_date in enumerate(end_dates, start=2):
             # 沒有任何公司抓到那一期（G6 補出來的空白欄）就整格留空——不編一個
-            # 不存在的結算日出來，那會讓 Snapshot 與圖表把假日期當成真的期間
+            # 不存在的結算日出來，那會讓 Snapshot 把假日期當成真的期間
             ws.cell(row=end_date_row, column=col,
                     value=end_date.replace("-", "") or None)
 
@@ -653,10 +693,19 @@ def write_chart_sheets(
         if metric_name not in block_ranges:
             continue
         data_start, data_end = block_ranges[metric_name]
-        end_date_row = data_start - 1  # 期末結算日列，緊接在資料列上方（絕對日期，真實時間可排序）
+        # chart_date_row 緊接在 end_date_row（Snapshot 用的文字列）上方一列，
+        # 排版順序見 write_compare_data_sheet()：header → chart_date_row →
+        # end_date_row → data_start。
+        chart_date_row = data_start - 2
         last_col = data_ws.max_column
 
         chart = LineChart()
+        # F6（2026-09-03，方案 B）：X 軸從文字類別軸換成真正的日期軸——原本
+        # `<c:catAx>` 的類別標籤是等距排列的文字（"20200126"），COSTCO 16 週
+        # 第四季跟一般 13 週季在軸上畫出來一樣寬，時間軸是失真的。DateAxis
+        # 繼承自 TextAxis（同一組 delete/axPos/tickLblPos/crosses/tickLblSkip
+        # 屬性都通用），這裡直接整個換掉、下面沿用原本的設定方式。
+        chart.x_axis = DateAxis()
         chart.title = metric_name
         chart.style = 2
         chart.x_axis.title = t("gui.compare.period")
@@ -682,6 +731,13 @@ def write_chart_sheets(
         chart.y_axis.tickLblPos = "nextTo"
         chart.x_axis.crosses = "autoZero"
         chart.y_axis.crosses = "autoZero"
+        # baseTimeUnit 明講「以天為底」——不寫的話 Excel 對缺值/不規則間距的
+        # 資料容易自己判斷成月或年為底，跟同一套「openpyxl 不寫、Excel 就當
+        # 不確定狀態」的坑同一類，這裡照 TODO F6 設計書明講掉。majorUnit 留
+        # 給 Excel 自動決定（跨公司比較的時間跨度差很多，寫死一個值對短區間
+        # 太密、對長區間又太疏）。
+        chart.x_axis.baseTimeUnit = "days"
+        chart.x_axis.numFmt = "yyyy-mm-dd"
         # 不同公司財年結束月不同，財季標籤（FY2024Q3）字串排序無法反映真實時間，
         # 缺值期間 Excel 預設會直接連到下一個有值的點造成誤導折線，兩者一起處理：
         # X 軸類別改用期末結算日（絕對日期）取代財季標籤，缺值處顯示為斷點不連線
@@ -718,19 +774,14 @@ def write_chart_sheets(
         )
         chart.add_data(data_ref, titles_from_data=True, from_rows=True)
 
+        # 指到 chart_date_row（真日期數值），不是 end_date_row（Snapshot 用的
+        # 文字列）。openpyxl 的 set_categories() 一律寫成 <cat><numRef>，這次
+        # 指向的儲存格本來就是數值型別，不需要再手動換成 strRef 那套 workaround
+        # （2026-08-22 那次是因為指到文字儲存格才需要換，這裡已經不是那個情況）。
         categories_ref = Reference(
-            data_ws, min_col=2, max_col=last_col, min_row=end_date_row, max_row=end_date_row
+            data_ws, min_col=2, max_col=last_col, min_row=chart_date_row, max_row=chart_date_row
         )
         chart.set_categories(categories_ref)
-        # openpyxl 的 set_categories() 不管儲存格實際內容是什麼，永遠寫成
-        # <cat><numRef>（數值參照）。期末結算日是文字（"20240331"，寫檔時
-        # 刻意存成文字給 Snapshot 的 MATCH／SUMPRODUCT 用），Excel 拿到指向
-        # 文字儲存格的數值參照解析不出來，類別軸整個讀不到值、連帶把圖例／
-        # 座標軸擠壓變形（CTH 截圖回報「中間斷線＋圖例被吃」的真正原因）。
-        # 手動把每個 series 的 cat 換成 strRef，內容不變，只是型別對上。
-        str_categories_ref = StrRef(f=str(categories_ref))
-        for series in chart.series:
-            series.cat = AxDataSource(strRef=str_categories_ref)
 
         # 接上 D0-1 Q4 合成後跨公司比較的時間跨度可以拉到 60-70 欄，全部日期
         # 標籤硬擠在 X 軸上會疊字看不清楚（這是修復帶出的新問題，原本 F3 5

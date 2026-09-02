@@ -465,6 +465,7 @@ STRINGS: dict[str, str] = {
     'gui.compare.cat_per_share': 'Per Share',
     'compare.xls.company': 'Company',
     'compare.xls.period_end': 'Period End',
+    'compare.xls.period_end_chart_date': 'Period End (date value, chart use only, hidden)',
     'compare.xls.fiscal_map_title': 'Calendar quarter to fiscal quarter (each company as it reports; blocks below always use calendar quarters)',
 
     # compare.xls.notes.* — 說明 sheet（G7，2026-08-25）。新增一條要同時改 comparison_writer.NOTE_ITEMS。
@@ -480,7 +481,7 @@ STRINGS: dict[str, str] = {
     'compare.xls.notes.not_period_end': 'Why not period-end dates',
     'compare.xls.notes.not_period_end_body': 'A 13-week quarter can end in the next calendar quarter. By period-end date, the NVDA quarter ending late July would sit beside the AMD September quarter instead of the June one.',
     'compare.xls.notes.period_end_row': 'The Period End row',
-    'compare.xls.notes.period_end_row_body': 'Companies in one column have different actual period-end dates; this row shows the latest of them. Snapshot uses it to decide what was visible at a given date.',
+    'compare.xls.notes.period_end_row_body': 'Companies in one column have different actual period-end dates; this row shows the latest of them. Snapshot uses it to decide what was visible at a given date, and the chart X-axis also plots this approximation, not each company\'s own exact period end.',
     'compare.xls.notes.synth_q4': 'Q4 is derived',
     'compare.xls.notes.synth_q4_body': 'There is no Q4 10-Q. Flow items are derived as annual minus Q1, Q2 and Q3; balance-sheet items are taken straight from the annual report.',
     'compare.xls.notes.blanks': 'What a blank means',

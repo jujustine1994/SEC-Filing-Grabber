@@ -10,6 +10,47 @@
 ## 功能清單
 
 ### 已完成
+- [x] **跨公司比較圖表的 X 軸改成真正的日期軸（F6，2026-09-03，CTH 選方案 B）**：
+      - **現況**：X 軸原本是文字類別軸（`<c:catAx>` + `strRef`），標籤是 `20200126`
+        這種 8 碼字串、等距排列——COSTCO 16 週的第四季在軸上跟一般 13 週季畫得一樣寬，
+        時間軸失真。根因鏈：期末結算日那一列刻意存成文字給 Snapshot 的
+        `SUMPRODUCT`／`MATCH` 用，2026-08-22 那次修復把圖表類別來源手動換成
+        `StrRef` 讓圖表能畫，代價是軸型別從此固定是文字類別軸
+      - **CTH 在 A（改期末日列本身）／B（另外加一列真日期只給圖表用）／C（不動）
+        三個選項裡選了 B**——不動已經修過一輪的 Snapshot 公式，風險比 A 低
+      - **改法**：`write_compare_data_sheet()` 在期末結算日文字列正上方多加一列
+        `chart_date_row`（真正的 Excel 日期值，`number_format="yyyy-mm-dd"`，
+        `ws.row_dimensions[...].hidden = True` 隱藏起來不佔眼球）。Snapshot 用的
+        文字列一格都沒動。`write_chart_sheets()` 的 `chart.x_axis` 從預設的
+        `TextAxis` 換成 `openpyxl.chart.axis.DateAxis`（繼承自 `TextAxis`，
+        `delete`／`axPos`／`tickLblPos`／`crosses`／`tickLblSkip` 等既有設定全部沿用），
+        明講 `baseTimeUnit="days"`（同一套「openpyxl 不寫、Excel 就當不確定狀態」的
+        坑），`majorUnit` 留給 Excel 自動判斷（不同比較的時間跨度差很多，寫死一個
+        值對短區間太密、對長區間太疏）。類別來源改指到 `chart_date_row`，型別本來
+        就是數值，不再需要 2026-08-22 那次的 `StrRef` workaround
+      - **G6 補出來的空白欄要特別處理**：那種欄位本來所有公司都沒資料、期末日
+        是空字串，日期軸的類別留空會被 Excel 塌成 1899-12-30，把整條時間軸拉爆。
+        新增 `_approx_period_date()`：算不出真正期末日時，用日曆季／年的**中點**
+        （Q1→02-15、Q2→05-15、Q3→08-15、Q4→11-15；年→06-30）當代表日——反正這種
+        欄位折線本來就是斷點（`display_blanks="gap"`），近似值只影響 X 軸上的位置，
+        不影響任何看得到的數字
+      - **語意限制寫進 Compare_Notes**：跨公司比較的欄是對齊過的日曆季，同一欄各家
+        實際期末日不同（NVDA 7/27、AMD 6/28），這一格放的是所有公司裡最晚的那一個
+        ——`compare.xls.notes.period_end_row_body` 補一句「圖表 X 軸的日期定位也是
+        用這個近似值，不是每家公司各自的精確期末日」，四個 locale 都補齊
+      - 新增 i18n key `compare.xls.period_end_chart_date`（隱藏列 A 欄標籤）
+      - 測試：`tests/test_comparison_writer.py` 新增／改寫約 10 條（DateAxis 型別、
+        `baseTimeUnit`、隱藏列、numRef 指到正確的列、G6 缺口欄拿到近似代表日、
+        原本假設「header 在 data_start-2」的既有測試因為多插一列全部改成
+        `data_start-3`／`data_start-4`）
+      - **驗收**：unzip 產出的 `.xlsx` 直接讀 `xl/charts/chart1.xml`，確認
+        `<dateAx>`（不是 `<catAx>`）、`baseTimeUnit="days"`、
+        `<cat><numRef><f>'Compare_Data'!$B$8:$C$8</f></numRef></cat>` 指向隱藏的
+        真日期列。**Excel COM 這次沒能實測**——這個沙箱環境跑 `Workbooks.Open()`
+        直接報錯（無法取得 Open 屬性），研判是無頭環境沒有 Excel 互動階段，不是
+        程式問題；建議 CTH 有空自己在 Excel 裡打開一份跨公司比較檔案，右鍵 X 軸
+        看「座標軸格式」是不是顯示「日期座標軸」，肉眼確認 COSTCO 那種 16 週季
+        真的比一般季寬
 - [x] **跨公司比較的期間篩選改支援月／日（F7，2026-09-03）**：
       - **現況**：原本「起始／結束」兩格只吃 4 位數年份，`comparison._filter_by_year()`
         也只比對年份，篩不到月或日

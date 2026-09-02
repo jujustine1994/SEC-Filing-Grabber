@@ -41,8 +41,8 @@ def test_compare_data_sheet_has_metric_header_and_period_columns():
     ws = wb["Compare_Data"]
     data_start, _ = ranges["Revenue"]
 
-    assert ws.cell(row=data_start - 3, column=1).value == "Revenue"
-    header_row = [c.value for c in ws[data_start - 2]]
+    assert ws.cell(row=data_start - 4, column=1).value == "Revenue"
+    header_row = [c.value for c in ws[data_start - 3]]
     assert "FY2024Q1" in header_row
     assert "FY2024Q2" in header_row
 
@@ -61,6 +61,26 @@ def test_compare_data_sheet_has_static_period_end_row():
     for cell in ws[end_date_row]:
         if cell.value:
             assert not str(cell.value).startswith("=")
+
+
+# ── F6：圖表用的真日期序列值列（2026-09-03，方案 B）────────────────────────
+
+def test_compare_data_sheet_has_a_hidden_real_date_row_above_the_text_row():
+    """F6：期末結算日文字列（Snapshot 用）不動，另外在它正上方加一列真正的
+    日期值只給圖表用，而且要隱藏起來不佔使用者眼球。"""
+    wb = Workbook()
+    result = _sample_result()
+    ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    ws = wb["Compare_Data"]
+    data_start = ranges["Revenue"][0]
+    end_date_row = data_start - 1
+    chart_date_row = data_start - 2
+
+    assert ws.cell(row=chart_date_row, column=2).value == date(2024, 3, 31)
+    assert ws.cell(row=chart_date_row, column=3).value == date(2024, 6, 30)
+    assert ws.row_dimensions[chart_date_row].hidden is True
+    # 文字列本身完全不變
+    assert ws.cell(row=end_date_row, column=2).value == "20240331"
 
 
 def test_compare_data_sheet_lists_company_rows_with_values():
@@ -202,11 +222,10 @@ def test_chart_sheet_created_per_metric_with_line_chart():
     assert len(ws._charts) == 1
 
 
-def test_chart_sheet_uses_period_end_date_row_as_categories():
-    """X 軸類別要用 Compare_Data 的期末結算日列（絕對日期，如 20240331），
-    不是財季標籤列（如 FY2024Q1）——不同公司財年結束月不同，財季標籤字串
-    排序無法反映真實時間順序，會讓 Excel 折線圖亂連線。期末結算日列緊接在
-    資料列上方（data_start - 1），財季標籤列則在再上一列（data_start - 2）。"""
+def test_chart_sheet_uses_the_hidden_chart_date_row_as_categories():
+    """F6（2026-09-03，方案 B）：X 軸類別改用 chart_date_row（真日期序列值，
+    data_start - 2），不是 Snapshot 在用的文字期末結算日列（data_start - 1），
+    也不是財季標籤列（data_start - 3）。"""
     wb = Workbook()
     result = _sample_result()
     block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
@@ -215,27 +234,30 @@ def test_chart_sheet_uses_period_end_date_row_as_categories():
     data_start, _ = block_ranges["Revenue"]
     ws = wb["Chart_Revenue"]
     chart = ws._charts[0]
-    cat_ref = chart.series[0].cat.numRef.f if chart.series[0].cat.numRef else chart.series[0].cat.strRef.f
-    assert f"${data_start - 1}:" in cat_ref or f"${data_start - 1}$" in cat_ref
-    assert f"${data_start - 2}" not in cat_ref
+    cat_ref = chart.series[0].cat.numRef.f
+    assert f"${data_start - 2}:" in cat_ref or f"${data_start - 2}$" in cat_ref
+    assert f"${data_start - 1}" not in cat_ref
+    assert f"${data_start - 3}" not in cat_ref
 
 
-def test_chart_sheet_categories_use_str_ref_not_num_ref():
-    """2026-08-22 CTH 截圖回報「中間斷線＋圖例被吃」：根因是 openpyxl 的
-    `chart.set_categories()` 不管儲存格實際內容永遠寫成 numRef（數值參照），
-    但期末結算日是文字（"20240331"），Excel 拿數值參照指向文字儲存格解析
-    不出來，類別軸整個讀不到值，連帶把圖例/座標軸擠壓變形。每個 series 的
-    `cat` 必須是 strRef，不能是 numRef。"""
+def test_chart_sheet_categories_use_num_ref_with_real_dates():
+    """F6：X 軸換成真日期軸後，類別來源指向的是真正的日期數值（chart_date_row），
+    不再需要 2026-08-22 那次的 strRef workaround（那次是因為指到文字儲存格
+    才需要換型別，這裡本來就是數值儲存格）。"""
     wb = Workbook()
     result = _sample_result()
     block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
     write_chart_sheets(wb, ["Revenue"], block_ranges)
 
+    data_start, _ = block_ranges["Revenue"]
+    data_ws = wb["Compare_Data"]
+    assert data_ws.cell(row=data_start - 2, column=2).value == date(2024, 3, 31)
+
     chart = wb["Chart_Revenue"]._charts[0]
     for series in chart.series:
-        assert series.cat.numRef is None, "類別軸不可以是 numRef——期末結算日是文字"
-        assert series.cat.strRef is not None
-        assert series.cat.strRef.f  # 有指到範圍
+        assert series.cat.strRef is None, "F6 之後類別軸應該是 numRef（真日期），不是 strRef"
+        assert series.cat.numRef is not None
+        assert series.cat.numRef.f
 
 
 def test_chart_sheet_axis_positions_and_tick_labels_are_explicit():
@@ -254,6 +276,23 @@ def test_chart_sheet_axis_positions_and_tick_labels_are_explicit():
     assert chart.y_axis.axPos == "l"
     assert chart.x_axis.tickLblPos == "nextTo"
     assert chart.y_axis.tickLblPos == "nextTo"
+
+
+def test_chart_sheet_x_axis_is_a_real_date_axis():
+    """F6（2026-09-03）：X 軸從文字類別軸（<c:catAx>）換成真正的日期軸
+    （<c:dateAx>），COSTCO 16 週第四季在軸上才會比一般 13 週季寬，不再是
+    等距排列的失真時間軸。baseTimeUnit 要明講「以天為底」，理由跟其他軸
+    屬性一樣：openpyxl 不寫、Excel 就當不確定狀態，容易自己判斷錯誤。"""
+    from openpyxl.chart.axis import DateAxis
+
+    wb = Workbook()
+    result = _sample_result()
+    block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    write_chart_sheets(wb, ["Revenue"], block_ranges)
+
+    chart = wb["Chart_Revenue"]._charts[0]
+    assert isinstance(chart.x_axis, DateAxis)
+    assert chart.x_axis.baseTimeUnit == "days"
 
 
 def test_chart_sheet_axes_explicitly_not_deleted():
@@ -552,7 +591,7 @@ def test_calendar_to_fiscal_map_sits_above_the_first_metric_block():
     data_start, _ = ranges["Revenue"]
 
     # 指標區塊的標題列（Revenue）在對應表下方，不是第 1 列
-    title_row = data_start - 3
+    title_row = data_start - 4
     assert ws.cell(row=title_row, column=1).value == "Revenue"
     assert title_row > 4
 
@@ -564,7 +603,7 @@ def test_metric_blocks_still_show_calendar_quarters_only():
     ws = wb["Compare_Data"]
     data_start, _ = ranges["Revenue"]
 
-    block_header = [c.value for c in ws[data_start - 2]]
+    block_header = [c.value for c in ws[data_start - 3]]
     assert block_header[1:] == ["2025Q2", "2025Q3"]
 
 
@@ -628,7 +667,7 @@ def test_snapshot_formulas_still_point_at_the_right_rows_after_the_map_is_insert
         assert isinstance(data_ws.cell(row=data_row, column=2).value, (int, float))
 
 
-def test_chart_categories_still_point_at_the_period_end_row_after_the_map():
+def test_chart_categories_still_point_at_the_chart_date_row_after_the_map():
     wb = Workbook()
     result = _fiscal_result()
     block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
@@ -636,9 +675,12 @@ def test_chart_categories_still_point_at_the_period_end_row_after_the_map():
 
     data_start, _ = block_ranges["Revenue"]
     data_ws = wb["Compare_Data"]
+    # Snapshot 用的文字列（data_start - 1）不受對應表插入影響，內容不變
     assert data_ws.cell(row=data_start - 1, column=2).value == "20250727"
+    # 圖表改指到它正上方的真日期列（data_start - 2）
+    assert data_ws.cell(row=data_start - 2, column=2).value == date(2025, 7, 27)
     chart = wb["Chart_Revenue"]._charts[0]
-    assert f"${data_start - 1}" in chart.series[0].cat.strRef.f
+    assert f"${data_start - 2}" in chart.series[0].cat.numRef.f
 
 
 # ── G7 說明 sheet（2026-08-25）────────────────────────────────────────────
@@ -817,11 +859,14 @@ def test_a_quarter_nobody_fetched_still_gets_a_column():
     ws = wb["Compare_Data"]
     data_start, _ = ranges["Revenue"]
 
-    header = [c.value for c in ws[data_start - 2]]
+    header = [c.value for c in ws[data_start - 3]]
     assert header[1:] == ["2025Q1", "2025Q2", "2025Q3"]
     # 缺的那一欄整欄空白：資料格與期末結算日都沒有，欄位本身留著
     assert ws.cell(row=data_start, column=3).value is None
     assert ws.cell(row=data_start - 1, column=3).value is None
+    # F6：但圖表用的日期列不能整格空白——真日期軸拿到空白類別會塌到
+    # 1899-12-30，把整條時間軸拉爆。缺口欄給個季中點的近似代表日。
+    assert ws.cell(row=data_start - 2, column=3).value == date(2025, 5, 15)
 
 
 def test_a_sixteen_week_fourth_quarter_is_not_mistaken_for_a_missing_quarter():
@@ -837,7 +882,7 @@ def test_a_sixteen_week_fourth_quarter_is_not_mistaken_for_a_missing_quarter():
     ranges = write_compare_data_sheet(wb, result, ["Revenue"])
     ws = wb["Compare_Data"]
 
-    header = [c.value for c in ws[ranges["Revenue"][0] - 2]]
+    header = [c.value for c in ws[ranges["Revenue"][0] - 3]]
     assert header[1:] == ["2024Q1", "2024Q2", "2024Q3", "2024Q4"]
 
 
@@ -854,7 +899,7 @@ def test_only_one_company_missing_a_quarter_does_not_add_a_column():
     ranges = write_compare_data_sheet(wb, result, ["Revenue"])
     ws = wb["Compare_Data"]
 
-    header = [c.value for c in ws[ranges["Revenue"][0] - 2]]
+    header = [c.value for c in ws[ranges["Revenue"][0] - 3]]
     assert header[1:] == ["2025Q1", "2025Q2", "2025Q3"]
 
 
@@ -869,7 +914,7 @@ def test_a_single_gap_never_generates_more_than_four_columns():
     ranges = write_compare_data_sheet(wb, result, ["Revenue"])
     ws = wb["Compare_Data"]
 
-    header = [c.value for c in ws[ranges["Revenue"][0] - 2]]
+    header = [c.value for c in ws[ranges["Revenue"][0] - 3]]
     assert header[1:] == ["2016Q1", "2025Q3"]
 
 
@@ -883,7 +928,7 @@ def test_gap_columns_never_extend_past_the_earliest_or_latest_period():
     ranges = write_compare_data_sheet(wb, result, ["Revenue"])
     ws = wb["Compare_Data"]
 
-    header = [c.value for c in ws[ranges["Revenue"][0] - 2] if c.value]
+    header = [c.value for c in ws[ranges["Revenue"][0] - 3] if c.value]
     assert header[1] == "2025Q1" and header[-1] == "2025Q3"
 
 
@@ -897,7 +942,7 @@ def test_annual_output_fills_a_missing_year():
     ranges = write_compare_data_sheet(wb, result, ["Revenue"])
     ws = wb["Compare_Data"]
 
-    header = [c.value for c in ws[ranges["Revenue"][0] - 2]]
+    header = [c.value for c in ws[ranges["Revenue"][0] - 3]]
     assert header[1:] == ["2022", "2023", "2024"]
 
 

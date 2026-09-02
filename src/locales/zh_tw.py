@@ -405,6 +405,7 @@ STRINGS: dict[str, str] = {
     "gui.compare.cat_per_share": '每股',
     "compare.xls.company": '公司',
     "compare.xls.period_end": '期末結算日',
+    "compare.xls.period_end_chart_date": '期末結算日（日期序列值，供圖表用，已隱藏）',
     "compare.xls.fiscal_map_title": '日曆季 ↔ 財季對應（各公司自己的財季，僅供對照，下面的區塊一律用日曆季）',
 
     # compare.xls.notes.* — 說明 sheet（G7，2026-08-25）。新增一條要同時改 comparison_writer.NOTE_ITEMS。
@@ -420,7 +421,7 @@ STRINGS: dict[str, str] = {
     'compare.xls.notes.not_period_end': '為什麼不用期末日',
     'compare.xls.notes.not_period_end_body': '13 週季的期末日會漂到下一季。用期末日的話 NVDA 7 月底那季會跟 AMD 9 月那季擺同一欄，而不是跟 6 月那季。',
     'compare.xls.notes.period_end_row': '期末結算日這一列',
-    'compare.xls.notes.period_end_row_body': '同一欄各公司的實際期末日不同，這裡取最晚的那一個。Snapshot 用它判斷「這個時間點看得到什麼」。',
+    'compare.xls.notes.period_end_row_body': '同一欄各公司的實際期末日不同，這裡取最晚的那一個。Snapshot 用它判斷「這個時間點看得到什麼」，圖表 X 軸的日期定位也是用這個近似值，不是每家公司各自的精確期末日。',
     'compare.xls.notes.synth_q4': 'Q4 是推算的',
     'compare.xls.notes.synth_q4_body': '10-Q 沒有 Q4，用「年報 − Q1 − Q2 − Q3」反推；資產負債表類直接取年報值。',
     'compare.xls.notes.blanks': '空白代表什麼',

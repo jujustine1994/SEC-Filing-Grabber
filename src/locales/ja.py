@@ -481,6 +481,7 @@ STRINGS: dict[str, str] = {
     "gui.compare.cat_per_share": '1株あたり',
     "compare.xls.company": '会社',
     "compare.xls.period_end": '決算期末日',
+    "compare.xls.period_end_chart_date": '決算期末日（日付値、グラフ専用、非表示）',
     "compare.xls.fiscal_map_title": '暦四半期 ↔ 会計四半期の対応（各社の会計四半期は参照用。以下のブロックは暦四半期）',
 
     # compare.xls.notes.* — 說明 sheet（G7，2026-08-25）。新增一條要同時改 comparison_writer.NOTE_ITEMS。
@@ -496,7 +497,7 @@ STRINGS: dict[str, str] = {
     'compare.xls.notes.not_period_end': '期末日を使わない理由',
     'compare.xls.notes.not_period_end_body': '13 週四半期の期末日は次の四半期にずれ込みます。期末日で並べると NVDA の 7 月末終了四半期が AMD の 9 月四半期と同じ列に入ってしまいます。',
     'compare.xls.notes.period_end_row': '決算期末日の行',
-    'compare.xls.notes.period_end_row_body': '同じ列でも各社の実際の期末日は異なるため、ここでは最も遅い日付を採用しています。Snapshot はこれで「その時点で見えていた数字」を判定します。',
+    'compare.xls.notes.period_end_row_body': '同じ列でも各社の実際の期末日は異なるため、ここでは最も遅い日付を採用しています。Snapshot はこれで「その時点で見えていた数字」を判定し、グラフのX軸の日付位置もこの近似値を使っています（各社それぞれの正確な期末日ではありません）。',
     'compare.xls.notes.synth_q4': 'Q4 は推計値',
     'compare.xls.notes.synth_q4_body': '10-Q に Q4 はありません。フロー項目は「年次 − Q1 − Q2 − Q3」で逆算し、貸借対照表項目は年次報告書の値をそのまま使います。',
     'compare.xls.notes.blanks': '空白の意味',
