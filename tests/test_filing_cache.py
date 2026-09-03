@@ -314,3 +314,51 @@ def test_load_rejects_an_entry_whose_version_is_null_when_the_environment_has_no
     monkeypatch.setattr(filing_cache, "edgartools_version", lambda: None)
     # 讀側要拒絕（不能讓 None != None 的誤認成過）
     assert filing_cache.load_filing("NVDA", ACC, 1045810) is None
+
+
+# ── manifest（衍生索引，壞了直接重建）────────────────────────────────────
+
+ACC2 = "0001045810-24-000456"
+
+
+def test_manifest_is_rebuilt_from_whatever_is_actually_on_disk(cache_dir):
+    _save_sample()
+    filing_cache.save_filing("NVDA", ACC2, form="10-K", filing_date="2025-02-26",
+                             cik=1045810, dataframes=None, has_financials=False)
+    manifest = filing_cache.rebuild_manifest("NVDA", cik=1045810)
+    accs = {f["accession_no"] for f in manifest["filings"]}
+    assert accs == {ACC, ACC2}
+    assert manifest["cik"] == 1045810
+    assert manifest["schema_version"] == filing_cache.SCHEMA_VERSION
+    assert manifest["last_checked_at"]
+
+
+def test_manifest_rows_carry_the_fields_the_gui_needs(cache_dir):
+    _save_sample()
+    row = filing_cache.rebuild_manifest("NVDA", cik=1045810)["filings"][0]
+    assert set(row) >= {"accession_no", "form", "filing_date", "cached_at",
+                        "edgartools_version", "has_financials", "size_bytes"}
+    assert row["size_bytes"] > 0
+
+
+def test_a_corrupt_manifest_is_simply_replaced(cache_dir):
+    """manifest 壞掉不需要特別的「修正」邏輯，跟「本來就不存在」同一條路徑。"""
+    _save_sample()
+    (filing_cache.ticker_dir("NVDA") / "_manifest.json").write_text(
+        "{ garbage", encoding="utf-8")
+    assert filing_cache.read_manifest("NVDA") is None
+    manifest = filing_cache.rebuild_manifest("NVDA", cik=1045810)
+    assert len(manifest["filings"]) == 1
+    assert filing_cache.read_manifest("NVDA") is not None
+
+
+def test_a_manifest_out_of_sync_with_disk_is_corrected_by_rebuild(cache_dir):
+    """manifest 說有兩份、磁碟只有一份 → 以磁碟為準。"""
+    _save_sample()
+    filing_cache.rebuild_manifest("NVDA", cik=1045810)
+    filing_cache.filing_path("NVDA", ACC).unlink()
+    assert filing_cache.rebuild_manifest("NVDA", cik=1045810)["filings"] == []
+
+
+def test_rebuilding_a_ticker_with_no_cache_directory_is_harmless(cache_dir):
+    assert filing_cache.rebuild_manifest("ZZZZ", cik=1)["filings"] == []

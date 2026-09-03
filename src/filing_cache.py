@@ -248,3 +248,67 @@ def save_filing(ticker: str, accession: str, *, form: str, filing_date: str,
         "dataframes": payloads,
     }
     return atomic_write_json(path, entry)
+
+
+# ── manifest ──────────────────────────────────────────────────────────────
+#
+# ⚠ manifest **不是事實來源**，是衍生索引，只給 GUI 顯示用。查快取一律直接問
+# `<accession>.json` 存不存在（掃 100 個檔名是微秒級成本，比維護「manifest
+# 跟磁碟是否同步」的心智負擔低得多）。所以這裡沒有「修正」邏輯，只有重建。
+
+MANIFEST_NAME = "_manifest.json"
+
+
+def read_manifest(ticker: str) -> dict | None:
+    """讀 manifest。不存在、壞掉、版本不符一律回 None（呼叫端重建）。"""
+    path = ticker_dir(ticker) / MANIFEST_NAME
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("schema_version") != SCHEMA_VERSION:
+        return None
+    return data
+
+
+def rebuild_manifest(ticker: str, cik: int | None = None) -> dict:
+    """從資料夾實際內容重建並寫回。manifest 遺失／損毀／跟磁碟對不上都走這條。"""
+    directory = ticker_dir(ticker)
+    rows: list[dict] = []
+    try:
+        paths = sorted(directory.glob("*.json"))
+    except OSError:
+        paths = []
+    for path in paths:
+        if path.name == MANIFEST_NAME or not ACCESSION_RE.match(path.stem):
+            continue
+        try:
+            size = path.stat().st_size
+            with open(path, "r", encoding="utf-8") as f:
+                entry = json.load(f)
+        except (OSError, ValueError):
+            continue    # 壞掉的那一份不進索引，下次抓取會重抓並覆蓋
+        if not isinstance(entry, dict):
+            continue
+        rows.append({
+            "accession_no": entry.get("accession_no", path.stem),
+            "form": entry.get("form", ""),
+            "filing_date": entry.get("filing_date", ""),
+            "cached_at": entry.get("cached_at", ""),
+            "edgartools_version": entry.get("edgartools_version", ""),
+            "has_financials": bool(entry.get("has_financials")),
+            "size_bytes": size,
+        })
+    manifest = {
+        "schema_version": SCHEMA_VERSION,
+        "ticker": (ticker or "").strip().upper(),
+        "cik": cik,
+        # 上次去 SEC 查 filing 清單的時間。純顯示用，**不是有效期限**
+        # ——每次抓取都會重查，不靠這個判斷要不要查。
+        "last_checked_at": _now_iso(),
+        "filings": rows,
+    }
+    if rows or directory.exists():
+        atomic_write_json(directory / MANIFEST_NAME, manifest)
+    return manifest
