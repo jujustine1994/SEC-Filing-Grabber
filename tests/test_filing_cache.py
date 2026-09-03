@@ -210,3 +210,89 @@ def test_edgartools_version_returns_none_when_package_not_found(monkeypatch):
 
     monkeypatch.setattr("importlib.metadata.version", _raise)
     assert filing_cache.edgartools_version() is None
+
+
+# ── 單份 filing 的讀寫與四道閘 ────────────────────────────────────────────
+
+ACC = "0001045810-25-000123"
+
+
+def _save_sample(ticker="NVDA", cik=1045810, cf=None):
+    return filing_cache.save_filing(
+        ticker, ACC, form="10-Q", filing_date="2025-08-27", cik=cik,
+        dataframes={"income_statement": _sample_df(),
+                    "balance_sheet": _sample_df(),
+                    "cashflow_statement": cf},
+        has_financials=True,
+    )
+
+
+def test_save_then_load_returns_the_same_three_dataframes(cache_dir):
+    assert _save_sample() is True
+    entry = filing_cache.load_filing("NVDA", ACC, 1045810)
+    assert entry is not None
+    filing = filing_cache.cached_filing(entry)
+    pd.testing.assert_frame_equal(
+        filing.financials.income_statement().to_dataframe(), _sample_df())
+    assert filing.financials.cashflow_statement() is None
+
+
+def test_load_returns_none_when_the_file_does_not_exist(cache_dir):
+    assert filing_cache.load_filing("NVDA", ACC, 1045810) is None
+
+
+def test_load_returns_none_when_the_cik_differs(cache_dir):
+    """ticker 會換手（公司更名、代號被回收給別家）。這種錯不會報例外，
+    只會安靜地把別家公司的數字餵給使用者，比任何其他失效情境都危險。"""
+    _save_sample(cik=1045810)
+    assert filing_cache.load_filing("NVDA", ACC, 99999) is None
+
+
+def test_load_returns_none_when_the_edgartools_version_differs(cache_dir, monkeypatch):
+    """套件升版可能讓同一份 filing 解出不一樣的結果（新的 standardization
+    mapping、XBRL parser 修 bug）。這條軸線跟我們自己的比對規則是兩件事。"""
+    _save_sample()
+    monkeypatch.setattr(filing_cache, "edgartools_version", lambda: "99.0.0")
+    assert filing_cache.load_filing("NVDA", ACC, 1045810) is None
+
+
+def test_load_returns_none_when_the_schema_version_differs(cache_dir):
+    _save_sample()
+    path = filing_cache.filing_path("NVDA", ACC)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["schema_version"] = filing_cache.SCHEMA_VERSION + 1
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    assert filing_cache.load_filing("NVDA", ACC, 1045810) is None
+
+
+def test_load_returns_none_for_corrupt_json_instead_of_raising(cache_dir):
+    """損毀的快取不可以拖垮整趟抓取——當作沒這份，重抓後覆蓋掉。"""
+    _save_sample()
+    filing_cache.filing_path("NVDA", ACC).write_text("{ not json", encoding="utf-8")
+    assert filing_cache.load_filing("NVDA", ACC, 1045810) is None
+
+
+def test_cache_is_disabled_entirely_when_the_version_is_unavailable(
+        cache_dir, monkeypatch):
+    """取不到 edgartools 版本時不讀也不寫，不留下無法比對版本的檔案。"""
+    monkeypatch.setattr(filing_cache, "edgartools_version", lambda: None)
+    assert _save_sample() is False
+    assert filing_cache.load_filing("NVDA", ACC, 1045810) is None
+
+
+def test_negative_cache_records_a_filing_with_no_financials(cache_dir):
+    """pre-XBRL 舊申報（2009 年前常見）：記著「這份試過了、沒有財務資料」，
+    下次不用再打一次 SEC 重試。"""
+    assert filing_cache.save_filing(
+        "NVDA", ACC, form="10-Q", filing_date="2008-05-01", cik=1045810,
+        dataframes=None, has_financials=False) is True
+    entry = filing_cache.load_filing("NVDA", ACC, 1045810)
+    assert entry is not None
+    assert entry["has_financials"] is False
+    assert filing_cache.cached_filing(entry).financials is None
+
+
+def test_save_rejects_a_malformed_accession(cache_dir):
+    assert filing_cache.save_filing(
+        "NVDA", "not-an-accession", form="10-Q", filing_date="2025-08-27",
+        cik=1045810, dataframes=None, has_financials=False) is False

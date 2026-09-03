@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
@@ -25,6 +26,11 @@ SCHEMA_VERSION = 1
 ACCESSION_RE = re.compile(r"^\d{10}-\d{2}-\d{6}$")
 
 STATEMENT_KEYS = ("income_statement", "balance_sheet", "cashflow_statement")
+
+
+def _now_iso() -> str:
+    """本地時間帶時區偏移，例如 "2026-09-03T14:22:10+08:00"。純顯示用。"""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 # ── 路徑 ──────────────────────────────────────────────────────────────────
@@ -177,3 +183,68 @@ class _CachedFiling:
 def cached_filing(entry: dict) -> _CachedFiling:
     """快取檔內容 → 可以餵給既有 builder 的替身 filing 物件。"""
     return _CachedFiling(entry)
+
+
+# ── 單份 filing 的讀寫 ────────────────────────────────────────────────────
+#
+# `<accession>.json` **是否存在，才是「這份 filing 有沒有快取」的事實來源**。
+# manifest 只是給 GUI 看的衍生索引，查快取不問它。
+
+def load_filing(ticker: str, accession: str, cik: int) -> dict | None:
+    """讀一份快取。四道閘任一沒過就回 None（視同無快取，照舊打 SEC 重抓）：
+    JSON 可解析、`schema_version`、`cik`、`edgartools_version`。
+
+    正確性優先於速度——寧可那次變慢，也不要餵錯公司的資料或吃到舊版
+    parser 的 bug。任何情況都不拋例外。
+    """
+    version = edgartools_version()
+    if version is None:
+        return None
+    path = filing_path(ticker, accession)
+    if path is None or not path.exists():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            entry = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("schema_version") != SCHEMA_VERSION:
+        return None
+    if entry.get("edgartools_version") != version:
+        return None
+    if cik is not None and entry.get("cik") != cik:
+        return None
+    return entry
+
+
+def save_filing(ticker: str, accession: str, *, form: str, filing_date: str,
+                cik: int, dataframes: dict | None, has_financials: bool) -> bool:
+    """寫一份快取。**逐份即時落檔**——一趟抓取可能好幾分鐘，中途斷線或關視窗
+    時，已經抓到的進度不該全部白費。
+
+    `has_financials=False` 是負向快取（pre-XBRL 舊申報）。**網路失敗絕對不能
+    走到這裡**——那是暫時性的，交給既有的 D11-B 缺漏帳本，每次都該重試。
+    """
+    version = edgartools_version()
+    if version is None:
+        return False
+    path = filing_path(ticker, accession)
+    if path is None:
+        return False
+    payloads = None
+    if has_financials:
+        payloads = {k: df_to_payload((dataframes or {}).get(k)) for k in STATEMENT_KEYS}
+    entry = {
+        "schema_version": SCHEMA_VERSION,
+        "accession_no": accession,
+        "form": form,
+        "filing_date": filing_date,
+        "cached_at": _now_iso(),
+        "cik": cik,
+        "edgartools_version": version,
+        "has_financials": bool(has_financials),
+        "dataframes": payloads,
+    }
+    return atomic_write_json(path, entry)
