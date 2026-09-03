@@ -52,6 +52,26 @@ def test_all_null_column_keeps_its_original_dtype():
     assert back["dimension_member_label"].dtype == df["dimension_member_label"].dtype
 
 
+def test_datetime_column_does_not_come_back_reinterpreted_as_1970():
+    """`to_json(orient="split")` 把 datetime64 欄寫成 epoch **毫秒**的整數，
+    `pd.DataFrame(...)` 讀回來變成 int64。若照存檔時記下的 dtype 硬
+    `astype("datetime64[us]")`，pandas 會把那串整數**當成微秒**重新解讀
+    ——毫秒被誤讀成微秒，時間軸整個縮 1000 倍，2025-12-27 會變成
+    1970-01-21。這一步不拋例外，`except (TypeError, ValueError)` 完全
+    抓不到，所以要直接釘住「不會被還原成 1970 年代」，而不是只驗「沒拋例外」。
+    """
+    df = pd.DataFrame({"filing_date": pd.to_datetime(["2025-12-27"])})
+    back = filing_cache.payload_to_df(filing_cache.df_to_payload(df))
+    col = back["filing_date"]
+    if pd.api.types.is_datetime64_any_dtype(col):
+        # 若還原邏輯宣稱認得 datetime64，數值必須是原本的日期。
+        assert col.iloc[0] == df["filing_date"].iloc[0]
+    else:
+        # 目前的作法：datetime64 不在安全還原清單內，留在 pandas 從 JSON
+        # 推斷出來的原始整數（epoch 毫秒，2025-12-27 = 1766793600000）。
+        assert col.iloc[0] == 1766793600000
+
+
 def test_none_and_empty_dataframe_are_not_the_same_thing():
     """`is_stmt is None` 與「空表」在下游（`_current_q_col`）行為不同，
     存檔再讀回來不可以混成同一種。"""
@@ -316,73 +336,6 @@ def test_load_rejects_an_entry_whose_version_is_null_when_the_environment_has_no
     assert filing_cache.load_filing("NVDA", ACC, 1045810) is None
 
 
-# ── manifest（衍生索引，壞了直接重建）────────────────────────────────────
-
-ACC2 = "0001045810-24-000456"
-
-
-def test_manifest_is_rebuilt_from_whatever_is_actually_on_disk(cache_dir):
-    _save_sample()
-    filing_cache.save_filing("NVDA", ACC2, form="10-K", filing_date="2025-02-26",
-                             cik=1045810, dataframes=None, has_financials=False)
-    manifest = filing_cache.rebuild_manifest("NVDA", cik=1045810)
-    accs = {f["accession_no"] for f in manifest["filings"]}
-    assert accs == {ACC, ACC2}
-    assert manifest["cik"] == 1045810
-    assert manifest["schema_version"] == filing_cache.SCHEMA_VERSION
-    assert manifest["last_checked_at"]
-
-
-def test_manifest_rows_carry_the_fields_the_gui_needs(cache_dir):
-    _save_sample()
-    row = filing_cache.rebuild_manifest("NVDA", cik=1045810)["filings"][0]
-    assert set(row) >= {"accession_no", "form", "filing_date", "cached_at",
-                        "edgartools_version", "has_financials", "size_bytes"}
-    assert row["size_bytes"] > 0
-
-
-def test_a_corrupt_manifest_is_simply_replaced(cache_dir):
-    """manifest 壞掉不需要特別的「修正」邏輯，跟「本來就不存在」同一條路徑。"""
-    _save_sample()
-    (filing_cache.ticker_dir("NVDA") / "_manifest.json").write_text(
-        "{ garbage", encoding="utf-8")
-    assert filing_cache.read_manifest("NVDA") is None
-    manifest = filing_cache.rebuild_manifest("NVDA", cik=1045810)
-    assert len(manifest["filings"]) == 1
-    assert filing_cache.read_manifest("NVDA") is not None
-
-
-def test_a_manifest_out_of_sync_with_disk_is_corrected_by_rebuild(cache_dir):
-    """manifest 說有兩份、磁碟只有一份 → 以磁碟為準。"""
-    _save_sample()
-    filing_cache.rebuild_manifest("NVDA", cik=1045810)
-    filing_cache.filing_path("NVDA", ACC).unlink()
-    assert filing_cache.rebuild_manifest("NVDA", cik=1045810)["filings"] == []
-
-
-def test_rebuild_skips_corrupt_individual_accession_files(cache_dir):
-    """某份 <accession>.json 壞掉不能拖垮整份重建——該份跳過，其他份繼續進索引。"""
-    _save_sample()
-    filing_cache.save_filing("NVDA", ACC2, form="10-K", filing_date="2025-02-26",
-                             cik=1045810, dataframes=None, has_financials=False)
-    # 第一份 accession 的檔案壞掉
-    filing_cache.filing_path("NVDA", ACC).write_text("{ not json", encoding="utf-8")
-    manifest = filing_cache.rebuild_manifest("NVDA", cik=1045810)
-    accs = {f["accession_no"] for f in manifest["filings"]}
-    # 好的那份在索引裡，壞的那份不在
-    assert ACC2 in accs
-    assert ACC not in accs
-    assert len(manifest["filings"]) == 1
-
-
-def test_rebuilding_a_ticker_with_no_cache_directory_is_harmless(cache_dir):
-    """未知 ticker 重建 manifest 不該建空資料夾（因為 `if rows or directory.exists()`
-    的防線）。純顯示用的索引壞掉或不存在的話呼叫端會重建，沒必要搶先建資料夾。"""
-    assert filing_cache.rebuild_manifest("ZZZZ", cik=1)["filings"] == []
-    # 重建後不該建出空資料夾
-    assert not filing_cache.ticker_dir("ZZZZ").exists()
-
-
 # ── GUI 用的統計與清除 ────────────────────────────────────────────────────────
 
 def test_listing_scans_the_folder_no_global_index_needed(cache_dir):
@@ -470,18 +423,3 @@ def test_listing_tolerates_one_ticker_vanishing_mid_scan(cache_dir, monkeypatch)
     rows = filing_cache.list_cached_tickers()
     # NVDA 消失了，但 AMD 還在
     assert [r["ticker"] for r in rows] == ["AMD"]
-
-
-def test_listing_does_not_count_manifest_as_a_filing(cache_dir):
-    """manifest 檔案（_manifest.json）會存在 ticker 目錄中，但不能被
-    誤算成一份 filing——count 要排除它。"""
-    _save_sample(ticker="NVDA")
-    # 先看有沒有 manifest
-    filing_cache.rebuild_manifest("NVDA", cik=1045810)
-    # 確認 manifest 檔案確實存在
-    assert (filing_cache.ticker_dir("NVDA") / filing_cache.MANIFEST_NAME).exists()
-    # 但列表上還是只算 1 份 filing（不是 2）
-    rows = filing_cache.list_cached_tickers()
-    assert len(rows) == 1
-    assert rows[0]["ticker"] == "NVDA"
-    assert rows[0]["count"] == 1

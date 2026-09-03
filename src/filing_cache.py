@@ -7,8 +7,9 @@ filing_cache.py — 本地 filing 解析快取（%APPDATA%\\SEC Financial Tools\
 hint regex、加比率、調 Q4 合成邏輯都不會讓快取失效——但 **edgartools 升版
 會**，那是另一條軸線，靠 `edgartools_version` 欄位擋（見 `load_filing`）。
 
-事實來源是 `<accession>.json` 檔案本身；`_manifest.json` 只是給 GUI 看的
-衍生索引，壞了直接從資料夾重建。
+事實來源是 `<accession>.json` 檔案本身，也是唯一的落地狀態——「哪些公司有
+快取」直接掃 `filing_cache/` 底下有哪些子資料夾回答（見 `list_cached_tickers()`），
+不維護額外的索引檔。
 """
 from __future__ import annotations
 
@@ -76,7 +77,7 @@ def atomic_write_json(path: Path, obj) -> bool:
             json.dump(obj, f, ensure_ascii=False)
         os.replace(tmp, path)
         return True
-    except OSError:
+    except Exception:
         try:
             tmp.unlink()
         except OSError:
@@ -125,6 +126,18 @@ def payload_to_df(payload: dict | None) -> pd.DataFrame | None:
     df = pd.DataFrame(raw["data"], index=raw["index"], columns=raw["columns"])
     for col, dtype in (payload.get("dtypes") or {}).items():
         if col not in df.columns:
+            continue
+        # 只還原「不可能還原錯」的型別：object / bool / int*／uint*／float*。
+        # datetime64 是實測踩到的地雷——`to_json(orient="split")` 把 datetime
+        # 欄寫成 epoch **毫秒**的整數，`pd.DataFrame(...)` 讀回來自然變成
+        # int64；這裡若照樣 `astype("datetime64[us]")`，pandas 會把那串整數
+        # **當成微秒**重新解讀（毫秒被錯讀成微秒，時間軸整個縮 1000 倍），
+        # 例如 2025-12-27 會變成 1970-01-21 10:46:33.6——`astype` 本身不拋
+        # 例外，`except (TypeError, ValueError)` 完全抓不到，數字看起來正常
+        # 但整欄都是錯的，比拋例外更危險。分不清楚就一律不寫回去，讓該欄
+        # 留在 pandas 從 JSON 自動推斷出來的樣子（值本身沒錯，只是 dtype
+        # 標籤不是原本那個）。
+        if not (dtype in ("object", "bool") or dtype.startswith(("int", "uint", "float"))):
             continue
         try:
             df[col] = df[col].astype(dtype)
@@ -189,7 +202,6 @@ def cached_filing(entry: dict) -> _CachedFiling:
 # ── 單份 filing 的讀寫 ────────────────────────────────────────────────────
 #
 # `<accession>.json` **是否存在，才是「這份 filing 有沒有快取」的事實來源**。
-# manifest 只是給 GUI 看的衍生索引，查快取不問它。
 
 def load_filing(ticker: str, accession: str, cik: int) -> dict | None:
     """讀一份快取。四道閘任一沒過就回 None（視同無快取，照舊打 SEC 重抓）：
@@ -215,7 +227,7 @@ def load_filing(ticker: str, accession: str, cik: int) -> dict | None:
         return None
     if entry.get("edgartools_version") != version:
         return None
-    if cik is not None and entry.get("cik") != cik:
+    if entry.get("cik") != cik:
         return None
     return entry
 
@@ -251,70 +263,6 @@ def save_filing(ticker: str, accession: str, *, form: str, filing_date: str,
     return atomic_write_json(path, entry)
 
 
-# ── manifest ──────────────────────────────────────────────────────────────
-#
-# ⚠ manifest **不是事實來源**，是衍生索引，只給 GUI 顯示用。查快取一律直接問
-# `<accession>.json` 存不存在（掃 100 個檔名是微秒級成本，比維護「manifest
-# 跟磁碟是否同步」的心智負擔低得多）。所以這裡沒有「修正」邏輯，只有重建。
-
-MANIFEST_NAME = "_manifest.json"
-
-
-def read_manifest(ticker: str) -> dict | None:
-    """讀 manifest。不存在、壞掉、版本不符一律回 None（呼叫端重建）。"""
-    path = ticker_dir(ticker) / MANIFEST_NAME
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
-        return None
-    if not isinstance(data, dict) or data.get("schema_version") != SCHEMA_VERSION:
-        return None
-    return data
-
-
-def rebuild_manifest(ticker: str, cik: int | None = None) -> dict:
-    """從資料夾實際內容重建並寫回。manifest 遺失／損毀／跟磁碟對不上都走這條。"""
-    directory = ticker_dir(ticker)
-    rows: list[dict] = []
-    try:
-        paths = sorted(directory.glob("*.json"))
-    except OSError:
-        paths = []
-    for path in paths:
-        if path.name == MANIFEST_NAME or not ACCESSION_RE.match(path.stem):
-            continue
-        try:
-            size = path.stat().st_size
-            with open(path, "r", encoding="utf-8") as f:
-                entry = json.load(f)
-        except (OSError, ValueError):
-            continue    # 壞掉的那一份不進索引，下次抓取會重抓並覆蓋
-        if not isinstance(entry, dict):
-            continue
-        rows.append({
-            "accession_no": entry.get("accession_no", path.stem),
-            "form": entry.get("form", ""),
-            "filing_date": entry.get("filing_date", ""),
-            "cached_at": entry.get("cached_at", ""),
-            "edgartools_version": entry.get("edgartools_version", ""),
-            "has_financials": bool(entry.get("has_financials")),
-            "size_bytes": size,
-        })
-    manifest = {
-        "schema_version": SCHEMA_VERSION,
-        "ticker": (ticker or "").strip().upper(),
-        "cik": cik,
-        # 上次去 SEC 查 filing 清單的時間。純顯示用，**不是有效期限**
-        # ——每次抓取都會重查，不靠這個判斷要不要查。
-        "last_checked_at": _now_iso(),
-        "filings": rows,
-    }
-    if rows or directory.exists():
-        atomic_write_json(directory / MANIFEST_NAME, manifest)
-    return manifest
-
-
 # ── GUI：統計與清除 ───────────────────────────────────────────────────────
 
 def _dir_stats(directory: Path) -> tuple[int, int]:
@@ -331,7 +279,7 @@ def _dir_stats(directory: Path) -> tuple[int, int]:
             size += path.stat().st_size
         except OSError:
             continue
-        if path.name != MANIFEST_NAME and ACCESSION_RE.match(path.stem):
+        if ACCESSION_RE.match(path.stem):
             count += 1
     return count, size
 

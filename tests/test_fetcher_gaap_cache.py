@@ -71,8 +71,6 @@ def test_first_fetch_hits_the_network_and_writes_the_cache_file(cache_dir):
     assert tenq is filing.obj.return_value
     assert not isinstance(tenq, filing_cache._CachedFiling)
     assert filing_cache.filing_path("NVDA", ACC).exists()
-    assert any(f["accession_no"] == ACC
-               for f in filing_cache.read_manifest("NVDA")["filings"])
 
 
 def test_second_fetch_reads_the_cache_and_never_touches_the_network(cache_dir):
@@ -307,12 +305,11 @@ def test_disk_cache_is_isolated_across_threads(cache_dir):
 
 
 def test_last_cache_stats_is_isolated_across_threads(cache_dir):
-    """Verify that each thread's `last_cache_stats()` returns only its own
-    cache hits/total, not another thread's. Originally `_last_cache_stats`
-    was a plain module global; concurrent fetches would race and report
-    wrong company's numbers. Converting to `ContextVar` fixes this.
-    
-    Uses `Barrier` to force deterministic overlap, not a timing gamble.
+    """驗證每條執行緒的 `last_cache_stats()` 只回自己的命中數/總數，不會撈到
+    另一條執行緒的。原本 `_last_cache_stats` 是純模組級全域變數，並行抓取時
+    會互相競爭、回報成別家公司的數字。改成 `ContextVar` 解決這個問題。
+
+    用 `Barrier` 逼兩條執行緒的範圍真的同時存在，不是碰運氣的時序測試。
     """
     barrier = threading.Barrier(2)
     results: dict[str, tuple[int, int]] = {}
@@ -323,8 +320,8 @@ def test_last_cache_stats_is_isolated_across_threads(cache_dir):
             ctx["cik"] = cik
             ctx["hits"] = hits
             ctx["misses"] = misses
-            barrier.wait(timeout=5)   # Both scopes open at same time
-        # After scope exits, stats are recorded in ContextVar
+            barrier.wait(timeout=5)   # 兩條執行緒的範圍在這一刻確定同時開著
+        # 範圍離開後，統計數字才會寫進 ContextVar
         results[ticker] = last_cache_stats()
 
     t1 = threading.Thread(target=_run, args=("NVDA", 1045810, 24, 1))
@@ -335,7 +332,7 @@ def test_last_cache_stats_is_isolated_across_threads(cache_dir):
     t2.join(timeout=10)
 
     assert not t1.is_alive() and not t2.is_alive()
-    # Each thread should see its own stats, not the other thread's
+    # 各自的統計數字不能互相污染
     assert results == {
         "NVDA": (24, 25),  # hits=24, total=hits+misses=24+1=25
         "AAPL": (5, 15),   # hits=5, total=5+10=15

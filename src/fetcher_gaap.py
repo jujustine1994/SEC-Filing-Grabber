@@ -324,7 +324,7 @@ _last_cache_stats_var: ContextVar[tuple[int, int]] = ContextVar("_last_cache_sta
 
 @contextmanager
 def _disk_cache_scope():
-    """一次抓取的磁碟快取範圍。離開時更新 manifest 並記下命中統計。"""
+    """一次抓取的磁碟快取範圍。離開時記下命中統計。"""
     outer = _disk_cache_var.get()
     ctx = {"ticker": None, "cik": None, "hits": 0, "misses": 0} if outer is None else outer
     token = _disk_cache_var.set(ctx)
@@ -332,13 +332,6 @@ def _disk_cache_scope():
         yield ctx
     finally:
         if outer is None:
-            if ctx["ticker"]:
-                # 收尾重建索引：反映這趟跑完後磁碟上實際的內容。
-                # manifest 只是給 GUI 看的，重建失敗不影響任何抓取結果。
-                try:
-                    filing_cache.rebuild_manifest(ctx["ticker"], ctx["cik"])
-                except OSError:
-                    pass
             _last_cache_stats_var.set((ctx["hits"], ctx["hits"] + ctx["misses"]))
         _disk_cache_var.reset(token)
 
@@ -375,33 +368,40 @@ def _save_to_disk_cache(ctx: dict, filing, obj) -> None:
     狀況——但寫錯的代價完全不同：正常的 pre-XBRL 負向快取重試也是一樣結果，
     炸出來的那種如果被誤記成負向快取，等於把一期本來可能修好再抓到的資料
     **永久**判死刑。分不清楚就一律不寫，留給下次重試。
+
+    ⚠ 整個函式本體包在一個 `except Exception` 底下——涵蓋
+    `filing_cache.save_filing()`（`df_to_payload()` 序列化、
+    `atomic_write_json()` 寫檔）在內。這裡的契約是「快取寫入失敗絕對不能讓
+    這次抓取跟著壞」，只窄窄包住三個 `to_dataframe()` getter 會漏掉序列化／
+    落檔階段炸出的例外（例如 `json.dump` 遇到序列化不了的物件丟
+    `TypeError`），讓它們逃出這個函式、拖累呼叫端。
     """
-    acc = _cache_key(filing)
-    fd = getattr(filing, "filing_date", None)
-    meta = {
-        "form": str(getattr(filing, "form", "") or ""),
-        "filing_date": str(fd) if fd else "",
-        "cik": ctx["cik"],
-    }
     try:
-        fin = obj.financials
-    except AttributeError:
-        return   # 分不出「真的沒有 financials」還是「取用時炸了」→ 一律不寫快取，下次重試
-    if fin is None:
-        filing_cache.save_filing(ctx["ticker"], acc, dataframes=None,
-                                 has_financials=False, **meta)
-        return
-    try:
+        acc = _cache_key(filing)
+        fd = getattr(filing, "filing_date", None)
+        meta = {
+            "form": str(getattr(filing, "form", "") or ""),
+            "filing_date": str(fd) if fd else "",
+            "cik": ctx["cik"],
+        }
+        try:
+            fin = obj.financials
+        except AttributeError:
+            return   # 分不出「真的沒有 financials」還是「取用時炸了」→ 一律不寫快取，下次重試
+        if fin is None:
+            filing_cache.save_filing(ctx["ticker"], acc, dataframes=None,
+                                     has_financials=False, **meta)
+            return
         dfs = {}
         for key, getter in (("income_statement", fin.income_statement),
                             ("balance_sheet", fin.balance_sheet),
                             ("cashflow_statement", fin.cashflow_statement)):
             stmt = getter()
             dfs[key] = None if stmt is None else stmt.to_dataframe()
+        filing_cache.save_filing(ctx["ticker"], acc, dataframes=dfs,
+                                 has_financials=True, **meta)
     except Exception:
-        return   # 解析失敗不留快取，下次重試（跟網路失敗同一個處理）
-    filing_cache.save_filing(ctx["ticker"], acc, dataframes=dfs,
-                             has_financials=True, **meta)
+        return   # 快取寫入的任何一步失敗都不該讓這次抓取跟著壞（跟網路失敗同一個處理）
 
 
 def _list_filings(company, form: str, amendments: bool = False,
