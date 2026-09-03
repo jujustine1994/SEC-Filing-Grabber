@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -312,3 +313,63 @@ def rebuild_manifest(ticker: str, cik: int | None = None) -> dict:
     if rows or directory.exists():
         atomic_write_json(directory / MANIFEST_NAME, manifest)
     return manifest
+
+
+# ── GUI：統計與清除 ───────────────────────────────────────────────────────
+
+def _dir_stats(directory: Path) -> tuple[int, int]:
+    """(filing 份數, 位元組數)。`except OSError` 是必要的——清除中或另一個
+    實例正在寫入時，檔案可能在 glob 與 stat 之間消失。"""
+    count = 0
+    size = 0
+    try:
+        paths = list(directory.glob("*.json"))
+    except OSError:
+        return 0, 0
+    for path in paths:
+        try:
+            size += path.stat().st_size
+        except OSError:
+            continue
+        if path.name != MANIFEST_NAME and ACCESSION_RE.match(path.stem):
+            count += 1
+    return count, size
+
+
+def list_cached_tickers() -> list[dict]:
+    """快取了哪些公司：直接掃 `filing_cache/` 底下有哪些子資料夾。
+    公司數量最多幾十家，掃資料夾的成本可以忽略。"""
+    root = cache_root()
+    rows: list[dict] = []
+    try:
+        entries = sorted(p for p in root.iterdir() if p.is_dir())
+    except OSError:
+        return []
+    for directory in entries:
+        count, size = _dir_stats(directory)
+        if count == 0 and size == 0:
+            continue
+        rows.append({"ticker": directory.name, "count": count, "size_bytes": size})
+    rows.sort(key=lambda r: (-r["size_bytes"], r["ticker"]))
+    return rows
+
+
+def total_size_bytes() -> int:
+    return sum(r["size_bytes"] for r in list_cached_tickers())
+
+
+def clear_ticker(ticker: str) -> bool:
+    """整個刪掉那家公司的資料夾。下次抓這家會當作全新開始。"""
+    directory = ticker_dir(ticker)
+    if not directory.exists():
+        return False
+    try:
+        shutil.rmtree(directory)
+        return True
+    except OSError:
+        return False
+
+
+def clear_all() -> int:
+    """刪掉所有公司的快取，回傳刪掉幾家。"""
+    return sum(1 for row in list_cached_tickers() if clear_ticker(row["ticker"]))

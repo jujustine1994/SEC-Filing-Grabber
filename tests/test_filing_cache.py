@@ -381,3 +381,71 @@ def test_rebuilding_a_ticker_with_no_cache_directory_is_harmless(cache_dir):
     assert filing_cache.rebuild_manifest("ZZZZ", cik=1)["filings"] == []
     # 重建後不該建出空資料夾
     assert not filing_cache.ticker_dir("ZZZZ").exists()
+
+
+# ── GUI 用的統計與清除 ────────────────────────────────────────────────────────
+
+def test_listing_scans_the_folder_no_global_index_needed(cache_dir):
+    """快取了哪些公司直接掃資料夾就知道——不維護容易跟磁碟脫鉤的全域清單。"""
+    _save_sample(ticker="NVDA")
+    _save_sample(ticker="AMD")
+    rows = filing_cache.list_cached_tickers()
+    assert {r["ticker"] for r in rows} == {"NVDA", "AMD"}
+    assert all(r["count"] == 1 and r["size_bytes"] > 0 for r in rows)
+
+
+def test_listing_is_sorted_by_size_descending(cache_dir):
+    _save_sample(ticker="BIG")
+    filing_cache.save_filing("SML", ACC, form="10-Q", filing_date="2025-08-27",
+                             cik=1, dataframes=None, has_financials=False)
+    rows = filing_cache.list_cached_tickers()
+    assert [r["ticker"] for r in rows] == ["BIG", "SML"]
+
+
+def test_listing_is_empty_when_nothing_is_cached(cache_dir):
+    assert filing_cache.list_cached_tickers() == []
+    assert filing_cache.total_size_bytes() == 0
+
+
+def test_listing_survives_a_file_vanishing_mid_scan(cache_dir, monkeypatch):
+    """正在被清除、或另一個實例正在寫入時檔案可能瞬間消失。"""
+    _save_sample()
+
+    # 窄化 monkeypatch：只讓指定目錄的 stat 失敗，不影響 pytest 內部
+    original_stat = Path.stat
+    ticker_path = filing_cache.ticker_dir("NVDA")
+
+    def _stat_with_boom(self, *args, **kwargs):
+        if self.parent == ticker_path:
+            raise OSError("gone")
+        return original_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", _stat_with_boom)
+    rows = filing_cache.list_cached_tickers()
+    assert rows == [] or rows[0]["size_bytes"] == 0
+
+
+def test_total_size_is_the_sum_of_every_ticker(cache_dir):
+    _save_sample(ticker="NVDA")
+    _save_sample(ticker="AMD")
+    rows = filing_cache.list_cached_tickers()
+    assert filing_cache.total_size_bytes() == sum(r["size_bytes"] for r in rows)
+
+
+def test_clear_ticker_removes_the_whole_folder(cache_dir):
+    _save_sample(ticker="NVDA")
+    _save_sample(ticker="AMD")
+    assert filing_cache.clear_ticker("NVDA") is True
+    assert not filing_cache.ticker_dir("NVDA").exists()
+    assert [r["ticker"] for r in filing_cache.list_cached_tickers()] == ["AMD"]
+
+
+def test_clear_ticker_on_something_that_is_not_cached_is_harmless(cache_dir):
+    assert filing_cache.clear_ticker("ZZZZ") is False
+
+
+def test_clear_all_removes_every_ticker(cache_dir):
+    _save_sample(ticker="NVDA")
+    _save_sample(ticker="AMD")
+    assert filing_cache.clear_all() == 2
+    assert filing_cache.list_cached_tickers() == []
