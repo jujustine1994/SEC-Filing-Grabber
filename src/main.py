@@ -243,6 +243,18 @@ def format_elapsed(seconds: float) -> str:
     return f"{secs}s"
 
 
+def cache_log_line(ticker: str, hits: int, total: int) -> str | None:
+    """本地 filing 快取的命中率，寫進 `logs/app.log`（一律英文）。
+
+    ⚠ 設計文件原本要求塞進起始 `===` 行，做不到——那一行在抓取**開始前**
+    就寫出去了，那時候還沒列 filing 清單、命中數不存在。改成 GAAP 抓完後
+    補一行獨立的 INFO，語意相同。
+    """
+    if not total:
+        return None
+    return f"{ticker} cache {hits}/{total}"
+
+
 def company_chip_entries(selected: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """已選公司 → `pack_wrapped_chips()` 吃的 `[(顯示文字, 移除用的 key)]`。
 
@@ -2718,6 +2730,11 @@ class SECFetcherApp:
                         fetch_quarterly=fetch_q, fetch_annual=fetch_k,
                         excluded_sheets=excluded_sheets or set(),
                     )
+                from fetcher_gaap import last_cache_stats
+                _hits, _total = last_cache_stats()
+                _cache_line = cache_log_line(ticker, _hits, _total)
+                if _cache_line:
+                    _write_log(_cache_line)
                 tables.extend(gaap_tables)
                 self._log(t("gui.log.gaap_got", ticker=ticker, n=len(gaap_tables)))
                 if gaps.has_gaps:

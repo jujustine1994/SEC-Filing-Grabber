@@ -206,3 +206,24 @@ def test_ticker_suggestions_appear_right_below_the_input(tk_root, compare_window
     assert slaves.index(listbox) == slaves.index(ticker_row) + 1, (
         "候選清單必須緊跟在輸入框那一列後面，"
         f"實際排在第 {slaves.index(listbox)} 個、輸入框在第 {slaves.index(ticker_row)} 個")
+
+
+# ── 快取命中數的 log 行（2026-09-03）────────────────────────────────────────
+#
+# 耗時變快也可能只是那天 SEC 比較順。沒有命中數字就無法判斷這次有沒有吃到快取。
+# `logs/app.log` 一律英文（2026-09-02 起的既有規則）。
+
+def test_cache_log_line_reports_hits_over_total():
+    assert main.cache_log_line("NVDA", 24, 25) == "NVDA cache 24/25"
+
+
+def test_cache_log_line_is_skipped_when_nothing_was_processed():
+    """沒抓任何 filing 時不要在 log 留一行 `cache 0/0` 的雜訊。"""
+    assert main.cache_log_line("NVDA", 0, 0) is None
+
+
+def test_cache_log_line_is_english_only():
+    """log 的讀者是維護者與 AI，而且這個檔同時被 PowerShell 寫，全英文
+    可以整類避開 cp950 的編碼地雷。"""
+    line = main.cache_log_line("NVDA", 0, 25)
+    assert all(ord(ch) < 128 for ch in line)
