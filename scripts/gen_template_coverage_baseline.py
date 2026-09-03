@@ -37,6 +37,8 @@ MIN_CO_RATIO = 0.85   # 至少多少比例的公司抓得到
 MIN_FILL = 0.9        # 抓得到的公司裡，填滿率中位數要超過多少
 
 cur_co = Counter(); fac_co = Counter(); fill = {r: [] for _, r in rows}
+# facts 路徑的填滿率——H1 要的數字。分母跟現行路徑用同一組期末日，才比得動。
+fill_facts = {(tag, r): [] for tag, r in rows}
 hole_hits = Counter(); contra_hits = Counter(); spor_hits = Counter()
 real_gap = defaultdict(list)   # 真缺口：companyfacts 有、我們整列空白
 census = Counter()             # 每個（列 × 公司）格子的三分類
@@ -57,8 +59,13 @@ for p in sorted(C.glob("gaap_*.pkl")):
     for tag, name in rows:
         for M in (fm.IS_MAPPING, fm.BS_MAPPING, fm.CF_MAPPING):
             if name in M:
-                facts_has = bool(ff.resolve_row(raw, M[name], prefer="as_reported"))
-                if facts_has: fac_co[(tag, name)] += 1
+                fseries = ff.resolve_row(raw, M[name], prefer="as_reported")
+                facts_has = bool(fseries)
+                if facts_has:
+                    fac_co[(tag, name)] += 1
+                    fill_facts[(tag, name)].append(
+                        sum(1 for e in ends
+                            if isinstance(fseries.get(e), (int, float))) / n)
                 # 真缺口：這家公司**確實 tag 過**（companyfacts 讀得到），我們卻整列空白。
                 # 這才是「該抓到卻沒抓到」；兩邊都沒有代表公司真的沒報，不算我們的問題。
                 if facts_has and name not in ours_has:
@@ -88,9 +95,14 @@ w = L.append
 w(f"# 模板體檢：{N} 家公司的逐列覆蓋率（{date.today():%Y-%m-%d} 產出）\n")
 w(f"**這份是自動產出的基線，不是手寫的。** 資料來源 `output/_spike/`（{N} 家的")
 w("companyfacts JSON 與現行路徑答案卷快取），重跑不用打網路。\n")
-w("**⚠ 答案卷的抓取窗不一致**：AAPL/ADBE/AMD/AVGO/COST/GOOGL/INTC/META/MSFT/")
-w("NVDA/TSLA/WMT 這 12 家是全部 filing（44~69 期），其餘都是 `max_filings=16`")
-w("（約 21 期）。重建時要沿用同樣的參數，不然逐列覆蓋率沒得比。\n")
+_np = sorted(r.total_periods for _, r in per_co)
+w(f"**答案卷的抓取窗**：{N} 家全部用 `spike_derive_mapping.py` 的固定參數"
+  "（`max_filings=16`／`max_annual_filings=5`）重建，期數 "
+  f"{_np[0]}~{_np[-1]}（中位數 {int(st.median(_np))}）。\n")
+w("> 2026-08-24 那份基線的抓取窗**不一致**：AAPL/ADBE/AMD/AVGO/COST/GOOGL/INTC/")
+w("> META/MSFT/NVDA/TSLA/WMT 這 12 家是用全部 filing 抓的（44~69 期），其餘才是")
+w("> `max_filings=16`。2026-09-04 重建時統一成 16/5，所以**那 12 家的逐列覆蓋率")
+w("> 會跟舊基線對不起來——那是抓取窗變了，不是回歸**。其餘 189 家可以直接比。\n")
 w("公司清單刻意涵蓋大中小型 × 跨產業，**包含金融股（JPM/GS/BAC/SCHW）與 REIT（PLD）**")
 w("——它們的報表結構跟製造業差很多，是檢驗模板通不通用最有效的一群。\n")
 w("## 零、這份文件怎麼讀（先看這段，不然數字會誤導）\n")
@@ -158,13 +170,25 @@ w("只在附註拆開），現行逐份解 filing 的路徑結構上拿不到。
 w("先把那份 filing 的報表 dataframe 印出來確認這一列到底在不在。\n")
 w("## 三、逐列覆蓋率：現行路徑 vs companyfacts\n")
 w(f"「有值公司數」＝ {N} 家裡有幾家這一列拿得到資料。兩邊差 8 家以上的標 ⚠。\n")
-w("| 表 | 列名 | 現行 | facts | 差 |")
-w("|---|---|---|---|---|")
+w("「填滿」＝抓得到的那些公司裡，答案卷的期末日有幾成拿得到值（中位數）。\n")
+w("| 表 | 列名 | 現行家數 | facts家數 | 差 | 現行填滿 | facts填滿 |")
+w("|---|---|---|---|---|---|---|")
 for tag, name in rows:
     a, b = cur_co[name], fac_co[(tag, name)]
     flag = " ⚠" if abs(a - b) >= 8 else ""
-    w(f"| {tag} | {name} | {a} | {b} | {b - a:+d}{flag} |")
+    w(f"| {tag} | {name} | {a} | {b} | {b - a:+d}{flag} | "
+      f"{med(fill[name]):.0%} | {med(fill_facts[(tag, name)]):.0%} |")
 w("")
+# H1 專用：CF 流量列（mapping 標了 `from_ytd`）的 facts 填滿率。H1 原本記
+# 「只有約 25%（一年四季只拿得到一季）」，`quarterly_from_ytd()` 上線後看這裡。
+_ytd = [(tag, name) for tag, name in rows
+        for M in (fm.IS_MAPPING, fm.BS_MAPPING, fm.CF_MAPPING)
+        if name in M and M[name].get("from_ytd")]
+_ytd_med = [med(fill_facts[k]) for k in _ytd if fill_facts[k]]
+w(f"**流量列（mapping 標 `from_ytd` 的 {len(_ytd)} 列）的 facts 填滿率中位數："
+  f"{st.median(_ytd_med) if _ytd_med else 0:.0%}**——這是 TODO H1 的驗收數字。")
+w("H1 記錄的原始症狀是「約 25%，一年四季只拿得到一季」，成因是公司把現金流量表的")
+w("項目 tag 成 YTD 累計；`fetcher_facts.quarterly_from_ytd()` 已經補上還原單季那一層。\n")
 good = sum(1 for _, name in rows if cur_co[name] >= MIN_CO and med(fill[name]) > MIN_FILL)
 w(f"**現行路徑達到「>={MIN_CO} 家（{MIN_CO_RATIO:.0%}）有值且填滿率 >{MIN_FILL:.0%}」的列：{good} / {len(rows)}**")
 w("（這個數字不該以 97/97 為目標，理由見第零節。）\n")
