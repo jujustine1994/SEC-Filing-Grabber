@@ -4,6 +4,7 @@
 永遠在快取之上即時重跑。所以這裡釘的是「存進去再讀回來，跟原本一模一樣」，
 以及「任何一種對不上的情況都要安靜地退回無快取，不能拋例外、不能餵錯資料」。
 """
+import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -192,8 +193,20 @@ def test_atomic_write_returns_false_instead_of_raising_when_disk_write_fails(
 
 
 def test_edgartools_version_is_read_from_package_metadata():
-    """實測 `edgar.__version__` 不存在（AttributeError），只能走
-    importlib.metadata。取不到就回 None，不可以填 "unknown" 之類的預設值
-    ——那會讓版本比對永遠成功或永遠失敗，兩種都是錯的。"""
+    """edgartools 是硬相依（requirements.txt），在本環境裡一定裝著。要驗證
+    版本字串真的會被取回，不是虛幻的 None。"""
     v = filing_cache.edgartools_version()
-    assert v is None or (isinstance(v, str) and v[0].isdigit())
+    assert v is not None
+    assert isinstance(v, str)
+    assert v[0].isdigit()
+
+
+def test_edgartools_version_returns_none_when_package_not_found(monkeypatch):
+    """實測 `edgar.__version__` 不存在（AttributeError），只能走
+    importlib.metadata。取不到就回 None，呼叫端把 None 當成
+    「這次不要用快取」——不可以填一個預設值混進檔案裡。"""
+    def _raise(*a, **kw):
+        raise importlib.metadata.PackageNotFoundError("edgartools")
+
+    monkeypatch.setattr("importlib.metadata.version", _raise)
+    assert filing_cache.edgartools_version() is None
