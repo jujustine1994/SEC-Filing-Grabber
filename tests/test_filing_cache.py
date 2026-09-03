@@ -449,3 +449,39 @@ def test_clear_all_removes_every_ticker(cache_dir):
     _save_sample(ticker="AMD")
     assert filing_cache.clear_all() == 2
     assert filing_cache.list_cached_tickers() == []
+
+
+def test_listing_tolerates_one_ticker_vanishing_mid_scan(cache_dir, monkeypatch):
+    """一個 ticker 目錄在掃描中被刪掉（concurrent clear 或另一實例 rmtree），
+    不該拖垮整份列表——只跳過那一個，其他 ticker 還是要出現。"""
+    _save_sample(ticker="NVDA")
+    _save_sample(ticker="AMD")
+
+    # 窄化 monkeypatch：只讓 NVDA 目錄的 is_dir() 失敗
+    original_is_dir = Path.is_dir
+    nvda_path = filing_cache.ticker_dir("NVDA")
+
+    def _is_dir_with_boom(self):
+        if self == nvda_path:
+            raise OSError("gone")
+        return original_is_dir(self)
+
+    monkeypatch.setattr(Path, "is_dir", _is_dir_with_boom)
+    rows = filing_cache.list_cached_tickers()
+    # NVDA 消失了，但 AMD 還在
+    assert [r["ticker"] for r in rows] == ["AMD"]
+
+
+def test_listing_does_not_count_manifest_as_a_filing(cache_dir):
+    """manifest 檔案（_manifest.json）會存在 ticker 目錄中，但不能被
+    誤算成一份 filing——count 要排除它。"""
+    _save_sample(ticker="NVDA")
+    # 先看有沒有 manifest
+    filing_cache.rebuild_manifest("NVDA", cik=1045810)
+    # 確認 manifest 檔案確實存在
+    assert (filing_cache.ticker_dir("NVDA") / filing_cache.MANIFEST_NAME).exists()
+    # 但列表上還是只算 1 份 filing（不是 2）
+    rows = filing_cache.list_cached_tickers()
+    assert len(rows) == 1
+    assert rows[0]["ticker"] == "NVDA"
+    assert rows[0]["count"] == 1

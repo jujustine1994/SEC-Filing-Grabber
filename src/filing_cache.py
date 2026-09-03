@@ -342,10 +342,20 @@ def list_cached_tickers() -> list[dict]:
     root = cache_root()
     rows: list[dict] = []
     try:
-        entries = sorted(p for p in root.iterdir() if p.is_dir())
+        entries = root.iterdir()
     except OSError:
         return []
-    for directory in entries:
+    # 過濾出目錄，但要容忍單一目錄在 is_dir() 時消失——不能因為一個目錄的
+    # stat 失敗就拋棄整份掃描。正在被清除或另一個實例正在寫入時常見。
+    entries_list = []
+    for p in entries:
+        try:
+            if p.is_dir():
+                entries_list.append(p)
+        except OSError:
+            continue
+    entries_list.sort(key=lambda p: p.name)
+    for directory in entries_list:
         count, size = _dir_stats(directory)
         if count == 0 and size == 0:
             continue
