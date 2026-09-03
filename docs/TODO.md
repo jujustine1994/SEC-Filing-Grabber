@@ -259,7 +259,7 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
      `Change in Inventories` AEP、`Finance Lease Liabilities, LT` ON、`Other Current Assets` CVX
 
 
-## I. 本地 filing 快取（2026-09-03 開工，主體已完成、收尾未做）
+## I. 本地 filing 快取（2026-09-03 開工，Task 1-11 全部完成，已併入分支主線）
 
 > **動手前必讀**：規格 `docs/superpowers/specs/2026-09-03-local-filing-cache-design.md`、
 > 實作計畫 `docs/superpowers/plans/2026-09-03-local-filing-cache.md`（11 個 task，
@@ -271,50 +271,13 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
 快取卡在**解析層與比對層之間**——存的是 edgartools 解出來的三張 DataFrame，
 `IS/BS/CF_TEMPLATE` 那套科目比對永遠在快取之上即時重跑。所以以後改 hint regex、
 加比率、調 Q4 合成邏輯都**不會**讓快取失效；但 **edgartools 升版會**，那條軸線靠
-每份快取檔裡的 `edgartools_version` 欄位擋。
+每份快取檔裡的 `edgartools_version` 欄位擋。詳細機制、四道閘、實測數字見
+`docs/ARCHITECTURE.md`「本地 filing 快取」一節。
 
-**目前狀態（Task 1-9 已完成並通過逐條 review，全套測試 1387 passed）**：
-快取**已經生效**。第二次抓同一家公司會讀 `%APPDATA%\SEC Financial Tools\filing_cache\`，
-`logs/app.log` 會多一行 `NVDA cache 24/25`（命中/總份數）。
-
-I1. **Task 10：Tab3 的「本地資料快取」區塊**（未完成，程式碼寫到一半）
-   - 要做的：Tab3（進階設定）加一塊顯示「哪些公司有快取、各佔多少空間」，
-     每家一顆「清除」、底下一顆「全部清除」（唯一不可逆操作，要二次確認），
-     外加總容量與「開啟資料夾」
-   - **半成品已 `git stash`**（stash 訊息 `Task 10 partial: Tab3 cache panel
-     (interrupted mid-wiring)`）：面板本體約 120 行已成形，但 `_start_worker` /
-     `_poll_queue` 的刷新掛勾還沒接完。要嘛 `git stash pop` 接著做，要嘛
-     `git stash drop` 照 brief 重寫（brief 在 `.superpowers/sdd/.../task-10-brief.md`）
-   - **⚠ 這塊必須自帶第二層固定高度捲動容器**（`_build_fixed_height_scrollable`，
-     約 110px）。Tab3 整頁本來就靠 `_TAB3_HEIGHT`（現值 355）撐住固定高度，
-     快取常駐十幾二十家公司，清單直接攤開會把 Tab3 撐爆、擠掉上面 SEC identity
-     與 AI 設定的可視範圍
-   - **加完要重新量 `_TAB3_HEIGHT`**（`docs/ARCHITECTURE.md`「視窗擺放」的既有規則：
-     改任何一頁版面都要重量）。量法：寫一支 Tk 探針**放在暫存目錄、不要放進
-     `scripts/`**，建 `SECFetcherApp`、`update_idletasks()`、讀各分頁
-     `winfo_reqheight()`，目標是 Tab3 與 Tab1 相差 ±5px 內、Notebook 總高不變
-   - **抓取進行中兩顆清除鈕都要 disable**（純函式 `main.cache_buttons_state()`
-     已經做好了，直接用），不然會邊寫邊刪同一個 ticker 的資料夾
-   - 九條 `gui.*` 字串四語系都已經進去了，不用再翻譯
-
-I2. **Task 11：驗收，需要網路實抓**（未做）
-   - **逐格比對**：同一家公司「清快取重抓」產出的 Excel 存成 base、「讀快取」
-     存成 new，跑 `scripts/excel_golden.py check base new`，要 **0 格不同**。
-     快取只能改變耗時，不能改變任何一格輸出
-   - **效能基準用 ARLO**：`docs/ARCHITECTURE.md` 記的實測是 25 份 filing 共 66 秒，
-     其中 XBRL 解析 19.9s ＋ `to_dataframe()` 28.4s ≈ 48s 是會被快取吃掉的部分，
-     剩下約 18s 是查清單等網路往返，快取**消不掉**。所以預期是 **3~5 倍**
-     （全熱 <15s），**不是「秒開」**——這個預期要先對齊，免得驗收時覺得「怎麼還要等」
-   - **⚠ 同時要量冷跑有沒有變慢**：miss 的時候為了落檔會多做一次三張表的
-     `to_dataframe()`，估計 ARLO 冷跑 +22s（約 +34%）。這是刻意的取捨——
-     miss 時改回傳替身物件可以省掉，但那會讓「冷跑 vs 熱跑逐格比對」變成
-     自己跟自己比、驗收失去意義。實測若超過 +30% 要記進 ARCHITECTURE 的已知取捨
-   - **65 條 `slow` 測試還沒跑過**（`pytest -m slow`，會打真實 SEC，約 12 分鐘）。
-     這次改的是四個 builder 共用的熱路徑，slow 那層最可能發現行為變化，併回 master 前要補跑
-   - 人工確認一次：某家公司最新一期 10-Q 已經在快取裡之後，公司真的發了新一期，
-     下次抓要抓到新的那期（不是繼續讀舊資料）
-   - 文件收尾：`docs/ARCHITECTURE.md` 加一節（快取卡在哪一層、四道閘、負向快取與
-     網路失敗的分野、替身物件的兩條隱性規則、實測數字），並更新 `_TAB3_HEIGHT` 實測值
+**目前狀態**：快取**已經生效**且已驗收——Tab3 的清除面板已接完
+（`main.py`），ARLO 實測熱跑／冷跑 8.85 倍、golden 逐格比對 0 格不同。
+全套測試 1387 passed（`not slow`）；`pytest -m slow` 結果見
+`docs/ARCHITECTURE.md`「本地 filing 快取」一節。
 
 I3. **⚠ 既有缺口（不是這次造成的）：`_compare_worker` 不設 `is_running`，
      跨公司比較與批次抓取可以同時跑**（2026-09-03 做快取時發現）
