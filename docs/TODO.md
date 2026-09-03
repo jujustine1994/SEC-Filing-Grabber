@@ -259,6 +259,117 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
      `Change in Inventories` AEP、`Finance Lease Liabilities, LT` ON、`Other Current Assets` CVX
 
 
+## I. 本地 filing 快取（2026-09-03 開工，主體已完成、收尾未做）
+
+> **動手前必讀**：規格 `docs/superpowers/specs/2026-09-03-local-filing-cache-design.md`、
+> 實作計畫 `docs/superpowers/plans/2026-09-03-local-filing-cache.md`（11 個 task，
+> 逐條含測試碼）。執行紀錄與所有已判決的取捨在
+> `.superpowers/sdd/2026-09-03-local-filing-cache/progress.md`（git-ignored，只在本機）。
+> 分支 `feature/local-filing-cache`，尚未併回 master。
+
+**這件事在做什麼**：抓同一家公司不要每次都重新對 SEC 打 20 年份 filing 再解析一次。
+快取卡在**解析層與比對層之間**——存的是 edgartools 解出來的三張 DataFrame，
+`IS/BS/CF_TEMPLATE` 那套科目比對永遠在快取之上即時重跑。所以以後改 hint regex、
+加比率、調 Q4 合成邏輯都**不會**讓快取失效；但 **edgartools 升版會**，那條軸線靠
+每份快取檔裡的 `edgartools_version` 欄位擋。
+
+**目前狀態（Task 1-9 已完成並通過逐條 review，全套測試 1387 passed）**：
+快取**已經生效**。第二次抓同一家公司會讀 `%APPDATA%\SEC Financial Tools\filing_cache\`，
+`logs/app.log` 會多一行 `NVDA cache 24/25`（命中/總份數）。
+
+I1. **Task 10：Tab3 的「本地資料快取」區塊**（未完成，程式碼寫到一半）
+   - 要做的：Tab3（進階設定）加一塊顯示「哪些公司有快取、各佔多少空間」，
+     每家一顆「清除」、底下一顆「全部清除」（唯一不可逆操作，要二次確認），
+     外加總容量與「開啟資料夾」
+   - **半成品已 `git stash`**（stash 訊息 `Task 10 partial: Tab3 cache panel
+     (interrupted mid-wiring)`）：面板本體約 120 行已成形，但 `_start_worker` /
+     `_poll_queue` 的刷新掛勾還沒接完。要嘛 `git stash pop` 接著做，要嘛
+     `git stash drop` 照 brief 重寫（brief 在 `.superpowers/sdd/.../task-10-brief.md`）
+   - **⚠ 這塊必須自帶第二層固定高度捲動容器**（`_build_fixed_height_scrollable`，
+     約 110px）。Tab3 整頁本來就靠 `_TAB3_HEIGHT`（現值 355）撐住固定高度，
+     快取常駐十幾二十家公司，清單直接攤開會把 Tab3 撐爆、擠掉上面 SEC identity
+     與 AI 設定的可視範圍
+   - **加完要重新量 `_TAB3_HEIGHT`**（`docs/ARCHITECTURE.md`「視窗擺放」的既有規則：
+     改任何一頁版面都要重量）。量法：寫一支 Tk 探針**放在暫存目錄、不要放進
+     `scripts/`**，建 `SECFetcherApp`、`update_idletasks()`、讀各分頁
+     `winfo_reqheight()`，目標是 Tab3 與 Tab1 相差 ±5px 內、Notebook 總高不變
+   - **抓取進行中兩顆清除鈕都要 disable**（純函式 `main.cache_buttons_state()`
+     已經做好了，直接用），不然會邊寫邊刪同一個 ticker 的資料夾
+   - 九條 `gui.*` 字串四語系都已經進去了，不用再翻譯
+
+I2. **Task 11：驗收，需要網路實抓**（未做）
+   - **逐格比對**：同一家公司「清快取重抓」產出的 Excel 存成 base、「讀快取」
+     存成 new，跑 `scripts/excel_golden.py check base new`，要 **0 格不同**。
+     快取只能改變耗時，不能改變任何一格輸出
+   - **效能基準用 ARLO**：`docs/ARCHITECTURE.md` 記的實測是 25 份 filing 共 66 秒，
+     其中 XBRL 解析 19.9s ＋ `to_dataframe()` 28.4s ≈ 48s 是會被快取吃掉的部分，
+     剩下約 18s 是查清單等網路往返，快取**消不掉**。所以預期是 **3~5 倍**
+     （全熱 <15s），**不是「秒開」**——這個預期要先對齊，免得驗收時覺得「怎麼還要等」
+   - **⚠ 同時要量冷跑有沒有變慢**：miss 的時候為了落檔會多做一次三張表的
+     `to_dataframe()`，估計 ARLO 冷跑 +22s（約 +34%）。這是刻意的取捨——
+     miss 時改回傳替身物件可以省掉，但那會讓「冷跑 vs 熱跑逐格比對」變成
+     自己跟自己比、驗收失去意義。實測若超過 +30% 要記進 ARCHITECTURE 的已知取捨
+   - **65 條 `slow` 測試還沒跑過**（`pytest -m slow`，會打真實 SEC，約 12 分鐘）。
+     這次改的是四個 builder 共用的熱路徑，slow 那層最可能發現行為變化，併回 master 前要補跑
+   - 人工確認一次：某家公司最新一期 10-Q 已經在快取裡之後，公司真的發了新一期，
+     下次抓要抓到新的那期（不是繼續讀舊資料）
+   - 文件收尾：`docs/ARCHITECTURE.md` 加一節（快取卡在哪一層、四道閘、負向快取與
+     網路失敗的分野、替身物件的兩條隱性規則、實測數字），並更新 `_TAB3_HEIGHT` 實測值
+
+I3. **⚠ 既有缺口（不是這次造成的）：`_compare_worker` 不設 `is_running`，
+     跨公司比較與批次抓取可以同時跑**（2026-09-03 做快取時發現）
+   - **現況**：`main.py` 的 `_start_worker()` 會設 `self.is_running = True` 並鎖住
+     Tab1／批次的按鈕；但跨公司比較的 `_compare_worker` 是自己開執行緒
+     （`main.py:1909` 附近），只把 `compare_run_btn` 設 disabled，**沒有設
+     `is_running`**。所以「批次抓取跑到一半，切到第 4 分頁按產生比較 Excel」
+     是按得下去的，兩個 worker 會真的並行
+   - **快取層已經對這種重疊免疫**：`fetcher_gaap` 的 `_disk_cache_var` 與
+     `_last_cache_stats_var` 都改用 `ContextVar`（新執行緒天生拿到空 context），
+     所以不會再出現「A 公司的 filing 被寫進 B 公司資料夾」或「log 顯示別家的命中數」
+   - **但底層那把鎖還是沒有**：兩趟同時打 SEC 會互相加重速率壓力，而
+     D11 已經實測過「連續大量抓取時 SEC 偶發失敗 → 靜默少掉幾格」。這是
+     **資料完整度**的風險，不是快取的風險
+   - **可能修法**：`_compare_worker` 開跑前也設 `self.is_running`（並在
+     `compare_done`／`compare_error` 還原），或改走既有的 `_start_worker()`。
+     要留意跨公司比較有自己的完成/失敗訊息路徑，直接套 `_start_worker` 可能
+     連帶影響按鈕還原邏輯，**動手前先確認三條路徑的還原點**
+
+I4. **`tests/test_i18n.py` 對「同一個 key 在同一個檔出現兩次」結構性失明**
+     （2026-09-03 實際踩到）
+   - **實際發生過**：加九條快取字串時，`en.py`／`ja.py`／`zh_cn.py` 各被多塞了
+     一份 `gui.btn.confirm`（原本那份還在）。三條 i18n 測試**全綠**
+   - **為什麼看不到**：Python 的 dict 字面值在**解析階段**就會把重複鍵吃掉
+     （後者覆蓋前者），執行期的 `STRINGS` 永遠只有一份，所以比對 key 集合、
+     比對 placeholder 都不可能發現
+   - **當下靠什麼抓到的**：`git diff --stat` 三個檔 +10 行、一個檔 +9 行，
+     九條字串卻應該四個檔都 +9——是行數對不上被注意到的，不是測試抓到的
+   - **可能修法**：加第四條防線，用 `ast` 解析四個 locale 檔的原始碼，
+     檢查同一個 dict 裡沒有重複的 key 字面值。成本低、一次寫完永久有效
+   - **為什麼值得做**：這次兩份值一樣所以無害，但下次有人只改其中一份，
+     畫面會顯示另一份的內容，而且**四條測試全綠**，查起來會非常久
+
+I5. **修正案（10-Q/A、10-K/A）現況本來就不抓**（承快取設計書，獨立議題）
+   - `_list_filings()` 目前呼叫時 `amendments=False`（`fetcher_gaap.py:304` 附近），
+     所以公司重編財報開的那份新 filing **現在就不在抓取清單裡**，不管有沒有快取
+     都一樣抓不到。快取只保證「清單裡查得到的 filing」會被正確、即時補齊，
+     不擴大也不縮小現有抓取範圍
+   - 要不要處理是獨立的產品判斷題：抓修正案等於同一期會有兩份來源，
+     要先決定「以哪一份為準」以及重編後舊數字要不要覆蓋——牽動 D11 的
+     「as reported vs restated」既有立場（`Compare_Notes` 目前明講保留原始申報版）
+
+I6. **快取層已知的小取捨（都已判決為可接受，記錄備查，不必主動修）**
+   - `ACCESSION_RE` 用 `$` 而非 `\Z`，允許結尾一個換行。字元類只有數字與破折號，
+     不可能夾帶 `/`、`\`、`..`，路徑注入防線實質上仍然成立
+   - `_save_to_disk_cache()` 的 try 只包三個 getter，`df_to_payload` 與
+     `save_filing` 在外面。這兩步理論上仍可能拋非 `OSError` 的例外而中斷抓取，
+     與模組自己「快取只是加速層，寫入失敗不該影響抓取」的原則有落差
+   - `_retry_once()` 會開第二個最外層 scope，`last_cache_stats()` 因此只反映
+     重試那一趟，第一趟的命中數在 log 上消失；`rebuild_manifest()` 也會跑兩次
+   - 空的殘留資料夾（份數與容量都是 0）不會出現在 GUI 清單，也就永遠不會被
+     「全部清除」掃到。會自癒（下次抓那家時重新寫入），只是那個空殼會留著
+   - ticker 換手時（同代號換成另一家公司），冒名那趟會用新 cik 覆寫同名檔案，
+     兩邊互相 thrash。資料永遠是對的（cik 閘門擋著），只是變慢
+
 ## 執行順序建議（2026-08-22 更新）
 
 > **維護規則**：做完的條目**直接從本檔刪除**，內容搬進 `docs/CHANGELOG.md`。
@@ -267,12 +378,16 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
 
 | 順位 | 項目 | 需要 API？ | 需要人？ | 說明 |
 |---|---|---|---|---|
+| 0 | I1／I2 本地快取收尾 | 是（I2 要實抓） | 是（看畫面、對齊效能預期） | 主體已完成且已生效，只差 Tab3 版面與驗收；分支 `feature/local-filing-cache` 還沒併回 master，**擺著不動會愈來愈難併** |
 | 1 | B2 skill 端抽取 | 否 | 是（skill 設計） | Non-GAAP 抽取改由 Claude Code 做 |
 | 2 | G8（比較欄補洞） | — | 部分 | 風險最高，會動所有既有期間的資料來源優先序，所以排在最後 |
 | 3 | D8／D0-2／D0-5／D9 一次決策 | 部分否 | 是 | 都是「已知限制要不要修」的產品判斷題，建議合併成一次決策對話 |
 | 4 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
 | — | G4 overflow 標示 | 否 | 是 | 建議只做標示，不做 synonym 合併 |
 | — | F2 估值倍數 | 是（要股價來源） | 是 | 待研究，未確認方向 |
+| — | I3 並行鎖缺口 | 否 | 是（要決定還原點） | 跨公司比較不設 `is_running`，與批次抓取可並行；影響資料完整度（見 D11），不影響快取 |
+| — | I4 locale 重複 key 測試 | 否 | 否 | 成本低、一次寫完永久有效，可以順手併進任何一次 i18n 改動 |
+| — | I5 修正案要不要抓 | 否 | 是 | 產品判斷題，牽動「as reported vs restated」的既有立場 |
 
 ## D. 待 CTH 決定的已知限制
 
