@@ -360,5 +360,24 @@ def test_a_manifest_out_of_sync_with_disk_is_corrected_by_rebuild(cache_dir):
     assert filing_cache.rebuild_manifest("NVDA", cik=1045810)["filings"] == []
 
 
+def test_rebuild_skips_corrupt_individual_accession_files(cache_dir):
+    """某份 <accession>.json 壞掉不能拖垮整份重建——該份跳過，其他份繼續進索引。"""
+    _save_sample()
+    filing_cache.save_filing("NVDA", ACC2, form="10-K", filing_date="2025-02-26",
+                             cik=1045810, dataframes=None, has_financials=False)
+    # 第一份 accession 的檔案壞掉
+    filing_cache.filing_path("NVDA", ACC).write_text("{ not json", encoding="utf-8")
+    manifest = filing_cache.rebuild_manifest("NVDA", cik=1045810)
+    accs = {f["accession_no"] for f in manifest["filings"]}
+    # 好的那份在索引裡，壞的那份不在
+    assert ACC2 in accs
+    assert ACC not in accs
+    assert len(manifest["filings"]) == 1
+
+
 def test_rebuilding_a_ticker_with_no_cache_directory_is_harmless(cache_dir):
+    """未知 ticker 重建 manifest 不該建空資料夾（因為 `if rows or directory.exists()`
+    的防線）。純顯示用的索引壞掉或不存在的話呼叫端會重建，沒必要搶先建資料夾。"""
     assert filing_cache.rebuild_manifest("ZZZZ", cik=1)["filings"] == []
+    # 重建後不該建出空資料夾
+    assert not filing_cache.ticker_dir("ZZZZ").exists()
