@@ -63,3 +63,54 @@ def payload_to_df(payload: dict | None) -> pd.DataFrame | None:
             # 下游只有極少數地方在意 dtype。
             pass
     return df
+
+
+# ── 替身物件（快取命中時 `_filing_obj()` 的回傳值）──────────────────────────
+#
+# ⚠ 這三個類別**刻意不定義 `__getattr__`**。`_financials_of()` 是
+# `getattr(tenq, "financials", None)`，替身若對未知屬性兜底回 None，以後有人
+# 在某個 builder 新用到 filing 物件的其他屬性，快取命中的路徑會安靜地把整份
+# filing 當成沒資料、清快取重跑卻是好的——這種 bug 極難查。只實作有人真的
+# 在用的那幾條路徑，其餘一律照 Python 預設失敗。
+
+class _CachedStatement:
+    """替身的一張報表。只有 `to_dataframe()`，因為呼叫端只用這一個。"""
+
+    def __init__(self, payload: dict):
+        self._payload = payload
+
+    def to_dataframe(self) -> pd.DataFrame:
+        return payload_to_df(self._payload)
+
+
+class _CachedFinancials:
+    """替身的 `financials`。三個 getter 全部無參數，跟真物件的用法一致。"""
+
+    def __init__(self, dataframes: dict):
+        self._dfs = dataframes or {}
+
+    def _stmt(self, key: str) -> _CachedStatement | None:
+        payload = self._dfs.get(key)
+        return None if payload is None else _CachedStatement(payload)
+
+    def income_statement(self):
+        return self._stmt("income_statement")
+
+    def balance_sheet(self):
+        return self._stmt("balance_sheet")
+
+    def cashflow_statement(self):
+        return self._stmt("cashflow_statement")
+
+
+class _CachedFiling:
+    """替身的 filing 物件。只有 `.financials` 一個屬性。"""
+
+    def __init__(self, entry: dict):
+        self.financials = (_CachedFinancials(entry.get("dataframes") or {})
+                           if entry.get("has_financials") else None)
+
+
+def cached_filing(entry: dict) -> _CachedFiling:
+    """快取檔內容 → 可以餵給既有 builder 的替身 filing 物件。"""
+    return _CachedFiling(entry)

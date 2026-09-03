@@ -62,3 +62,71 @@ def test_none_and_empty_dataframe_are_not_the_same_thing():
     assert back is not None
     assert len(back) == 0
     assert list(back.columns) == list(empty.columns)
+
+
+# ── 替身物件 ──────────────────────────────────────────────────────────────
+#
+# 快取命中時 `_filing_obj()` 回傳的東西。四個 builder 對 filing 物件的用法
+# 只有一種：`.financials` → `income_statement()`/`balance_sheet()`/
+# `cashflow_statement()` → `.to_dataframe()`，全部無參數。
+
+def _entry(has_financials=True, is_df="sample", bs_df="sample", cf_df=None):
+    def _p(v):
+        if isinstance(v, str) and v == "sample":
+            return filing_cache.df_to_payload(_sample_df())
+        return filing_cache.df_to_payload(v)
+    return {
+        "schema_version": filing_cache.SCHEMA_VERSION,
+        "accession_no": "0001045810-25-000123",
+        "form": "10-Q",
+        "filing_date": "2025-08-27",
+        "cik": 1045810,
+        "has_financials": has_financials,
+        "dataframes": None if not has_financials else {
+            "income_statement": _p(is_df),
+            "balance_sheet": _p(bs_df),
+            "cashflow_statement": _p(cf_df),
+        },
+    }
+
+
+def test_cached_filing_exposes_financials_attribute_directly():
+    """有兩處直接寫 `tenq.financials.xxx()` 繞過 `_financials_of()`
+    （fetcher_gaap.py:1123、2584-2586），這兩條路也要能吃替身。"""
+    filing = filing_cache.cached_filing(_entry())
+    df = filing.financials.income_statement().to_dataframe()
+    pd.testing.assert_frame_equal(df, _sample_df())
+
+
+def test_cached_filing_raises_attribute_error_for_anything_else():
+    """`_financials_of()` 是 `getattr(tenq, "financials", None)`。替身若對未知
+    屬性用 `__getattr__` 兜底回 None，以後有人新用到 filing 的其他屬性時，
+    快取命中的路徑會**安靜地把整份 filing 當成沒資料**，清快取重跑卻是好的
+    ——這種 bug 極難查。所以未知屬性一律照 Python 預設拋 AttributeError。"""
+    filing = filing_cache.cached_filing(_entry())
+    with pytest.raises(AttributeError):
+        filing.has_earnings
+    with pytest.raises(AttributeError):
+        filing.obj
+
+
+def test_missing_statement_comes_back_as_none_not_empty():
+    """`is_stmt is None` 這種判斷在 fetcher_gaap.py:1330 / 1499 都有。"""
+    filing = filing_cache.cached_filing(_entry(cf_df=None))
+    assert filing.financials.cashflow_statement() is None
+
+
+def test_empty_statement_comes_back_as_an_empty_dataframe_not_none():
+    """跟上一條成對：空表不是「沒有這張表」，下游行為不一樣。"""
+    empty = _sample_df().iloc[0:0]
+    filing = filing_cache.cached_filing(_entry(cf_df=empty))
+    stmt = filing.financials.cashflow_statement()
+    assert stmt is not None
+    assert len(stmt.to_dataframe()) == 0
+
+
+def test_negative_cache_entry_has_financials_none():
+    """pre-XBRL 舊申報：`financials` 本來就是 None，替身要照樣回 None，
+    讓 `_financials_of()` 走既有的 `continue` 分支。"""
+    filing = filing_cache.cached_filing(_entry(has_financials=False))
+    assert filing.financials is None
