@@ -1,9 +1,11 @@
 # 本地 filing 快取 設計
 
 > 2026-09-03 · 對應 `docs/TODO.md`（待補條目）
-> 狀態：設計已與 CTH 逐段確認（Q&A 形式），另一個 session 做過 spike 驗證
-> 序列化可行性並抓出 9 項要補的細節（版本漂移、負向快取、manifest 定位、
-> GUI 版面、寫入時機等），已全部併入本文件，待寫實作計畫
+> 狀態：設計已與 CTH 逐段確認（Q&A 形式），另一個 session 做過兩輪 spike 審查
+> （第一輪：版本漂移、負向快取、manifest 定位、GUI 版面、寫入時機；第二輪：
+> 快取命中時 `_filing_obj()` 的替身物件介面、dtype 存檔、edgartools 版本
+> 取得方式、原子寫入、避免雙重編碼、log 記快取命中數），已全部併入本文件，
+> 待寫實作計畫
 
 ## 目標
 
@@ -77,6 +79,58 @@ XBRL parser 修 bug）可能讓同一份 filing 解出不一樣的結果——�
                                   └─ 沒有 → 打 SEC 解析 → 寫進本機快取 → 回傳
 ```
 
+### ⚠ 快取命中時 `_filing_obj()` 要回傳什麼——替身物件（proxy）
+
+這是動工前一定要先定義清楚的介面，不然實作第一天就會卡住：`_filing_obj()`
+目前的回傳值是 edgartools 的 filing 物件，快取命中時我們手上只有存檔的
+DataFrame，**沒辦法憑空生出一個真正的 edgartools 物件**，必須回傳一個
+**長得像它、但只實作有人真的在用的那幾條路徑**的替身。
+
+三個約束（都是查現有呼叫端查出來的，不是預先假想）：
+
+1. **替身要有 `.financials` 屬性**，不能只支援 `_financials_of(tenq)`
+   ——有兩處直接寫 `tenq.financials.xxx()` 繞過那層 helper
+   （`fetcher_gaap.py:1123`、`fetcher_gaap.py:2584-2586`），這兩條路也要能吃
+   替身，不然快取命中時會直接 `AttributeError`。
+2. **替身遇到沒實作的屬性要照 Python 預設行為讓它拋 `AttributeError`，
+   絕對不能吞下來回 `None`**。`_financials_of()` 本身是
+   `getattr(tenq, "financials", None)`——如果替身對任何未知屬性都回
+   `None`（例如用 `__getattr__` 兜底），以後有人在某個 builder 裡新用到
+   filing 物件的其他屬性，快取命中的路徑會**安靜地把整份 filing 當成
+   沒資料**，清快取重跑卻是好的——這種 bug 極難查。替身只該明確定義
+   `.financials` 這一條鏈用到的方法，其餘什麼都不寫，讓存取直接照物件
+   沒有這個屬性的正常方式失敗。
+3. **三張表（IS/BS/CF）各自可能是 `None`**（`is_stmt is None` 這種判斷在
+   `fetcher_gaap.py:1330`／`1499` 都有），快取格式要能分開表示「這張表
+   不存在」跟「這張表存在但是空 DataFrame」兩種不同狀態，讀回來要準確
+   還原成原本那一種——`_current_q_col(df)` 等下游函式對這兩種狀態的行為
+   不一樣。
+
+介面大致長這樣（實作時的確切類別設計留給實作計畫階段，這裡定調行為契約）：
+
+```python
+class _CachedFinancials:
+    def income_statement(self):   # 回傳 _CachedStatement 或 None
+        ...
+    def balance_sheet(self):      # 同上
+        ...
+    def cashflow_statement(self): # 同上
+        ...
+
+class _CachedStatement:
+    def to_dataframe(self):       # 回傳還原 dtype 之後的 DataFrame
+        ...
+
+class _CachedFiling:
+    def __init__(self, cached_data):
+        self.financials = _CachedFinancials(cached_data)
+    # 不定義 __getattr__——任何其他屬性存取一律照 Python 預設拋 AttributeError
+```
+
+順帶一提：這也是為什麼現有 G9「單次執行內的記憶體解析快取」
+（`_parse_cache_scope()`）完全不用改——它存的就是 `_filing_obj()` 的回傳值，
+存真物件或存這個替身，對它來說沒有差別。
+
 ---
 
 ## 二、儲存位置與檔案結構
@@ -146,8 +200,10 @@ XBRL parser 修 bug）可能讓同一份 filing 解出不一樣的結果——�
 ### 單一 filing 快取檔（`<accession>.json`）
 
 存三張 pandas DataFrame（income statement／balance sheet／cashflow
-statement，即 `_financials_of()` 之後三個 `.to_dataframe()` 呼叫的結果），
-用 `df.to_json(orient="split")` 序列化，外層包一份 metadata：
+statement，即 `_financials_of()` 之後三個 `.to_dataframe()` 呼叫的結果）。
+每張表可能是 `None`（見上方替身物件的約束 3），存的時候要能分辨「這張表
+不存在」（值為 `null`）跟「存在但是空表」（有 `columns`/`index` 但
+`data` 是空陣列）：
 
 ```json
 {
@@ -160,18 +216,40 @@ statement，即 `_financials_of()` 之後三個 `.to_dataframe()` 呼叫的結�
   "edgartools_version": "5.29.0",
   "has_financials": true,
   "dataframes": {
-    "income_statement": "<df.to_json(orient='split') 的字串內容>",
-    "balance_sheet": "<同上>",
-    "cashflow_statement": "<同上>"
+    "income_statement": {
+      "data": { "...": "json.loads(df.to_json(orient='split')) 的物件內容" },
+      "dtypes": {"concept": "object", "level": "int64", "abstract": "bool", "...": "..."}
+    },
+    "balance_sheet": { "data": { "...": "..." }, "dtypes": { "...": "..." } },
+    "cashflow_statement": null
   }
 }
 ```
 
-這個形狀已經實測驗證過（見「風險」）：`to_json(orient="split")` 對這三張表
-是乾淨的，沒有踩到循環參照或不可序列化的型別。**唯一要處理的細節**：
-`pandas.read_json()` 對「整欄都是 null」的欄位會推成 `float64`，跟原本可能
-是 `str` 的 dtype 對不上——讀回來之後要照原始 DataFrame 的 dtype map 明確
-`astype()` 回去，不能只靠 `read_json` 自動推斷。
+三個實作細節（都是第二輪 spike 才發現、原本這節有漏掉）：
+
+1. **存 `json.loads(df.to_json(orient="split"))` 的物件，不要存
+   `df.to_json(...)` 的字串。** 直接把字串塞進外層 JSON 等於整份內容被
+   逃逸一次（每個 `"` 變 `\"`），檔案膨脹約 10~15%，而且用文字編輯器打開
+   完全不能看，debug 不方便。讀取時反過來 `json.dumps(...)` 餵回
+   `pandas.read_json()`，或直接用 `columns`/`index`/`data` 自己組
+   `pd.DataFrame`。
+2. **`dtypes` 是必要欄位，不是可省略的**。`to_json(orient="split")` 本身
+   不含 dtype 資訊，`pandas.read_json()` 對「整欄都是 null」的欄位會推成
+   `float64`，跟原本可能是 `str`／`object` 的型別對不上——讀回來之後要
+   照存檔時記下的 `dtypes` map 明確 `astype()` 回去，不能依賴自動推斷。
+3. **`edgartools_version` 的取得方式要指名**：用
+   `importlib.metadata.version("edgartools")`（實測回 `"5.29.0"`）——
+   **不要用 `edgar.__version__`，這個屬性不存在**（實測會
+   `AttributeError`）。取不到版本號（例如未來套件改了發布方式）就直接
+   視同無快取，不要寫一個 `"unknown"` 之類的預設值混進檔案裡，那會讓版本
+   比對邏輯永遠比對成功或永遠失敗，看預設值怎麼寫，兩種都是錯的。
+4. **`<accession>.json` 的寫入也要走 tmp + `os.replace()` 的原子寫法**
+   ——理由跟 manifest 一樣：兩個實例（批次抓取＋跨公司比較）有機會同時
+   解析到同一份 filing、同時要寫同一個檔名，非原子寫法會交錯出半截
+   JSON，磁碟寫到一半空間不夠也一樣。tmp 檔名要帶 PID
+   （例如 `<accession>.json.<pid>.tmp`），避免兩個實例互相蓋到對方的
+   暫存檔。成本跟 manifest 那套一樣低，兩種檔案統一用同一套寫入 helper。
 
 ---
 
@@ -222,6 +300,17 @@ CTH 講清楚（後面「風險」那節會再提一次），要不要處理修�
 **不會有資料過舊的風險（在上面這個澄清的前提下）**：filing 一旦存在 SEC 上
 內容不會變——本機快取的每一份 filing 永遠正確，差別只在「本機還沒有最新
 那幾份」，而這一步每次都會自動補齊。
+
+**log 要記快取命中數，不能只看耗時。** 耗時變快也可能只是那天 SEC 比較順、
+跟有沒有吃到快取無關；沒有命中數字，使用者跟維護者都無法判斷「這次到底
+有沒有吃到快取」。沿用現有「設定塞在起始 `===` 那行」的規則，加一個欄位：
+
+```
+=== 2026-09-03 14:22:10 Fetch NVDA | GAAP | 10-Q/10-K | max80 | cache 24/25 ===
+```
+
+`cache 24/25` 表示這趟要處理的 25 份 filing 裡有 24 份是直接讀快取的。這行
+本身固定英文（2026-09-02 起 `logs/app.log` 一律英文的既有規則）。
 
 ---
 
