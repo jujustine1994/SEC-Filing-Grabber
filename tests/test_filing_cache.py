@@ -130,3 +130,70 @@ def test_negative_cache_entry_has_financials_none():
     讓 `_financials_of()` 走既有的 `continue` 分支。"""
     filing = filing_cache.cached_filing(_entry(has_financials=False))
     assert filing.financials is None
+
+
+# ── 路徑與原子寫入 ────────────────────────────────────────────────────────
+
+@pytest.fixture
+def cache_dir(tmp_path, monkeypatch):
+    """把快取根目錄導到 tmp_path。`cache_root()` 每次呼叫重讀環境變數，
+    所以 monkeypatch 就夠了，不用改模組層常數。"""
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    return tmp_path / "SEC Financial Tools" / "filing_cache"
+
+
+def test_cache_root_follows_the_config_py_appdata_convention(cache_dir):
+    assert filing_cache.cache_root() == cache_dir
+
+
+def test_ticker_dir_is_uppercase(cache_dir):
+    assert filing_cache.ticker_dir("nvda").name == "NVDA"
+
+
+def test_filing_path_rejects_anything_that_is_not_an_accession_number(cache_dir):
+    assert filing_cache.filing_path("NVDA", "0001045810-25-000123") is not None
+    for bad in ("../../etc/passwd", "", "abc", "0001045810-25-00012"):
+        assert filing_cache.filing_path("NVDA", bad) is None
+
+
+def test_atomic_write_leaves_no_tmp_file_behind(cache_dir):
+    path = cache_dir / "NVDA" / "x.json"
+    assert filing_cache.atomic_write_json(path, {"a": 1}) is True
+    assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1}
+    assert list(path.parent.glob("*.tmp")) == []
+
+
+def test_atomic_write_uses_a_pid_suffixed_tmp_then_replaces(cache_dir, monkeypatch):
+    """兩個實例（批次抓取＋跨公司比較）有機會同時寫同一個檔名。
+    tmp 檔名不帶 PID 的話兩邊會蓋到對方的暫存檔。"""
+    seen = {}
+
+    real_replace = os.replace
+
+    def _spy(src, dst):
+        seen["src"] = str(src)
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(filing_cache.os, "replace", _spy)
+    path = cache_dir / "NVDA" / "y.json"
+    filing_cache.atomic_write_json(path, {"a": 1})
+    assert str(os.getpid()) in seen["src"]
+    assert seen["src"].endswith(".tmp")
+
+
+def test_atomic_write_returns_false_instead_of_raising_when_disk_write_fails(
+        cache_dir, monkeypatch):
+    """磁碟滿／權限問題時只記 log 繼續跑，不能拖垮整趟抓取。"""
+    def _boom(*a, **kw):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(filing_cache, "open", _boom, raising=False)
+    assert filing_cache.atomic_write_json(cache_dir / "NVDA" / "z.json", {"a": 1}) is False
+
+
+def test_edgartools_version_is_read_from_package_metadata():
+    """實測 `edgar.__version__` 不存在（AttributeError），只能走
+    importlib.metadata。取不到就回 None，不可以填 "unknown" 之類的預設值
+    ——那會讓版本比對永遠成功或永遠失敗，兩種都是錯的。"""
+    v = filing_cache.edgartools_version()
+    assert v is None or (isinstance(v, str) and v[0].isdigit())

@@ -27,6 +27,69 @@ ACCESSION_RE = re.compile(r"^\d{10}-\d{2}-\d{6}$")
 STATEMENT_KEYS = ("income_statement", "balance_sheet", "cashflow_statement")
 
 
+# ── 路徑 ──────────────────────────────────────────────────────────────────
+#
+# 沿用 `config.py` 的 `%APPDATA%\SEC Financial Tools\`（**有空格**那個；
+# `override_engine.py` 用的是底線版 `SEC_Financial_Tools`，兩者歷史上就分岔了，
+# 這裡跟 config.py 對齊）。每次呼叫重讀環境變數，測試才好導到 tmp。
+
+def cache_root() -> Path:
+    appdata = os.environ.get("APPDATA")
+    if appdata:
+        return Path(appdata) / "SEC Financial Tools" / "filing_cache"
+    return Path.home() / ".sec_financial_tools" / "filing_cache"
+
+
+def ticker_dir(ticker: str) -> Path:
+    """一個 ticker 一個資料夾，名稱就是大寫 ticker——不用查表，在檔案總管
+    肉眼就看得出哪些公司有快取、大概多大。"""
+    return cache_root() / (ticker or "").strip().upper()
+
+
+def filing_path(ticker: str, accession: str) -> Path | None:
+    """`<accession>.json` 的完整路徑。accession 格式不合法回 None（不快取）
+    ——這同時擋掉把奇怪字串當檔名寫出去的可能。"""
+    if not ACCESSION_RE.match(str(accession or "")):
+        return None
+    return ticker_dir(ticker) / f"{accession}.json"
+
+
+# ── 原子寫入 ──────────────────────────────────────────────────────────────
+
+def atomic_write_json(path: Path, obj) -> bool:
+    """tmp + `os.replace()`。tmp 檔名帶 PID，避免兩個實例互相蓋到暫存檔。
+
+    寫不進去（磁碟滿、權限）只回 False，不拋——快取只是加速層，
+    寫入失敗不該影響這次抓取的結果。
+    """
+    tmp = Path(str(path) + f".{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(obj, f, ensure_ascii=False)
+        os.replace(tmp, path)
+        return True
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
+
+
+# ── edgartools 版本 ───────────────────────────────────────────────────────
+
+def edgartools_version() -> str | None:
+    """實測 `edgar.__version__` **不存在**（AttributeError），只能走
+    package metadata（實測回 "5.29.0"）。取不到回 None，呼叫端把 None 當成
+    「這次不要用快取」——不可以填一個預設值混進檔案裡。"""
+    try:
+        from importlib.metadata import version
+        return version("edgartools")
+    except Exception:
+        return None
+
+
 # ── DataFrame 序列化 ──────────────────────────────────────────────────────
 
 def df_to_payload(df: pd.DataFrame | None) -> dict | None:
