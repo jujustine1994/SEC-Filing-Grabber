@@ -2,6 +2,35 @@
 
 ## 2026-09-04
 
+- **TODO H1 實測驗收：companyfacts 對 CF 流量項的填滿率 25% → 100%**（201 家、零網路）。
+  H1 記的「修法：`fetcher_facts` 要加一層 YTD 相減還原單季」**其實早就做完了**
+  （`quarterly_from_ytd()`，`fetcher_facts.py:164`，7 條測試蓋住），只是沒有人回頭
+  量過改善幅度，TODO 一直停在「要加一層」。
+  - **做法**：拿 `output/_spike/` 既有的 facts JSON 與答案卷，把 mapping 的
+    `from_ytd` 拿掉當「修法前」，做同一份資料上的 A/B——**不需要重抓 201 家**
+  - **結果**：27 個 `from_ytd` 列的填滿率中位數 **25% → 100%**，完全重現 H1 原記錄
+    的 25%。`Capex`／`Dividends Paid`／`Operating Cash Flow`／`D&A` 等主要列都是 100%
+  - 沒到 100% 的六列（`Acquisitions` 61%、`Debt Proceeds` 66%、`Investment Proceeds`
+    76%、`Debt Repayments` 85%、`Investment Purchases` 85%、`Change in Deferred Revenue`
+    95%）都是「本來就不是每季都發生」的活動，不是抓取缺陷
+  - **G11 的 caveat 解除**（「facts 不是 CF 的 drop-in replacement」），但 G11
+    維持「不切換」的決策不變——這只是把技術阻礙拿掉
+
+- **TODO G13 成因查明：SNOW 的重複期末日是「季表混進純年度欄」，不是標籤撞號**。
+  原本猜「同一期被兩份 filing 用不同財季標籤收進來」，**猜錯了**。
+  - **實測**（逐份印 SNOW 的 16 份 10-Q，看 `_current_q_col()` 挑到什麼欄）：
+    `0001640147-22-000044`（2022-06-03 申報，本該是 FY2023Q1、期末 2022-04-30）
+    的損益表 dataframe **唯一的期間欄是 `2022-01-31 (FY)`**——那張表裡根本沒有
+    Q 欄。其餘 15 份都正常
+  - **鏈路**：`_is_q_col()`（`fetcher_gaap.py:875`）把 `"FY"` 也算成期間欄 →
+    `_current_q_col()` 回傳它 → `_col_to_quarter_label()` 回 `FY2022`
+  - **副作用比「看到兩個一樣的日期」嚴重**：dedup 是 `if label in periods: continue`，
+    那個假的 `FY2022` 佔掉位置後，**FY2023Q1 整季被靜默丟掉**
+  - **頻率**：掃 201 家答案卷，「季表出現純年度標籤」與「期末日重複」都只有 SNOW
+    一家且一對一重合——同一個成因的兩個症狀
+  - **修法未做**（會動到期間去重邏輯，要 CTH 點頭），候選方向記在 TODO G13
+
+
 - **快取替身的 DataFrame memo（TODO I7 第一刀）**：四個 builder（IS／BS／CF／
   segments）各自對同一份 filing 的同一張表呼叫 `to_dataframe()`，每次都把
   「JSON → DataFrame → astype」整輪重跑。`_CachedStatement` 改成 memo 解析

@@ -152,11 +152,36 @@ G8. **用「比較欄」當 fallback 補洞** ← **CTH 已決策，放最後做
    - 要處理的問題：① 同一期間會在多份 filing 出現（當期一次、隔年比較欄一次），取哪一版？當期優先、比較欄只補洞 ② 公司重編（restatement）時兩版數字不同，要不要標示 ③ 比較欄的欄名同樣不能採信 `(Qn)`，要走跟 D0-6 一樣的日期反推
    - 另一條路（成本較高，列為備案）：SEC Company Facts API（`data.sec.gov/api/xbrl/companyfacts/CIK##########.json`），一次拿回該公司歷來所有 XBRL fact。edgartools 的 `company.get_facts()` 已經在用來抓流通股數。交叉補洞能力更強，但 restatement 取版本的問題更嚴重
 
-G13. **同一個期末日出現兩次（重複列）**（2026-08-22 做 G6 判定規則分析時發現）
+G13. **同一個期末日出現兩次（重複列）** ✅ **成因已查明（2026-09-04），修法未做**
    - 實測 SNOW 的 `Data_Financials(Q)` 有兩欄期末日都是 `2022-01-31`
-   - 52 家、1,482 對相鄰期間裡只有這 1 筆，屬於低頻但真實的資料問題
-   - 要查：是同一期被兩份 filing 用不同財季標籤收進來（label 沒撞號但期末日撞了），還是別的原因
-   - G6 的補欄規則不會被它影響（`round(0/91)=0`），但重複欄本身會讓使用者看到兩個一樣的日期
+   - **原本的猜測（「同一期被兩份 filing 用不同財季標籤收進來」）是錯的。**
+     真正的成因是**季表裡混進了一個純年度欄**：
+
+     ```
+     FY2022     2022-01-31   ← 年度標籤，混進季表
+     FY2022Q4   2022-01-31   ← 真正的 Q4
+     FY2023Q1   （整欄不見了）
+     ```
+
+   - **實測證據**（2026-09-04 逐份印 SNOW 的 16 份 10-Q，`_current_q_col()` 挑到什麼欄）：
+     `0001640147-22-000044`（2022-06-03 申報，**本該是 FY2023Q1、期末 2022-04-30**）
+     的損益表 dataframe，**唯一的期間欄是 `2022-01-31 (FY)`**——不是「FY 欄被
+     優先挑走」，是那張表裡根本沒有 Q 欄。其餘 15 份都正常挑到 `(Qn)`
+   - **鏈路**：edgartools 對那份 10-Q 只解出年度欄 → `_is_q_col()`
+     （`fetcher_gaap.py:875`）把 `"FY"` 也算成期間欄 → `_current_q_col()` 回傳它
+     → `_col_to_quarter_label()`（`fetcher_gaap.py:819`）走 `period.upper() == "FY"`
+     分支回傳 `FY2022`
+   - **副作用比「看到兩個一樣的日期」嚴重**：`_build_is_table` 的 dedup 是
+     `if label in periods: continue`，那個假的 `FY2022` 佔掉位置之後，
+     **FY2023Q1 整季被靜默丟掉**
+   - **發生頻率**：掃 201 家的答案卷快取，「季表出現純年度標籤 `FY\d{4}`」與
+     「期末日重複」**都只有 SNOW 一家，且兩者一對一重合**——同一個成因的兩個症狀
+   - G6 的補欄規則不會被它影響（`round(0/91)=0`）
+   - **修法未做，要 CTH 點頭**。候選方向（都會動到期間去重邏輯）：
+     (a) 季表的 builder 直接拒收 `(FY)` 欄——最直接，但要確認沒有哪家公司的
+         季表本來就靠它補值；(b) 挑欄時優先找 `(Qn)`，全表只有 `(FY)` 時才退而求其次
+         並記進抓取帳本；(c) 維持現狀但在 Index 標紅。**(a) 看起來對，但這是
+         「靜默丟一季」換成「靜默少一欄」，差別要 CTH 判斷**
 
 ## H. 單一公司抓取的核心體檢（2026-08-22 CTH 指定為最重要的任務）
 
@@ -178,12 +203,25 @@ H0. **已有的體檢數字（2026-08-24 重跑，**201 家**實測，基線見 
    - **剩下 4 列改 concept 名字救不了**（公司沒在報表表面單獨列，只有附註有）：`Accrued Compensation`、`Op. Lease Liabilities, current`、`Operating Lease ROU Assets`、`Amortization of Intangibles`。詳見 H3-1
    - 資料在 `output/_spike/`（52 家的 facts JSON 與答案卷快取），重跑體檢不用再打網路。**注意答案卷的抓取窗不一致**：AAPL/ADBE/AMD/AVGO/COST/GOOGL/INTC/META/MSFT/NVDA/TSLA/WMT 十二家是全部 filing（44~69 期），其餘 40 家是 `max_filings=16`（約 21 期）。重建時要沿用同樣的參數，不然逐列覆蓋率沒得比
 
-H1. **⚠ 新發現：companyfacts 對「現金流量表的流量項」只有約 25% 覆蓋**（做 H0 體檢時發現，**修正 G11 的評估**）
-   - 症狀：`Capex`／`Dividends Paid`／`Change in Receivables`／`FX Effect on Cash` 等 CF 流量列，facts 的填滿率中位數只有 **25%**（＝一年四季只拿得到一季）
+H1. ✅ **已完成並實測驗收（2026-09-04）：companyfacts 對「現金流量表流量項」的覆蓋率 25% → 100%**（原記錄「只有約 25% 覆蓋」，**修正 G11 的評估**）
+   - 原始症狀：`Capex`／`Dividends Paid`／`Change in Receivables`／`FX Effect on Cash` 等 CF 流量列，facts 的填滿率中位數只有 **25%**（＝一年四季只拿得到一季）
    - **根因**：公司在 XBRL 裡把現金流量表的項目 tag 成 **YTD 累計**，不是單季。只有 Q1 的 YTD 剛好等於單季，所以 `classify_period()` 篩「80~100 天」只撈得到 Q1
-   - **這不是 facts 的缺陷，是我的實作只收單季 duration**。facts 其實有那些 YTD fact，而且**自帶精確起訖日**，做 YTD 拆算比現行路徑更可靠（現行是靠欄名猜哪欄是 YTD）
-   - **修法**：`fetcher_facts` 要加一層「同一財年內用本期 YTD − 上期 YTD 還原單季」。判定用 `start` 相同、`end` 遞增這個結構性特徵，不用猜
-   - **影響 G11 的結論**：facts 不是 CF 的 drop-in replacement，要補這一層才算數。IS/BS 不受影響（那些本來就 tag 單季／時點值）
+   - **這不是 facts 的缺陷，是實作只收單季 duration**。facts 其實有那些 YTD fact，而且**自帶精確起訖日**，做 YTD 拆算比現行路徑更可靠（現行是靠欄名猜哪欄是 YTD）
+   - **✅ 修法已完成**：`quarterly_from_ytd()`（`src/fetcher_facts.py:164`）——依 `start` 分組、組內依 `end` 排序後相鄰相減，每組第一筆直接採用，並擋掉「孤單的年度長度」（同一個 `start` 底下只有一筆且長度落在年度區間，那是年度值不是 Q1）。已接進 `resolve_row()`（`fetcher_facts.py:232`），`tests/test_fetcher_facts.py` 有 7 條測試蓋住
+   - **✅ 實測驗收（2026-09-04，201 家、零網路）**：拿 `output/_spike/` 既有的 facts JSON 與答案卷，把 mapping 的 `from_ytd` 拿掉當作「修法前」，做同一份資料上的 A/B。**27 個 `from_ytd` 列的填滿率中位數：25% → 100%**，完全重現原記錄的 25%
+
+     | 列 | 前 | 後 | | 列 | 前 | 後 |
+     |---|---|---|---|---|---|---|
+     | Capex | 25% | **100%** | | Operating Cash Flow | 25% | **100%** |
+     | Dividends Paid | 25% | **100%** | | Investing Cash Flow | 25% | **100%** |
+     | Change in Receivables | 25% | **100%** | | Financing Cash Flow | 25% | **100%** |
+     | FX Effect on Cash | 25% | **100%** | | D&A | 25% | **100%** |
+
+   - **沒到 100% 的六列都是「本來就不是每季都發生」的活動，不是抓取缺陷**：
+     `Acquisitions` 61%、`Debt Proceeds` 66%、`Investment Proceeds` 76%、
+     `Debt Repayments` 85%、`Investment Purchases` 85%、`Change in Deferred Revenue` 95%
+   - **對 G11 的結論**：原本記「facts 不是 CF 的 drop-in replacement，要補這一層才算數」——**那一層已經補上了，這個 caveat 解除**。IS/BS 本來就不受影響（那些 tag 的是單季／時點值）。⚠ 但 **G11 仍然維持「不切換」的決策**，這條只是把它的技術阻礙拿掉，不是重啟切換的理由
+   - **量測腳本沒有留下來**（一次性 A/B，30 行，邏輯就是「把 spec 的 `from_ytd` 拿掉再算一次填滿率」）。要重現的話，`gen_template_coverage_baseline.py` 第三節現在有「facts填滿」欄與一行 `from_ytd` 列的中位數
 
 H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-23：確認就是「讓使用者選公版格式」，不是目前最急迫的問題，保留方向未來再處理**
    - **關鍵取捨已定調（A 案）**：**維持固定列位，只切換顯示／隱藏**。關掉的列還在、只是隱藏或留白，**下游完全不受影響**（`financial-assistant` 的 `read_excel.py`、使用者自己的 Excel 公式、跨檔案 `MATCH` 都靠固定列位取值）
