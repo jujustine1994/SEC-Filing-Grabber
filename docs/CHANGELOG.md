@@ -10,6 +10,43 @@
 ## 功能清單
 
 ### 已完成
+- [x] **本地 filing 快取（2026-09-03，分支 `feature/local-filing-cache`，Task 1-11）**：
+      - **動機**：同一家公司每次抓取都對 SEC 重新打 20 年份 filing 再解析一次，
+        `_parse_cache_scope()`（G9）只擋掉「同一次抓取內」的重複解析，跨執行
+        完全沒有記憶
+      - **設計**：快取卡在**解析層與比對層之間**——存 edgartools 解出來的
+        income statement / balance sheet / cashflow statement 三張 DataFrame，
+        `IS/BS/CF_TEMPLATE` 比對規則永遠在快取之上即時重跑，所以改比對規則、
+        hint regex、Q4 合成邏輯都不會讓快取失效，但 edgartools 升版會（靠
+        `edgartools_version` 欄位擋）。存放在
+        `%APPDATA%\SEC Financial Tools\filing_cache\<TICKER>\<accession>.json`，
+        `<accession>.json` 是唯一的落地狀態，「哪些公司有快取」GUI 直接掃
+        `filing_cache/` 底下的子資料夾回答，不維護額外的索引檔
+      - **四道閘**：JSON 可解析、`schema_version`、`cik`、`edgartools_version`，
+        任一沒過視同無快取，照舊重抓，不拋例外
+      - **替身物件**兩條隱性規則：不定義 `__getattr__`（未實作屬性照 Python
+        預設拋 `AttributeError`，不兜底 `None`）、`None` 不等於空 DataFrame
+      - **GUI**：Tab3（進階設定）新增「本地資料快取」區塊，列出各家公司佔用
+        空間，全部清除有二次確認（唯一不可逆的破壞性操作）、逐一清除單一公司
+        不做二次確認（代價有限，跳確認反而礙事），抓取進行中鎖住清除鈕，自帶
+        第二層固定高度捲動容器（`_TAB3_HEIGHT` 重量後仍是 355，Tab3 412px／
+        Tab1 414px／Notebook 440px 不變）
+      - **實測（ARLO，GAAP，10-Q+10-K，33 份 filing，2026-09-03，重量版——
+        第一版數字漏清了 edgartools 自己的 HTTP 快取 `~/.edgar/_tcache`，
+        已作廢）**：兩層快取都清乾淨後冷跑 55.12s（0/33 命中）、緊接著熱跑
+        7.89s（33/33 命中），**6.99 倍**，仍比原估 3~5 倍快；
+        `scripts/excel_golden.py check` **0 格不同**。冷跑本身因為 miss 時要
+        多做一次 `to_dataframe()` 落檔而變慢——用 `master`／這個分支交替執行、
+        每輪都清乾淨兩層快取量測：master 平均 44.08s、這個分支冷跑平均
+        56.08s，**+27%**，低於原估 +34% 也低於 +30% 記錄門檻，但數字仍留在
+        `docs/ARCHITECTURE.md` 備查（換回替身物件可以省掉這筆成本，但會讓
+        golden 比對失去意義，不採用）
+      - **不涵蓋**：Non-GAAP 有自己的 `nongaap_cache.json`；`company.get_facts()`
+        流通股數；`_list_filings()` 清單查詢；修正案（10-Q/A、10-K/A）現況
+        `amendments=False` 本來就不抓，跟這個快取無關
+      - **測試**：全套 1387 passed（`not slow`）＋ `pytest -m slow`（65 條，
+        打真實 SEC）
+      - 細節見 `docs/ARCHITECTURE.md`「本地 filing 快取」一節
 - [x] **修復跨公司比較 Excel 圖表被 Excel 判定毀損整批刪除（A/F8，2026-09-03）**：
       - **現象**：F6（X 軸改真日期軸）合併後，跨公司比較產出的 7 張 `Chart_*`
         sheet 圖表，Excel 開檔時全部跳「發現無法讀取的內容，是否修復」，修復後

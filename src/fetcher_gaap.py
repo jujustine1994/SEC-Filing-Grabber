@@ -36,6 +36,7 @@ from edgar import Company, set_identity as set_identity
 from contextlib import contextmanager
 from contextvars import ContextVar
 
+import filing_cache
 from fetch_ledger import FetchLedger
 from i18n import t
 from net_retry import NetworkDownError, with_retry
@@ -301,6 +302,108 @@ def _cache_key(filing) -> str | None:
     return str(acc) if acc else None
 
 
+# ── 本地磁碟快取（跨執行有效）────────────────────────────────────────────
+#
+# 跟上面的 `_parse_cache`（G9，只活在一次執行的記憶體裡）是**兩層不同的快取**，
+# 不衝突：磁碟快取讀回來的結果一樣會進記憶體快取，避免同一次執行內重複讀檔。
+#
+# 綁定分兩步是為了避免把 `_fetch_gaap_impl()` 整段重新縮排：範圍在
+# `fetch_gaap_statements()` 開，`ticker`/`cik` 等 `Company(ticker)` 建好之後
+# 才由 `_bind_disk_cache()` 填進去。沒綁定（拿不到 cik）就整個不用快取，
+# 行為跟改動前一模一樣。
+#
+# 用 ContextVar 而不是模組級全域變數：跟上面 `_ledger_var` 同一個理由——
+# `main.py` 的批次抓取與跨公司比較（compare worker）各自跑在自己的執行緒上，
+# 且 `_compare_worker` 目前並不會設 `is_running` 擋住重疊執行（main.py 已知
+# 缺口）。用普通 dict 全域變數會讓兩條執行緒共用同一個 ctx，A 執行緒的
+# `_bind_disk_cache()` 會覆蓋掉 B 執行緒正在用的 ticker/cik，檔案就會寫進
+# 錯的資料夾。ContextVar 讓每個執行緒起手都是空的，天然互不干擾。
+_disk_cache_var: ContextVar[dict | None] = ContextVar("_disk_cache", default=None)
+_last_cache_stats_var: ContextVar[tuple[int, int]] = ContextVar("_last_cache_stats", default=(0, 0))
+
+
+@contextmanager
+def _disk_cache_scope():
+    """一次抓取的磁碟快取範圍。離開時記下命中統計。"""
+    outer = _disk_cache_var.get()
+    ctx = {"ticker": None, "cik": None, "hits": 0, "misses": 0} if outer is None else outer
+    token = _disk_cache_var.set(ctx)
+    try:
+        yield ctx
+    finally:
+        if outer is None:
+            _last_cache_stats_var.set((ctx["hits"], ctx["hits"] + ctx["misses"]))
+        _disk_cache_var.reset(token)
+
+
+def _bind_disk_cache(ticker: str, cik) -> None:
+    """把這趟的公司身分填進磁碟快取範圍。cik 拿不到就不啟用快取——
+    ticker 只是別名，會換手；cik 才是跟 SEC 打交道真正的鍵。"""
+    ctx = _disk_cache_var.get()
+    if ctx is None or not ticker or cik is None:
+        return
+    try:
+        ctx["cik"] = int(cik)
+    except (TypeError, ValueError):
+        return
+    ctx["ticker"] = str(ticker).strip().upper()
+
+
+def last_cache_stats() -> tuple[int, int]:
+    """上一趟抓取的 (命中份數, 處理份數)。給 log 用（見 main.py）。"""
+    return _last_cache_stats_var.get()
+
+
+def _save_to_disk_cache(ctx: dict, filing, obj) -> None:
+    """把剛解析出來的三張 DataFrame 逐份即時落檔。
+
+    ⚠ 只有「`filing.obj()` 成功回來」才會走到這裡——網路失敗會在上面直接
+    往外拋，不留任何快取（正向或負向都不留），下次照樣重試。
+    解析成功但 `financials` 是 None（pre-XBRL）才寫負向快取。
+
+    ⚠ 這裡刻意不呼叫共用的 `_financials_of()`（它對外用 `getattr(..., None)`
+    吞掉 `AttributeError`，其他呼叫端要的就是這個寬容）。寫快取的門檻更嚴：
+    `financials` 這個 property 本身若在存取時炸出 `AttributeError`（XBRL
+    殘缺或格式異常），跟「這份 filing 真的沒有 financials」是分不出來的兩種
+    狀況——但寫錯的代價完全不同：正常的 pre-XBRL 負向快取重試也是一樣結果，
+    炸出來的那種如果被誤記成負向快取，等於把一期本來可能修好再抓到的資料
+    **永久**判死刑。分不清楚就一律不寫，留給下次重試。
+
+    ⚠ 整個函式本體包在一個 `except Exception` 底下——涵蓋
+    `filing_cache.save_filing()`（`df_to_payload()` 序列化、
+    `atomic_write_json()` 寫檔）在內。這裡的契約是「快取寫入失敗絕對不能讓
+    這次抓取跟著壞」，只窄窄包住三個 `to_dataframe()` getter 會漏掉序列化／
+    落檔階段炸出的例外（例如 `json.dump` 遇到序列化不了的物件丟
+    `TypeError`），讓它們逃出這個函式、拖累呼叫端。
+    """
+    try:
+        acc = _cache_key(filing)
+        fd = getattr(filing, "filing_date", None)
+        meta = {
+            "form": str(getattr(filing, "form", "") or ""),
+            "filing_date": str(fd) if fd else "",
+            "cik": ctx["cik"],
+        }
+        try:
+            fin = obj.financials
+        except AttributeError:
+            return   # 分不出「真的沒有 financials」還是「取用時炸了」→ 一律不寫快取，下次重試
+        if fin is None:
+            filing_cache.save_filing(ctx["ticker"], acc, dataframes=None,
+                                     has_financials=False, **meta)
+            return
+        dfs = {}
+        for key, getter in (("income_statement", fin.income_statement),
+                            ("balance_sheet", fin.balance_sheet),
+                            ("cashflow_statement", fin.cashflow_statement)):
+            stmt = getter()
+            dfs[key] = None if stmt is None else stmt.to_dataframe()
+        filing_cache.save_filing(ctx["ticker"], acc, dataframes=dfs,
+                                 has_financials=True, **meta)
+    except Exception:
+        return   # 快取寫入的任何一步失敗都不該讓這次抓取跟著壞（跟網路失敗同一個處理）
+
+
 def _list_filings(company, form: str, amendments: bool = False,
                    sleep: Callable[[float], None] = time.sleep) -> list:
     """列出這家公司某個表單類型的所有 filing，網路問題退避重試（2026-08-25）。
@@ -323,13 +426,33 @@ def _filing_obj(filing):
     帳本判定網路已經斷掉之後（連續多期失敗）就不再退避重試：整個網路
     斷掉時 40 份財報各等 2+4 秒等於乾等 4 分鐘，剩下的快速失敗完，
     照樣寫檔、照樣提示。
+
+    快取有兩層：記憶體（G9，一次執行內）與磁碟（跨執行）。磁碟命中時回傳的
+    是 `filing_cache` 的替身物件，只實作 `.financials` 那一條鏈——四個 builder
+    對 filing 物件的用法就只有這一種。
     """
     key = _cache_key(filing)
     if _parse_cache is not None and key is not None and key in _parse_cache:
         return _parse_cache[key]
+
+    ctx = _disk_cache_var.get()
+    if ctx is not None and ctx["ticker"] and key is not None:
+        entry = filing_cache.load_filing(ctx["ticker"], key, ctx["cik"])
+        if entry is not None:
+            ctx["hits"] += 1
+            obj = filing_cache.cached_filing(entry)
+            if _parse_cache is not None:
+                _parse_cache[key] = obj
+            return obj
+
     led = _ledger()
     attempts = 1 if (led is not None and led.give_up_retrying) else 3
     obj = with_retry(lambda: filing.obj(), attempts=attempts)
+
+    if ctx is not None and ctx["ticker"] and key is not None:
+        ctx["misses"] += 1
+        _save_to_disk_cache(ctx, filing, obj)
+
     if _parse_cache is not None and key is not None:
         _parse_cache[key] = obj
     return obj
@@ -2493,14 +2616,14 @@ def fetch_gaap_statements(ticker: str, identity: str,
     # （上面的遞迴自己開的，或是 `main.py`／`cli.py` 先開好才呼叫進來的）——
     # 兩條路都會走到這裡，重試才不會只在其中一條路生效。
     led = _ledger()
-    with _parse_cache_scope():
+    with _disk_cache_scope(), _parse_cache_scope():
         tables = _fetch_gaap_impl(
             ticker, identity, max_filings, max_annual_filings, ai_config,
             start_year, end_year, fetch_quarterly, fetch_annual, excluded_sheets,
         )
 
     def _retry_once() -> tuple[list[StatementTable], FetchLedger]:
-        with collect_gaps() as retry_led, _parse_cache_scope():
+        with collect_gaps() as retry_led, _disk_cache_scope(), _parse_cache_scope():
             retry_tables = _fetch_gaap_impl(
                 ticker, identity, max_filings, max_annual_filings, ai_config,
                 start_year, end_year, fetch_quarterly, fetch_annual, excluded_sheets,
@@ -2522,6 +2645,8 @@ def _fetch_gaap_impl(ticker: str, identity: str,
     excluded_sheets = excluded_sheets or set()
     set_identity(identity)
     company = Company(ticker)
+    # cik 才是跟 SEC 打交道真正的鍵；ticker 只是會換手的別名。拿不到就不用快取。
+    _bind_disk_cache(ticker, getattr(company, "cik", None))
 
     filings_q = _list_filings(company, "10-Q") if fetch_quarterly else []
     filings_k = _list_filings(company, "10-K") if fetch_annual else []

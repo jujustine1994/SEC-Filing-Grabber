@@ -259,6 +259,77 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
      `Change in Inventories` AEP、`Finance Lease Liabilities, LT` ON、`Other Current Assets` CVX
 
 
+## I. 本地 filing 快取（2026-09-03 開工，Task 1-11 全部完成，已併入分支主線）
+
+> **動手前必讀**：規格 `docs/superpowers/specs/2026-09-03-local-filing-cache-design.md`、
+> 實作計畫 `docs/superpowers/plans/2026-09-03-local-filing-cache.md`（11 個 task，
+> 逐條含測試碼）。執行紀錄與所有已判決的取捨在
+> `.superpowers/sdd/2026-09-03-local-filing-cache/progress.md`（git-ignored，只在本機）。
+> 分支 `feature/local-filing-cache`，尚未併回 master。
+
+**這件事在做什麼**：抓同一家公司不要每次都重新對 SEC 打 20 年份 filing 再解析一次。
+快取卡在**解析層與比對層之間**——存的是 edgartools 解出來的三張 DataFrame，
+`IS/BS/CF_TEMPLATE` 那套科目比對永遠在快取之上即時重跑。所以以後改 hint regex、
+加比率、調 Q4 合成邏輯都**不會**讓快取失效；但 **edgartools 升版會**，那條軸線靠
+每份快取檔裡的 `edgartools_version` 欄位擋。詳細機制、四道閘、實測數字見
+`docs/ARCHITECTURE.md`「本地 filing 快取」一節。
+
+**目前狀態**：快取**已經生效**且已驗收——Tab3 的清除面板已接完
+（`main.py`），ARLO 實測熱跑／冷跑 6.99 倍、golden 逐格比對 0 格不同。
+全套測試 1387 passed（`not slow`）；`pytest -m slow` 結果見
+`docs/ARCHITECTURE.md`「本地 filing 快取」一節。
+
+I3. **⚠ 既有缺口（不是這次造成的）：`_compare_worker` 不設 `is_running`，
+     跨公司比較與批次抓取可以同時跑**（2026-09-03 做快取時發現）
+   - **現況**：`main.py` 的 `_start_worker()` 會設 `self.is_running = True` 並鎖住
+     Tab1／批次的按鈕；但跨公司比較的 `_compare_worker` 是自己開執行緒
+     （`main.py:1909` 附近），只把 `compare_run_btn` 設 disabled，**沒有設
+     `is_running`**。所以「批次抓取跑到一半，切到第 4 分頁按產生比較 Excel」
+     是按得下去的，兩個 worker 會真的並行
+   - **快取層已經對這種重疊免疫**：`fetcher_gaap` 的 `_disk_cache_var` 與
+     `_last_cache_stats_var` 都改用 `ContextVar`（新執行緒天生拿到空 context），
+     所以不會再出現「A 公司的 filing 被寫進 B 公司資料夾」或「log 顯示別家的命中數」
+   - **但底層那把鎖還是沒有**：兩趟同時打 SEC 會互相加重速率壓力，而
+     D11 已經實測過「連續大量抓取時 SEC 偶發失敗 → 靜默少掉幾格」。這是
+     **資料完整度**的風險，不是快取的風險
+   - **可能修法**：`_compare_worker` 開跑前也設 `self.is_running`（並在
+     `compare_done`／`compare_error` 還原），或改走既有的 `_start_worker()`。
+     要留意跨公司比較有自己的完成/失敗訊息路徑，直接套 `_start_worker` 可能
+     連帶影響按鈕還原邏輯，**動手前先確認三條路徑的還原點**
+
+I4. **`tests/test_i18n.py` 對「同一個 key 在同一個檔出現兩次」結構性失明**
+     （2026-09-03 實際踩到）
+   - **實際發生過**：加九條快取字串時，`en.py`／`ja.py`／`zh_cn.py` 各被多塞了
+     一份 `gui.btn.confirm`（原本那份還在）。三條 i18n 測試**全綠**
+   - **為什麼看不到**：Python 的 dict 字面值在**解析階段**就會把重複鍵吃掉
+     （後者覆蓋前者），執行期的 `STRINGS` 永遠只有一份，所以比對 key 集合、
+     比對 placeholder 都不可能發現
+   - **當下靠什麼抓到的**：`git diff --stat` 三個檔 +10 行、一個檔 +9 行，
+     九條字串卻應該四個檔都 +9——是行數對不上被注意到的，不是測試抓到的
+   - **可能修法**：加第四條防線，用 `ast` 解析四個 locale 檔的原始碼，
+     檢查同一個 dict 裡沒有重複的 key 字面值。成本低、一次寫完永久有效
+   - **為什麼值得做**：這次兩份值一樣所以無害，但下次有人只改其中一份，
+     畫面會顯示另一份的內容，而且**四條測試全綠**，查起來會非常久
+
+I5. **修正案（10-Q/A、10-K/A）現況本來就不抓**（承快取設計書，獨立議題）
+   - `_list_filings()` 目前呼叫時 `amendments=False`（`fetcher_gaap.py:304` 附近），
+     所以公司重編財報開的那份新 filing **現在就不在抓取清單裡**，不管有沒有快取
+     都一樣抓不到。快取只保證「清單裡查得到的 filing」會被正確、即時補齊，
+     不擴大也不縮小現有抓取範圍
+   - 要不要處理是獨立的產品判斷題：抓修正案等於同一期會有兩份來源，
+     要先決定「以哪一份為準」以及重編後舊數字要不要覆蓋——牽動 D11 的
+     「as reported vs restated」既有立場（`Compare_Notes` 目前明講保留原始申報版）
+
+I6. **快取層已知的小取捨（都已判決為可接受，記錄備查，不必主動修）**
+   - `ACCESSION_RE` 用 `$` 而非 `\Z`，允許結尾一個換行。字元類只有數字與破折號，
+     不可能夾帶 `/`、`\`、`..`，路徑注入防線實質上仍然成立
+   - `_retry_once()` 會開第二個最外層 scope，`last_cache_stats()` 因此只反映
+     重試那一趟，第一趟的命中數在 log 上消失
+   - 空的殘留資料夾（份數與容量都是 0）不會出現在 GUI 清單，也就永遠不會被
+     「全部清除」掃到。會自癒（下次抓那家時重新寫入），只是那個空殼會留著
+   - ticker 換手時（同代號換成另一家公司），冒名那趟會用新 cik 覆寫同名檔案，
+     兩邊互相 thrash。資料永遠是對的（cik 閘門擋著），只是變慢
+
 ## 執行順序建議（2026-08-22 更新）
 
 > **維護規則**：做完的條目**直接從本檔刪除**，內容搬進 `docs/CHANGELOG.md`。
@@ -273,6 +344,9 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
 | 4 | E 系列 GUI 細節（E2/E3/E5/E11） | 否 | 部分要 | 多半已標「先不做」或「待重現」，不影響資料正確性 |
 | — | G4 overflow 標示 | 否 | 是 | 建議只做標示，不做 synonym 合併 |
 | — | F2 估值倍數 | 是（要股價來源） | 是 | 待研究，未確認方向 |
+| — | I3 並行鎖缺口 | 否 | 是（要決定還原點） | 跨公司比較不設 `is_running`，與批次抓取可並行；影響資料完整度（見 D11），不影響快取 |
+| — | I4 locale 重複 key 測試 | 否 | 否 | 成本低、一次寫完永久有效，可以順手併進任何一次 i18n 改動 |
+| — | I5 修正案要不要抓 | 否 | 是 | 產品判斷題，牽動「as reported vs restated」的既有立場 |
 
 ## D. 待 CTH 決定的已知限制
 

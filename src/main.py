@@ -22,6 +22,7 @@ from datetime import date
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
+import filing_cache
 import i18n
 from i18n import t
 from config import load_config, save_config, CONFIG_PATH
@@ -241,6 +242,36 @@ def format_elapsed(seconds: float) -> str:
     if minutes:
         return f"{minutes}m {secs:02d}s"
     return f"{secs}s"
+
+
+def cache_log_line(ticker: str, hits: int, total: int) -> str | None:
+    """本地 filing 快取的命中率，寫進 `logs/app.log`（一律英文）。
+
+    ⚠ 設計文件原本要求塞進起始 `===` 行，做不到——那一行在抓取**開始前**
+    就寫出去了，那時候還沒列 filing 清單、命中數不存在。改成 GAAP 抓完後
+    補一行獨立的 INFO，語意相同。
+    """
+    if not total:
+        return None
+    return f"{ticker} cache {hits}/{total}"
+
+
+def format_size(num_bytes: int) -> str:
+    """位元組 → 一眼看得懂的容量。單位符號與語言無關，跟 `format_elapsed()`
+    一樣畫面與 log 共用同一個格式，不維護兩套。"""
+    n = max(0, int(num_bytes or 0))
+    if n >= 1024 ** 3:
+        return f"{n / 1024 ** 3:.1f} GB"
+    if n >= 1024 ** 2:
+        return f"{n / 1024 ** 2:.1f} MB"
+    if n == 0:
+        return "0 KB"
+    return f"{n / 1024:.1f} KB"
+
+
+def cache_buttons_state(is_running: bool) -> str:
+    """抓取進行中鎖住兩顆清除鈕，不然會邊寫邊刪同一個資料夾。"""
+    return "disabled" if is_running else "normal"
 
 
 def company_chip_entries(selected: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -517,6 +548,11 @@ class SECFetcherApp:
         i18n.set_lang(self.cfg.get("language"))
         self.msg_queue: queue.Queue = queue.Queue()
         self.is_running = False
+        # 跨公司比較走自己的一顆按鈕（compare_run_btn），不共用 is_running——
+        # 那顆旗標同時管 Tab1／批次／掃描鍵，比較執行緒借用會動到不相干的
+        # 按鈕行為，也可能在比較完成路徑上把 is_running 誤復原成別的狀態。
+        # 快取清除鈕要同時看這兩個旗標（見 _sync_cache_buttons）。
+        self._compare_running = False
         # Runtime state for popups
         self._wl_found_name = ""
         self._wl_list_container = None
@@ -590,6 +626,10 @@ class SECFetcherApp:
         self._build_tab2()
         self._build_tab4()
         self._build_tab3()
+        # 切到 Tab3 時重畫快取清單——不輪詢，只在真的需要看的時候刷新。
+        # 實際判斷邏輯與 index 對應見 _on_tab_changed 的 docstring（單一
+        # 出處，避免兩處各記一份、之後改版又對不上）。
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
         self._update_identity_warnings()
 
         # 「管理 Watchlist」原本放在這裡（root 層級、row=1，跨頁籤都看得到），
@@ -1906,6 +1946,8 @@ class SECFetcherApp:
             return
 
         self.compare_run_btn.config(state="disabled")
+        self._compare_running = True
+        self._sync_cache_buttons()
         threading.Thread(target=self._compare_worker, daemon=True).start()
 
     def _compare_worker(self):
@@ -2025,7 +2067,21 @@ class SECFetcherApp:
     # 355 量出來的 Tab3 總高度 (~412px) 跟 Tab1 的 414px 只差 2px，兩頁看起來
     # 一樣高。改動任何一頁的版面之後要重量（寫一個 Tk 探針腳本：建
     # `SECFetcherApp`、`update_idletasks()`、讀各分頁 `winfo_reqheight()`）。
+    #
+    # 2026-09-03 Task 10 加「本地資料快取」區塊後重量：Tab3 仍是 412px（快取
+    # 區塊自己有第二層 110px 固定高度捲動，撐爆與否不影響外層容器的
+    # reqheight），Tab1 414px、Notebook 整體 440px，前後都不變，355 不用調。
     _TAB3_HEIGHT = 355
+
+    def _on_tab_changed(self, event=None):
+        """切頁時的統一入口。目前只有 Tab3（進階設定）需要動作——切過去就重畫
+        快取清單，換取「不輪詢」。
+
+        index 是 3、不是 2：分頁是依 `_build_tab1` → `_build_tab2` →
+        `_build_tab4` → `_build_tab3` 的呼叫順序 `notebook.add()`，所以
+        順位是 單一公司(0) / 批量更新(1) / 跨公司比較(2) / 進階設定(3)。"""
+        if self.notebook.index("current") == 3:
+            self._refresh_cache_panel()
 
     def _build_settings_footer(self, tab):
         """存檔／還原固定在頁籤最下面（TODO E11）——原本存檔鍵在可捲動內容的
@@ -2166,6 +2222,117 @@ class SECFetcherApp:
         self._on_template_mode_change()  # set initial enabled/disabled state
         # 存檔／還原按鈕搬到 `_build_settings_footer`（`tab` 層級，固定在頁籤
         # 最下面，不放在這個可捲動的 `popup` 裡），見 `_build_tab3` 的說明
+
+        self._build_cache_panel(popup)
+
+    def _build_cache_panel(self, popup):
+        """Tab3 的「本地資料快取」區塊。
+
+        ⚠ 這塊**自帶第二層固定高度捲動**。Tab3 整頁本來就是靠
+        `_build_fixed_height_scrollable(tab, height=self._TAB3_HEIGHT)` 撐住
+        （見 `_build_tab3`），快取常駐個位數到二三十家公司，清單直接攤開會把
+        Tab3 撐爆、擠掉上面 SEC identity／AI 設定的可視範圍。
+
+        沒有「立即更新」按鈕——每次抓取本來就會自動查新 filing，不需要手動觸發。
+        """
+        frame = ttk.LabelFrame(popup, text=t("gui.frame.filing_cache"), padding=8)
+        frame.grid(row=4, column=0, sticky="ew", padx=12, pady=4)
+        frame.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(frame)
+        header.grid(row=0, column=0, sticky="ew")
+        self._cache_total_label = ttk.Label(header, text="")
+        self._cache_total_label.pack(side="left")
+        ttk.Button(header, text=t("gui.btn.cache_open_folder"),
+                   command=self._open_cache_folder).pack(side="right")
+
+        list_host = ttk.Frame(frame)
+        list_host.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        _, self._cache_list_inner = _build_fixed_height_scrollable(list_host, height=110)
+
+        footer = ttk.Frame(frame)
+        footer.grid(row=2, column=0, sticky="e", pady=(4, 0))
+        self._cache_clear_all_btn = ttk.Button(
+            footer, text=t("gui.btn.cache_clear_all"), command=self._clear_all_cache)
+        self._cache_clear_all_btn.pack(side="right")
+
+        self._cache_clear_btns = []
+        self._refresh_cache_panel()
+
+    def _refresh_cache_panel(self):
+        """重畫快取清單。刷新時機：切到 Tab3、任一次清除之後、任一次抓取
+        （Tab1／批次／跨公司比較）完成之後——不輪詢。"""
+        if not hasattr(self, "_cache_list_inner"):
+            return
+        for child in self._cache_list_inner.winfo_children():
+            child.destroy()
+        self._cache_clear_btns = []
+
+        rows = filing_cache.list_cached_tickers()
+        total = sum(r["size_bytes"] for r in rows)
+        self._cache_total_label.config(
+            text=t("gui.lbl.cache_total", size=format_size(total)))
+
+        if not rows:
+            ttk.Label(self._cache_list_inner, text=t("gui.lbl.cache_empty"),
+                      foreground="#555555").pack(anchor="w")
+        for row in rows:
+            line = ttk.Frame(self._cache_list_inner)
+            line.pack(fill="x", pady=1)
+            ttk.Label(line, text=row["ticker"], width=8).pack(side="left")
+            ttk.Label(line, text=t("gui.lbl.cache_filings", count=row["count"]),
+                      width=16).pack(side="left")
+            ttk.Label(line, text=format_size(row["size_bytes"]),
+                      width=10).pack(side="left")
+            btn = ttk.Button(line, text=t("gui.btn.cache_clear"), width=6,
+                             command=lambda tk_=row["ticker"]: self._clear_cache_ticker(tk_))
+            btn.pack(side="right")
+            self._cache_clear_btns.append(btn)
+        self._sync_cache_buttons()
+
+    def _sync_cache_buttons(self):
+        """抓取進行中鎖住兩顆清除鈕——不然會邊寫邊刪同一個 ticker 的資料夾。
+
+        跨公司比較用自己的 `_compare_running`、不是 `is_running`（見 `__init__`
+        的說明），所以這裡兩個旗標都要看，任一個在跑就鎖。"""
+        running = bool(getattr(self, "is_running", False)) or \
+            bool(getattr(self, "_compare_running", False))
+        state = cache_buttons_state(running)
+        for btn in getattr(self, "_cache_clear_btns", []):
+            btn.config(state=state)
+        if getattr(self, "_cache_clear_all_btn", None):
+            self._cache_clear_all_btn.config(state=state)
+
+    def _open_cache_folder(self):
+        """讓使用者自己用檔案總管進一步查看／處理，不用我們另外做細部管理 UI。"""
+        root = filing_cache.cache_root()
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(root))
+        except OSError as exc:
+            _write_log(f"cannot open cache folder: {type(exc).__name__}", "ERROR")
+
+    def _clear_cache_ticker(self, ticker: str):
+        """整個刪掉那家公司的資料夾。下次抓這家會當作全新開始。
+        單一公司不做二次確認——重抓一家的代價有限，跳確認反而礙事。"""
+        filing_cache.clear_ticker(ticker)
+        _write_log(f"cache cleared for {ticker}")
+        self._refresh_cache_panel()
+
+    def _clear_all_cache(self):
+        """唯一不可逆的破壞性操作，要二次確認——雖然只是快取，
+        重抓 20 年份是好幾分鐘的代價，值得防手滑。"""
+        rows = filing_cache.list_cached_tickers()
+        if not rows:
+            return
+        total = format_size(sum(r["size_bytes"] for r in rows))
+        if not messagebox.askyesno(
+                t("gui.dlg.cache_clear_all_title"),
+                t("gui.msg.cache_clear_all_body", n=len(rows), size=total)):
+            return
+        removed = filing_cache.clear_all()
+        _write_log(f"cache cleared for all {removed} companies")
+        self._refresh_cache_panel()
 
     def _on_template_mode_change(self):
         is_custom = getattr(self, "settings_template_mode_var", None) and \
@@ -2649,6 +2816,7 @@ class SECFetcherApp:
         self.progress_bar["value"] = 0
         self.progress_label.config(text=t("gui.status.preparing"))
         self.is_running = True
+        self._sync_cache_buttons()
         self.btn_run_single.config(state="disabled")
         self.btn_run_batch.config(state="disabled")
         if self._scan_btn:
@@ -2718,6 +2886,11 @@ class SECFetcherApp:
                         fetch_quarterly=fetch_q, fetch_annual=fetch_k,
                         excluded_sheets=excluded_sheets or set(),
                     )
+                from fetcher_gaap import last_cache_stats
+                _hits, _total = last_cache_stats()
+                _cache_line = cache_log_line(ticker, _hits, _total)
+                if _cache_line:
+                    _write_log(_cache_line)
                 tables.extend(gaap_tables)
                 self._log(t("gui.log.gaap_got", ticker=ticker, n=len(gaap_tables)))
                 if gaps.has_gaps:
@@ -2937,6 +3110,8 @@ class SECFetcherApp:
                 elif msg_type == "done":
                     success = data
                     self.is_running = False
+                    self._sync_cache_buttons()
+                    self._refresh_cache_panel()
                     self.btn_run_single.config(state="normal")
                     self.btn_run_batch.config(state="normal")
                     if self._scan_btn:
@@ -3028,11 +3203,17 @@ class SECFetcherApp:
                     self._log(f"{t('gui.compare.select_title')}: {data}", "ERROR")
                     self.progress_label.config(text=t("gui.status.error_see_log"))
                     self.compare_run_btn.config(state="normal")
+                    self._compare_running = False
+                    self._sync_cache_buttons()
+                    self._refresh_cache_panel()
 
                 elif msg_type == "compare_done":
                     self._log(t("gui.compare.log_done", path=data))
                     self.progress_label.config(text=t("gui.status.done"))
                     self.compare_run_btn.config(state="normal")
+                    self._compare_running = False
+                    self._sync_cache_buttons()
+                    self._refresh_cache_panel()
 
         except queue.Empty:
             pass

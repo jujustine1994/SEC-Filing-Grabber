@@ -219,6 +219,9 @@ STRINGS: dict[str, str] = {
     "gui.btn.adv_collapsed": '▶ 進階設定',
     "gui.btn.adv_expanded": '▼ 進階設定',
     "gui.btn.browse": '瀏覽',
+    "gui.btn.cache_clear": '清除',
+    "gui.btn.cache_clear_all": '全部清除',
+    "gui.btn.cache_open_folder": '開啟資料夾',
     "gui.btn.cancel": '取消',
     "gui.btn.close": '關閉',
     "gui.btn.confirm": '確定',
@@ -259,6 +262,7 @@ STRINGS: dict[str, str] = {
     # gui.dlg.*
     "gui.dlg.add_group_prompt": '群組名稱：',
     "gui.dlg.add_group_title": '新增群組',
+    "gui.dlg.cache_clear_all_title": '清除全部快取',
     "gui.dlg.choose_output_dir": '選擇儲存位置',
     "gui.dlg.choose_template": '選擇著色模板',
     "gui.dlg.confirm_delete_title": '確認刪除',
@@ -272,6 +276,7 @@ STRINGS: dict[str, str] = {
     "gui.frame.add_company": ' 新增公司 ',
     "gui.frame.ai_settings": ' AI 設定（Non-GAAP 功能需要，未設定不影響 GAAP）',
     "gui.frame.fetch_settings": ' 抓取設定 ',
+    "gui.frame.filing_cache": '本地資料快取',
     "gui.frame.optional_sheets": ' 可選 Sheet（掃描後顯示）',
     "gui.frame.progress": ' 處理進度 ',
     "gui.frame.watchlist_current": ' 目前 Watchlist ',
@@ -290,6 +295,9 @@ STRINGS: dict[str, str] = {
 
     # gui.lbl.*
     "gui.lbl.api_key_notice": 'API Key 僅存於本機 config.json，請勿分享給他人。',
+    "gui.lbl.cache_empty": '尚無快取資料',
+    "gui.lbl.cache_filings": '{count} 份 filing',
+    "gui.lbl.cache_total": '總容量：{size}',
     "gui.lbl.filename_empty": '（請輸入檔名）',
     "gui.lbl.filename_format": '檔名格式：',
     "gui.lbl.filename_sample": 'TICKER 公司名稱 data.xlsx',
@@ -322,6 +330,7 @@ STRINGS: dict[str, str] = {
     # gui.msg.*
     "gui.msg.bad_year": '日期區間請輸入有效年份（如 2018）',
     "gui.msg.batch_nongaap_need_key": 'Non-GAAP 需先在「進階設定」填入 AI API Key',
+    "gui.msg.cache_clear_all_body": '將刪除全部 {n} 家公司的本地快取（{size}）。\n\n下次抓取這些公司要重新解析 20 年份資料，可能要好幾分鐘。確定要清除嗎？',
     "gui.msg.connection_ok": '連線成功！',
     "gui.msg.enter_api_key": '請輸入 API Key',
     "gui.msg.enter_ticker": '請輸入 Ticker',

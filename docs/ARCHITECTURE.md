@@ -877,6 +877,129 @@ XBRL 解析 19.9 秒、`to_dataframe` 28.4 秒。**edgartools 不會跨呼叫快
   不是放在 `_ledger() is None` 那個分支裡——`main.py`／`cli.py` 會自己先開
   `collect_gaps()`，那條路不會走到遞迴
 
+## 本地 filing 快取（`filing_cache.py`，2026-09-03）
+
+**卡在哪一層**：解析層與比對層之間。`_filing_obj()`（`fetcher_gaap.py`）解出
+edgartools 的 income statement / balance sheet / cashflow statement 三張
+DataFrame 之後，原封不動存進 `%APPDATA%\SEC Financial Tools\filing_cache\`；
+`IS/BS/CF_TEMPLATE` 那套科目比對規則、hint regex、Q4 合成邏輯，永遠在快取
+**之上**即時重跑，不進快取檔。所以以後改比對規則、加比率、調模板都不會讓
+快取失效——**但 edgartools 升版會**，靠每份快取檔裡的 `edgartools_version`
+欄位擋（見下方四道閘）。這跟同一節上面的「解析快取（`_parse_cache_scope()`）」
+是兩層不同的東西：那層只活在一次執行的記憶體裡（G9），這層落地跨執行有效。
+
+**儲存位置與檔案**：一個 ticker 一個資料夾（`filing_cache/ARLO/`），檔名是
+SEC accession number（`0000866787-25-000123.json`）。**`<accession>.json`
+是唯一的落地狀態**——查快取一律直接問這個檔案存不存在、內容能不能過四道閘，
+不維護任何索引。GUI 想知道「哪些公司有快取、各佔多大」也不例外：
+`list_cached_tickers()` 直接掃 `filing_cache/` 底下有哪些子資料夾、逐一
+`stat()` 加總，不開額外的索引檔——公司數量最多幾十家，掃資料夾的成本可以
+忽略，比維護一份索引跟磁碟隨時同步的心智成本低得多。
+
+**四道閘**（`load_filing()`，任一沒過就當無快取、照舊打 SEC 重抓，不拋例外）：
+1. JSON 能解析（檔案沒被中斷寫入或手動改壞）
+2. `schema_version` 跟現在的 `filing_cache.SCHEMA_VERSION` 相符
+3. `cik` 跟這次抓取的公司相符（防 ticker 換手撞名）
+4. `edgartools_version` 跟現在裝的套件版本相符（`importlib.metadata.version()`
+   讀出來，讀不到就整次不用快取）
+
+**負向快取 vs 網路失敗**：`has_financials: false` 是負向快取，代表這份
+filing 解析**成功**但沒有 XBRL financials（多半是 pre-XBRL 的舊申報）——
+這種情況合法且穩定，快取起來下次不用重解。**網路失敗絕對不會走到這裡**：
+`_filing_obj()` 下載失敗會直接往外拋，交給既有的 D11-B 缺漏帳本，下次照樣
+重試，不留任何快取（正向負向都不留）。分不清楚「真的沒有 financials」還是
+「取用 `.financials` 時炸出 `AttributeError`」的情況（XBRL 殘缺或格式異常）
+也一律不寫快取，留給下次重試——寫錯負向快取的代價是把一期本來可能修好
+再抓到的資料永久判死刑，遠比多重試幾次貴。
+
+**替身物件的兩條隱性規則**（`_CachedFiling` / `_CachedFinancials` /
+`_CachedStatement`）：命中快取時回傳的不是真正的 edgartools filing 物件，
+是只實作 `.financials.income_statement().to_dataframe()` 這條鏈的替身。
+① **刻意不定義 `__getattr__`**——存取未實作的屬性一律照 Python 預設拋
+`AttributeError`，不兜底回 `None`。如果兜底，以後某個 builder 新用到
+filing 物件的其他屬性，快取命中的路徑會安靜地把整份 filing 當成沒資料，
+清快取重跑卻是好的——這種 bug 極難查，寧可讓它馬上炸出來。
+② **`None` 不等於空 DataFrame**：`payload_to_df(None)` 回傳 `None`（代表
+「這張表本來就不存在」），跟真的解出一張沒有列的空表是兩種狀態，下游判斷
+`if stmt is None` 的邏輯才不會被快取路徑改變語意。
+
+**⚠ edgartools 自己也有一層持久化 HTTP 快取，這個專案的清除動作碰不到它**：
+`~/.edgar/_tcache`（Hishel-File，規則對 `/Archives/edgar/data` 是「快取到
+天荒地老」）跟這裡的 `filing_cache.py` 是完全獨立的兩層。
+`filing_cache.clear_ticker()` 只清這個專案自己 `%APPDATA%` 底下那份，
+**不會**動到 `~/.edgar/_tcache`——如果只清這邊就量「冷跑」，量到的其實是
+「本專案快取沒有、但 edgartools 自己的 HTTP 快取可能還在」的混合狀態，不是
+真正對 SEC 重新握手一次。下面的數字是把兩層都清乾淨（`filing_cache.clear_ticker`
++ 手動刪 `~/.edgar/_tcache`）之後才量的，第一次量測（2026-09-03 稍早）踩過
+這個坑，數字已作廢重量。
+
+**這次量到的數字**（ARLO、GAAP、10-Q+10-K、`--max-filings` 預設 80，
+33 份 filing，2026-09-03，SEC EDGAR 實測，重量版）：
+
+| 跑法 | elapsed | 快取命中 |
+|---|---|---|
+| 冷跑（兩層快取都清空後第一次抓）| 55.12s | 0/33 |
+| 熱跑（緊接著再抓一次，兩層都不清）| 7.89s | 33/33 |
+
+熱跑／冷跑 = **6.99 倍**，同樣比設計文件原先估的 3~5 倍快，方向跟修正前的
+結論一致（原估是拿 25 份 filing 的舊基準推算）。**另外兩次獨立冷跑**（見下方
+「冷跑變慢的取捨」段落的交替測試）分別是 55.96s、56.20s，三次冷跑都落在
+55~56s，數字穩定，不是單次噪聲。**golden 逐格比對 0 格不同**
+（`scripts/excel_golden.py check`，exit code 0，覆蓋 ARLO 全部 sheet；用的是
+本節最早那組冷/熱跑產出的 xlsx 存的基準，比對的是輸出內容而非耗時，**不受
+上面這次重量影響**，結論仍然有效，未重跑）——快取只改變耗時，沒有改變任何
+輸出內容。
+
+**冷跑變慢的取捨（已發生，低於但接近 +30% 門檻）**：miss 時
+`_save_to_disk_cache()` 會為了落檔多呼叫一次三張表的 `to_dataframe()`，
+builder 組表時還要再呼叫一次——同一份 filing 的 `to_dataframe()` 冷跑時被叫
+兩次。第一次量這個數字時只清了本專案的快取、沒清 `~/.edgar/_tcache`，
+且 `master` 與這個分支的兩輪比較沒有交錯執行順序，量到 +56%——**這個數字
+已經作廢**。重量方法：`master`／這個分支交替執行（M→F→M→F），**每一輪都把
+兩層快取清乾淨**，避免 SEC 端當天流量波動只影響其中一邊：
+
+| 順序 | 分支 | elapsed | 備註 |
+|---|---|---|---|
+| 1 | master | 45.15s | |
+| 2 | 這個分支 | 55.96s | cache 0/33 |
+| 3 | master | 43.01s | |
+| 4 | 這個分支 | 56.20s | cache 0/33 |
+
+master 平均 44.08s（45.15s / 43.01s），這個分支冷跑平均 56.08s（55.96s /
+56.20s），**慢了約 +27%**——比原先估計的 +34% 略低，也低於 +30% 的記錄門檻，
+但因為前一版數字（+56%）明顯是量測方法有誤、且新數字已經很接近門檻，這裡
+還是把交替測試的原始數字整組留下來，供以後複查。這是刻意的取捨：miss 時若
+改回傳替身物件重用那三張表可以省掉這筆重複解析成本，但那樣「冷跑 vs 熱跑」
+逐格比對就變成同一條程式碼路徑跟自己比，驗收會失去意義，所以不預設採用。
+熱跑完全不受影響——6.99 倍的實測已經涵蓋了這筆冷跑成本沒有轉嫁到熱跑上。
+
+**`pytest -m slow`（65 條，打真實 SEC，2026-09-03）**：58 passed、7 skipped、
+0 failed，耗時 12m 29s。這次改動的是四個 builder 共用的熱路徑，這層測試沒有
+發現行為變化。
+
+**新一期財報會被抓到——這次沒有實測到**：機制上，`_list_filings()` 每次
+抓取都重新對 SEC 查最新清單（不受快取影響，見下方「不涵蓋」），新申報的
+accession number 在快取資料夾裡找不到對應 `<accession>.json`，四道閘第一關
+就過不了，自然落回正常下載流程並寫入新快取檔——不需要額外的「過期」判斷。
+但這次跑的時間點沒有剛好碰上任何一家追蹤中公司發新一期財報，**沒有機會用
+真實新申報驗證**，只驗證了機制上的推論，留給日後自然發生時確認。
+
+**不涵蓋什麼**（這幾條完全不受這次改動影響，每次都照舊打網路）：
+- **Non-GAAP**：`fetcher_nongaap.py` 有自己獨立的 `nongaap_cache.json`，
+  跟這裡的 `filing_cache.py` 是兩套不同的快取
+- **流通股數**：`company.get_facts()`（BVPS / FCF per Share / 流通股數 YoY
+  用到的來源）不在這層快取範圍內
+- **`_list_filings()` 的清單查詢**：每次抓取都重新問 SEC「這家公司有哪些
+  filing」，不受這層快取影響（也不受 edgartools 自己的 HTTP 快取影響——
+  `_get_cache_rules()` 只把 `/submissions` 這類清單端點快取 30 秒）。這是
+  熱跑（33/33 全命中）仍然要花 7.6~7.9s 而不是「秒開」的主因，也是新一期
+  財報一定抓得到的原因。**這個數字比設計文件原先估的 18s 低不少**——原估
+  是拿另一個舊基準（25 份 filing）反推的，這次 ARLO 33 份的實測顯示查清單
+  + 查流通股數的網路往返實際成本更接近 8s，不是 18s；兩次獨立測量（清乾淨
+  兩層快取前後各跑一次熱跑）都落在同一個範圍，不是巧合
+- **修正案（10-Q/A、10-K/A）**：`_list_filings(amendments=False)` 現況本來
+  就不抓，跟這個快取無關（獨立議題，見 `docs/TODO.md`）
+
 ## 跨公司比較（`comparison.py` + `comparison_writer.py`）
 
 `build_comparison()` 對每個 ticker 呼叫一次 `fetch_gaap_statements()`，重組成
