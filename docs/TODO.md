@@ -274,10 +274,25 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
 每份快取檔裡的 `edgartools_version` 欄位擋。詳細機制、四道閘、實測數字見
 `docs/ARCHITECTURE.md`「本地 filing 快取」一節。
 
-**目前狀態**：快取**已經生效**且已驗收——Tab3 的清除面板已接完
-（`main.py`），ARLO 實測熱跑／冷跑 6.99 倍、golden 逐格比對 0 格不同。
-全套測試 1387 passed（`not slow`）；`pytest -m slow` 結果見
+**目前狀態**：快取**已經生效**、已驗收、**已合併 master**（`83c3b62`）。
+Tab3 的清除面板已接完（`main.py`），golden 逐格比對 0 格不同，
+全套測試 1381 passed（`not slow`）＋ slow 58 passed。倍數不要引用單一數字
+（冷 55~110s／熱 8~17s，隨 SEC 與本機負載變動），細節見
 `docs/ARCHITECTURE.md`「本地 filing 快取」一節。
+
+I7. **熱跑的瓶頸已經從網路變成比對層——要再快只能優化那裡**
+     （2026-09-03 逐段實測，數字見 `docs/ARCHITECTURE.md`）
+   - 全命中的一趟 ARLO 抓取約 10~17s，其中**約 14.2s（九成）是比對層**
+     （`IS/BS/CF_TEMPLATE` 逐列配對、`_synthesize_q4()`、比率、segments），
+     純本機 CPU；網路合計只有 1~2s，讀快取檔＋還原 DataFrame 約 0.95s
+   - **所以再加任何一層快取都不會讓熱跑變快**，`_filing_obj()` 那條線已經
+     降到 0.1s 等級。這條記在這裡是為了擋掉「再快取一層」這個直覺但錯誤的
+     方向
+   - 最便宜的一刀：`_CachedStatement.to_dataframe()` 加 memo。四個 builder
+     各自對同一張表重呼叫，`payload_to_df()` 被叫 224 次而不是 33 次，省下
+     約 0.85s（6%）。真物件路徑在 G9 記憶體快取下也是每次重算，所以加了
+     memo 會讓兩條路徑行為不同，**要先確認 golden 仍然 0 格不同**
+   - 真正的大頭（14.2s）要動模板配對本身，範圍大、風險高，**未評估**
 
 I3. **⚠ 既有缺口（不是這次造成的）：`_compare_worker` 不設 `is_running`，
      跨公司比較與批次抓取可以同時跑**（2026-09-03 做快取時發現）
