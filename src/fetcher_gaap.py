@@ -319,13 +319,12 @@ def _cache_key(filing) -> str | None:
 # `_bind_disk_cache()` 會覆蓋掉 B 執行緒正在用的 ticker/cik，檔案就會寫進
 # 錯的資料夾。ContextVar 讓每個執行緒起手都是空的，天然互不干擾。
 _disk_cache_var: ContextVar[dict | None] = ContextVar("_disk_cache", default=None)
-_last_cache_stats: tuple[int, int] = (0, 0)
+_last_cache_stats_var: ContextVar[tuple[int, int]] = ContextVar("_last_cache_stats", default=(0, 0))
 
 
 @contextmanager
 def _disk_cache_scope():
     """一次抓取的磁碟快取範圍。離開時更新 manifest 並記下命中統計。"""
-    global _last_cache_stats
     outer = _disk_cache_var.get()
     ctx = {"ticker": None, "cik": None, "hits": 0, "misses": 0} if outer is None else outer
     token = _disk_cache_var.set(ctx)
@@ -340,7 +339,7 @@ def _disk_cache_scope():
                     filing_cache.rebuild_manifest(ctx["ticker"], ctx["cik"])
                 except OSError:
                     pass
-            _last_cache_stats = (ctx["hits"], ctx["hits"] + ctx["misses"])
+            _last_cache_stats_var.set((ctx["hits"], ctx["hits"] + ctx["misses"]))
         _disk_cache_var.reset(token)
 
 
@@ -359,7 +358,7 @@ def _bind_disk_cache(ticker: str, cik) -> None:
 
 def last_cache_stats() -> tuple[int, int]:
     """上一趟抓取的 (命中份數, 處理份數)。給 log 用（見 main.py）。"""
-    return _last_cache_stats
+    return _last_cache_stats_var.get()
 
 
 def _save_to_disk_cache(ctx: dict, filing, obj) -> None:

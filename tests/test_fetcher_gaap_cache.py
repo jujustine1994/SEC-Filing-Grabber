@@ -304,3 +304,39 @@ def test_disk_cache_is_isolated_across_threads(cache_dir):
     # 沒有互相污染：誰的 accession 都沒有跑進對方的資料夾。
     assert not filing_cache.filing_path("NVDA", ACC_OLD).exists()
     assert not filing_cache.filing_path("AAPL", ACC).exists()
+
+
+def test_last_cache_stats_is_isolated_across_threads(cache_dir):
+    """Verify that each thread's `last_cache_stats()` returns only its own
+    cache hits/total, not another thread's. Originally `_last_cache_stats`
+    was a plain module global; concurrent fetches would race and report
+    wrong company's numbers. Converting to `ContextVar` fixes this.
+    
+    Uses `Barrier` to force deterministic overlap, not a timing gamble.
+    """
+    barrier = threading.Barrier(2)
+    results: dict[str, tuple[int, int]] = {}
+
+    def _run(ticker: str, cik: int, hits: int, misses: int) -> None:
+        with _disk_cache_scope() as ctx:
+            ctx["ticker"] = ticker
+            ctx["cik"] = cik
+            ctx["hits"] = hits
+            ctx["misses"] = misses
+            barrier.wait(timeout=5)   # Both scopes open at same time
+        # After scope exits, stats are recorded in ContextVar
+        results[ticker] = last_cache_stats()
+
+    t1 = threading.Thread(target=_run, args=("NVDA", 1045810, 24, 1))
+    t2 = threading.Thread(target=_run, args=("AAPL", 320193, 5, 10))
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert not t1.is_alive() and not t2.is_alive()
+    # Each thread should see its own stats, not the other thread's
+    assert results == {
+        "NVDA": (24, 25),  # hits=24, total=hits+misses=24+1=25
+        "AAPL": (5, 15),   # hits=5, total=5+10=15
+    }
