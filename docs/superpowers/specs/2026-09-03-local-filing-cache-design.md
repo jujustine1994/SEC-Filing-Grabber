@@ -218,7 +218,7 @@ statement，即 `_financials_of()` 之後三個 `.to_dataframe()` 呼叫的結�
   "dataframes": {
     "income_statement": {
       "data": { "...": "json.loads(df.to_json(orient='split')) 的物件內容" },
-      "dtypes": {"concept": "object", "level": "int64", "abstract": "bool", "...": "..."}
+      "dtypes": {"concept": "str", "level": "int64", "abstract": "bool", "...": "..."}
     },
     "balance_sheet": { "data": { "...": "..." }, "dtypes": { "...": "..." } },
     "cashflow_statement": null
@@ -393,6 +393,12 @@ SEC identity、AI 設定、抓取上限、模板模式這類「維護者會去�
 - 磁碟已有 `<accession>.json` 且 `cik`／`edgartools_version` 都相符 → 不呼叫
   `filing.obj()`（mock 驗證呼叫次數為 0），三張 DataFrame 讀回來的內容與
   dtype 要跟原始 DataFrame 一致（含「整欄皆 null」那個 dtype 還原的細節）
+- **替身物件的兩條隱性規則各要有一條測試釘住**，不然只活在這份文件的文字
+  裡，下一個人重構時很容易弄丟：
+  - 對替身存取一個沒實作的屬性（例如 `.has_earnings`）必須 raise
+    `AttributeError`，不可以安靜回傳 `None`
+  - 「這張表是 `None`」跟「這張表是空 DataFrame」存檔再讀回來，兩種狀態
+    不可以混在一起變成同一種
 - 新 filing（磁碟沒有對應檔案）才會真的呼叫 `filing.obj()`，成功後磁碟要
   多一個檔案、manifest 要多一筆
 - `cik` 不符 / `edgartools_version` 不符 / schema_version 不符 / JSON 本身
