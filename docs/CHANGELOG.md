@@ -20,16 +20,17 @@
         hint regex、Q4 合成邏輯都不會讓快取失效，但 edgartools 升版會（靠
         `edgartools_version` 欄位擋）。存放在
         `%APPDATA%\SEC Financial Tools\filing_cache\<TICKER>\<accession>.json`，
-        `<accession>.json` 是事實來源，`_manifest.json` 是給 GUI 看的衍生索引，
-        壞掉直接從資料夾重建
+        `<accession>.json` 是唯一的落地狀態，「哪些公司有快取」GUI 直接掃
+        `filing_cache/` 底下的子資料夾回答，不維護額外的索引檔
       - **四道閘**：JSON 可解析、`schema_version`、`cik`、`edgartools_version`，
         任一沒過視同無快取，照舊重抓，不拋例外
       - **替身物件**兩條隱性規則：不定義 `__getattr__`（未實作屬性照 Python
         預設拋 `AttributeError`，不兜底 `None`）、`None` 不等於空 DataFrame
       - **GUI**：Tab3（進階設定）新增「本地資料快取」區塊，列出各家公司佔用
-        空間，逐一/全部清除都有二次確認，抓取進行中鎖住清除鈕，自帶第二層
-        固定高度捲動容器（`_TAB3_HEIGHT` 重量後仍是 355，Tab3 412px／Tab1
-        414px／Notebook 440px 不變）
+        空間，全部清除有二次確認（唯一不可逆的破壞性操作）、逐一清除單一公司
+        不做二次確認（代價有限，跳確認反而礙事），抓取進行中鎖住清除鈕，自帶
+        第二層固定高度捲動容器（`_TAB3_HEIGHT` 重量後仍是 355，Tab3 412px／
+        Tab1 414px／Notebook 440px 不變）
       - **實測（ARLO，GAAP，10-Q+10-K，33 份 filing，2026-09-03，重量版——
         第一版數字漏清了 edgartools 自己的 HTTP 快取 `~/.edgar/_tcache`，
         已作廢）**：兩層快取都清乾淨後冷跑 55.12s（0/33 命中）、緊接著熱跑
@@ -38,7 +39,7 @@
         多做一次 `to_dataframe()` 落檔而變慢——用 `master`／這個分支交替執行、
         每輪都清乾淨兩層快取量測：master 平均 44.08s、這個分支冷跑平均
         56.08s，**+27%**，低於原估 +34% 也低於 +30% 記錄門檻，但數字仍留在
-        `docs/ARCHITECTURE.md` 備查（换回替身物件可以省掉這筆成本，但會讓
+        `docs/ARCHITECTURE.md` 備查（換回替身物件可以省掉這筆成本，但會讓
         golden 比對失去意義，不採用）
       - **不涵蓋**：Non-GAAP 有自己的 `nongaap_cache.json`；`company.get_facts()`
         流通股數；`_list_filings()` 清單查詢；修正案（10-Q/A、10-K/A）現況
