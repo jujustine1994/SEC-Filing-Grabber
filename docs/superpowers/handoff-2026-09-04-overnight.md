@@ -157,3 +157,78 @@ TICKERS=$(cat output/_hintsweep_201/tickers_joined.txt)
 3. H1 的實測結論（CF 填滿率到底改善了沒）
 4. 你自己做了哪些決定、如果錯了代價是什麼
 5. 還沒 push（29+ commits），要不要推是他的決定
+
+
+---
+
+# 執行記錄（2026-09-04 夜間，隨時更新——斷線時看這裡接手）
+
+> 這一段是**滾動更新**的，不是最後才寫。如果 AI session 中途因額度耗盡斷掉，
+> 下一個 session 從這裡接手，**不要重跑那三小時的抓取**。
+
+## 環境現況
+
+- 分支：`spike/h0-baseline-rebuild`（從 `master` 開出來，master 沒動）
+- 201 個舊 pkl 已備份到 `output/_spike_pkl_backup_20260904/`（含舊的
+  `mapping.json`／`mapping_candidates.json`）。要回復原狀就複製回 `output/_spike/`
+- **有一支 detached 看門狗在跑**：`scripts/watchdog_h0_baseline.sh`
+  （log：`output/_spike/watchdog.log`）。它跟 AI 的額度無關，會自己等抓取跑完、
+  掃警告、產基線、把驗收數字寫進 `output/_spike/h0_summary.txt`
+
+## 斷線後怎麼接手（照這個順序）
+
+1. 讀 `output/_spike/h0_summary.txt`——達標列數新舊對照、H1 的 `from_ytd` 填滿率、
+   三分類、假警報都在裡面。**沒有這個檔就代表抓取還沒跑完**，看 `watchdog.log`
+2. 讀 `output/_spike/rebuild_warnings.txt`——D11 的抓取缺漏。有可疑的 ticker 就
+   **只刪那幾家的 pkl** 再跑一次 `spike_derive_mapping.py <那幾家>`
+   （會走本地 filing 快取，很快），然後重跑 `gen_template_coverage_baseline.py`
+3. 照主任務 A 的「驗收」四點寫報告、更新 `docs/TODO.md` H0、寫 CHANGELOG
+4. 主任務 B（H1 改寫）：數字從新基線第三節的「facts填滿」欄與那行
+   `from_ytd` 填滿率中位數撈
+
+## 已完成
+
+- **commit `f142494`**：`gen_template_coverage_baseline.py` 加「現行填滿／facts填滿」
+  兩欄＋一行 `from_ytd` 列的 facts 填滿率中位數（H1 的驗收數字，原本文件裡撈不到）；
+  「抓取窗不一致」那段改成從 pkl 實際期數動態算，並保留一段說明「那 12 家跟舊基線
+  對不起來是抓取窗變了、不是回歸」
+- **commit `2b3e61e`**：看門狗腳本 ＋ `scripts/README.md` Index 同步
+- **5 家的煙霧測試**（重建到第 5 家時跑的）：`from_ytd` 那 29 列的 facts 填滿率
+  中位數 **100%**，H1 記的原始症狀是 25%。201 家的正式數字要等跑完
+
+## G13 已查到成因（用備份 pkl，零網路）
+
+SNOW 那兩欄**不是**「兩份 filing 用不同財季標籤收進同一期」（TODO 原本的猜測），
+而是**季表裡混進了一個純年度欄**：
+
+```
+FY2022     2022-01-31   ← 年度標籤，混進季表
+FY2022Q4   2022-01-31   ← 真正的 Q4
+FY2023Q1   （整欄不見了）
+```
+
+鏈路：`_is_q_col()`（`fetcher_gaap.py:875`）把 `(FY)` 也算成季度欄
+→ 某份 10-Q 的 IS dataframe 被 `_current_q_col()` 挑到 `(FY)` 欄
+→ `_col_to_quarter_label()`（`fetcher_gaap.py:819`）回傳 `FY2022`。
+
+**副作用比重複欄嚴重**：`_build_is_table` 的 dedup 是 `if label in periods: continue`，
+所以真正的 FY2023Q1 被那個假的 `FY2022` 佔掉位置、整欄被吃掉。
+
+量化（掃 201 家備份 pkl）：「季表出現純年度標籤 `FY\d{4}`」與「期末日重複」
+**都只有 SNOW 一家，兩者一對一重合**。
+
+還沒做的最後一步：等 SNOW 進本地 filing 快取後，把那份 10-Q 的原始 dataframe
+印出來確認欄名真的是 `2022-01-31 (FY)`。**確認完只寫進 TODO，不改修法**
+（改法會動到期間去重邏輯，要 CTH 點頭）。
+
+## 我自己做的決定
+
+1. **加填滿率欄位到基線文件**（原本沒有）。理由：H1 的驗收數字「CF 流量列填滿率」
+   在舊文件裡根本撈不到，交接指示要我從新基線撈，撈不到就得另外寫一支腳本。
+   代價：文件表格多兩欄、跟舊版不能逐列 diff。錯了的話回退這個 commit 即可
+2. **寫看門狗腳本**（交接沒要求）。理由：抓取要三小時，AI session 可能因額度耗盡
+   中途斷掉，成果不該綁在 AI 活著。代價：多一支 `scripts/` 腳本要維護
+3. **關掉 Monitor 的進度回報**，改由看門狗記在檔案裡。理由：每 15 分鐘叫醒 AI
+   一次純燒額度，而進度資訊寫檔就夠
+4. **ticker 清單用 `tr ',' ' '` 拆開**：`tickers_joined.txt` 是逗號串接的，
+   交接文件寫的 `TICKERS=$(cat ...)` 直接帶進去會被當成單一 ticker
