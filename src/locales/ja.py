@@ -260,7 +260,6 @@ STRINGS: dict[str, str] = {
     "gui.btn.cache_open_folder": 'フォルダを開く',
     "gui.btn.cancel": 'キャンセル',
     "gui.btn.close": '閉じる',
-    "gui.btn.confirm": 'OK',
     "gui.btn.delete_group": '削除',
     "gui.btn.discard_close": '破棄',
     "gui.btn.hide": '隠す',

@@ -262,7 +262,6 @@ STRINGS: dict[str, str] = {
     'gui.btn.cache_open_folder': 'Open folder',
     'gui.btn.cancel': 'Cancel',
     'gui.btn.close': 'Close',
-    'gui.btn.confirm': 'OK',
     'gui.btn.delete_group': 'Delete',
     'gui.btn.discard_close': 'Discard',
     'gui.btn.hide': 'Hide',

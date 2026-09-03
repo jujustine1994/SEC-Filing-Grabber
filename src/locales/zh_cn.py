@@ -216,7 +216,6 @@ STRINGS: dict[str, str] = {
     'gui.btn.cache_open_folder': '打开文件夹',
     'gui.btn.cancel': '取消',
     'gui.btn.close': '关闭',
-    'gui.btn.confirm': '确定',
     'gui.btn.delete_group': '删除群组',
     'gui.btn.discard_close': '放弃关闭',
     'gui.btn.hide': '隐藏',
