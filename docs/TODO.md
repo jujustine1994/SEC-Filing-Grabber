@@ -275,7 +275,7 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
 `docs/ARCHITECTURE.md`「本地 filing 快取」一節。
 
 **目前狀態**：快取**已經生效**且已驗收——Tab3 的清除面板已接完
-（`main.py`），ARLO 實測熱跑／冷跑 8.85 倍、golden 逐格比對 0 格不同。
+（`main.py`），ARLO 實測熱跑／冷跑 6.99 倍、golden 逐格比對 0 格不同。
 全套測試 1387 passed（`not slow`）；`pytest -m slow` 結果見
 `docs/ARCHITECTURE.md`「本地 filing 快取」一節。
 
