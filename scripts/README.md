@@ -23,6 +23,7 @@
 | `spike_companyfacts_diff.py` | **TODO G11 決策依據**：SEC companyfacts API 路徑 vs 現行「逐份解 filing」路徑的逐格比對。不改任何現有程式。輸出耗時對照、逐格異同、模板列覆蓋率、Q4 由 10-K 直接 tag 的比例。實測 NVDA：companyfacts 0.51s vs 解 filing 109s（**215 倍**） | 啟用 |
 | `spike_derive_mapping.py` | **TODO G11 第二步**：用現行路徑已知正確的數字當答案卷，反推 companyfacts 的 us-gaap concept 對照表。模板的 `std_concept` 欄是 edgartools 正規化過的名字（`NetIncome`），不是原始 element name（`NetIncomeLoss`），憑印象填 75 列一定會錯。這支對每個 concept 算「同期末日數字對得上的比例」，命中率最高的就是正確 mapping，順便偵測正負號相反。結果存 `output/_spike/mapping_candidates.json`，並快取 facts JSON 與現行路徑結果避免重跑 | 啟用 |
 | `survey_nongaap_metrics.py` | 調查 32 家（大中小型跨產業）8-K 新聞稿實際使用的 Non-GAAP 指標，統計跨公司覆蓋率，決定 `Data_NonGAAP` 固定模板要收哪些行。**不呼叫 AI**（純文字比對，不吃配額）。原文會存到快取目錄，調整比對規則後可重跑分析不必重新下載 | 啟用 |
+| `check_excel_repair.ps1` | **驗證一份 `.xlsx` 會不會被 Excel 判定內容毀損**（TODO A/F8 修復用）。用 Excel COM 開檔，比對 `%TEMP%` 底下 `error*.xml` 修復日誌開檔前後的變化，並清點 `Chart_*` 分頁還剩幾張圖。**實測發現**：壞檔會讓 `Workbooks.Open()` 直接丟 COM 例外（不是卡對話框，Open() 呼叫本身快速失敗），這個訊號比等修復日誌更乾淨，用來跟已知正常的 `.xlsx` 對照最快。`powershell -File scripts/check_excel_repair.ps1 -Path <絕對路徑>`，回傳碼 0=OK、2=REPRODUCED（判定毀損） | 啟用 |
 
 ---
 

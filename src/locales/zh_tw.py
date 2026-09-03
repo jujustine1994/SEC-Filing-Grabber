@@ -405,7 +405,7 @@ STRINGS: dict[str, str] = {
     "gui.compare.cat_per_share": '每股',
     "compare.xls.company": '公司',
     "compare.xls.period_end": '期末結算日',
-    "compare.xls.period_end_chart_date": '期末結算日（日期序列值，供圖表用，已隱藏）',
+    "compare.xls.period_end_chart_date": '期末結算日（日期序列值，供圖表用，請勿手動修改）',
     "compare.xls.fiscal_map_title": '日曆季 ↔ 財季對應（各公司自己的財季，僅供對照，下面的區塊一律用日曆季）',
 
     # compare.xls.notes.* — 說明 sheet（G7，2026-08-25）。新增一條要同時改 comparison_writer.NOTE_ITEMS。

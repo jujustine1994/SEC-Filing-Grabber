@@ -65,9 +65,10 @@ def test_compare_data_sheet_has_static_period_end_row():
 
 # ── F6：圖表用的真日期序列值列（2026-09-03，方案 B）────────────────────────
 
-def test_compare_data_sheet_has_a_hidden_real_date_row_above_the_text_row():
+def test_compare_data_sheet_has_a_gray_real_date_row_above_the_text_row():
     """F6：期末結算日文字列（Snapshot 用）不動，另外在它正上方加一列真正的
-    日期值只給圖表用，而且要隱藏起來不佔使用者眼球。"""
+    日期值只給圖表用。2026-09-04 CTH 要求改成灰底常駐顯示（不隱藏）——
+    隱藏列使用者根本找不到、也不知道有這一列。"""
     wb = Workbook()
     result = _sample_result()
     ranges = write_compare_data_sheet(wb, result, ["Revenue"])
@@ -78,7 +79,10 @@ def test_compare_data_sheet_has_a_hidden_real_date_row_above_the_text_row():
 
     assert ws.cell(row=chart_date_row, column=2).value == date(2024, 3, 31)
     assert ws.cell(row=chart_date_row, column=3).value == date(2024, 6, 30)
-    assert ws.row_dimensions[chart_date_row].hidden is True
+    assert ws.row_dimensions[chart_date_row].hidden is False
+    gray = "00D9D9D9"
+    assert ws.cell(row=chart_date_row, column=1).fill.fgColor.rgb in (gray, "FFD9D9D9")
+    assert ws.cell(row=chart_date_row, column=2).fill.fgColor.rgb in (gray, "FFD9D9D9")
     # 文字列本身完全不變
     assert ws.cell(row=end_date_row, column=2).value == "20240331"
 
@@ -222,7 +226,7 @@ def test_chart_sheet_created_per_metric_with_line_chart():
     assert len(ws._charts) == 1
 
 
-def test_chart_sheet_uses_the_hidden_chart_date_row_as_categories():
+def test_chart_sheet_uses_the_chart_date_row_as_categories():
     """F6（2026-09-03，方案 B）：X 軸類別改用 chart_date_row（真日期序列值，
     data_start - 2），不是 Snapshot 在用的文字期末結算日列（data_start - 1），
     也不是財季標籤列（data_start - 3）。"""
@@ -386,10 +390,11 @@ def test_chart_sheet_y_axis_uses_same_number_format_as_cells():
     assert margin_chart.y_axis.title.text.rich.p[0].r[0].t == "Gross Margin (%)"
 
 
-def test_chart_sheet_x_axis_skips_labels_when_many_periods():
-    """新發現的問題（不在原本 F3 5 項清單裡）：接上 D0-1 Q4 合成後跨公司比較
-    的時間跨度可以拉到 60-70 欄，全部日期標籤硬擠在 X 軸上會疊字看不清楚。
-    CTH 確認：目標大約 15 個可視標籤，用 tickLblSkip 跳著顯示。"""
+def test_chart_sheet_x_axis_major_unit_scales_with_period_span():
+    """A-3（2026-09-03 CTH 決策 A）：DateAxis 底下 tickLblSkip/tickMarkSkip
+    是死碼（CT_DateAx schema 沒有這兩個元素，設了也不會寫進 XML，見 A-3）。
+    日期軸控制標籤密度改用 majorUnit（動態算，總天數 ÷ 15）+
+    majorTimeUnit="days"，維持原本「約 15 個可視標籤」的設計意圖。"""
     wb = Workbook()
     periods = [f"FY{2009 + i // 4}Q{i % 4 + 1}" for i in range(60)]
     result = _sample_result()
@@ -401,21 +406,40 @@ def test_chart_sheet_x_axis_skips_labels_when_many_periods():
     write_chart_sheets(wb, ["Revenue"], block_ranges)
 
     chart = wb["Chart_Revenue"]._charts[0]
-    n_periods = len(periods)
-    expected_skip = max(1, n_periods // 15)
-    assert chart.x_axis.tickLblSkip == expected_skip
-    assert chart.x_axis.tickMarkSkip == expected_skip
+    # 2009-01-01（第一期近似日）～2024-06-30（NVDA 最後一期），實際跨度 5659 天
+    span_days = (date(2024, 6, 30) - date(2009, 1, 1)).days
+    assert chart.x_axis.majorUnit == max(1, span_days // 15)
+    assert chart.x_axis.majorTimeUnit == "days"
 
 
-def test_chart_sheet_x_axis_no_skip_when_few_periods():
-    """期間數少的話（原本的 2 期樣本資料）不用跳著顯示，skip 應該是 1。"""
+def test_chart_sheet_x_axis_major_unit_scales_down_when_span_is_short():
+    """期間數少、時間跨度短的話（原本的 2 期樣本資料，2024-03-31～2024-06-30
+    共 91 天），majorUnit 要跟著縮小，不能沿用長區間的密度、把僅有的兩個點
+    也跳著顯示。"""
     wb = Workbook()
     result = _sample_result()
     block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
     write_chart_sheets(wb, ["Revenue"], block_ranges)
 
     chart = wb["Chart_Revenue"]._charts[0]
-    assert chart.x_axis.tickLblSkip == 1
+    span_days = (date(2024, 6, 30) - date(2024, 3, 31)).days
+    assert chart.x_axis.majorUnit == max(1, span_days // 15)
+
+
+def test_chart_sheet_x_axis_major_unit_is_at_least_one_with_a_single_period():
+    """只有一期資料時算不出跨度（少於兩個日期點），majorUnit 要保底為 1，
+    不能是 0——Excel 對 majorUnit=0 的日期軸行為未定義。"""
+    wb = Workbook()
+    result = ComparisonResult(
+        metrics={"Revenue": {"NVDA": {"FY2024Q1": 100.0}}},
+        period_ends={"NVDA": {"FY2024Q1": "2024-03-31"}},
+        failures=[],
+    )
+    block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    write_chart_sheets(wb, ["Revenue"], block_ranges)
+
+    chart = wb["Chart_Revenue"]._charts[0]
+    assert chart.x_axis.majorUnit == 1
 
 
 def test_chart_sheet_name_truncates_long_metric_names():
@@ -427,6 +451,55 @@ def test_chart_sheet_name_truncates_long_metric_names():
     write_chart_sheets(wb, ["Revenue", long_name], block_ranges)
 
     assert all(len(name) <= 31 for name in wb.sheetnames)
+
+
+# ── A/F8：圖表 XML 層級驗收（openpyxl 物件層 OK 不代表 OOXML 層沒壞）──────
+
+def test_chart_xml_axes_cross_reference_each_other_and_major_unit_is_written():
+    """A-4：F6 那次 tickLblSkip 測試全綠、Excel 卻開不了檔，因為只驗了 Python
+    物件屬性，沒驗存檔後實際寫出的 XML。DateAxis 換軸後 y_axis.crossAx 曾經
+    指向一個已經不存在的軸 id（懸空參照），openpyxl 寫檔不做一致性檢查，這類
+    「物件層 OK、OOXML 層壞掉」的 bug 只有讀回實際 XML 才擋得住。
+
+    這裡把檔案存到 BytesIO、從 zip 裡讀回 xl/charts/chart1.xml，直接對
+    <c:dateAx>/<c:valAx> 的 axId/crossAx 做交叉驗證，並確認 majorUnit 真的
+    有寫出來（不是像 tickLblSkip 那樣設得進物件、卻消失在 XML 裡）。
+    """
+    import io
+    import zipfile
+    from xml.etree import ElementTree as ET
+
+    wb = Workbook()
+    result = _sample_result()
+    block_ranges = write_compare_data_sheet(wb, result, ["Revenue"])
+    write_chart_sheets(wb, ["Revenue"], block_ranges)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    with zipfile.ZipFile(buf) as zf:
+        chart_xml = zf.read("xl/charts/chart1.xml")
+
+    ns = {"c": "http://schemas.openxmlformats.org/drawingml/2006/chart"}
+    root = ET.fromstring(chart_xml)
+
+    date_ax = root.find(".//c:dateAx", ns)
+    val_ax = root.find(".//c:valAx", ns)
+    assert date_ax is not None and val_ax is not None
+
+    date_ax_id = date_ax.find("c:axId", ns).get("val")
+    val_ax_id = val_ax.find("c:axId", ns).get("val")
+    date_cross_ax = date_ax.find("c:crossAx", ns).get("val")
+    val_cross_ax = val_ax.find("c:crossAx", ns).get("val")
+
+    # 兩軸必須互指：dateAx 的 crossAx 指向 valAx 的 axId，反之亦然
+    assert date_cross_ax == val_ax_id
+    assert val_cross_ax == date_ax_id
+
+    major_unit = date_ax.find("c:majorUnit", ns)
+    assert major_unit is not None
+    assert int(major_unit.get("val")) >= 1
 
 
 # ── write_comparison_workbook ────────────────────────────────────────────

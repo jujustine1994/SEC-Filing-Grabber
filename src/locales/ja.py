@@ -481,7 +481,7 @@ STRINGS: dict[str, str] = {
     "gui.compare.cat_per_share": '1株あたり',
     "compare.xls.company": '会社',
     "compare.xls.period_end": '決算期末日',
-    "compare.xls.period_end_chart_date": '決算期末日（日付値、グラフ専用、非表示）',
+    "compare.xls.period_end_chart_date": '決算期末日（日付値、グラフ専用、手動で編集しないでください）',
     "compare.xls.fiscal_map_title": '暦四半期 ↔ 会計四半期の対応（各社の会計四半期は参照用。以下のブロックは暦四半期）',
 
     # compare.xls.notes.* — 說明 sheet（G7，2026-08-25）。新增一條要同時改 comparison_writer.NOTE_ITEMS。

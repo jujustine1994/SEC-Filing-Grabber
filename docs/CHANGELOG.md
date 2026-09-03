@@ -10,6 +10,52 @@
 ## 功能清單
 
 ### 已完成
+- [x] **修復跨公司比較 Excel 圖表被 Excel 判定毀損整批刪除（A/F8，2026-09-03）**：
+      - **現象**：F6（X 軸改真日期軸）合併後，跨公司比較產出的 7 張 `Chart_*`
+        sheet 圖表，Excel 開檔時全部跳「發現無法讀取的內容，是否修復」，修復後
+        圖表整張消失。修復日誌只列 `drawing1~7.xml`，資料本身完好
+      - **根因（已用 XML dump 定位，非推測）**：`LineChart()` 出廠內建
+        `y_axis`（`NumericAxis`，`axId=100, crossAx=10`，指向出廠 `TextAxis` 的
+        `axId=10`）。F6 把 `chart.x_axis` 整根換成 `DateAxis()`（預設
+        `axId=500`）後沒有同步更新 `y_axis.crossAx`，寫出的 `<valAx><crossAx
+        val="10"/>` 從此指向一個不存在的軸——懸空參照。openpyxl 寫檔不做軸
+        一致性檢查，Python 端完全不報錯，log 也顯示成功，只有 Excel 載入
+        chart part 失敗時才會發作，而且報錯方式是把整個外層 `drawing` 標成
+        毀損，看起來像「繪圖物件壞掉」，實際錯在軸的交叉參照
+      - **同時發現的死碼**：F6 那段「`tickLblSkip`／`tickMarkSkip` 讓長區間
+        標籤跳著顯示」對 `DateAxis`完全無效——`DateAxis` 繼承自 `TextAxis`
+        讓這兩個 Python 屬性設得進去、讀得回來、不報錯，但 `CT_DateAx` 的
+        schema 沒有這兩個元素，`DateAxis.__elements__` 也不含它們，根本不會
+        寫進 XML。測試只驗 Python 物件屬性（`chart.x_axis.tickLblSkip ==
+        expected`），驗的是一個從沒寫進檔案的東西，全綠但產出的檔案開不了
+      - **CTH 決策（A-3 標籤密度改法）**：選 A——動態算 `majorUnit`
+        （總天數 ÷ 15），維持「約 15 個可視標籤」的設計意圖，不採「交給
+        Excel 自動決定」的 B 案
+      - **修法**：`comparison_writer.py` `write_chart_sheets()`
+        (1) 建完 `DateAxis` 後立刻補 `chart.y_axis.crossAx =
+        chart.x_axis.axId`，兩軸永遠互指，之後不管誰再換軸型都不會脫鉤；
+        (2) 移除死碼 `tickLblSkip`／`tickMarkSkip`，改讀 `chart_date_row`
+        的真日期值算實際跨度天數，設 `majorUnit = max(1, span_days // 15)` +
+        `majorTimeUnit="days"`
+      - **驗證手段（新增）**：`scripts/check_excel_repair.ps1`——用 Excel COM
+        開檔，比對 `%TEMP%` 底下 `error*.xml` 修復日誌變化，並清點
+        `Chart_*` 分頁還剩幾張圖。**實測發現 F6 那次「Excel COM 開不了是無頭
+        環境限制」的猜測是錯的**：這個環境本身能正常用 COM 開一般 `.xlsx`
+        （`AAPL Apple Inc. data.xlsx` 開檔成功），只有壞檔會讓
+        `Workbooks.Open()` 直接丟 COM 例外（不管 `Visible`／`DisplayAlerts`
+        怎麼設都一樣，不是卡在對話框、是 Open() 呼叫本身快速失敗）——這其實
+        是比等 `error*.xml` 更乾淨的自動化重現訊號，用known-good／known-bad
+        兩份檔案對照就能穩定判斷
+      - **驗收**：拿 CTH 桌面那個壞檔（`MyComp_AMD_MSFT_NVDA_20260903.xlsx`）
+        先重現確認 `Workbooks.Open()` 報錯，修完後用小型比較檔
+        （2 家 × 3 期）驗證 `check_excel_repair.ps1` 顯示「OK」、2 張
+        `Chart_*` 分頁圖表都在、沒有新的修復日誌
+      - **測試**：`tests/test_comparison_writer.py` 改寫死碼測試
+        （`tickLblSkip`／`tickMarkSkip` 相關兩條）成驗證 `majorUnit` 動態
+        縮放的三條；新增 XML 層級測試——存檔到 `BytesIO`、讀回
+        `xl/charts/chart1.xml`，直接 assert `<c:dateAx>`／`<c:valAx>` 的
+        `axId`／`crossAx` 互指，`majorUnit` 確實寫進 XML。全套非 live 測試
+        1320 passed
 - [x] **跨公司比較圖表的 X 軸改成真正的日期軸（F6，2026-09-03，CTH 選方案 B）**：
       - **現況**：X 軸原本是文字類別軸（`<c:catAx>` + `strRef`），標籤是 `20200126`
         這種 8 碼字串、等距排列——COSTCO 16 週的第四季在軸上跟一般 13 週季畫得一樣寬，
@@ -46,11 +92,14 @@
       - **驗收**：unzip 產出的 `.xlsx` 直接讀 `xl/charts/chart1.xml`，確認
         `<dateAx>`（不是 `<catAx>`）、`baseTimeUnit="days"`、
         `<cat><numRef><f>'Compare_Data'!$B$8:$C$8</f></numRef></cat>` 指向隱藏的
-        真日期列。**Excel COM 這次沒能實測**——這個沙箱環境跑 `Workbooks.Open()`
-        直接報錯（無法取得 Open 屬性），研判是無頭環境沒有 Excel 互動階段，不是
-        程式問題；建議 CTH 有空自己在 Excel 裡打開一份跨公司比較檔案，右鍵 X 軸
-        看「座標軸格式」是不是顯示「日期座標軸」，肉眼確認 COSTCO 那種 16 週季
-        真的比一般季寬
+        真日期列。**Excel COM 這次沒能實測**——`Workbooks.Open()` 直接報錯
+        （無法取得 Open 屬性），當時研判是無頭環境沒有 Excel 互動階段。
+        ⚠ **2026-09-03（A/F8 修復時）訂正：這個猜測是錯的**——這台機器的
+        Excel COM 本身能正常開一般 `.xlsx`，`Workbooks.Open()` 報錯其實就是
+        「這份檔案本身壞了」的訊號，是這次遺漏的驗收步驟，不是環境限制。
+        當時只做了 XML dump 沒實際拿 Excel 開開看，才會漏掉 `crossAx`
+        懸空參照這個 bug，詳見同一節「修復跨公司比較 Excel 圖表被 Excel
+        判定毀損整批刪除（A/F8）」
 - [x] **跨公司比較的期間篩選改支援月／日（F7，2026-09-03）**：
       - **現況**：原本「起始／結束」兩格只吃 4 位數年份，`comparison._filter_by_year()`
         也只比對年份，篩不到月或日

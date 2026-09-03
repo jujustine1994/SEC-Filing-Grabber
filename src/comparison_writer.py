@@ -31,6 +31,11 @@ from i18n import t
 _HEADER_FONT = Font(bold=True)
 _BLOCK_GAP = 1  # 區塊之間空幾列
 _YELLOW_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+# F6 圖表日期列（2026-09-04 CTH 要求）：原本用隱藏列，CTH 覺得藏起來使用者
+# 找不到、也不知道有這列。改成灰底常駐顯示——看得到，但顏色暗示「這是給
+# 圖表用的輔助列，不要手動改」，跟期末結算日那列（白底，Snapshot 在用）
+# 一眼區分開來。
+_GRAY_FILL = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
 
 
 # ── 說明 sheet（G7，2026-08-25）────────────────────────────────────────────
@@ -498,15 +503,17 @@ def write_compare_data_sheet(
         # F6（2026-09-03，方案 B）：另外加一列真日期序列值，只給圖表當 X 軸類別
         # 用，不動下面那列文字——Snapshot 的 SUMPRODUCT/MATCH 靠那列是文字才
         # 對得起來（見 write_snapshot_sheets()），兩件事分開比同時改風險低。
-        # 隱藏起來，不佔使用者眼球，但仍在檔案裡（不是不存在）。
+        # 2026-09-04 CTH 要求改成灰底常駐顯示（不隱藏）——隱藏列使用者根本
+        # 找不到、也不知道有這一列，灰底既看得到又提示「不要手動改」。
         chart_date_row = header_row + 1
-        ws.cell(row=chart_date_row, column=1, value=t("compare.xls.period_end_chart_date"))
-        ws.row_dimensions[chart_date_row].hidden = True
+        label_cell = ws.cell(row=chart_date_row, column=1, value=t("compare.xls.period_end_chart_date"))
+        label_cell.fill = _GRAY_FILL
         for col, (period, end_date) in enumerate(zip(periods, end_dates), start=2):
             date_value = (_parse_iso(end_date) if end_date
                           else _approx_period_date(period))
+            cell = ws.cell(row=chart_date_row, column=col, value=date_value)
+            cell.fill = _GRAY_FILL
             if date_value is not None:
-                cell = ws.cell(row=chart_date_row, column=col, value=date_value)
                 cell.number_format = "yyyy-mm-dd"
 
         # 期末結算日列（靜態文字，供 Snapshot 用）。fetcher_gaap 給的原始格式是
@@ -706,6 +713,12 @@ def write_chart_sheets(
         # 繼承自 TextAxis（同一組 delete/axPos/tickLblPos/crosses/tickLblSkip
         # 屬性都通用），這裡直接整個換掉、下面沿用原本的設定方式。
         chart.x_axis = DateAxis()
+        # DateAxis 的預設 axId 是 500，跟 LineChart() 出廠內建的 y_axis
+        # （NumericAxis，crossAx 指向舊 TextAxis 的 axId=10）不是同一組，換軸
+        # 後 crossAx 變成懸空參照，Excel 開檔會把整張圖判定成毀損內容整個砍掉
+        # （drawing*.xml 被 removedPart）。openpyxl 寫檔不驗這個一致性，兩軸
+        # 一律互指才安全，不管以後誰再換軸型都不會脫鉤。
+        chart.y_axis.crossAx = chart.x_axis.axId
         chart.title = metric_name
         chart.style = 2
         chart.x_axis.title = t("gui.compare.period")
@@ -786,10 +799,25 @@ def write_chart_sheets(
         # 接上 D0-1 Q4 合成後跨公司比較的時間跨度可以拉到 60-70 欄，全部日期
         # 標籤硬擠在 X 軸上會疊字看不清楚（這是修復帶出的新問題，原本 F3 5
         # 項清單沒有涵蓋）。目標大約 15 個可視標籤，跳著顯示。
-        n_periods = last_col - 1  # 扣掉 A 欄（公司名），B 欄開始才是期間
-        tick_skip = max(1, n_periods // 15)
-        chart.x_axis.tickLblSkip = tick_skip
-        chart.x_axis.tickMarkSkip = tick_skip
+        #
+        # A-3（2026-09-03 CTH 決策 A）：DateAxis 繼承自 TextAxis，
+        # tickLblSkip/tickMarkSkip 這兩個 Python 屬性設得進去、讀得回來、不
+        # 報錯，但 CT_DateAx 的 schema 沒有這兩個元素，DateAxis.__elements__
+        # 不含它們，根本不會寫進 XML——整段從 F6 就是死碼。日期軸控制標籤密度
+        # 要用 majorUnit + majorTimeUnit，這裡動態算 majorUnit（總天數 ÷ 15）
+        # 維持原本「約 15 個可視標籤」的設計意圖。
+        dates_in_row = [
+            cell.value
+            for cell in data_ws[chart_date_row][1:last_col]
+            if isinstance(cell.value, datetime.date)
+        ]
+        if len(dates_in_row) >= 2:
+            span_days = (max(dates_in_row) - min(dates_in_row)).days
+            major_unit = max(1, span_days // 15)
+        else:
+            major_unit = 1
+        chart.x_axis.majorTimeUnit = "days"
+        chart.x_axis.majorUnit = major_unit
 
         sheet_name = _chart_sheet_name(metric_name)
         chart_ws = wb.create_sheet(sheet_name)

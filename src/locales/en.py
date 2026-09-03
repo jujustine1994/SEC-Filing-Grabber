@@ -465,7 +465,7 @@ STRINGS: dict[str, str] = {
     'gui.compare.cat_per_share': 'Per Share',
     'compare.xls.company': 'Company',
     'compare.xls.period_end': 'Period End',
-    'compare.xls.period_end_chart_date': 'Period End (date value, chart use only, hidden)',
+    'compare.xls.period_end_chart_date': 'Period End (date value, chart use only, do not edit)',
     'compare.xls.fiscal_map_title': 'Calendar quarter to fiscal quarter (each company as it reports; blocks below always use calendar quarters)',
 
     # compare.xls.notes.* — 說明 sheet（G7，2026-08-25）。新增一條要同時改 comparison_writer.NOTE_ITEMS。
