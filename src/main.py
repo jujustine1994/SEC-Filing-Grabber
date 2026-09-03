@@ -269,6 +269,15 @@ def format_size(num_bytes: int) -> str:
     return f"{n / 1024:.1f} KB"
 
 
+def any_fetch_running(is_running: bool, compare_running: bool) -> bool:
+    """Tab1／批次（`is_running`）或跨公司比較（`compare_running`）任一在跑。
+
+    兩個旗標分開維護是刻意的（見 `_sync_run_buttons` 的說明），但「能不能再
+    發動一趟抓取」這個判斷永遠要看兩個。
+    """
+    return bool(is_running) or bool(compare_running)
+
+
 def cache_buttons_state(is_running: bool) -> str:
     """抓取進行中鎖住兩顆清除鈕，不然會邊寫邊刪同一個資料夾。"""
     return "disabled" if is_running else "normal"
@@ -553,6 +562,9 @@ class SECFetcherApp:
         # 按鈕行為，也可能在比較完成路徑上把 is_running 誤復原成別的狀態。
         # 快取清除鈕要同時看這兩個旗標（見 _sync_cache_buttons）。
         self._compare_running = False
+        # 快速掃描只 disable 自己那顆按鈕、沒有旗標，`_sync_run_buttons()`
+        # 統一放行時會在掃描途中把它誤放開（連帶蓋掉「掃描中」字樣）。
+        self._scan_running = False
         # Runtime state for popups
         self._wl_found_name = ""
         self._wl_list_container = None
@@ -1945,9 +1957,12 @@ class SECFetcherApp:
             )
             return
 
-        self.compare_run_btn.config(state="disabled")
+        # 同 `_start_worker`：Tab1／批次抓到一半時不可以再開一趟比較（TODO I3）
+        if self._fetch_running():
+            return
         self._compare_running = True
         self._sync_cache_buttons()
+        self._sync_run_buttons()
         threading.Thread(target=self._compare_worker, daemon=True).start()
 
     def _compare_worker(self):
@@ -2290,18 +2305,47 @@ class SECFetcherApp:
             self._cache_clear_btns.append(btn)
         self._sync_cache_buttons()
 
+    def _fetch_running(self) -> bool:
+        """這個視窗裡有沒有任何一趟抓取正在跑（Tab1／批次／跨公司比較）。"""
+        return any_fetch_running(getattr(self, "is_running", False),
+                                 getattr(self, "_compare_running", False))
+
     def _sync_cache_buttons(self):
         """抓取進行中鎖住兩顆清除鈕——不然會邊寫邊刪同一個 ticker 的資料夾。
 
         跨公司比較用自己的 `_compare_running`、不是 `is_running`（見 `__init__`
         的說明），所以這裡兩個旗標都要看，任一個在跑就鎖。"""
-        running = bool(getattr(self, "is_running", False)) or \
-            bool(getattr(self, "_compare_running", False))
-        state = cache_buttons_state(running)
+        state = cache_buttons_state(self._fetch_running())
         for btn in getattr(self, "_cache_clear_btns", []):
             btn.config(state=state)
         if getattr(self, "_cache_clear_all_btn", None):
             self._cache_clear_all_btn.config(state=state)
+
+    def _sync_run_buttons(self):
+        """四顆會發動抓取的按鈕一起鎖／一起放（TODO I3，2026-09-03）。
+
+        原本 Tab1／批次／掃描是靠 `is_running` 鎖，跨公司比較卻只鎖自己那顆
+        `compare_run_btn`、完全不看別人——所以「批次抓到一半切到第 4 分頁按
+        產生比較 Excel」是按得下去的，兩趟會同時對 SEC 發請求。D11 已經實測過
+        連續大量抓取會讓 SEC 偶發失敗、靜默少掉幾格，所以這不是效能問題而是
+        **資料完整度**問題。
+
+        刻意**不**讓跨公司比較去設 `is_running`：那個旗標同時是
+        `_start_worker` 的防重入鎖，而比較有自己的完成／失敗訊息路徑
+        （`compare_done`／`compare_error`），共用會讓還原點交錯、難以推理。
+        改成兩個旗標各自維護、由這個函式統一換算成按鈕狀態。
+        """
+        running = self._fetch_running()
+        state = cache_buttons_state(running)
+        for name in ("btn_run_single", "btn_run_batch", "compare_run_btn"):
+            btn = getattr(self, name, None)
+            if btn is not None:
+                btn.config(state=state)
+        # 掃描鈕多一個條件：掃描本身在跑時不可以被放開，否則會蓋掉「掃描中」
+        # 字樣，也讓使用者能對同一個 ticker 重複發動查詢
+        if getattr(self, "_scan_btn", None) is not None:
+            self._scan_btn.config(
+                state=cache_buttons_state(running or self._scan_running))
 
     def _open_cache_folder(self):
         """讓使用者自己用檔案總管進一步查看／處理，不用我們另外做細部管理 UI。"""
@@ -2707,6 +2751,7 @@ class SECFetcherApp:
         if not identity:
             messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.set_identity"))
             return
+        self._scan_running = True
         if self._scan_btn:
             self._scan_btn.config(state="disabled", text=t("gui.status.scanning"))
         if self._scan_hint_label:
@@ -2807,7 +2852,9 @@ class SECFetcherApp:
 
     def _start_worker(self, target):
         """Clear log, disable run buttons, and start target as a daemon thread. Guards against double-runs."""
-        if self.is_running:
+        # 防重入要看**兩個**旗標：跨公司比較跑到一半時也不可以再開一趟
+        # （TODO I3——兩趟同時打 SEC 會加重 D11 那個「靜默少格」的風險）
+        if self._fetch_running():
             return
         self.log_text.config(state="normal")
         self.log_text.delete("1.0", "end")
@@ -2817,10 +2864,7 @@ class SECFetcherApp:
         self.progress_label.config(text=t("gui.status.preparing"))
         self.is_running = True
         self._sync_cache_buttons()
-        self.btn_run_single.config(state="disabled")
-        self.btn_run_batch.config(state="disabled")
-        if self._scan_btn:
-            self._scan_btn.config(state="disabled")
+        self._sync_run_buttons()
         threading.Thread(target=target, daemon=True).start()
 
     def _worker_single(self, ticker: str, fetch_gaap: bool, fetch_nongaap: bool,
@@ -3111,11 +3155,8 @@ class SECFetcherApp:
                     success = data
                     self.is_running = False
                     self._sync_cache_buttons()
+                    self._sync_run_buttons()
                     self._refresh_cache_panel()
-                    self.btn_run_single.config(state="normal")
-                    self.btn_run_batch.config(state="normal")
-                    if self._scan_btn:
-                        self._scan_btn.config(state="normal")
                     if success:
                         self.btn_open_folder.pack(side="left")
                         self.progress_label.config(text=t("gui.status.done"))
@@ -3182,12 +3223,14 @@ class SECFetcherApp:
                         info = (t("gui.status.latest_data", label=label, end=end, filed=fdate)
                                 if label else t("gui.status.latest_unknown"))
                         self._sheet_panel_frame.configure(text=f"{self._SHEET_PANEL_TITLE_BASE} ｜ {info}")
+                    self._scan_running = False
                     if self._scan_btn:
                         self._scan_btn.config(state="normal", text=t("gui.btn.scan"))
                     if self._scan_hint_label:
                         self._scan_hint_label.config(text="")
 
                 elif msg_type == "preview_scan_error":
+                    self._scan_running = False
                     if self._scan_btn:
                         self._scan_btn.config(state="normal", text=t("gui.btn.scan"))
                     if self._scan_hint_label:
@@ -3202,17 +3245,17 @@ class SECFetcherApp:
                 elif msg_type == "compare_error":
                     self._log(f"{t('gui.compare.select_title')}: {data}", "ERROR")
                     self.progress_label.config(text=t("gui.status.error_see_log"))
-                    self.compare_run_btn.config(state="normal")
                     self._compare_running = False
                     self._sync_cache_buttons()
+                    self._sync_run_buttons()
                     self._refresh_cache_panel()
 
                 elif msg_type == "compare_done":
                     self._log(t("gui.compare.log_done", path=data))
                     self.progress_label.config(text=t("gui.status.done"))
-                    self.compare_run_btn.config(state="normal")
                     self._compare_running = False
                     self._sync_cache_buttons()
+                    self._sync_run_buttons()
                     self._refresh_cache_panel()
 
         except queue.Empty:

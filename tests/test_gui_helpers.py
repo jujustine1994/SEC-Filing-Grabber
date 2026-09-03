@@ -257,3 +257,36 @@ def test_cache_buttons_are_locked_while_a_fetch_is_running():
     「執行中鎖住相關按鈕」慣例。"""
     assert main.cache_buttons_state(True) == "disabled"
     assert main.cache_buttons_state(False) == "normal"
+
+
+# ── 有沒有任何抓取在跑（TODO I3，2026-09-03）────────────────────────────────
+#
+# 原本 Tab1／批次／掃描靠 `is_running` 互鎖，跨公司比較卻只鎖自己那顆按鈕、
+# 不看別人——「批次抓到一半切到第 4 分頁按產生比較 Excel」是按得下去的，
+# 兩趟會同時對 SEC 發請求。D11 已實測連續大量抓取會讓 SEC 偶發失敗、靜默
+# 少掉幾格，所以這是**資料完整度**問題，不是效能問題。
+#
+# 兩個旗標刻意分開維護（比較有自己的完成／失敗訊息路徑，共用 `is_running`
+# 會讓還原點交錯），所以「能不能再發動一趟」統一由這個純函式換算。
+
+@pytest.mark.parametrize("is_running, compare_running, expected", [
+    (False, False, False),
+    (True,  False, True),    # Tab1／批次在跑
+    (False, True,  True),    # 跨公司比較在跑
+    (True,  True,  True),
+])
+def test_any_fetch_running(is_running, compare_running, expected):
+    assert main.any_fetch_running(is_running, compare_running) is expected
+
+
+def test_any_fetch_running_is_not_a_constant():
+    """兩個方向都要有——回傳定值的實作必須紅燈。"""
+    assert main.any_fetch_running(False, False) is False
+    assert main.any_fetch_running(True, True) is True
+
+
+def test_run_buttons_lock_whenever_any_fetch_runs():
+    """跟 cache_buttons_state 共用同一套換算，四顆按鈕與兩顆清除鈕一致。"""
+    for a, b in ((True, False), (False, True), (True, True)):
+        assert main.cache_buttons_state(main.any_fetch_running(a, b)) == "disabled"
+    assert main.cache_buttons_state(main.any_fetch_running(False, False)) == "normal"

@@ -1,8 +1,9 @@
-"""Tests for i18n.py 與 locales/ — 多語言的三道防線。
+"""Tests for i18n.py 與 locales/ — 多語言的四道防線。
 
 1. 語言檔的 key 集合必須完全一致（漏翻當場紅燈）
 2. placeholder 必須一致（譯文打錯 {name} 會讓 t() 靜默吐未格式化的字串）
 3. src/ 底下不得再出現寫死的中日文字面（防止日後功能開發時悄悄退化）
+4. 同一個語言檔裡不得有重複的 key（前三條對這件事結構性失明，見下方）
 
 第 3 條是**永久**的：它不是為了這次遷移，是為了讓下一次不會又回到 558 條
 寫死字串的狀態。
@@ -330,3 +331,66 @@ def test_template_path_uses_the_same_column_b_lookup():
     src = inspect.getsource(excel_writer._write_sheet_template)
     assert "_col_b(" in src, "模板路徑沒走 _col_b，B 欄命名空間會查錯"
     assert "zh_label(" not in src, "模板路徑還在直接呼叫 zh_label"
+
+
+# ── 4. 同一個語言檔裡不得有重複的 key ─────────────────────────────────────
+#
+# **2026-09-03 真的發生過**：加本地快取那九條字串時，`en.py`／`ja.py`／
+# `zh_cn.py` 各被多塞了一份已經存在的 `gui.btn.confirm`，而上面三條測試
+# **全部綠燈**。
+#
+# 為什麼看不到：Python 的 dict 字面值在**解析階段**就把重複鍵吃掉了
+# （後者覆蓋前者），執行期的 `STRINGS` 永遠只有一份，所以比對 key 集合、
+# 比對 placeholder 都不可能發現。當時是靠 `git diff --stat` 三個檔 +10 行、
+# 一個檔 +9 行，行數對不上才被注意到——那不是可以依賴的防線。
+#
+# 當時兩份的值剛好一樣所以無害。真正的風險是下次有人只改其中一份：畫面會
+# 顯示另一份的內容，而且四條測試依然全綠，查起來會非常久。
+#
+# 所以這條不看執行期的 dict，直接用 AST 讀原始碼裡實際寫了哪些 key。
+
+LOCALE_DIR = SRC / "locales"
+
+
+def _duplicate_keys(path: Path) -> list[str]:
+    """回傳這個 locale 檔裡出現超過一次的 key（照原始碼，不是執行期 dict）。"""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    seen: dict[str, int] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Dict):
+            continue
+        for k in node.keys:
+            if isinstance(k, ast.Constant) and isinstance(k.value, str):
+                seen[k.value] = seen.get(k.value, 0) + 1
+    return sorted(k for k, n in seen.items() if n > 1)
+
+
+@pytest.mark.parametrize("lang", LANGS)
+def test_no_duplicate_keys_within_a_locale_file(lang):
+    """重複鍵會被 Python 靜默吃掉，前三條測試看不到——只能讀原始碼。"""
+    path = LOCALE_DIR / f"{lang}.py"
+    assert path.exists(), f"找不到 {path}"
+    dups = _duplicate_keys(path)
+    assert not dups, (
+        f"{lang}.py 有 {len(dups)} 個重複的 key：{dups}。"
+        "Python 會保留最後一份、靜默丟掉前面的，畫面顯示的不一定是你剛改的那份。"
+    )
+
+
+def test_the_duplicate_key_detector_actually_detects(tmp_path):
+    """反向測試：這條防線本身要能抓到東西，否則它只是裝飾。
+
+    上面那條在四個檔都乾淨時永遠綠燈，光看它無法分辨「真的沒有重複」還是
+    「偵測邏輯根本沒在運作」——2026-09-03 那次失誤的教訓就是「全綠不等於
+    有在檢查」。
+    """
+    fake = tmp_path / "fake_locale.py"
+    fake.write_text(
+        "STRINGS = {\n"
+        "    'gui.btn.ok': '確定',\n"
+        "    'gui.btn.cancel': '取消',\n"
+        "    'gui.btn.ok': 'OK',\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    assert _duplicate_keys(fake) == ["gui.btn.ok"]
