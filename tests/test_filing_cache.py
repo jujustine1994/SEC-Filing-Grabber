@@ -153,6 +153,72 @@ def test_negative_cache_entry_has_financials_none():
     assert filing.financials is None
 
 
+# ── 替身的 DataFrame memo（TODO I7）───────────────────────────────────────
+
+
+def test_repeated_to_dataframe_parses_the_payload_only_once():
+    """同一份 filing 的同一張表，四個 builder 各自呼叫一次。
+
+    memo 之前 `payload_to_df()` 每次都重跑一輪 JSON → DataFrame → astype，
+    ARLO 預設參數實測 **224 次、合計 0.37s**。memo 之後每張表只解析一次。
+    """
+    filing = filing_cache.cached_filing(_entry())
+    calls = {"n": 0}
+    orig = filing_cache.payload_to_df
+
+    def counted(payload):
+        calls["n"] += 1
+        return orig(payload)
+
+    filing_cache.payload_to_df = counted
+    try:
+        for _ in range(4):
+            filing.financials.income_statement().to_dataframe()
+    finally:
+        filing_cache.payload_to_df = orig
+    assert calls["n"] == 1
+
+
+def test_each_call_returns_an_independent_dataframe():
+    """**memo 不可以讓四個 builder 共用同一個 DataFrame 物件。**
+
+    現行程式碼沒有任何一處改動報表 dataframe（全庫零 `inplace=True`、
+    零欄位指派），所以共用「現在」是安全的——但哪天有人寫 `df["x"] = ...`
+    就會靜默污染其他 builder，而且症狀是「另一張表莫名多一欄」，極難查。
+
+    實測深複製比重新解析便宜 **9.8 倍**（0.17ms vs 1.67ms），
+    所以隔離幾乎是免費的，沒有理由省。
+    """
+    filing = filing_cache.cached_filing(_entry())
+    stmt = filing.financials.income_statement()
+    first = stmt.to_dataframe()
+    second = stmt.to_dataframe()
+    assert first is not second
+    pd.testing.assert_frame_equal(first, second)
+
+    first["injected"] = 1
+    third = stmt.to_dataframe()
+    assert "injected" not in third.columns
+
+
+def test_memo_is_shared_across_repeated_getter_calls():
+    """`_CachedFinancials._stmt()` 每次都 new 一個 `_CachedStatement`，
+    所以 memo 只放在 statement 身上是沒用的——四個 builder 各自呼叫
+    `fin.income_statement()`，拿到的是四個不同物件。memo 要能跨 getter 共用。"""
+    filing = filing_cache.cached_filing(_entry())
+    assert filing.financials.income_statement() is filing.financials.income_statement()
+
+
+def test_memo_does_not_leak_between_statements():
+    """三張表各自 memo，不可以互相拿到對方的 DataFrame。"""
+    bs = _sample_df().rename(columns={"label": "bs_label"})
+    filing = filing_cache.cached_filing(_entry(bs_df=bs))
+    is_df = filing.financials.income_statement().to_dataframe()
+    bs_df = filing.financials.balance_sheet().to_dataframe()
+    assert "label" in is_df.columns
+    assert "bs_label" in bs_df.columns
+
+
 # ── 路徑與原子寫入 ────────────────────────────────────────────────────────
 
 @pytest.fixture

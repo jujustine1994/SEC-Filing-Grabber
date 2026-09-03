@@ -156,25 +156,50 @@ def payload_to_df(payload: dict | None) -> pd.DataFrame | None:
 # filing 當成沒資料、清快取重跑卻是好的——這種 bug 極難查。只實作有人真的
 # 在用的那幾條路徑，其餘一律照 Python 預設失敗。
 
+_UNSET = object()
+
+
 class _CachedStatement:
-    """替身的一張報表。只有 `to_dataframe()`，因為呼叫端只用這一個。"""
+    """替身的一張報表。只有 `to_dataframe()`，因為呼叫端只用這一個。
+
+    **解析結果 memo 起來**（TODO I7）。四個 builder（IS／BS／CF／segments）
+    各自對同一份 filing 的同一張表呼叫一次，memo 之前 `payload_to_df()` 會把
+    「JSON → DataFrame → astype」整輪重跑 —— ARLO 預設參數實測 **224 次、
+    合計 0.37s**。
+
+    **每次仍回傳 copy，不共用同一個 DataFrame 物件。** 現行程式碼沒有任何一處
+    改動報表 dataframe（全庫零 `inplace=True`、零欄位指派），共用「現在」是安全
+    的；但哪天有人寫 `df["x"] = ...`，症狀會是「另一張表莫名多一欄」，極難查。
+    實測深複製比重新解析便宜 **9.8 倍**（0.17ms vs 1.67ms），隔離幾乎免費。
+    """
 
     def __init__(self, payload: dict):
         self._payload = payload
+        self._df = _UNSET
 
     def to_dataframe(self) -> pd.DataFrame:
-        return payload_to_df(self._payload)
+        if self._df is _UNSET:
+            self._df = payload_to_df(self._payload)
+        return None if self._df is None else self._df.copy()
 
 
 class _CachedFinancials:
-    """替身的 `financials`。三個 getter 全部無參數，跟真物件的用法一致。"""
+    """替身的 `financials`。三個 getter 全部無參數，跟真物件的用法一致。
+
+    getter 回傳的 `_CachedStatement` 也要 memo：每次 new 一個的話，上面那層
+    memo 形同虛設——四個 builder 各自呼叫 `fin.income_statement()`，拿到的會是
+    四個各自空白的物件。
+    """
 
     def __init__(self, dataframes: dict):
         self._dfs = dataframes or {}
+        self._stmts: dict[str, "_CachedStatement | None"] = {}
 
-    def _stmt(self, key: str) -> _CachedStatement | None:
-        payload = self._dfs.get(key)
-        return None if payload is None else _CachedStatement(payload)
+    def _stmt(self, key: str) -> "_CachedStatement | None":
+        if key not in self._stmts:
+            payload = self._dfs.get(key)
+            self._stmts[key] = None if payload is None else _CachedStatement(payload)
+        return self._stmts[key]
 
     def income_statement(self):
         return self._stmt("income_statement")
