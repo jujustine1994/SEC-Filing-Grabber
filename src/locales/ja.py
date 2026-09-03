@@ -255,8 +255,12 @@ STRINGS: dict[str, str] = {
     "gui.btn.adv_collapsed": '▶ 詳細設定',
     "gui.btn.adv_expanded": '▼ 詳細設定',
     "gui.btn.browse": '参照',
+    "gui.btn.cache_clear": '削除',
+    "gui.btn.cache_clear_all": 'すべて削除',
+    "gui.btn.cache_open_folder": 'フォルダを開く',
     "gui.btn.cancel": 'キャンセル',
     "gui.btn.close": '閉じる',
+    "gui.btn.confirm": 'OK',
     "gui.btn.delete_group": '削除',
     "gui.btn.discard_close": '破棄',
     "gui.btn.hide": '隠す',
@@ -299,6 +303,7 @@ STRINGS: dict[str, str] = {
     # ── GUI：ダイアログ ─────────────────────────────────────────────────
     "gui.dlg.add_group_prompt": 'グループ名：',
     "gui.dlg.add_group_title": 'グループ追加',
+    "gui.dlg.cache_clear_all_title": 'すべてのキャッシュを削除',
     "gui.dlg.choose_output_dir": '保存先を選択',
     "gui.dlg.choose_template": '配色テンプレートを選択',
     "gui.dlg.choose_ticker_dir": '{ticker} の出力フォルダを選択',
@@ -313,6 +318,7 @@ STRINGS: dict[str, str] = {
     "gui.frame.add_company": ' 銘柄を追加 ',
     "gui.frame.ai_settings": ' AI 設定（Non-GAAP に必要。未設定でも GAAP には影響なし）',
     "gui.frame.fetch_settings": ' 取得設定 ',
+    "gui.frame.filing_cache": 'ローカルデータキャッシュ',
     "gui.frame.optional_sheets": ' 任意シート（スキャン後に表示）',
     "gui.frame.progress": ' 進捗 ',
     "gui.frame.watchlist_current": ' 現在のウォッチリスト ',
@@ -334,6 +340,9 @@ STRINGS: dict[str, str] = {
 
     # ── GUI：ラベル ─────────────────────────────────────────────────────
     "gui.lbl.api_key_notice": 'API キーはローカルの config.json にのみ保存されます。他人と共有しないでください。',
+    "gui.lbl.cache_empty": 'キャッシュはまだありません',
+    "gui.lbl.cache_filings": '{count} 件のfiling',
+    "gui.lbl.cache_total": '合計容量：{size}',
     "gui.lbl.filename_empty": '（ファイル名を入力）',
     "gui.lbl.filename_format": 'ファイル名：',
     "gui.lbl.filename_sample": 'TICKER 会社名 data.xlsx',
@@ -379,6 +388,7 @@ STRINGS: dict[str, str] = {
     # ── GUI：メッセージ ─────────────────────────────────────────────────
     "gui.msg.bad_year": '期間には有効な年を入力してください（例：2018）',
     "gui.msg.batch_nongaap_need_key": 'Non-GAAP には「詳細設定」での AI API キー入力が必要です',
+    "gui.msg.cache_clear_all_body": '{n} 社分のローカルキャッシュ（{size}）をすべて削除します。\n\n次回取得時は20年分を解析し直すため、数分かかることがあります。よろしいですか？',
     "gui.msg.connection_ok": '接続に成功しました！',
     "gui.msg.enter_api_key": 'API キーを入力してください',
     "gui.msg.enter_ticker": 'ティッカーを入力してください',

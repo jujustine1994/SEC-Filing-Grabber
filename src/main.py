@@ -255,6 +255,24 @@ def cache_log_line(ticker: str, hits: int, total: int) -> str | None:
     return f"{ticker} cache {hits}/{total}"
 
 
+def format_size(num_bytes: int) -> str:
+    """位元組 → 一眼看得懂的容量。單位符號與語言無關，跟 `format_elapsed()`
+    一樣畫面與 log 共用同一個格式，不維護兩套。"""
+    n = max(0, int(num_bytes or 0))
+    if n >= 1024 ** 3:
+        return f"{n / 1024 ** 3:.1f} GB"
+    if n >= 1024 ** 2:
+        return f"{n / 1024 ** 2:.1f} MB"
+    if n == 0:
+        return "0 KB"
+    return f"{n / 1024:.1f} KB"
+
+
+def cache_buttons_state(is_running: bool) -> str:
+    """抓取進行中鎖住兩顆清除鈕，不然會邊寫邊刪同一個資料夾。"""
+    return "disabled" if is_running else "normal"
+
+
 def company_chip_entries(selected: list[tuple[str, str]]) -> list[tuple[str, str]]:
     """已選公司 → `pack_wrapped_chips()` 吃的 `[(顯示文字, 移除用的 key)]`。
 

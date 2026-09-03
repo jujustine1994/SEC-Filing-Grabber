@@ -227,3 +227,33 @@ def test_cache_log_line_is_english_only():
     可以整類避開 cp950 的編碼地雷。"""
     line = main.cache_log_line("NVDA", 0, 25)
     assert all(ord(ch) < 128 for ch in line)
+
+
+# ── 快取容量顯示 ────────────────────────────────────────────────────────────
+#
+# CTH 選的是手動清、不做自動上限，所以「現在到底佔多少」是他做決定的依據，
+# 這個數字必須一眼看得懂——不是 41104179 這種原始位元組數。
+
+@pytest.mark.parametrize("num_bytes, expected", [
+    (0, "0 KB"),
+    (512, "0.5 KB"),
+    (61234, "59.8 KB"),
+    (18_400_000, "17.5 MB"),
+    (1_073_741_824, "1.0 GB"),
+])
+def test_format_size(num_bytes, expected):
+    assert main.format_size(num_bytes) == expected
+
+
+def test_format_size_never_shows_a_negative():
+    assert main.format_size(-1) == "0 KB"
+
+
+# ── 抓取進行中不可以邊寫邊刪 ────────────────────────────────────────────────
+
+def test_cache_buttons_are_locked_while_a_fetch_is_running():
+    """Tab1／批次／跨公司比較任一個 worker thread 還在跑時，兩顆清除按鈕都要
+    disable——不然會邊寫邊刪同一個 ticker 的資料夾。沿用專案既有的
+    「執行中鎖住相關按鈕」慣例。"""
+    assert main.cache_buttons_state(True) == "disabled"
+    assert main.cache_buttons_state(False) == "normal"
