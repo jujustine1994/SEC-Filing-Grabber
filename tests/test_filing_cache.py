@@ -296,3 +296,21 @@ def test_save_rejects_a_malformed_accession(cache_dir):
     assert filing_cache.save_filing(
         "NVDA", "not-an-accession", form="10-Q", filing_date="2025-08-27",
         cik=1045810, dataframes=None, has_financials=False) is False
+
+
+def test_load_rejects_an_entry_whose_version_is_null_when_the_environment_has_none_either(
+        cache_dir, monkeypatch):
+    """edgartools 版本查不到時不讀也不寫。但如果磁碟上的舊檔案記的是
+    `edgartools_version: null`，而當下環境也查不到版本，比對會是
+    `None != None` → False，檔案會被**誤認為有效**——這是讀側的單獨防線。"""
+    # 先用能夠決定版本的環境存檔
+    _save_sample()
+    # 改檔案上的版本欄位為 null
+    path = filing_cache.filing_path("NVDA", ACC)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["edgartools_version"] = None
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    # 環境也查不到版本
+    monkeypatch.setattr(filing_cache, "edgartools_version", lambda: None)
+    # 讀側要拒絕（不能讓 None != None 的誤認成過）
+    assert filing_cache.load_filing("NVDA", ACC, 1045810) is None
