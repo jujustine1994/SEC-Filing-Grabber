@@ -548,6 +548,11 @@ class SECFetcherApp:
         i18n.set_lang(self.cfg.get("language"))
         self.msg_queue: queue.Queue = queue.Queue()
         self.is_running = False
+        # 跨公司比較走自己的一顆按鈕（compare_run_btn），不共用 is_running——
+        # 那顆旗標同時管 Tab1／批次／掃描鍵，比較執行緒借用會動到不相干的
+        # 按鈕行為，也可能在比較完成路徑上把 is_running 誤復原成別的狀態。
+        # 快取清除鈕要同時看這兩個旗標（見 _sync_cache_buttons）。
+        self._compare_running = False
         # Runtime state for popups
         self._wl_found_name = ""
         self._wl_list_container = None
@@ -621,7 +626,9 @@ class SECFetcherApp:
         self._build_tab2()
         self._build_tab4()
         self._build_tab3()
-        # 切到 Tab3（index 2）時重畫快取清單——不輪詢，只在真的需要看的時候刷新。
+        # 切到 Tab3 時重畫快取清單——不輪詢，只在真的需要看的時候刷新。
+        # 實際判斷邏輯與 index 對應見 _on_tab_changed 的 docstring（單一
+        # 出處，避免兩處各記一份、之後改版又對不上）。
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
         self._update_identity_warnings()
 
@@ -1939,6 +1946,8 @@ class SECFetcherApp:
             return
 
         self.compare_run_btn.config(state="disabled")
+        self._compare_running = True
+        self._sync_cache_buttons()
         threading.Thread(target=self._compare_worker, daemon=True).start()
 
     def _compare_worker(self):
@@ -2282,8 +2291,13 @@ class SECFetcherApp:
         self._sync_cache_buttons()
 
     def _sync_cache_buttons(self):
-        """抓取進行中鎖住兩顆清除鈕——不然會邊寫邊刪同一個 ticker 的資料夾。"""
-        state = cache_buttons_state(bool(getattr(self, "is_running", False)))
+        """抓取進行中鎖住兩顆清除鈕——不然會邊寫邊刪同一個 ticker 的資料夾。
+
+        跨公司比較用自己的 `_compare_running`、不是 `is_running`（見 `__init__`
+        的說明），所以這裡兩個旗標都要看，任一個在跑就鎖。"""
+        running = bool(getattr(self, "is_running", False)) or \
+            bool(getattr(self, "_compare_running", False))
+        state = cache_buttons_state(running)
         for btn in getattr(self, "_cache_clear_btns", []):
             btn.config(state=state)
         if getattr(self, "_cache_clear_all_btn", None):
@@ -3189,12 +3203,16 @@ class SECFetcherApp:
                     self._log(f"{t('gui.compare.select_title')}: {data}", "ERROR")
                     self.progress_label.config(text=t("gui.status.error_see_log"))
                     self.compare_run_btn.config(state="normal")
+                    self._compare_running = False
+                    self._sync_cache_buttons()
                     self._refresh_cache_panel()
 
                 elif msg_type == "compare_done":
                     self._log(t("gui.compare.log_done", path=data))
                     self.progress_label.config(text=t("gui.status.done"))
                     self.compare_run_btn.config(state="normal")
+                    self._compare_running = False
+                    self._sync_cache_buttons()
                     self._refresh_cache_panel()
 
         except queue.Empty:
