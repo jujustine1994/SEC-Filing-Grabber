@@ -311,17 +311,24 @@ def _cache_key(filing) -> str | None:
 # `fetch_gaap_statements()` 開，`ticker`/`cik` 等 `Company(ticker)` 建好之後
 # 才由 `_bind_disk_cache()` 填進去。沒綁定（拿不到 cik）就整個不用快取，
 # 行為跟改動前一模一樣。
-_disk_cache: dict | None = None
+#
+# 用 ContextVar 而不是模組級全域變數：跟上面 `_ledger_var` 同一個理由——
+# `main.py` 的批次抓取與跨公司比較（compare worker）各自跑在自己的執行緒上，
+# 且 `_compare_worker` 目前並不會設 `is_running` 擋住重疊執行（main.py 已知
+# 缺口）。用普通 dict 全域變數會讓兩條執行緒共用同一個 ctx，A 執行緒的
+# `_bind_disk_cache()` 會覆蓋掉 B 執行緒正在用的 ticker/cik，檔案就會寫進
+# 錯的資料夾。ContextVar 讓每個執行緒起手都是空的，天然互不干擾。
+_disk_cache_var: ContextVar[dict | None] = ContextVar("_disk_cache", default=None)
 _last_cache_stats: tuple[int, int] = (0, 0)
 
 
 @contextmanager
 def _disk_cache_scope():
     """一次抓取的磁碟快取範圍。離開時更新 manifest 並記下命中統計。"""
-    global _disk_cache, _last_cache_stats
-    outer = _disk_cache
+    global _last_cache_stats
+    outer = _disk_cache_var.get()
     ctx = {"ticker": None, "cik": None, "hits": 0, "misses": 0} if outer is None else outer
-    _disk_cache = ctx
+    token = _disk_cache_var.set(ctx)
     try:
         yield ctx
     finally:
@@ -334,19 +341,20 @@ def _disk_cache_scope():
                 except OSError:
                     pass
             _last_cache_stats = (ctx["hits"], ctx["hits"] + ctx["misses"])
-            _disk_cache = None
+        _disk_cache_var.reset(token)
 
 
 def _bind_disk_cache(ticker: str, cik) -> None:
     """把這趟的公司身分填進磁碟快取範圍。cik 拿不到就不啟用快取——
     ticker 只是別名，會換手；cik 才是跟 SEC 打交道真正的鍵。"""
-    if _disk_cache is None or not ticker or cik is None:
+    ctx = _disk_cache_var.get()
+    if ctx is None or not ticker or cik is None:
         return
     try:
-        _disk_cache["cik"] = int(cik)
+        ctx["cik"] = int(cik)
     except (TypeError, ValueError):
         return
-    _disk_cache["ticker"] = str(ticker).strip().upper()
+    ctx["ticker"] = str(ticker).strip().upper()
 
 
 def last_cache_stats() -> tuple[int, int]:
@@ -360,6 +368,14 @@ def _save_to_disk_cache(ctx: dict, filing, obj) -> None:
     ⚠ 只有「`filing.obj()` 成功回來」才會走到這裡——網路失敗會在上面直接
     往外拋，不留任何快取（正向或負向都不留），下次照樣重試。
     解析成功但 `financials` 是 None（pre-XBRL）才寫負向快取。
+
+    ⚠ 這裡刻意不呼叫共用的 `_financials_of()`（它對外用 `getattr(..., None)`
+    吞掉 `AttributeError`，其他呼叫端要的就是這個寬容）。寫快取的門檻更嚴：
+    `financials` 這個 property 本身若在存取時炸出 `AttributeError`（XBRL
+    殘缺或格式異常），跟「這份 filing 真的沒有 financials」是分不出來的兩種
+    狀況——但寫錯的代價完全不同：正常的 pre-XBRL 負向快取重試也是一樣結果，
+    炸出來的那種如果被誤記成負向快取，等於把一期本來可能修好再抓到的資料
+    **永久**判死刑。分不清楚就一律不寫，留給下次重試。
     """
     acc = _cache_key(filing)
     fd = getattr(filing, "filing_date", None)
@@ -368,7 +384,10 @@ def _save_to_disk_cache(ctx: dict, filing, obj) -> None:
         "filing_date": str(fd) if fd else "",
         "cik": ctx["cik"],
     }
-    fin = _financials_of(obj)
+    try:
+        fin = obj.financials
+    except AttributeError:
+        return   # 分不出「真的沒有 financials」還是「取用時炸了」→ 一律不寫快取，下次重試
     if fin is None:
         filing_cache.save_filing(ctx["ticker"], acc, dataframes=None,
                                  has_financials=False, **meta)
@@ -417,7 +436,7 @@ def _filing_obj(filing):
     if _parse_cache is not None and key is not None and key in _parse_cache:
         return _parse_cache[key]
 
-    ctx = _disk_cache
+    ctx = _disk_cache_var.get()
     if ctx is not None and ctx["ticker"] and key is not None:
         entry = filing_cache.load_filing(ctx["ticker"], key, ctx["cik"])
         if entry is not None:

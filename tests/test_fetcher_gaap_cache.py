@@ -3,6 +3,7 @@
 `filing_cache.py` 自己的儲存層測試在 tests/test_filing_cache.py。這裡釘的是
 「什麼時候會打網路、什麼時候不會」，以及那幾條踩到會餵錯資料的邊界。
 """
+import threading
 from unittest.mock import MagicMock
 
 import pandas as pd
@@ -62,8 +63,13 @@ def test_first_fetch_hits_the_network_and_writes_the_cache_file(cache_dir):
     filing = _fake_filing()
     with _disk_cache_scope(), _parse_cache_scope():
         _bind_disk_cache("NVDA", 1045810)
-        _filing_obj(filing)
+        tenq = _filing_obj(filing)
     assert filing.obj.call_count == 1
+    # 沒命中磁碟快取（miss）時一定要回傳真物件，不能是 `filing_cache` 的替身——
+    # 差一步的話，計畫驗收測試「冷抓 vs 熱快取逐格比對」會失去意義：兩條路
+    # 都變成同一種替身物件，比對永遠一樣，測不出快取有沒有餵錯資料。
+    assert tenq is filing.obj.return_value
+    assert not isinstance(tenq, filing_cache._CachedFiling)
     assert filing_cache.filing_path("NVDA", ACC).exists()
     assert any(f["accession_no"] == ACC
                for f in filing_cache.read_manifest("NVDA")["filings"])
@@ -100,9 +106,15 @@ def test_a_cache_hit_still_goes_through_the_in_memory_parse_cache(cache_dir):
 
 
 def test_cache_is_off_when_nothing_is_bound(cache_dir):
-    """沒綁定 ticker/cik（例如拿不到 cik）時，行為跟改動前完全一樣。"""
+    """沒綁定 ticker/cik（例如拿不到 cik）時，行為跟改動前完全一樣。
+
+    真實情況下範圍是有開的（`fetch_gaap_statements()` 一律開
+    `_disk_cache_scope()`）——只是 `Company.cik` 拿不到，`_bind_disk_cache()`
+    提早回傳、`ctx["ticker"]` 留空。這裡刻意在打開的範圍內綁一個 `cik=None`，
+    而不是乾脆不開範圍，才是這條分支實際會被走到的樣子。"""
     filing = _fake_filing()
-    with _parse_cache_scope():
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", None)
         _filing_obj(filing)
     assert filing.obj.call_count == 1
     assert not filing_cache.cache_root().exists()
@@ -141,6 +153,10 @@ def test_a_network_failure_is_never_recorded_as_a_negative_cache(cache_dir):
         _bind_disk_cache("NVDA", 1045810)
         _filing_obj(retry)
     assert retry.obj.call_count == 1
+    # 正向對照：同一份 filing 真的抓成功後檔案就會出現——證明前面「沒有
+    # 檔案」是因為網路失敗那條路徑真的沒寫，不是因為寫入功能整個是死的
+    # （例如 `edgartools_version()` 回 None 導致讀寫全部關閉）。
+    assert filing_cache.filing_path("NVDA", ACC).exists()
 
 
 def test_a_parse_failure_after_download_is_not_cached_either(cache_dir):
@@ -151,6 +167,46 @@ def test_a_parse_failure_after_download_is_not_cached_either(cache_dir):
         _bind_disk_cache("NVDA", 1045810)
         _filing_obj(filing)
     assert not filing_cache.filing_path("NVDA", ACC).exists()
+
+    # 正向對照：同一份 filing 換一次正常解析就會落檔——證明前面「沒有檔案」
+    # 是解析失敗那條路徑真的沒寫，不是寫入功能整個是死的。
+    retry = _fake_filing()
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(retry)
+    assert filing_cache.filing_path("NVDA", ACC).exists()
+
+
+class _BoomObj:
+    """`.obj()` 的回傳值，`financials` 是個存取就炸的 lazy property——用來
+    模擬殘缺／異常 XBRL 讓 edgartools 內部丟出 `AttributeError` 的情況。
+    刻意不用 `MagicMock` + `PropertyMock`：後者要掛在 `type(instance)` 上，
+    而 `MagicMock()` 的類別是全域共用的 `MagicMock`，掛上去會污染其他測試
+    用到的所有 mock 物件。"""
+
+    @property
+    def financials(self):
+        raise AttributeError("boom")
+
+
+def test_an_attribute_error_reading_financials_is_never_cached_negatively(cache_dir):
+    """`financials` 是個會炸的 lazy property（殘缺／異常 XBRL），不是「真的
+    沒有 financials」——`getattr(obj, "financials", None)` 會把兩者混為一談，
+    寫成負向快取就等於把這一期**永久**判死刑（比網路失敗更糟：網路失敗
+    下次還會重試，這種一旦寫錯就再也不會重新嘗試）。分不清楚就不准寫。"""
+    filing = _fake_filing()
+    filing.obj.return_value = _BoomObj()
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(filing)
+    assert not filing_cache.filing_path("NVDA", ACC).exists()
+
+    retry = _fake_filing()
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(retry)
+    assert retry.obj.call_count == 1
+    assert filing_cache.filing_path("NVDA", ACC).exists()
 
 
 # ── 逐份即時落檔 ──────────────────────────────────────────────────────────
@@ -208,3 +264,43 @@ def test_the_cache_is_keyed_per_company_not_shared(cache_dir):
         _bind_disk_cache("NVDA", 99999)     # 同 ticker、不同公司
         _filing_obj(other)
     assert other.obj.call_count == 1
+
+
+# ── 執行緒隔離 ────────────────────────────────────────────────────────────
+
+def test_disk_cache_is_isolated_across_threads(cache_dir):
+    """`main.py` 的批次抓取跟跨公司比較各自跑在自己的執行緒上，且目前並不
+    保證兩者不會同時執行（`_compare_worker` 沒有設 `is_running`，不會被
+    `_start_worker` 的互斥擋住）。如果磁碟快取範圍是模組級全域變數，兩條
+    執行緒會共用同一個 ctx：後綁定的那條執行緒的 ticker/cik 會蓋掉先綁定
+    的，檔案就會被寫進錯的公司資料夾。改成 `ContextVar`（跟既有的
+    `_ledger_var` 同一招）後，每條新執行緒起手都是空的，天然互不干擾。
+
+    用 `Barrier` 逼兩條執行緒的範圍真的同時存在（而不是先後執行、剛好沒
+    撞在一起）——這是刻意設計成必然重疊，不是碰運氣的時序測試，不會 flaky。
+    """
+    barrier = threading.Barrier(2)
+    results: dict[str, int] = {}
+
+    def _run(ticker: str, cik: int, acc: str) -> None:
+        filing = _fake_filing(acc=acc)
+        with _disk_cache_scope(), _parse_cache_scope():
+            _bind_disk_cache(ticker, cik)
+            barrier.wait(timeout=5)   # 兩條執行緒的範圍在這一刻確定同時開著
+            _filing_obj(filing)
+        results[ticker] = filing.obj.call_count
+
+    t1 = threading.Thread(target=_run, args=("NVDA", 1045810, ACC))
+    t2 = threading.Thread(target=_run, args=("AAPL", 320193, ACC_OLD))
+    t1.start()
+    t2.start()
+    t1.join(timeout=10)
+    t2.join(timeout=10)
+
+    assert not t1.is_alive() and not t2.is_alive()
+    assert results == {"NVDA": 1, "AAPL": 1}
+    assert filing_cache.filing_path("NVDA", ACC).exists()
+    assert filing_cache.filing_path("AAPL", ACC_OLD).exists()
+    # 沒有互相污染：誰的 accession 都沒有跑進對方的資料夾。
+    assert not filing_cache.filing_path("NVDA", ACC_OLD).exists()
+    assert not filing_cache.filing_path("AAPL", ACC).exists()
