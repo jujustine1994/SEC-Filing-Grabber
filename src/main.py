@@ -24,6 +24,7 @@ from tkinter import messagebox, scrolledtext, ttk
 
 import filing_cache
 import i18n
+import local_db
 from i18n import t
 from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
@@ -276,6 +277,28 @@ def any_fetch_running(is_running: bool, compare_running: bool) -> bool:
     發動一趟抓取」這個判斷永遠要看兩個。
     """
     return bool(is_running) or bool(compare_running)
+
+
+def local_db_row_text(meta: dict | None) -> tuple[str, str]:
+    """`_meta.json` → GUI 那一列要顯示的 (涵蓋期間, 到底了沒)。
+
+    拆成純函式是為了能離線測——Tk 的部分照專案現況用探針手動驗。
+    三個 form 合起來看：只要有一個 form 還沒到底就顯示「未到底」，因為
+    「還要不要再挖」是整家一起決定的。標記過期（`reached_bottom_stale`）的
+    加問號——那個值是上一輪留下來的，這輪還沒重算。
+    """
+    forms = (meta or {}).get("forms") or {}
+    dates = [d for f in forms.values() for d in (f.get("oldest"), f.get("newest")) if d]
+    span = f"{min(dates)[:7]}~{max(dates)[:7]}" if dates else "—"
+    states = [forms.get(f, {}).get("reached_bottom") for f in ("10-Q", "10-K")]
+    stale = any(forms.get(f, {}).get("reached_bottom_stale") for f in ("10-Q", "10-K"))
+    if not forms:
+        bottom = "—"
+    elif all(s is not None for s in states):
+        bottom = t("gui.lbl.db_bottom_yes")
+    else:
+        bottom = t("gui.lbl.db_bottom_no")
+    return span, (bottom + "?" if stale and bottom != "—" else bottom)
 
 
 def cache_buttons_state(is_running: bool) -> str:
@@ -2266,7 +2289,16 @@ class SECFetcherApp:
         _, self._cache_list_inner = _build_fixed_height_scrollable(list_host, height=110)
 
         footer = ttk.Frame(frame)
-        footer.grid(row=2, column=0, sticky="e", pady=(4, 0))
+        footer.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        # 「更新本地庫」放左邊、跟「全部清除」隔開——一個是暖快取、一個是
+        # 唯一不可逆的破壞性操作，擺在一起遲早有人按錯。
+        self._localdb_run_btn = ttk.Button(
+            footer, text=t("gui.btn.db_update"), command=self._start_local_db_update)
+        self._localdb_run_btn.pack(side="left")
+        self._localdb_list_btn = ttk.Button(
+            footer, text=t("gui.btn.db_manage_list"),
+            command=self._open_local_db_popup)
+        self._localdb_list_btn.pack(side="left", padx=(4, 0))
         self._cache_clear_all_btn = ttk.Button(
             footer, text=t("gui.btn.cache_clear_all"), command=self._clear_all_cache)
         self._cache_clear_all_btn.pack(side="right")
@@ -2285,8 +2317,10 @@ class SECFetcherApp:
 
         rows = filing_cache.list_cached_tickers()
         total = sum(r["size_bytes"] for r in rows)
+        in_list = set(local_db.get_update_list(self.cfg))
         self._cache_total_label.config(
-            text=t("gui.lbl.cache_total", size=format_size(total)))
+            text=t("gui.lbl.cache_total", size=format_size(total))
+                 + "　" + t("gui.lbl.db_list_count", n=len(in_list)))
 
         if not rows:
             ttk.Label(self._cache_list_inner, text=t("gui.lbl.cache_empty"),
@@ -2294,9 +2328,15 @@ class SECFetcherApp:
         for row in rows:
             line = ttk.Frame(self._cache_list_inner)
             line.pack(fill="x", pady=1)
-            ttk.Label(line, text=row["ticker"], width=8).pack(side="left")
+            # `load_meta()` 對得上就只做一次目錄列舉、不開任何檔——201 家
+            # 若每次都要讀 881 個 JSON 才畫得出這個清單，GUI 會卡住。
+            span, bottom = local_db_row_text(local_db.load_meta(row["ticker"]))
+            mark = "★" if row["ticker"] in in_list else "　"
+            ttk.Label(line, text=mark + row["ticker"], width=9).pack(side="left")
             ttk.Label(line, text=t("gui.lbl.cache_filings", count=row["count"]),
-                      width=16).pack(side="left")
+                      width=12).pack(side="left")
+            ttk.Label(line, text=span, width=17).pack(side="left")
+            ttk.Label(line, text=bottom, width=9).pack(side="left")
             ttk.Label(line, text=format_size(row["size_bytes"]),
                       width=10).pack(side="left")
             btn = ttk.Button(line, text=t("gui.btn.cache_clear"), width=6,
@@ -2318,8 +2358,10 @@ class SECFetcherApp:
         state = cache_buttons_state(self._fetch_running())
         for btn in getattr(self, "_cache_clear_btns", []):
             btn.config(state=state)
-        if getattr(self, "_cache_clear_all_btn", None):
-            self._cache_clear_all_btn.config(state=state)
+        for name in ("_cache_clear_all_btn", "_localdb_run_btn", "_localdb_list_btn"):
+            btn = getattr(self, name, None)
+            if btn is not None:
+                btn.config(state=state)
 
     def _sync_run_buttons(self):
         """四顆會發動抓取的按鈕一起鎖／一起放（TODO I3，2026-09-03）。
@@ -2362,6 +2404,156 @@ class SECFetcherApp:
         filing_cache.clear_ticker(ticker)
         _write_log(f"cache cleared for {ticker}")
         self._refresh_cache_panel()
+
+    # ── 本地財報資料庫（TODO J1／J3）────────────────────────────────────
+    #
+    # ⚠ 這裡的「更新名單」跟 watchlist 彈窗裡的「公司名稱快取」是**兩件完全
+    # 不同的事**：那個是 ticker→公司全名的對照表，這個是「要保持新鮮的財報
+    # 資料」。用字上刻意不共用「快取」兩個字。
+
+    def _open_local_db_popup(self):
+        """更新名單的管理視窗。編輯直接寫進 `self.cfg` 並存檔——這份名單只有
+        一個維度（有／沒有），不像 watchlist 有群組要暫存後一起 commit。"""
+        popup = tk.Toplevel(self.root)
+        popup.title(t("gui.btn.db_manage_list"))
+        popup.geometry("420x460")
+        popup.transient(self.root)
+
+        ttk.Label(popup, text=t("gui.lbl.db_list_help"), wraplength=390,
+                  foreground="#555555", justify="left").pack(
+                      anchor="w", padx=12, pady=(10, 6))
+
+        host = ttk.Frame(popup)
+        host.pack(fill="both", expand=True, padx=12)
+        _, self._db_list_inner = _build_fixed_height_scrollable(host, height=230)
+
+        add_row = ttk.Frame(popup)
+        add_row.pack(fill="x", padx=12, pady=(8, 0))
+        self._db_add_var = tk.StringVar()
+        ttk.Entry(add_row, textvariable=self._db_add_var, width=12).pack(side="left")
+        ttk.Button(add_row, text=t("gui.btn.db_add"),
+                   command=self._db_add_typed).pack(side="left", padx=(4, 0))
+
+        btns = ttk.Frame(popup)
+        btns.pack(fill="x", padx=12, pady=(8, 4))
+        ttk.Button(btns, text=t("gui.btn.db_import_watchlist"),
+                   command=lambda: self._db_import(local_db.import_from_watchlist)
+                   ).pack(fill="x", pady=1)
+        ttk.Button(btns, text=t("gui.btn.db_import_cached"),
+                   command=lambda: self._db_import(local_db.import_from_cache)
+                   ).pack(fill="x", pady=1)
+        ttk.Button(popup, text=t("gui.btn.close"),
+                   command=popup.destroy).pack(pady=(4, 10))
+
+        _center_on_parent(popup, self.root)
+        self._refresh_db_list()
+
+    def _refresh_db_list(self):
+        if not getattr(self, "_db_list_inner", None):
+            return
+        try:
+            self._db_list_inner.winfo_exists()
+        except tk.TclError:
+            return
+        for child in self._db_list_inner.winfo_children():
+            child.destroy()
+        tickers = local_db.get_update_list(self.cfg)
+        if not tickers:
+            ttk.Label(self._db_list_inner, text=t("gui.lbl.db_list_empty"),
+                      foreground="#555555").pack(anchor="w")
+        for ticker in tickers:
+            line = ttk.Frame(self._db_list_inner)
+            line.pack(fill="x", pady=1)
+            ttk.Label(line, text=ticker, width=10).pack(side="left")
+            cached = filing_cache.ticker_dir(ticker).exists()
+            ttk.Label(line, text="" if cached else t("gui.lbl.db_not_fetched"),
+                      foreground="#888888").pack(side="left")
+            ttk.Button(line, text=t("gui.btn.db_remove"), width=6,
+                       command=lambda tk_=ticker: self._db_remove(tk_)).pack(side="right")
+
+    def _db_save(self):
+        save_config(self.cfg, CONFIG_PATH)
+        self._refresh_db_list()
+        self._refresh_cache_panel()
+
+    def _db_add_typed(self):
+        raw = (self._db_add_var.get() or "").strip()
+        if not raw:
+            return
+        # 一次貼多個（空白或逗號分隔）是刻意支援的——從別處複製一串 ticker
+        # 過來是最常見的建名單方式。
+        local_db.add_tickers(self.cfg, re.split(r"[\s,;]+", raw))
+        self._db_add_var.set("")
+        self._db_save()
+
+    def _db_remove(self, ticker: str):
+        """只從名單移除，**不碰快取檔案**——「不要再自動更新」跟「把抓過的
+        資料刪掉」是兩回事，混在一起會讓人不敢按。"""
+        local_db.remove_ticker(self.cfg, ticker)
+        self._db_save()
+
+    def _db_import(self, fn):
+        added = fn(self.cfg)
+        self._db_save()
+        messagebox.showinfo(t("gui.dlg.info_title"),
+                            t("gui.msg.db_imported", n=len(added)))
+
+    def _start_local_db_update(self):
+        """「更新本地庫」——走更新名單、一律拓到底、只暖快取不產 Excel。
+
+        走 `_start_worker()` 是為了共用那套防重入與按鈕鎖：兩趟同時對 SEC
+        發請求會加重 D11 那個「靜默少格」的風險（TODO I3 的同一個理由）。
+        """
+        tickers = local_db.get_update_list(self.cfg)
+        if not tickers:
+            messagebox.showinfo(t("gui.dlg.info_title"), t("gui.msg.db_list_empty"))
+            return
+        if not (self.cfg.get("identity") or "").strip():
+            messagebox.showerror(t("gui.dlg.error_title"), t("gui.log.need_identity_full"))
+            return
+        if not messagebox.askyesno(
+                t("gui.dlg.db_update_title"),
+                t("gui.msg.db_update_confirm", n=len(tickers))):
+            return
+        self.notebook.select(0)     # log 在第 1 頁，不然按下去看不到任何動靜
+        self._start_worker(lambda: self._local_db_worker(tickers))
+
+    def _local_db_worker(self, tickers: list[str]):
+        """背景執行緒：整批更新。單一公司失敗不中斷整體（設計書第六節）。"""
+        identity = self.cfg.get("identity", "")
+        task_start = time.time()
+        _write_log_header(f"Local DB update {len(tickers)} companies "
+                          f"{','.join(tickers)}")
+        self._log(t("gui.db.log_start", n=len(tickers)))
+
+        def on_progress(event: dict):
+            if event.get("event") == "ticker_start":
+                self._set_progress(event["index"], event["total"],
+                                   t("gui.db.log_company", ticker=event["ticker"],
+                                     current=event["index"] + 1, total=event["total"]))
+            elif event.get("event") == "ticker_done":
+                self._log(t("gui.db.log_company_done", ticker=event["ticker"],
+                            status=event["status"], n=event.get("new_filings", 0)))
+
+        try:
+            report = local_db.update_local_db(tickers, identity, progress=on_progress)
+        except Exception as exc:                       # noqa: BLE001
+            elapsed = format_elapsed(time.time() - task_start)
+            self._log(t("gui.db.log_failed", elapsed=elapsed), "FAIL")
+            _write_log(f"Local DB update FAILED -> {type(exc).__name__}"
+                       f"{_exc_status(exc)}, elapsed {elapsed}", "FAIL")
+            self.msg_queue.put(("db_done", False))
+            return
+
+        elapsed = format_elapsed(time.time() - task_start)
+        self._log(t("gui.db.log_done", updated=report.updated,
+                    skipped=report.skipped, failed=report.failed, elapsed=elapsed), "OK")
+        if report.gap_tickers:
+            # D11：連續大量抓取 SEC 會偶發失敗、**靜默少格**。這幾家單獨重跑
+            # 即可——第二輪從本地快取讀已成功的部分，只重抓失敗那幾份。
+            self._log(t("gui.db.log_gaps", tickers=", ".join(report.gap_tickers)))
+        _write_log(f"Local DB update OK, {report.summary()}, elapsed {elapsed}", "OK")
+        self.msg_queue.put(("db_done", not report.failed))
 
     def _clear_all_cache(self):
         """唯一不可逆的破壞性操作，要二次確認——雖然只是快取，
@@ -3163,6 +3355,17 @@ class SECFetcherApp:
                     else:
                         self.progress_label.config(text=t("gui.status.error_see_log"))
 
+                elif msg_type == "db_done":
+                    # 跟 "done" 幾乎一樣，差在**不顯示「開啟輸出資料夾」**——
+                    # 更新本地庫只暖快取、不產任何 Excel，那顆按鈕會誤導。
+                    self.is_running = False
+                    self._sync_cache_buttons()
+                    self._sync_run_buttons()
+                    self._refresh_cache_panel()
+                    self.progress_label.config(
+                        text=t("gui.status.done") if data
+                        else t("gui.status.error_see_log"))
+
                 elif msg_type == "tab1_name_result":
                     status, looked_ticker, name = data
                     current = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
@@ -3317,6 +3520,39 @@ def _pick_language_on_first_run(root: tk.Tk) -> None:
     save_config(cfg, CONFIG_PATH)
 
 
+def _warn_if_edgartools_changed(root: tk.Tk) -> None:
+    """啟動時偵測「本地資料是舊版 edgartools 解出來的」（TODO J4）。
+
+    升級是在命令列發生的、不會在 GUI 裡發生，所以唯一能講這件事的時點就是
+    **下次啟動**。`load_filing()` 拿存檔時記的版本跟現在安裝的做字串完全比對，
+    不符就整份失效（`5.29.0 → 5.29.1` 也全滅）——這個嚴格度是刻意的：快取存的
+    是「那個版本的 parser 吐出來的 DataFrame」，edgartools 修了解析 bug 的話，
+    舊快取裡的數字就是帶著那個 bug 的，**而且不會報錯，只是數字錯**。
+
+    **刻意不提供「照用舊快取」那個選項。** 明知可能帶著舊 parser 的解析 bug
+    還拿來做投資判斷，換到的只是省一晚。
+
+    這裡只**告知**，不自動發動重抓——長時間批次要由使用者決定什麼時候跑
+    （「按下去去睡覺」是 GUI 的「更新本地庫」，掛排程器是 CLI 的 `update-db`）。
+    """
+    try:
+        summary = local_db.stale_cache_summary()
+    except Exception:                                  # noqa: BLE001
+        return                                          # 偵測失敗不該擋住啟動
+    if not summary["companies"]:
+        return
+    hours = summary["estimated_seconds"] / 3600
+    messagebox.showwarning(
+        t("gui.dlg.db_version_title"),
+        t("gui.msg.db_version_body",
+          old="／".join(summary["old_versions"]), new=summary["current"],
+          n=summary["n_companies"], filings=summary["n_filings"],
+          size=format_size(summary["size_bytes"]),
+          hours=f"{hours:.1f}", pin=summary["old_versions"][0]),
+        parent=root,
+    )
+
+
 def main():
     """Entry point: show banner, create Tk root, launch app, enter event loop."""
     show_cth_banner()
@@ -3329,6 +3565,8 @@ def main():
     root.attributes("-topmost", False)
     _pick_language_on_first_run(root)
     SECFetcherApp(root)
+    # 語言選完、主視窗建好之後才問——這則訊息要照使用者的語言講
+    _warn_if_edgartools_changed(root)
     root.mainloop()
 
 

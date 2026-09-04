@@ -419,3 +419,47 @@ def test_update_skips_blank_and_duplicate_tickers(cache_dir):
     edgar = _FakeEdgar({"AAPL": {"10-Q": [(_acc(1), "2013-05-01")], "10-K": []}})
     _run(edgar, ["aapl", "AAPL", "", None])
     assert edgar.listed == ["AAPL"]
+
+
+# ── GUI 那一列的文字（純函式，Tk 的部分照專案現況用探針手動驗）─────────────
+
+def test_row_text_shows_the_span_across_both_forms():
+    from main import local_db_row_text
+    meta = {"forms": {
+        "10-Q": {"oldest": "2008-02-01", "newest": "2026-07-31",
+                 "reached_bottom": "xbrl_cutoff"},
+        "10-K": {"oldest": "2008-11-05", "newest": "2025-10-31",
+                 "reached_bottom": "xbrl_cutoff"}}}
+    span, bottom = local_db_row_text(meta)
+    assert span == "2008-02~2026-07"
+    assert "?" not in bottom
+
+
+def test_row_text_says_partial_when_one_form_is_unfinished():
+    """兩個 form 只要有一個沒到底就顯示未到底——「還要不要再挖」是整家一起
+    決定的。"""
+    from main import local_db_row_text
+    meta = {"forms": {"10-Q": {"oldest": "2021-02-01", "newest": "2026-02-01",
+                               "reached_bottom": None},
+                      "10-K": {"oldest": "2013-11-01", "newest": "2025-11-01",
+                               "reached_bottom": "no_more_filings"}}}
+    _span, bottom = local_db_row_text(meta)
+    import i18n
+    assert bottom == i18n.t("gui.lbl.db_bottom_no")
+
+
+def test_row_text_marks_a_stale_reached_bottom_with_a_question_mark():
+    from main import local_db_row_text
+    meta = {"forms": {
+        "10-Q": {"oldest": "2013-02-01", "newest": "2026-02-01",
+                 "reached_bottom": "no_more_filings", "reached_bottom_stale": True},
+        "10-K": {"oldest": "2013-02-01", "newest": "2026-02-01",
+                 "reached_bottom": "no_more_filings"}}}
+    assert local_db_row_text(meta)[1].endswith("?")
+
+
+def test_row_text_survives_a_missing_meta():
+    """meta 還沒建（或剛被刪）時 GUI 不能炸——這個清單每次切到 Tab3 都會畫。"""
+    from main import local_db_row_text
+    assert local_db_row_text(None) == ("—", "—")
+    assert local_db_row_text({"forms": {}}) == ("—", "—")

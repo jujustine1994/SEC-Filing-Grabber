@@ -331,10 +331,11 @@ def import_from_cache(cfg: dict) -> list[str]:
 
 # ── J4：版本鎖與版本不符偵測 ──────────────────────────────────────────────
 
-# 重抓一份 filing 大約要多久（秒）。**待實測校正**——目前是從 TODO J5 記的
-# 「65~105 秒/家、16/5 的窗（＝21 份）」反推的粗估，不是逐份量到的。
+# 重抓一份 filing 大約要多久（秒）。**實測值**：2026-09-04 用 `update-db`
+# 對 META 拓到底，27 份新 filing、整趟 49.4s（含 3 家的 filing 清單查詢），
+# ≈1.8 s/份。同一輪 AAPL／ARLO 走跳過那條路，第二輪三家全跳過只花 1.0s。
 # 只拿來估「重抓要幾小時」給使用者參考，估錯不影響任何正確性。
-SECONDS_PER_FILING = 4.0
+SECONDS_PER_FILING = 1.8
 
 
 def pinned_edgartools_version() -> str | None:
@@ -520,7 +521,10 @@ def update_local_db(tickers, identity: str, *,
             continue
 
         cached = cached_accessions(ticker)
-        meta = read_meta(ticker)
+        # 用 `load_meta()`（會自癒）不是 `read_meta()`：既有的 34 家在這個功能
+        # 上線前沒有 meta，用 raw 讀會全部判成「版本不明 → 不可跳過」，
+        # 等於第一輪一定全部進抓取迴圈。自癒重建會去讀檔拿到真正的版本。
+        meta = load_meta(ticker)
         version_ok = bool(current_version) and (
             not cached or (meta or {}).get("edgartools_version") == current_version)
         plan = plan_ticker(listings, cached, version_ok=version_ok)

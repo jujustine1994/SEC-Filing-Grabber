@@ -536,3 +536,96 @@ def test_press_release_label_agreement_false_when_they_differ(monkeypatch, capsy
 def test_fy_end_month_from_mmdd(mmdd, expected):
     """MMDD → 月份。查不到就回 None，不可以預設 12（非 12 月結算會整批標錯）。"""
     assert cli._fy_end_month_from_mmdd(mmdd) == expected
+
+
+# ── update-db（TODO J3）─────────────────────────────────────────────────────
+#
+# 完全離線：抓取那一層是 `local_db.update_local_db()` 的注入點，這裡直接把
+# 整個 `update_local_db` 換掉，只驗 CLI 的參數解析、名單維護與輸出格式。
+
+@pytest.fixture
+def db_cfg(tmp_path, monkeypatch):
+    """把 config.json 與快取根目錄都導到 tmp_path。"""
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    import config
+    path = tmp_path / "config.json"
+    monkeypatch.setattr(config, "CONFIG_PATH", path)
+    monkeypatch.setattr(cli, "load_config", lambda: config.load_config(path))
+    return path
+
+
+def _write_cfg(path, data):
+    import config
+    config.save_config({**config.DEFAULT_CONFIG, **data}, path)
+
+
+def test_update_db_list_prints_the_update_list(db_cfg, capsys):
+    _write_cfg(db_cfg, {"local_db_tickers": ["AAPL", "NVDA"]})
+    assert cli.main(["update-db", "--list", "--config-path", str(db_cfg)]) == 0
+    assert "AAPL, NVDA" in capsys.readouterr().out
+
+
+def test_update_db_import_watchlist_writes_config_and_does_not_fetch(db_cfg, capsys):
+    """名單維護做完就結束，不順便發動幾小時的抓取——手滑的代價差太多。"""
+    _write_cfg(db_cfg, {"watchlist": [{"ticker": "AAPL"}, {"ticker": "NVDA"}]})
+    called = []
+    import local_db
+    _orig = local_db.update_local_db
+    local_db.update_local_db = lambda *a, **k: called.append(1)
+    try:
+        assert cli.main(["update-db", "--import-watchlist",
+                         "--config-path", str(db_cfg)]) == 0
+    finally:
+        local_db.update_local_db = _orig
+    assert called == []
+    assert json.loads(db_cfg.read_text(encoding="utf-8"))["local_db_tickers"] \
+        == ["AAPL", "NVDA"]
+
+
+def test_update_db_errors_when_the_list_is_empty(db_cfg, capsys):
+    _write_cfg(db_cfg, {"identity": "T t@e.com"})
+    assert cli.main(["update-db", "--config-path", str(db_cfg)]) == 2
+    assert "更新名單是空的" in capsys.readouterr().err
+
+
+def test_update_db_runs_the_list_and_reports(db_cfg, capsys, monkeypatch):
+    _write_cfg(db_cfg, {"identity": "T t@e.com", "local_db_tickers": ["AAPL", "NVDA"]})
+    import local_db
+    seen = {}
+
+    def fake_update(tickers, identity, **kw):
+        seen["tickers"] = list(tickers)
+        return local_db.UpdateReport(results=[
+            local_db.TickerResult("AAPL", "skipped"),
+            local_db.TickerResult("NVDA", "updated", new_filings=3, gaps=1),
+        ])
+
+    monkeypatch.setattr(local_db, "update_local_db", fake_update)
+    assert cli.main(["update-db", "--config-path", str(db_cfg)]) == 0
+    out = capsys.readouterr().out
+    assert seen["tickers"] == ["AAPL", "NVDA"]
+    assert "更新 1 家、跳過 1 家、失敗 0 家" in out
+    assert "NVDA" in out          # 缺漏清單要點名（D11）
+
+
+def test_update_db_positional_tickers_override_the_list(db_cfg, monkeypatch):
+    _write_cfg(db_cfg, {"identity": "T t@e.com", "local_db_tickers": ["AAPL"]})
+    import local_db
+    seen = {}
+
+    def fake_update(tickers, identity, **kw):
+        seen["t"] = list(tickers)
+        return local_db.UpdateReport()
+
+    monkeypatch.setattr(local_db, "update_local_db", fake_update)
+    assert cli.main(["update-db", "msft", "--config-path", str(db_cfg)]) == 0
+    assert seen["t"] == ["MSFT"]
+
+
+def test_update_db_returns_nonzero_when_a_company_failed(db_cfg, monkeypatch):
+    _write_cfg(db_cfg, {"identity": "T t@e.com", "local_db_tickers": ["AAPL"]})
+    import local_db
+    monkeypatch.setattr(local_db, "update_local_db",
+                        lambda *a, **k: local_db.UpdateReport(results=[
+                            local_db.TickerResult("AAPL", "failed", error="X: boom")]))
+    assert cli.main(["update-db", "--config-path", str(db_cfg)]) == 1

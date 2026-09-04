@@ -23,6 +23,7 @@ import argparse
 import json
 import re
 import sys
+import time
 import unicodedata
 from pathlib import Path
 from typing import Any
@@ -442,6 +443,108 @@ def cmd_press_release(args: argparse.Namespace) -> int:
     return 0
 
 
+# ── update-db（TODO J3）─────────────────────────────────────────────────────
+#
+# CLI 這條是**必要的**，不是 GUI 的附屬品：整批拓到底要好幾小時，GUI 開著過夜
+# 不可靠（Windows 更新、休眠），這條才掛得上工作排程器。
+
+def _fmt_hms(seconds: float) -> str:
+    seconds = int(seconds)
+    return f"{seconds // 3600}h{seconds % 3600 // 60:02d}m{seconds % 60:02d}s"
+
+
+def cmd_update_db(args: argparse.Namespace) -> int:
+    """把更新名單上的公司一路抓到底，只暖快取不產 Excel。
+
+    名單維護（`--import-watchlist` / `--import-cached` / `--add` / `--remove`）
+    做完就存檔並印出名單**直接結束**，不順便發動抓取——「改名單」跟「跑幾小時的
+    抓取」混在同一次執行裡，手滑的代價差太多。
+    """
+    import local_db
+    from config import CONFIG_PATH, load_config, save_config
+
+    cfg = load_config()
+    touched = False
+    if args.import_watchlist:
+        added = local_db.import_from_watchlist(cfg)
+        print(f"從 watchlist 加入 {len(added)} 家：{', '.join(added) or '（無新增）'}")
+        touched = True
+    if args.import_cached:
+        added = local_db.import_from_cache(cfg)
+        print(f"從快取現況加入 {len(added)} 家：{', '.join(added) or '（無新增）'}")
+        touched = True
+    if args.add:
+        added = local_db.add_tickers(cfg, args.add)
+        print(f"加入 {len(added)} 家：{', '.join(added) or '（無新增）'}")
+        touched = True
+    if args.remove:
+        removed = [t for t in args.remove if local_db.remove_ticker(cfg, t)]
+        print(f"移除 {len(removed)} 家：{', '.join(removed) or '（無異動）'}")
+        touched = True
+    if touched:
+        save_config(cfg, args.config_path or CONFIG_PATH)
+
+    targets = local_db.normalize_tickers(args.tickers) or local_db.get_update_list(cfg)
+    if args.list or touched:
+        print(f"更新名單（{len(local_db.get_update_list(cfg))} 家）："
+              + (", ".join(local_db.get_update_list(cfg)) or "（空）"))
+        return 0
+    if not targets:
+        raise CliError("更新名單是空的。先用 --import-watchlist／--import-cached／"
+                       "--add TICKER 建一份，或直接在指令後面列 ticker")
+
+    identity = resolve_identity(args.identity)
+    stale = local_db.stale_cache_summary()
+    if stale["companies"]:
+        print(f"⚠ 有 {stale['n_companies']} 家、{stale['n_filings']} 份快取是舊版 "
+              f"edgartools（{'／'.join(stale['old_versions'])}）解出來的，"
+              f"目前是 {stale['current']}——這些會全部重抓", file=sys.stderr)
+
+    started = time.monotonic()
+
+    def on_progress(event: dict) -> None:
+        kind = event.get("event")
+        if kind == "ticker_start":
+            print(f"[{event['index'] + 1}/{event['total']}] {event['ticker']} …",
+                  file=sys.stderr, flush=True)
+        elif kind == "ticker_done":
+            note = f"新增 {event.get('new_filings', 0)} 份"
+            if event.get("gaps"):
+                note += f"、缺漏 {event['gaps']} 期"
+            if event.get("error"):
+                note = event["error"]
+            print(f"    -> {event['status']}（{note}）", file=sys.stderr, flush=True)
+
+    report = local_db.update_local_db(targets, identity, progress=on_progress)
+    elapsed = time.monotonic() - started
+
+    payload = {
+        "elapsed_seconds": round(elapsed, 1),
+        "updated": report.updated,
+        "skipped": report.skipped,
+        "failed": report.failed,
+        "stopped": report.stopped,
+        # D11：連續大量抓取時 SEC 會偶發失敗、**靜默少格**。這幾家之後單獨重跑
+        # 即可——第二輪會從本地快取讀已經成功的部分，只重抓失敗那幾份。
+        "gap_tickers": report.gap_tickers,
+        "results": [{"ticker": r.ticker, "status": r.status,
+                     "new_filings": r.new_filings, "gaps": r.gaps,
+                     "error": r.error, "forms": r.forms}
+                    for r in report.results],
+    }
+    if args.json:
+        _emit_json(payload, args.json)
+    print(f"完成：更新 {report.updated} 家、跳過 {report.skipped} 家、"
+          f"失敗 {report.failed} 家，耗時 {_fmt_hms(elapsed)}")
+    if report.gap_tickers:
+        print(f"⚠ 有抓取缺漏，建議單獨重跑：{', '.join(report.gap_tickers)}")
+    if report.failed:
+        for r in report.results:
+            if r.status == "failed":
+                print(f"  失敗 {r.ticker}：{r.error}", file=sys.stderr)
+    return 1 if report.failed else 0
+
+
 # ── 共用 ────────────────────────────────────────────────────────────────────
 
 def _emit_json(payload: dict[str, Any], target: str) -> None:
@@ -497,6 +600,25 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--raw", action="store_true",
                    help="改輸出新聞稿全文（除錯用，一季約 450K 字元）")
     p.set_defaults(func=cmd_press_release)
+
+    # update-db 不吃 `common`：那組參數（ticker 單數、--years、--max-filings）
+    # 對「整批拓到底」完全不適用——深度是固定的（設計書第六節：一律拓到底）。
+    u = sub.add_parser("update-db",
+                       help="更新本地財報資料庫（走更新名單、拓到底、只暖快取）")
+    u.add_argument("tickers", nargs="*", metavar="TICKER",
+                   help="只更新這幾家；不給就走 config 的更新名單")
+    u.add_argument("--identity", help="SEC EDGAR Identity（預設讀 config.json）")
+    u.add_argument("--json", nargs="?", const="-", metavar="PATH",
+                   help="輸出這一輪的結果 JSON；不給路徑或給 - 就印到 stdout")
+    u.add_argument("--list", action="store_true", help="只印出更新名單，不抓取")
+    u.add_argument("--add", nargs="+", metavar="TICKER", help="加進更新名單")
+    u.add_argument("--remove", nargs="+", metavar="TICKER", help="從更新名單移除")
+    u.add_argument("--import-watchlist", action="store_true",
+                   help="把 watchlist 全部加進更新名單")
+    u.add_argument("--import-cached", action="store_true",
+                   help="把快取裡已有的公司全部加進更新名單")
+    u.add_argument("--config-path", help="改寫哪一份 config.json（測試用）")
+    u.set_defaults(func=cmd_update_db)
     return parser
 
 

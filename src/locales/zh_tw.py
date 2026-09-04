@@ -534,4 +534,32 @@ STRINGS: dict[str, str] = {
     # Excel TEXT() 的月份格式碼。"m" 出數字（後面自己接「月」），
     # "mmm" 出月份簡稱（Oct）。換語言時這格一定要跟著前綴/後綴一起想。
     "xls.fy_input.span_month_format": 'm',
+
+    # ── 本地財報資料庫（TODO J1-J4）────────────────────────────────
+    # ⚠ 「更新名單」跟 watchlist 彈窗裡的「公司名稱快取」是兩件不同的事，
+    # 用字上刻意不共用「快取」兩個字。
+    "gui.btn.db_update": '更新本地庫',
+    "gui.btn.db_manage_list": '更新名單',
+    "gui.btn.db_add": '加入',
+    "gui.btn.db_remove": '移除',
+    "gui.btn.db_import_watchlist": '把 Watchlist 全部加進更新名單',
+    "gui.btn.db_import_cached": '把已快取的公司全部加進更新名單',
+    "gui.lbl.db_list_count": '更新名單：{n} 家',
+    "gui.lbl.db_list_help": '更新名單＝「要保持新鮮的財報資料」，跟 Watchlist（批次產 Excel 的對象）分開，兩份可以不同。按「更新本地庫」時只會更新這份名單上的公司，一律抓到底，只暖快取不產 Excel。',
+    "gui.lbl.db_list_empty": '名單是空的——先用下面兩顆按鈕匯入，或直接輸入 ticker',
+    "gui.lbl.db_not_fetched": '（尚未抓過）',
+    "gui.lbl.db_bottom_yes": '已到底',
+    "gui.lbl.db_bottom_no": '未到底',
+    "gui.dlg.db_update_title": '更新本地庫',
+    "gui.dlg.db_version_title": 'edgartools 版本已變更',
+    "gui.msg.db_update_confirm": '將更新 {n} 家公司的本地財報資料，一律抓到底。\n\n已經抓到底又沒有新財報的公司會整家跳過，只花一次清單查詢。要抓的公司每家約 1~3 分鐘，全程可以放著跑。\n\n開始嗎？',
+    "gui.msg.db_list_empty": '更新名單是空的。先按「更新名單」建一份。',
+    "gui.msg.db_imported": '加入 {n} 家（重複的自動略過）。',
+    "gui.msg.db_version_body": '偵測到 edgartools 版本從 {old} 變成 {new}。\n\n本地資料庫有 {n} 家、{filings} 份財報（{size}）是用舊版解析的，將全部失效——快取存的是「那個版本的 parser 吐出來的數字」，混用會拿到帶著舊解析 bug 的數值而且不會報錯。\n\n繼續使用需要重新抓取，預估約 {hours} 小時（可用「更新本地庫」按下去放著跑，或用 CLI 的 update-db 掛工作排程器半夜跑）。\n\n不想現在重抓的話，可以回退版本：pip install edgartools=={pin}',
+    "gui.db.log_start": '開始更新本地庫（{n} 家）...',
+    "gui.db.log_company": '[{ticker}] 檢查中...（{current}/{total}）',
+    "gui.db.log_company_done": '[{ticker}] {status}（新增 {n} 份）',
+    "gui.db.log_done": '更新本地庫完成：更新 {updated} 家、跳過 {skipped} 家、失敗 {failed} 家，耗時 {elapsed}',
+    "gui.db.log_gaps": '⚠ 有抓取缺漏，建議之後單獨重跑：{tickers}',
+    "gui.db.log_failed": '更新本地庫失敗，耗時 {elapsed}',
 }
