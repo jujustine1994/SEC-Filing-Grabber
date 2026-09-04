@@ -463,3 +463,79 @@ def test_row_text_survives_a_missing_meta():
     from main import local_db_row_text
     assert local_db_row_text(None) == ("—", "—")
     assert local_db_row_text({"forms": {}}) == ("—", "—")
+
+
+# ── 「便宜」這件事要真的便宜（2026-09-04 自我複查抓到的兩處）─────────────
+
+def test_stale_summary_does_not_open_every_filing_when_meta_is_fresh(cache_dir):
+    """啟動時的版本偵測**不可以**去讀每一份 filing。
+
+    201 家拓到底是 16,000 份檔案——原本的寫法對每一家呼叫 `scan_filings()`，
+    等於每次開程式都把整個本地庫讀一遍。meta 新鮮時它就已經記著版本了。
+    """
+    _write_filing("AAPL", _acc(1), form="10-Q", filing_date="2025-08-01",
+                  version="5.29.0")
+    local_db.write_meta("AAPL", local_db.rebuild_meta("AAPL"))
+
+    def boom(_ticker):
+        raise AssertionError("不該為了偵測版本去讀 filing 檔")
+
+    original = local_db.scan_filings
+    local_db.scan_filings = boom
+    try:
+        summary = local_db.stale_cache_summary()
+    finally:
+        local_db.scan_filings = original
+    assert summary["companies"] == []
+
+
+def test_stale_summary_still_finds_stale_companies_from_meta(cache_dir, monkeypatch):
+    monkeypatch.setattr(filing_cache, "edgartools_version", lambda: "5.31.0")
+    _write_filing("AAPL", _acc(1), form="10-Q", filing_date="2025-08-01",
+                  version="5.29.0")
+    local_db.write_meta("AAPL", local_db.rebuild_meta("AAPL"))
+    summary = local_db.stale_cache_summary()
+    assert summary["companies"] == ["AAPL"]
+    assert summary["n_filings"] == 1
+    assert summary["old_versions"] == ["5.29.0"]
+
+
+def test_skipping_a_company_does_not_reread_its_filings(cache_dir):
+    """「整家跳過」要真的便宜。原本跳過之後還是照樣重建一次 meta
+    （＝把那家的 75 份檔案全部開一遍），跳過的意義就少了一半。"""
+    edgar = _FakeEdgar({"META": {"10-Q": [(_acc(1), "2013-05-01")],
+                                 "10-K": [(_acc(2), "2013-02-01")]}})
+    _run(edgar, ["META"])                      # 第一輪：建好 meta
+
+    calls = []
+    original = local_db.scan_filings
+
+    def counting(ticker):
+        calls.append(ticker)
+        return original(ticker)
+
+    local_db.scan_filings = counting
+    try:
+        report = _run(edgar, ["META"])         # 第二輪：整家跳過
+    finally:
+        local_db.scan_filings = original
+    assert report.skipped == 1
+    assert calls == [], f"跳過的公司不該重讀 filing，實際讀了 {calls}"
+
+
+def test_skipping_still_refreshes_reached_bottom_and_timestamp(cache_dir):
+    """便宜歸便宜，`reached_bottom` 還是要更新成這一輪剛連網算出來的，
+    過期標記也要清掉——不然 GUI 上那個「?」永遠拿不掉。"""
+    edgar = _FakeEdgar({"META": {"10-Q": [(_acc(1), "2013-05-01")], "10-K": []}})
+    _run(edgar, ["META"])
+    meta = local_db.read_meta("META")
+    meta["forms"]["10-Q"]["reached_bottom"] = None
+    meta["forms"]["10-Q"]["reached_bottom_stale"] = True
+    meta["updated_at"] = "2000-01-01T00:00:00+08:00"
+    local_db.write_meta("META", meta)
+
+    _run(edgar, ["META"])
+    healed = local_db.read_meta("META")
+    assert healed["forms"]["10-Q"]["reached_bottom"] == "no_more_filings"
+    assert healed["forms"]["10-Q"]["reached_bottom_stale"] is False
+    assert healed["updated_at"] > "2000-01-01"

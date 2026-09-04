@@ -378,14 +378,21 @@ def stale_cache_summary() -> dict:
     size_bytes = 0
     old_versions: set[str] = set()
     for row in filing_cache.list_cached_tickers():
-        stale = [r for r in scan_filings(row["ticker"])
-                 if r["edgartools_version"] != current]
-        if not stale:
+        # ⚠ **走 meta，不要逐份開檔。** 這個函式是在**程式啟動時**跑的，
+        # 而 201 家拓到底是 ≈16,000 份檔案——原本的寫法對每一家呼叫
+        # `scan_filings()`，等於每次開程式都把整個本地庫讀一遍才畫得出主視窗。
+        # meta 本來就記著版本，`load_meta()` 在 meta 新鮮時只做一次目錄列舉。
+        meta = load_meta(row["ticker"])
+        version = (meta or {}).get("edgartools_version")
+        # meta 拿不到版本（剛清空、或舊版留下的）就當它是相符的：這裡的職責是
+        # 「講出確定失效的部分」，寧可少報也不要拿不確定的東西嚇人。真的失效的
+        # 那幾份在 `load_filing()` 那道閘還是會被擋下來重抓，不會用到錯的數字。
+        if version is None or version == current:
             continue
         companies.append(row["ticker"])
-        n_filings += len(stale)
+        n_filings += row["count"]
         size_bytes += row["size_bytes"]
-        old_versions.update(str(r["edgartools_version"]) for r in stale)
+        old_versions.add(str(version))
     return {
         "current": current,
         "companies": companies,
@@ -552,7 +559,16 @@ def update_local_db(tickers, identity: str, *,
             # 步驟 4：用步驟 1 的完整清單重算 meta。這裡的 `reached_bottom`
             # 是**新鮮的**（剛連網拿到清單），所以 stale 旗標清掉。
             new_cached = cached_accessions(ticker)
-            meta = rebuild_meta(ticker, previous=read_meta(ticker))
+            # 跳過的公司**不重建 meta**——「整家跳過」要真的便宜。重建會把那家
+            # 的 75 份檔案全部開一遍，201 家就是 16,000 次開檔，跳過的意義少一半。
+            # 上面的 `load_meta()` 已經確認過它跟目錄對得上，份數沒變、內容沒變，
+            # 唯一要更新的就是下面那圈剛算出來的 `reached_bottom` 與時間戳。
+            if plan["skip"] and meta is not None and meta.get("file_count") == len(new_cached):
+                meta = dict(meta)
+                meta["forms"] = {f: dict(meta.get("forms", {}).get(f) or {}) for f in FORMS}
+                meta["updated_at"] = filing_cache._now_iso()
+            else:
+                meta = rebuild_meta(ticker, previous=read_meta(ticker))
             if cik is not None:
                 try:
                     meta["cik"] = int(cik)
