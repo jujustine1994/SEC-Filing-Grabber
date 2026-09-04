@@ -96,3 +96,99 @@ TODO **J5：找一個晚上把全部公司的快取跑滿**（201 家、拓到�
 
 在這個檔案末尾追加一段「做了什麼、量到什麼、我自己決定了什麼、哪些沒做完」。
 CTH 回來第一件事會看這裡。
+
+
+---
+
+# 執行記錄（2026-09-04 由 Claude 追加）
+
+分支 `feat/local-filing-db`，**沒有 push、沒有動 master**。
+
+## 一、做了什麼
+
+**J1-J4 全部完成。** 四個 commit：
+
+| commit | 內容 |
+|---|---|
+| `3707050` | J1／J2／J4 狀態層（新檔 `src/local_db.py`） |
+| `f6f77ae` | J3 的 CLI `update-db` ＋ GUI 快取面板擴充 |
+| `23a7cf1` | TODO／CHANGELOG／ARCHITECTURE／CLI 四份文件 |
+| `3793d28` | 抓取速率的數字修正（見下面第三節） |
+
+- **J1 更新名單**：`config["local_db_tickers"]`，跟 `watchlist` 並列、語意分開。
+  兩個便利動作（匯入 watchlist／匯入快取現況）GUI 與 CLI 都有
+- **J2 `_meta.json`**：一家一份，分 form 記。「到底」在抓取迴圈**外面**推導
+  （比對完整 filing 清單與已快取的 accession），**`fetcher_gaap` 一行都沒動**
+- **J3 「更新本地庫」**：`local_db.update_local_db()`，GUI 按鈕（Tab3 既有面板，
+  沒開新分頁）＋ CLI `src/cli.py update-db`
+- **J4 版本鎖**：`requirements.txt` 改成 `edgartools==5.29.0`，
+  啟動時偵測版本不符跳提醒（`main._warn_if_edgartools_changed()`）
+
+測試 **1396 → 1446**（新增 50 條，全部離線）。GUI 用 Tk 探針驗過。
+設計書〈十、刻意不做〉那節一條都沒加回來。
+
+## 二、量到什麼（都是實測，不是推估）
+
+**驗收條件（第二次執行要整家跳過）——過了：**
+
+| | 耗時 | 結果 |
+|---|---|---|
+| 第一輪 AAPL／ARLO／META | 49.4s | AAPL、ARLO 整家跳過；META 新增 27 份（30→57） |
+| 第二輪 同三家 | **1.0s** | 三家全部跳過，**零下載** |
+
+`reached_bottom` 判定跟設計書那張實測對照表**完全一致**：
+AAPL `xbrl_cutoff`（2008 撞 XBRL 起點）、ARLO／META `no_more_filings`
+（2018／2012 才上市）。meta 的 count／oldest／newest 逐項核對過。
+
+**抓取速率：冷跑 2.8 s/份**（連續抓 15 家沒抓過的公司，取中段 900 秒的窗
+量到 321 份）。
+
+## 三、我自己決定的事
+
+1. **`SECONDS_PER_FILING` 用冷跑的 2.8，不用一開始量到的 1.8。**
+   1.8 是對 META 量的，但那家在 `~/.edgar/_tcache`（edgartools 自己那層持久化
+   HTTP 快取）裡已經是熱的——量到的是「本地重解析」不是「對 SEC 重新抓一次」。
+   ARCHITECTURE.md 記過同一個坑讓第一次的快取效能量測整組作廢，這次差點又踩。
+   估「重抓要幾小時」按最壞情況算。`3793d28` 把常數與兩份文件一起改了
+2. **`plan_ticker()` 加了 `version_ok` 這個條件**（設計書沒寫）。版本不符時
+   `load_filing()` 一律回 None，那些檔案等同不存在——這時如果照樣「整家跳過」，
+   那家公司會**永遠停在失效狀態**。所以版本不符一律不跳過
+3. **日期解析不出來時一律判「還沒到底」**。誤判「還沒到底」只是多查一次清單；
+   誤判「到底」會讓那家公司永遠不再往下挖，而且完全沒有症狀
+4. **`update_local_db()` 用 `load_meta()`（會自癒）不是 `read_meta()`**。
+   既有的 34 家在這功能上線前沒有 meta，用 raw 讀會全部判成「版本不明→不可跳過」，
+   第一輪就一定全部進抓取迴圈。實測結果：AAPL／ARLO **第一輪就跳過了**
+5. **CLI 的名單維護做完就結束，不順便發動抓取。** 「改名單」跟「跑幾小時的抓取」
+   混在同一次執行裡，手滑的代價差太多
+6. **GUI 完成用新的 `db_done` 訊息，不顯示「開啟輸出資料夾」**——這條路不產 Excel，
+   那顆按鈕會誤導
+7. **順手修 `filing_cache._dir_stats()`**：容量不再把 `_meta.json` 算進去。
+   不修的話「清空後只剩 meta」的資料夾會在 GUI 顯示成一列「0 份」
+   （這就是交接文件地雷 #3 講的那件事，設計書建議「清除時一併刪 meta」——
+   `clear_ticker()` 用的是 `rmtree`，本來就會一起刪，所以只要修統計那邊）
+8. **沒有把 201 家寫進 CTH 的 `config.json`。** 規模實測用位置參數指定 ticker，
+   不動使用者的設定
+
+## 四、哪些沒做完
+
+- **J5（把 201 家的快取跑滿）沒做。** 這是「可選」項目，而且照 2.8 s/份、
+  201 家×約 80 份估算是 **12~13 小時**——那不是可以無人值守放著跑一整晚就算了的
+  規模，SEC 的偶發失敗（D11）也還沒量過。所以改成先跑一個**有界的規模實測**
+  （15 家、拓到底）來量缺漏率，讓 CTH 拿數字決定要不要先做 D11 (c) 降速。
+  **這個實測在寫這段時還沒跑完**，結果會另外補在下面
+- **D11 (c)「降低連續抓取的速率」沒做**——設計書明確說不在範圍內，只記一筆
+- **`main.py` 那幾個新函式沒有自動測試**（`_open_local_db_popup`、
+  `_local_db_worker`、`_warn_if_edgartools_changed`）。照專案現況，Tk 的部分
+  用探針手動驗；純函式的部分（`local_db_row_text`）有 4 條自動測試蓋住
+
+## 五、要跑 J5 的話
+
+```bash
+cd "C:/Users/CTH/Documents/Code/SEC Financial Tools"
+./venv/Scripts/python.exe src/cli.py update-db --import-cached      # 先建名單
+./venv/Scripts/python.exe src/cli.py update-db --add <其餘 ticker>  # 補到 201 家
+./venv/Scripts/python.exe src/cli.py update-db --json out.json      # 開跑
+```
+
+中斷不會白費（逐份即時落檔），重跑會自動跳過已經到底的公司。
+跑完看 `out.json` 的 `gap_tickers`——那幾家單獨重跑一次即可（會走本地快取，很快）。
