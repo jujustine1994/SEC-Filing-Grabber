@@ -539,3 +539,34 @@ def test_skipping_still_refreshes_reached_bottom_and_timestamp(cache_dir):
     assert healed["forms"]["10-Q"]["reached_bottom"] == "no_more_filings"
     assert healed["forms"]["10-Q"]["reached_bottom_stale"] is False
     assert healed["updated_at"] > "2000-01-01"
+
+
+def test_skip_path_falls_back_to_rebuild_when_meta_is_missing_a_form(cache_dir):
+    """殘缺的 meta 不可以走「沿用」那條路。
+
+    份數對得上所以 `load_meta()` 不會自癒它——沿用的話會生出一個只有
+    `reached_bottom`、沒有 `count` 的條目，而且**會一直錯下去**。
+    """
+    edgar = _FakeEdgar({"META": {"10-Q": [(_acc(1), "2013-05-01")], "10-K": []}})
+    _run(edgar, ["META"])
+    broken = local_db.read_meta("META")
+    del broken["forms"]["10-K"]
+    local_db.write_meta("META", broken)
+
+    report = _run(edgar, ["META"])
+    assert report.skipped == 1
+    healed = local_db.read_meta("META")
+    assert healed["forms"]["10-K"]["count"] == 0
+    assert healed["forms"]["10-Q"]["count"] == 1
+
+
+@pytest.mark.parametrize("meta, ok", [
+    (None, False),
+    ({"file_count": 9, "forms": {"10-Q": {"count": 1}, "10-K": {"count": 0}}}, False),
+    ({"file_count": 1, "forms": None}, False),
+    ({"file_count": 1, "forms": {"10-Q": {"count": 1}}}, False),
+    ({"file_count": 1, "forms": {"10-Q": {}, "10-K": {"count": 0}}}, False),
+    ({"file_count": 1, "forms": {"10-Q": {"count": 1}, "10-K": {"count": 0}}}, True),
+])
+def test_meta_is_reusable(meta, ok):
+    assert local_db._meta_is_reusable(meta, 1) is ok

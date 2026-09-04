@@ -331,8 +331,10 @@ def import_from_cache(cfg: dict) -> list[str]:
 
 # ── J4：版本鎖與版本不符偵測 ──────────────────────────────────────────────
 
-# 重抓一份 filing 大約要多久（秒）。**實測值，取冷跑那個**：2026-09-04
-# 連續抓 15 家沒抓過的公司，取中段 900 秒的窗量到 321 份 → **2.8 s/份**。
+# 重抓一份 filing 大約要多久（秒）。**實測值，取冷跑、取保守的那個**：
+# 2026-09-04 連續抓 15 家沒抓過的公司拓到底，整趟 783 份／1,930s＝2.46 s/份，
+# 其中中段 900 秒的窗是 321 份／2.8 s/份。取 2.8——這個數字只用來估
+# 「重抓要幾小時」，估太樂觀比估太保守糟。
 #
 # ⚠ 不要用「對 META 量到的 1.8 s/份」——那家在 `~/.edgar/_tcache`（edgartools
 # 自己那層持久化 HTTP 快取，跟本專案的 filing_cache 完全獨立、清除動作也碰不到）
@@ -449,6 +451,22 @@ class UpdateReport:
                 + (" stopped=1" if self.stopped else ""))
 
 
+def _meta_is_reusable(meta: dict | None, file_count: int) -> bool:
+    """跳過那條路可不可以直接沿用這份 meta，不重建。
+
+    要求份數對得上、而且**兩個 form 的完整統計都在**。少一個 form（舊版寫的、
+    手改過的、寫到一半的）就退回重建——沿用會生出一個只有 `reached_bottom`、
+    沒有 `count`／`oldest`／`newest` 的殘缺條目，GUI 那一列會顯示成「—」，
+    而且份數對得上所以**下次 `load_meta()` 不會自癒它**，會一直錯下去。
+    """
+    if not isinstance(meta, dict) or meta.get("file_count") != file_count:
+        return False
+    forms = meta.get("forms")
+    if not isinstance(forms, dict):
+        return False
+    return all(isinstance(forms.get(f), dict) and "count" in forms[f] for f in FORMS)
+
+
 def _default_list_filings(ticker: str, identity: str) -> tuple[dict, int | None]:
     """真的去 EDGAR 拿完整 filing 清單。一家一次網路，很便宜。
 
@@ -563,9 +581,10 @@ def update_local_db(tickers, identity: str, *,
             # 的 75 份檔案全部開一遍，201 家就是 16,000 次開檔，跳過的意義少一半。
             # 上面的 `load_meta()` 已經確認過它跟目錄對得上，份數沒變、內容沒變，
             # 唯一要更新的就是下面那圈剛算出來的 `reached_bottom` 與時間戳。
-            if plan["skip"] and meta is not None and meta.get("file_count") == len(new_cached):
+            if plan["skip"] and _meta_is_reusable(meta, len(new_cached)):
+                forms = meta["forms"]
                 meta = dict(meta)
-                meta["forms"] = {f: dict(meta.get("forms", {}).get(f) or {}) for f in FORMS}
+                meta["forms"] = {f: dict(forms[f]) for f in FORMS}
                 meta["updated_at"] = filing_cache._now_iso()
             else:
                 meta = rebuild_meta(ticker, previous=read_meta(ticker))
