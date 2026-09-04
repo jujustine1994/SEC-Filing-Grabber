@@ -1192,6 +1192,12 @@ reached_bottom = "no_more_filings"  cached ⊇ available，且原始清單沒有
 並附回退指令。**刻意不提供「照用舊快取」**——明知可能帶著舊 parser 的解析 bug
 還拿來做投資判斷，換到的只是省一晚。
 
+**⚠ `launcher.ps1` 每次啟動都會跑一次 `uv pip install -r requirements.txt`**
+（`launcher.ps1:168`，venv 已存在的那條路徑也會跑）。加上版本鎖之後這變成一件
+好事：走啟動器的使用者，edgartools 版本會被**每次啟動自動拉回 5.29.0**，
+本地庫不會因為版本漂移而失效。所以 J4 那個提醒對話框實際上是給
+「自己在命令列 `pip install` 過」的人看的——這兩塊是互補的，不是重複。
+
 **刻意不做（YAGNI，設計書第十節，是硬性的）**：不存原始 XBRL（容量 1.4 GB → 42 GB）、
 不做容量上限／自動淘汰（自動刪資料違反「抓過不用重抓」的核心承諾）、
 不做「版本不符但照用」、不做比 filing 更細的增量（accession 已是最細粒度）、

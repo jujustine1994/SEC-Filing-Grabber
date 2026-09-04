@@ -231,3 +231,28 @@ cd "C:/Users/CTH/Documents/Code/SEC Financial Tools"
 `scripts/probe_local_db_gui.py`（24 項，不打網路），README Index 已同步。
 
 **測試 1396 → 1457。**
+
+## 追加：拓到底真的換到 17 年資料（AEP 端對端驗證）
+
+前面量的都是「抓了幾份、花多久」。這條量的是**拿到手的資料變成什麼**。
+AEP 原本 21 份（約 5 年），拓到底 75 份，然後跑一次 `cli.py gaap AEP`：
+
+| Sheet | 期數 | 涵蓋 |
+|---|---|---|
+| `Data_Financials(Q)` | **69 期** | FY2009Q2 → FY2026Q2（**17 年**） |
+| `Data_Financials(Y)` | 17 期 | FY2009 → FY2025 |
+| `Data_Segments` | 51 期 | FY2009Q2 → FY2026Q2 |
+
+**17 秒跑完，filing 一份都沒下載。** 這是 J5 值不值得跑的直接證據：
+5 年 → 17 年，而且之後每次重產只要十幾秒。
+
+（順帶：`Data_Financials(Q)` 從 FY2009Q2 起跳而不是 2008，跟設計書講的
+「XBRL 從 2008 才開始、實際上拿不到 20 年」一致。）
+
+## 追加：`launcher.ps1` 會自動維持版本鎖
+
+`launcher.ps1:168` 每次啟動都跑 `uv pip install -r requirements.txt`，
+venv 已存在的路徑也會跑。加了 `edgartools==5.29.0` 之後，走啟動器的使用者
+**版本會被每次啟動自動拉回**，本地庫不會因為漂移而失效。
+所以 J4 那個對話框實際上是給「自己在命令列 pip install 過」的人看的，
+兩塊互補不重複。已記進 ARCHITECTURE。
