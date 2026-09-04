@@ -34,6 +34,12 @@ DEFAULT_CONFIG: dict = {
     "output_dir": "output",
     "ticker_paths": {},
     "watchlist": [],
+    # 本地財報資料庫的「更新名單」（TODO J1）。跟 `watchlist` **刻意分開**：
+    # `watchlist` 是「批次產 Excel 的對象」，這份是「要保持新鮮的資料」。
+    # 合併會壞在兩處——併進 watchlist 的話 Tab 2 一按就產 201 份 Excel；
+    # 改用「快取裡已有的」的話，還沒抓過的公司永遠不會被抓。
+    # 兩份可重疊也可不重疊，不強制包含關係。維護動作見 local_db.py。
+    "local_db_tickers": [],
     "filename_format": "ticker_name",
     "filename_custom": "",
     "compare_filename_prefix": "Compare",

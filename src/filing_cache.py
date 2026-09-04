@@ -300,12 +300,16 @@ def _dir_stats(directory: Path) -> tuple[int, int]:
     except OSError:
         return 0, 0
     for path in paths:
+        # 只算 filing 本身。同一個資料夾裡還有 `_meta.json`（見 local_db.py）
+        # ——它既不是 filing，也不該讓一個「清空後只剩 meta」的資料夾在 GUI
+        # 上顯示成一列「0 份」（下面 `list_cached_tickers()` 靠 size 來過濾）。
+        if not ACCESSION_RE.match(path.stem):
+            continue
         try:
             size += path.stat().st_size
         except OSError:
             continue
-        if ACCESSION_RE.match(path.stem):
-            count += 1
+        count += 1
     return count, size
 
 

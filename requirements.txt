@@ -1,4 +1,8 @@
-edgartools>=2.0.0
+# 鎖死版本（TODO J4）。快取存的是「這個版本的 parser 吐出來的 DataFrame」，
+# 版本一變 `filing_cache.load_filing()` 就整個判定失效——不鎖的話任何人重跑一次
+# `pip install -r requirements.txt` 都可能在沒打算升級的情況下讓整個本地庫失效。
+# 要升級請先讀 docs/superpowers/specs/2026-09-04-local-filing-db-design.md 第七節。
+edgartools==5.29.0
 openpyxl>=3.1.0
 pytest>=8.0.0
 google-genai>=1.0.0
