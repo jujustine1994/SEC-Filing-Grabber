@@ -2,6 +2,38 @@
 
 ## 2026-09-04
 
+- **TODO J1-J4 完成：本地財報資料庫的狀態層**（分支 `feat/local-filing-db`，
+  設計書 `docs/superpowers/specs/2026-09-04-local-filing-db-design.md`）。
+  架構沒有改——`filing_cache.py` 的儲存格式、位置、四道閘全部原封不動，
+  新增的是一層 `src/local_db.py`，補上「更新名單／涵蓋狀態／版本告知」三塊。
+  - **J1 更新名單** `config["local_db_tickers"]`，跟 `watchlist` 分開的第三份清單。
+    配兩個便利動作（匯入 watchlist、匯入快取現況）
+  - **J2 `_meta.json`**，一家一份放該公司資料夾。分 form 記 count／oldest／newest／
+    `reached_bottom`。**「到底」在抓取迴圈外面推導**（比對完整 filing 清單與已快取
+    的 accession），`fetcher_gaap` 一行都沒動——避開 G13 (a) 那種「要穿過 6 個
+    builder」的坑。meta 只是快照，跟目錄對不上就重建；`reached_bottom` 重算要連網，
+    所以重建時保留舊值並標記過期
+  - **J3 「更新本地庫」**：GUI 按鈕（Tab3 既有的快取面板，沒開新分頁）＋
+    CLI `src/cli.py update-db`（掛工作排程器用）。走更新名單、一律拓到底、
+    只暖快取不產 Excel。單一公司失敗不中斷整體
+  - **J4 版本鎖**：`requirements.txt` 從 `edgartools>=2.0.0` 改成 `==5.29.0`。
+    啟動時偵測到本地資料是舊版解析的就跳提醒，明示 N 家 M 份將失效、預估重抓時數、
+    附回退指令。**不提供「照用舊快取」**（會拿到帶著舊 parser bug 的數字而且不報錯）
+  - **實測驗收**（AAPL／ARLO／META，真實資料）：
+    | | 耗時 | 結果 |
+    |---|---|---|
+    | 第一輪 | 49.4s | AAPL、ARLO **整家跳過**；META 新增 27 份（30→57） |
+    | 第二輪 | **1.0s** | 三家全部跳過，**零下載** |
+
+    `reached_bottom` 判定跟設計書的實測對照表完全一致：AAPL `xbrl_cutoff`
+    （2008 撞 XBRL 起點）、ARLO／META `no_more_filings`（2018／2012 才上市）。
+    抓取速率量到 **≈1.8 s/份**（`local_db.SECONDS_PER_FILING` 用的就是這個數字）
+  - 順手修 `filing_cache._dir_stats()`：容量不再把 `_meta.json` 算進去，
+    不然「清空後只剩 meta」的資料夾會在 GUI 顯示成一列「0 份」
+  - 測試 1396 → 1446（新增 50 條，全部離線）。GUI 用 Tk 探針驗過
+    （面板 34 列、更新名單彈窗、匯入 34 家、還原）
+  - **未 push、未併 master。J5（把 201 家跑滿）尚未跑**
+
 - **TODO H1 實測驗收：companyfacts 對 CF 流量項的填滿率 25% → 100%**（201 家、零網路）。
   H1 記的「修法：`fetcher_facts` 要加一層 YTD 相減還原單季」**其實早就做完了**
   （`quarterly_from_ytd()`，`fetcher_facts.py:164`，7 條測試蓋住），只是沒有人回頭

@@ -460,38 +460,44 @@ I6. **快取層已知的小取捨（都已判決為可接受，記錄備查，�
 
 > 設計書：`docs/superpowers/specs/2026-09-04-local-filing-db-design.md`
 > **結論：不需要重新構思架構。** 現有 `filing_cache.py` 已是正確形狀，
-> 缺的是三塊「狀態與體驗」。實作計畫尚未寫。
+> 缺的是三塊「狀態與體驗」。
+>
+> **J1-J4 已完成**（2026-09-04，分支 `feat/local-filing-db`，**未 push、未併 master**）。
+> 落地在新的 `src/local_db.py`（狀態層）＋ `src/cli.py update-db` ＋ Tab3 快取面板。
+> **`fetcher_gaap` 的抓取迴圈一行都沒動**——「到底了沒」在迴圈外面推導。
+> 實測驗收見 CHANGELOG 2026-09-04 那則。**J5 尚未跑**（見下）。
 
-J1. **更新名單（`config["local_db_tickers"]`）**——跟既有 `watchlist` 分開的第三份清單。
+J1. ✅ **更新名單（`config["local_db_tickers"]`）**——跟既有 `watchlist` 分開的第三份清單。
    `watchlist` 是「批次產 Excel 的對象」，更新名單是「要保持新鮮的資料」，兩者可以不同。
    配兩個便利動作：匯入 watchlist、匯入快取現況
 
-J2. **每家一份 `_meta.json`**——涵蓋期間、份數、`reached_bottom`、上次更新、寫入時的
+J2. ✅ **每家一份 `_meta.json`**——涵蓋期間、份數、`reached_bottom`、上次更新、寫入時的
    edgartools 版本。分 form 記（10-Q／10-K 的深度上限是獨立的）。
    **「到底」在 builder 外面推導**（比對完整 filing 清單與已快取的 accession），
    不動 `fetcher_gaap` 一行——避免踩到 G13 (a) 那種「要穿過 6 個 builder」的坑。
    meta 只是快照，跟目錄對不上就重建
 
-J3. **「更新本地庫」動作**——走更新名單、一律拓到底、只暖快取不產 Excel。
+J3. ✅ **「更新本地庫」動作**——走更新名單、一律拓到底、只暖快取不產 Excel。
    已到底又沒有新財報的公司**整家跳過**，只花一次 filing 清單的網路。
    單一公司失敗不中斷。GUI 按鈕 ＋ CLI 子命令（掛工作排程器用）
 
-J4. **edgartools 版本鎖與升級告知**——`requirements.txt` 現在是 `edgartools>=2.0.0`
+J4. ✅ **edgartools 版本鎖與升級告知**——`requirements.txt` 現在是 `edgartools>=2.0.0`
    **沒鎖**，重跑一次 `pip install` 就可能讓整個本地庫失效。鎖成 `==5.29.0`。
    啟動時偵測版本不符 → 明示「N 家 M 份將失效、重抓約需 H 小時」，
    選項〔今晚重抓〕〔立刻重抓〕〔取消升級〕。**不提供「照用舊快取」**（會拿到帶著
    舊 parser bug 的數字而且不報錯）
 
-J5. **⏰ 找一個晚上把全部公司的快取跑滿**（CTH 2026-09-04 交代）
+J5. ⏳ **找一個晚上把全部公司的快取跑滿**（CTH 2026-09-04 交代）
    - **對象**：至少 `output/_hintsweep_201/tickers_joined.txt` 那 201 家，之後可再擴充
    - **深度**：拓到底（＝公司最早的 XBRL 申報或 2008 起點，取較晚者。
      所以實際上最多 18 年，不是 20 年——XBRL 從 2008 才開始）
    - **預估**：約 1.4 GB、數小時。2026-09-04 實測抓取速率約 65~105 秒/家（16/5 的窗），
      拓到底會更久
    - **現況**：快取已有 34 家、881 份、71.3 MB
-   - **⚠ 先決條件**：這件事**做完 J3 再跑**比較划算——不然中途失敗要手動挑哪幾家重跑。
-     真的等不及也可以先用 `scripts/spike_derive_mapping.py` 那條路暖，但它會順便寫
-     `output/_spike/` 的答案卷 pkl，會污染 H0 的基線資料
+   - **✅ 先決條件已滿足**：J3 做完了。現在跑就是一行——
+     `./venv/Scripts/python.exe src/cli.py update-db --import-cached` 先把名單建好
+     （或 `--add` 逐家指定），再 `update-db --json out.json` 跑。
+     中途斷掉不會白費（逐份即時落檔），重跑會自動跳過已經到底的公司
    - **⚠ 跑之前先看 TODO D11**：連續大量抓取時 SEC 會偶發失敗、**靜默少格**。
      跑完要檢查抓取缺漏清單，有問題的公司單獨重跑（會走本地快取，很快）
 

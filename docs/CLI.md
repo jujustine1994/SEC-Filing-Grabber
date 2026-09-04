@@ -62,3 +62,27 @@
 6 月底改成 12 月底，改制前那 30 季**全部**差 2 季；MSCI 那次只挪 31 天，不跨季所以
 沒事（`scripts/check_fye_drift.py`，離線可重驗）。`label_agrees_with_fiscal_label`
 抓得到「選進來的那幾份有問題」，抓不到「該選進來卻被 `--years` 漏掉」的那一類。
+
+## `update-db`：更新本地財報資料庫（TODO J3）
+
+```bash
+# 名單維護（做完就存檔結束，不會順便發動抓取）
+./venv/Scripts/python.exe src/cli.py update-db --list
+./venv/Scripts/python.exe src/cli.py update-db --import-cached      # 快取裡已有的全加進來
+./venv/Scripts/python.exe src/cli.py update-db --import-watchlist   # watchlist 全加進來
+./venv/Scripts/python.exe src/cli.py update-db --add NVDA MSFT
+./venv/Scripts/python.exe src/cli.py update-db --remove NVDA
+
+# 真的跑（走更新名單，一律拓到底，只暖快取不產 Excel）
+./venv/Scripts/python.exe src/cli.py update-db --json out.json
+./venv/Scripts/python.exe src/cli.py update-db AAPL META   # 只跑這幾家，不動名單
+```
+
+- **沒有 `--years` / `--max-filings`**：深度是固定的（拓到底），這是設計決定
+- **已經到底又沒有新財報的公司整家跳過**，只花一次 filing 清單查詢。
+  實測三家全跳過是 1.0s；要抓的公司約 1.8 秒/份
+- **單一公司失敗不中斷整體**，最後列出失敗與「有抓取缺漏」的公司（TODO D11：
+  連續大量抓取時 SEC 會偶發失敗、靜默少格）。那幾家之後單獨重跑即可
+- **中斷不會白費**：逐份即時落檔，重跑會自動跳過已完成的
+- 離開碼：0 全部成功／1 有公司失敗／2 參數或設定有問題
+- 這條是給 **Windows 工作排程器**掛半夜跑用的——GUI 開著過夜不可靠（更新、休眠）

@@ -1107,3 +1107,86 @@ request、0.34 秒**（現行每家 7.5 分鐘）。每筆 fact 自帶 `start`/`
 - **Data_EPS_Recon 從未產生**：edgartools `eps_reconciliation` 對 NVDA/AAPL/MSFT 均回傳 None，非 XBRL-tagged 公司無解；待 edgartools 改善或改用 AI 解析方案
 - **模板列覆蓋率只有 40/97**（2026-08-22，52 家實測）：達到「≥45 家有值且填滿率 >90%」的只有 40 列。系統性問題見 `docs/TODO.md` H3——`Current Portion of LT Debt` 25/52 家被判矛盾、`Shares Outstanding` 43/52 家有洞。**部分列（`Accrued Compensation` 等）改 concept 名字救不了**——那些 filing 的報表表面根本沒有那一列，公司把它放在附註，只有 companyfacts 拿得到
 - **多股別公司抓不到流通股數**：PLTR／GOOGL／META 有 Class A/B/C，封面頁的 `dei:EntityCommonStockSharesOutstanding` 按股別分開標，`company.get_facts()` 取不到。連帶 BVPS、FCF per Share、流通股數 YoY 空白
+
+## 本地財報資料庫（`local_db.py`，2026-09-04，TODO J1-J4）
+
+上一節的 `filing_cache.py` 管的是「一份 filing 怎麼存、怎麼讀」。
+`local_db.py` 是疊在它上面的**狀態層**，補三塊「狀態與體驗」，
+**不改儲存格式、不動 `fetcher_gaap` 的抓取迴圈一行**。
+設計書：`docs/superpowers/specs/2026-09-04-local-filing-db-design.md`。
+
+**三份清單，三種語意，刻意不合併**：
+
+| | 快取內容 | 更新名單（`config["local_db_tickers"]`）| `watchlist` |
+|---|---|---|---|
+| 怎麼來的 | 掃目錄得出的**事實** | 使用者維護的**意圖** | 使用者維護 |
+| 內容 | 所有抓過的（含 Tab 1 一次性查詢）| 要保持新鮮的（可含還沒抓過的）| 批次產 Excel 的對象 |
+| 誰改 | 抓取／清除自動改 | 只有使用者 | 只有使用者 |
+
+合併會壞在兩處：併進 `watchlist` → Tab 2 一按產 201 份 Excel；
+改用「快取裡有的」→「未來把全部抓好」做不到，因為還沒抓的公司永遠不會被抓。
+三者可重疊也可不重疊，**不強制包含關係**。
+
+**`_meta.json`**：一家一份，放該公司資料夾（`filing_cache/AAPL/_meta.json`）。
+不做全域單一檔——分開才不會在多視窗同時寫時互相蓋掉。分 form（10-Q／10-K）
+記 `count`／`oldest`／`newest`／`reached_bottom`，因為 `max_filings` 與
+`max_annual_filings` 是兩個獨立上限，一家公司可能 10-K 到底了、10-Q 還沒，
+**合記會誤判成整家到底，然後永遠不再往下挖**。
+
+**原則：掃目錄為準，meta 只是快照。** 讀 meta 時比對 `file_count` 與實際的
+目錄列舉結果，不符（或檔案壞掉、schema 不符）就當場重建並寫回。
+比對用的是**目錄列舉、不讀檔內容**，很便宜——201 家若每次都要讀 881 個 JSON
+才畫得出 GUI 清單會卡住。meta 刪掉、寫壞、跟目錄不同步，功能都照樣正確，
+只是慢一點，所以 `filing_cache.py` 那條「不維護額外索引檔」的原則沒有被破壞。
+
+**「到底」怎麼判定（`derive_reached_bottom()`）**：抓取迴圈有三個停止條件
+（撞到 `max_filings`、撞到 `_XBRL_CUTOFF`＝2008-01-01、清單用完）。
+直覺做法是讓 builder 回報是哪一個停的，**但那要穿過 3 個 builder 與 8 個
+`_current_q_col()` 呼叫點，就是 TODO G13 (a) 那個坑**。改成在迴圈外面推導，
+零改動：
+
+```
+available = _list_filings(公司, form) 裡 filing_date >= 2008-01-01 的
+cached    = 該資料夾裡的 accession 集合
+
+reached_bottom = "no_more_filings"  cached ⊇ available，且原始清單沒有 2008 前的
+               = "xbrl_cutoff"      cached ⊇ available，且原始清單有被 2008 擋掉的
+               = null               否則（還沒抓完，下次要繼續挖）
+```
+
+`_list_filings()` 本來就回傳完整清單，所以這些資訊在「更新本地庫」跑的時候
+順手就有，不必額外連網。日期解析不出來的一律**當成在窗內**（＝判 null）——
+誤判「還沒到底」只是多查一次清單，誤判「到底」會讓那家公司永遠不再往下挖，
+而且完全沒有症狀。
+
+**「更新本地庫」（`update_local_db()`）**：對象是更新名單，深度一律拓到底，
+**不產 Excel**（要 Excel 走既有的 Tab 2 批次）。每家四步：
+
+1. `_list_filings()` 拿 10-Q／10-K 完整清單 ← 一次網路，很便宜
+2. 跟快取現況比對：兩個 form 都到底、又沒有新 filing → **整家跳過**
+3. `fetch_gaap_statements(max_filings=200, max_annual_filings=50)`，
+   結果**直接丟棄**——要的是它的副作用（把快取填滿）。200/50 只是「大到不會是
+   它先喊停」的餘裕值，實際由 `_XBRL_CUTOFF` 或清單用完停止
+4. 用步驟 1 的完整清單重算 `_meta.json`
+
+步驟 2 是「不要每次全部重抓」的具體實現。**實測（2026-09-04，AAPL／ARLO／META）**：
+第一輪 49.4s（AAPL、ARLO 整家跳過，META 新增 27 份），**第二輪 1.0s、三家全跳過、
+零下載**。抓取速率 ≈1.8 s/份。
+
+單一公司失敗**不中斷整體**（比照 `comparison.py` 的 `CompanyFetchError` 原則：
+公司層級跳過，跟同一家公司內部的科目缺漏是兩回事）。沿用 `collect_gaps()`，
+跑完列出有抓取缺漏的公司——這對應 TODO D11：連續大量抓取時 SEC 會偶發失敗、
+**靜默少格**，那幾家之後單獨重跑即可（第二輪從本地快取讀已成功的部分）。
+中斷不會白費：`save_filing()` 是逐份即時落檔的。
+
+**版本鎖（J4）**：`requirements.txt` 鎖成 `edgartools==5.29.0`。不鎖的話任何人
+重跑一次 `pip install -r requirements.txt` 都可能在沒打算升級的情況下讓整個本地庫
+失效。升級是在命令列發生的、不會在 GUI 裡發生，所以偵測點是**下次啟動**
+（`main._warn_if_edgartools_changed()`），明示「N 家 M 份將失效、預估重抓 H 小時」
+並附回退指令。**刻意不提供「照用舊快取」**——明知可能帶著舊 parser 的解析 bug
+還拿來做投資判斷，換到的只是省一晚。
+
+**刻意不做（YAGNI，設計書第十節，是硬性的）**：不存原始 XBRL（容量 1.4 GB → 42 GB）、
+不做容量上限／自動淘汰（自動刪資料違反「抓過不用重抓」的核心承諾）、
+不做「版本不符但照用」、不做比 filing 更細的增量（accession 已是最細粒度）、
+不動 `fetcher_gaap` 的抓取迴圈。
