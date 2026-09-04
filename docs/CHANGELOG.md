@@ -27,7 +27,11 @@
 
     `reached_bottom` 判定跟設計書的實測對照表完全一致：AAPL `xbrl_cutoff`
     （2008 撞 XBRL 起點）、ARLO／META `no_more_filings`（2018／2012 才上市）。
-    抓取速率量到 **≈1.8 s/份**（`local_db.SECONDS_PER_FILING` 用的就是這個數字）
+    抓取速率**分兩種**，不要混用：對 `~/.edgar/_tcache` 已經熱的公司（META）是
+    ≈1.8 s/份；連續抓 15 家沒抓過的公司、取中段 900 秒的窗量到 321 份，
+    **冷跑是 2.8 s/份**。`local_db.SECONDS_PER_FILING` 用的是冷跑那個——
+    估「重抓要幾小時」要按最壞情況算。ARCHITECTURE.md 記過同一個坑
+    （edgartools 自己那層 HTTP 快取讓第一次的效能量測整組作廢）
   - 順手修 `filing_cache._dir_stats()`：容量不再把 `_meta.json` 算進去，
     不然「清空後只剩 meta」的資料夾會在 GUI 顯示成一列「0 份」
   - 測試 1396 → 1446（新增 50 條，全部離線）。GUI 用 Tk 探針驗過

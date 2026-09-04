@@ -331,11 +331,16 @@ def import_from_cache(cfg: dict) -> list[str]:
 
 # ── J4：版本鎖與版本不符偵測 ──────────────────────────────────────────────
 
-# 重抓一份 filing 大約要多久（秒）。**實測值**：2026-09-04 用 `update-db`
-# 對 META 拓到底，27 份新 filing、整趟 49.4s（含 3 家的 filing 清單查詢），
-# ≈1.8 s/份。同一輪 AAPL／ARLO 走跳過那條路，第二輪三家全跳過只花 1.0s。
+# 重抓一份 filing 大約要多久（秒）。**實測值，取冷跑那個**：2026-09-04
+# 連續抓 15 家沒抓過的公司，取中段 900 秒的窗量到 321 份 → **2.8 s/份**。
+#
+# ⚠ 不要用「對 META 量到的 1.8 s/份」——那家在 `~/.edgar/_tcache`（edgartools
+# 自己那層持久化 HTTP 快取，跟本專案的 filing_cache 完全獨立、清除動作也碰不到）
+# 裡已經是熱的，量到的是「本地重解析」不是「對 SEC 重新抓一次」。
+# ARCHITECTURE.md 記過同一個坑讓第一次的快取效能量測整組作廢。
+#
 # 只拿來估「重抓要幾小時」給使用者參考，估錯不影響任何正確性。
-SECONDS_PER_FILING = 1.8
+SECONDS_PER_FILING = 2.8
 
 
 def pinned_edgartools_version() -> str | None:
