@@ -65,8 +65,43 @@ ADI AMGN BK BKNG CCI CL CMCSA CNC CVX DLR EOG ETN JPM LHX LMT LOW
 改組換過 CIK 的公司（BLK 只有 2 年、DIS/DOW/CI 7 年…）舊申報在別的 CIK，
 判定正確但資料比預期少——見 **TODO J6**。
 
+### 格式驗證（`scripts/verify_local_db.py`，2026-09-06）
+
+份數對不代表檔案能用，所以每批跑完**另外驗一次格式**。9,233 份逐檔驗，不連網，108 秒：
+
+| 檢查 | 結果 |
+|---|---|
+| 過 `load_filing()` 四道閘（JSON／schema／cik／版本） | **9,233 / 9,233＝100%** |
+| 三張表反序列化（`payload_to_df` 那條路） | **0 份失敗** |
+| `_meta.json` 與目錄一致（file_count、各 form count、版本） | **0 家不符** |
+| 同一家出現多個 cik | **0 家** |
+| 讀不出來的檔案 | **0 份** |
+| **有問題的公司** | **0 家** ✅ |
+
+**824 份「空殼」（三張表全 None）不是格式問題**，是忠實記錄上游現實：
+
+- 年份分布 2010:85、2011:18、2012 之後只剩 6，跟 SEC 的 **XBRL 三階段強制時程**
+  （2009-06 最大型 → 2010-06 其餘大型加速申報人 → 2011-06 所有其他人）完全吻合
+- 剩下那幾份是分拆後的第一份年報（ABBV 2013、KEYS 2014、GEHC 2023）
+- **決定性驗證**：挑 7 份 2010~2023 的空殼直接跟 SEC 重抓（COHR／KLAC／FTNT／
+  DXCM／KEYS／GEHC／ABBV），**7/7 上游結果完全一樣**，edgartools 自己的訊息就是
+  `No statements available in XBRL data`。**重抓也救不回來，不需要重跑**
+
+### 端對端抽驗（5 家跑完整流程）
+
+| ticker | 季表期數 | 涵蓋 | 關鍵列填滿率 |
+|---|---|---|---|
+| KO | 69 | FY2009Q2→FY2026Q2 | Revenue／GP／OI／NI／OCF／Capex 皆 96% |
+| JPM | 69 | FY2009Q2→FY2026Q2 | Revenue 99%、NI 99%、OCF 96%（GP／Capex 0% 是銀行本來就沒有） |
+| LULU | 65 | FY2011Q2→FY2027Q2 | 皆 98% |
+| DIS | 30 | FY2019Q2→FY2026Q3 | 皆 97%（期數短是 J6 的換 CIK，不是抓漏） |
+| BLK | 8 | FY2024Q3→FY2026Q2 | 皆 88%（同上） |
+
+`Data_Financials(Q)`／`Data_Meta`／`Data_Ratios` 期數三者一致，`Data_Segments` ≤ 之。
+
 原始資料：`output/_localdb/`（`batch1_plan.json`／`batch1_result.json`／
-`audit_2026-09-04.json`／`audit_after_batch1.json`／`batch1_round2.json`）。
+`audit_2026-09-04.json`／`audit_after_batch1.json`／`batch1_round2.json`／
+`audit_final_batch1.json`／`verify_batch1.json`／`e2e_*.json`）。
 **`output/` 是 git-ignored 的**，那些檔案只在本機。
 
 ## Batch 2（未跑）：剩下的 67 家
