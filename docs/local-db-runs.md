@@ -12,8 +12,24 @@
 | | 家數 |
 |---|---|
 | universe | **201** |
-| 已完成 | **134** |
-| 未開始 | **67** |
+| 已完成 | **201** ✅ |
+| 未開始 | **0** |
+
+**201 家 / 13,921 份 / 0.98 GB**（每家份數中位數 75、最多 77、最少 8）。
+全部通過格式驗證。實際容量比設計書估的 1.4 GB 小，因為不少公司受 J6 的
+換 CIK 影響，份數不到 75。
+
+涵蓋起始年分布（**J6 的具體規模**）：
+
+| 起始年 | 家數 |
+|---|---|
+| 2008~2009（滿 17~18 年） | **165** |
+| 2010~2014 | 16 |
+| 2015~2019 | 15 |
+| 2020~2024 | 5 |
+
+也就是說 **165/201（82%）拿得到完整 17~18 年**，其餘 36 家受限於上市時間或
+改組換 CIK。
 
 ## Batch 1（2026-09-04 ~ 09-05）
 
@@ -104,29 +120,58 @@ ADI AMGN BK BKNG CCI CL CMCSA CNC CVX DLR EOG ETN JPM LHX LMT LOW
 `audit_final_batch1.json`／`verify_batch1.json`／`e2e_*.json`）。
 **`output/` 是 git-ignored 的**，那些檔案只在本機。
 
-## Batch 2（未跑）：剩下的 67 家
+## Batch 2（2026-09-06）：剩下的 67 家 ✅
 
-```
-LVS  MA   MAR  MCD  MCHP MCK  MCO  MDLZ MDT  MET  MMM  MNST MPC  MRK  MRVL
-MS   MSCI MSI  MU   NDAQ NEE  NEM  NFLX NKE  NOC  NOW  NSC  NUE  NXPI ODFL
-OKE  OMC  ON   ONTO ORCL ORLY OTIS OXY  PANW PAYX PEP  PFE  PG   PLD  PSX
-PYPL QCOM RTX  SBUX SCHW SLB  SNOW SNPS SO   SWKS T    TGT  TMO  TSLA TXN
-UNH  UNP  UPS  V    WFC  WMT  XOM
-```
+**內容**：67 家全新公司（前置稽核確認既有 134 家仍全部完整，0 需要修補）
 
-**推估**：67 家 × 約 75 份 ≈ 5,000 份 × 2.24 s/份 ≈ **3.1 小時**、約 0.45 GB。
+### ⚠ 第一次跑法失敗了——這件事以後要避免
 
-怎麼跑：
+一開始用一個 process 連跑 67 家，**在第 16 家被系統因記憶體不足中止**
+（`status: killed，system is running low on memory`）。原因是 edgartools 的
+內部快取會跨公司累積，我們自己的 `_parse_cache_scope()` 只涵蓋單次抓取，擋不住。
+
+**中止沒有白費**——`save_filing()` 逐份即時落檔，已完成的 15 家都在
+（134 → 150 家、9,233 → 10,324 份），重跑整家跳過。這是增量設計的價值。
+
+**修法**：`scripts/run_localdb_batch.sh`，把名單切段、**每段一個獨立 process**，
+段落結束時記憶體整個還給系統。**以後一律用這支跑，不要一個 process 硬幹。**
 
 ```bash
-# 1. 先看現在缺什麼、下一批是哪些（不下載任何 filing，134 家約 3 分鐘）
-./venv/Scripts/python.exe scripts/audit_local_db.py --plan-next 100 \
-    --json output/_localdb/audit_before_batch2.json
-
-# 2. 把「需要更新的」跟「下一批」接起來跑
-./venv/Scripts/python.exe src/cli.py update-db <上一步印出的 ticker> \
-    --json output/_localdb/batch2_result.json
-
-# 3. 收尾：再稽核一次，把還沒到底的再跑一輪
-./venv/Scripts/python.exe scripts/audit_local_db.py
+bash scripts/run_localdb_batch.sh output/_localdb/batch2 8 <ticker...>
 ```
+
+### 結果
+
+| | |
+|---|---|
+| 分段 | 9 段（每段 8 家），合計 **220 分鐘** |
+| 結果 | **0 失敗、0 缺漏**（`gap_tickers` 全空） |
+| 第 1~2 段 | 幾乎全跳過——被中止前已完成的那 15 家，證明中斷不白費 |
+| 快取 | 134 家/9,233 份 → **201 家/13,921 份/0.98 GB** |
+
+**收尾**：
+
+| 步驟 | 結果 |
+|---|---|
+| 稽核（201 家，281s） | **完整 201 家、需要更新 0 家**——這次不需要第二輪 |
+| 格式驗證（13,921 份，205s） | 四道閘 **13,921/13,921＝100%**、反序列化 0 失敗、meta 0 不符、**有問題的公司 0 家** ✅ |
+
+（batch 1 當時有 16 家要跑第二輪，這次 0 家。分段跑每段獨立 process，
+每家都跑得更乾淨。）
+
+1,236 份空殼（2010 前 1,079、2010 後 157）**不是格式問題**，理由同 batch 1。
+
+原始資料：`output/_localdb/batch2_plan.json`／`batch2_chunk01~09.json`／
+`audit_before_batch2.json`／`audit_after_batch2.json`／`verify_batch2.json`。
+
+## 之後怎麼維護
+
+universe 已經全部抓完，之後只要定期跑一次把新財報補進來：
+
+```bash
+bash scripts/run_localdb_batch.sh output/_localdb/refresh 8 $(cat output/_hintsweep_201/tickers_joined.txt)
+./venv/Scripts/python.exe scripts/audit_local_db.py     # 收尾確認
+./venv/Scripts/python.exe scripts/verify_local_db.py    # 格式驗證
+```
+
+已經到底又沒有新財報的公司會**整家跳過**，所以沒有新財報的時候整輪只要幾分鐘。
