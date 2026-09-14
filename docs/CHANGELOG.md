@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-09-14
+
+- **維護：venv 改用 uv 管理的獨立 Python（不依賴系統 Python）**。原本 `venv`
+  是用 Microsoft Store 版 Python 3.13 建的（沙盒安裝，容易有套件裝了但其他
+  環境讀不到、資料夾存取受限等問題）。照 `windows-tool.md` 既定規範改用
+  `uv venv venv --python 3.13`：uv 會自己管理一份獨立的 Python 3.13.12，所有
+  專案共用同一份，不依賴系統上裝的任何 Python。套件安裝改用
+  `uv pip install -r requirements.txt --python venv\Scripts\python.exe`，
+  `edgartools` 鎖版 5.29.0 確認正確安裝，local filing cache 格式不受影響。
+  舊 venv 備份搬到專案外
+  `Documents/Code/_venv_backups/SEC Financial Tools/venv_old_store_20260914/`。
+  驗證：`pytest -m "not slow"` 1457 條全過，跟改之前一致。
+
 ## 2026-09-04
 
 - **TODO J1-J4 完成：本地財報資料庫的狀態層**（分支 `feat/local-filing-db`，
