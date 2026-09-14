@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-09-14
+
+- **維護：venv 底層 Python 從 Microsoft Store 版改為 python.org 版**。原本
+  `venv` 是用 Microsoft Store 版 Python 3.13 建的（沙盒安裝，容易有套件裝了
+  但其他環境讀不到、資料夾存取受限等問題）。改用官方 python.org 安裝的
+  Python 3.13（`AppData\Local\Programs\Python\Python313`）重建 venv，
+  `requirements.txt` 版本鎖定不變（`edgartools==5.29.0` 等），local filing
+  cache 格式不受影響。舊 venv 備份搬到專案外
+  `Documents/Code/_venv_backups/SEC Financial Tools/venv_old_store_20260914/`。
+  驗證：`pytest -m "not slow"` 1457 條全過，跟改之前一致。
+
 ## 2026-09-04
 
 - **TODO J1-J4 完成：本地財報資料庫的狀態層**（分支 `feat/local-filing-db`，
