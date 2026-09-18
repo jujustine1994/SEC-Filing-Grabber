@@ -316,26 +316,6 @@ H0. **已有的體檢數字（2026-08-24 重跑，**201 家**實測，基線見 
    - **剩下 4 列改 concept 名字救不了**（公司沒在報表表面單獨列，只有附註有）：`Accrued Compensation`、`Op. Lease Liabilities, current`、`Operating Lease ROU Assets`、`Amortization of Intangibles`。詳見 H3-1
    - 資料在 `output/_spike/`（52 家的 facts JSON 與答案卷快取），重跑體檢不用再打網路。**注意答案卷的抓取窗不一致**：AAPL/ADBE/AMD/AVGO/COST/GOOGL/INTC/META/MSFT/NVDA/TSLA/WMT 十二家是全部 filing（44~69 期），其餘 40 家是 `max_filings=16`（約 21 期）。重建時要沿用同樣的參數，不然逐列覆蓋率沒得比
 
-H1. ✅ **已完成並實測驗收（2026-09-04）：companyfacts 對「現金流量表流量項」的覆蓋率 25% → 100%**（原記錄「只有約 25% 覆蓋」，**修正 G11 的評估**）
-   - 原始症狀：`Capex`／`Dividends Paid`／`Change in Receivables`／`FX Effect on Cash` 等 CF 流量列，facts 的填滿率中位數只有 **25%**（＝一年四季只拿得到一季）
-   - **根因**：公司在 XBRL 裡把現金流量表的項目 tag 成 **YTD 累計**，不是單季。只有 Q1 的 YTD 剛好等於單季，所以 `classify_period()` 篩「80~100 天」只撈得到 Q1
-   - **這不是 facts 的缺陷，是實作只收單季 duration**。facts 其實有那些 YTD fact，而且**自帶精確起訖日**，做 YTD 拆算比現行路徑更可靠（現行是靠欄名猜哪欄是 YTD）
-   - **✅ 修法已完成**：`quarterly_from_ytd()`（`src/fetcher_facts.py:164`）——依 `start` 分組、組內依 `end` 排序後相鄰相減，每組第一筆直接採用，並擋掉「孤單的年度長度」（同一個 `start` 底下只有一筆且長度落在年度區間，那是年度值不是 Q1）。已接進 `resolve_row()`（`fetcher_facts.py:232`），`tests/test_fetcher_facts.py` 有 7 條測試蓋住
-   - **✅ 實測驗收（2026-09-04，201 家、零網路）**：拿 `output/_spike/` 既有的 facts JSON 與答案卷，把 mapping 的 `from_ytd` 拿掉當作「修法前」，做同一份資料上的 A/B。**27 個 `from_ytd` 列的填滿率中位數：25% → 100%**，完全重現原記錄的 25%
-
-     | 列 | 前 | 後 | | 列 | 前 | 後 |
-     |---|---|---|---|---|---|---|
-     | Capex | 25% | **100%** | | Operating Cash Flow | 25% | **100%** |
-     | Dividends Paid | 25% | **100%** | | Investing Cash Flow | 25% | **100%** |
-     | Change in Receivables | 25% | **100%** | | Financing Cash Flow | 25% | **100%** |
-     | FX Effect on Cash | 25% | **100%** | | D&A | 25% | **100%** |
-
-   - **沒到 100% 的六列都是「本來就不是每季都發生」的活動，不是抓取缺陷**：
-     `Acquisitions` 61%、`Debt Proceeds` 66%、`Investment Proceeds` 76%、
-     `Debt Repayments` 85%、`Investment Purchases` 85%、`Change in Deferred Revenue` 95%
-   - **對 G11 的結論**：原本記「facts 不是 CF 的 drop-in replacement，要補這一層才算數」——**那一層已經補上了，這個 caveat 解除**。IS/BS 本來就不受影響（那些 tag 的是單季／時點值）。⚠ 但 **G11 仍然維持「不切換」的決策**，這條只是把它的技術阻礙拿掉，不是重啟切換的理由
-   - **量測腳本沒有留下來**（一次性 A/B，30 行，邏輯就是「把 spec 的 `from_ytd` 拿掉再算一次填滿率」）。要重現的話，`gen_template_coverage_baseline.py` 第三節現在有「facts填滿」欄與一行 `from_ytd` 列的中位數
-
 H2. **公版（模板）內容改成使用者可選** ← **CTH 2026-08-23：確認就是「讓使用者選公版格式」，不是目前最急迫的問題，保留方向未來再處理**
    - **關鍵取捨已定調（A 案）**：**維持固定列位，只切換顯示／隱藏**。關掉的列還在、只是隱藏或留白，**下游完全不受影響**（`financial-assistant` 的 `read_excel.py`、使用者自己的 Excel 公式、跨檔案 `MATCH` 都靠固定列位取值）
    - 否決的 B 案：接受列位浮動、關掉的列真的消失。好處是檔案更乾淨，但代價是打斷所有既有 Excel 公式，換不到
@@ -410,13 +390,14 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
      `Change in Inventories` AEP、`Finance Lease Liabilities, LT` ON、`Other Current Assets` CVX
 
 
-## I. 本地 filing 快取（2026-09-03 開工，Task 1-11 全部完成，已併入分支主線）
+## I. 本地 filing 快取（2026-09-03，Task 1-11 全部完成並已併入 master）
 
 > **動手前必讀**：規格 `docs/superpowers/specs/2026-09-03-local-filing-cache-design.md`、
 > 實作計畫 `docs/superpowers/plans/2026-09-03-local-filing-cache.md`（11 個 task，
 > 逐條含測試碼）。執行紀錄與所有已判決的取捨在
 > `.superpowers/sdd/2026-09-03-local-filing-cache/progress.md`（git-ignored，只在本機）。
-> 分支 `feature/local-filing-cache`，尚未併回 master。
+> 已併入 master。已判決的取捨與效能天花板搬到 `docs/ARCHITECTURE.md`
+> 「快取層：已判決的取捨與效能天花板」一節。
 
 **這件事在做什麼**：抓同一家公司不要每次都重新對 SEC 打 20 年份 filing 再解析一次。
 快取卡在**解析層與比對層之間**——存的是 edgartools 解出來的三張 DataFrame，
@@ -431,32 +412,6 @@ Tab3 的清除面板已接完（`main.py`），golden 逐格比對 0 格不同�
 （冷 55~110s／熱 8~17s，隨 SEC 與本機負載變動），細節見
 `docs/ARCHITECTURE.md`「本地 filing 快取」一節。
 
-I7. **熱跑的瓶頸已經從網路變成比對層——要再快只能優化那裡**
-     （2026-09-03 逐段實測，數字見 `docs/ARCHITECTURE.md`）
-   - 全命中的一趟 ARLO 抓取約 10~17s，其中**約 14.2s（九成）是比對層**
-     （`IS/BS/CF_TEMPLATE` 逐列配對、`_synthesize_q4()`、比率、segments），
-     純本機 CPU；網路合計只有 1~2s，讀快取檔＋還原 DataFrame 約 0.95s
-   - **所以再加任何一層快取都不會讓熱跑變快**，`_filing_obj()` 那條線已經
-     降到 0.1s 等級。這條記在這裡是為了擋掉「再快取一層」這個直覺但錯誤的
-     方向
-   - ✅ **最便宜的一刀已完成（2026-09-04）**：`_CachedStatement.to_dataframe()`
-     加 memo，`_CachedFinancials` 一併 memo statement 物件（不然每次 new 一個，
-     上層 memo 形同虛設）。
-     - **實測（ARLO，預設 80/20，各 5 次，範圍完全不重疊）**：端到端中位數
-       **7.07s → 6.52s（省 0.55s，約 9%）**；`payload_to_df()`
-       **224 次／385ms → 99 次／160ms**
-     - **⚠ 這條原本寫「省下約 0.85s（6%）」是量錯的**：解析總成本上限就只有
-       0.37~0.40s，省不到 0.85s；百分比反而低估。原記錄的基準是「ARLO 一趟
-       10~17s」，這次熱跑量到 7s，基準本身不同。**引用效能數字前先確認基準**
-     - **兩條路徑行為確實不同**（真物件路徑在 G9 記憶體快取下仍每次重算），
-       所以每次回傳 `.copy()` 保持隔離——深複製比重新解析便宜 9.8 倍
-       （0.17ms vs 1.67ms），隔離幾乎免費
-     - **驗收**：`excel_golden.py` 驗的是 Excel 寫檔那段，跟這次改動不同軸，
-       所以改用「抓取結果逐格比對」——5 家（ARLO／AAPL／GOOGL／META／JPM）
-       memo 前後 **23,859 格 0 格不同**；非 slow 測試 1392 → 1396 passed
-     - 端到端省的 0.55s 大於解析省的 0.22s，多出來那段**沒查證原因**
-   - 真正的大頭（14.2s）要動模板配對本身，範圍大、風險高，**未評估**
-
 I5. **修正案（10-Q/A、10-K/A）現況本來就不抓**（承快取設計書，獨立議題）
    - `_list_filings()` 目前呼叫時 `amendments=False`（`fetcher_gaap.py:304` 附近），
      所以公司重編財報開的那份新 filing **現在就不在抓取清單裡**，不管有沒有快取
@@ -465,16 +420,6 @@ I5. **修正案（10-Q/A、10-K/A）現況本來就不抓**（承快取設計書
    - 要不要處理是獨立的產品判斷題：抓修正案等於同一期會有兩份來源，
      要先決定「以哪一份為準」以及重編後舊數字要不要覆蓋——牽動 D11 的
      「as reported vs restated」既有立場（`Compare_Notes` 目前明講保留原始申報版）
-
-I6. **快取層已知的小取捨（都已判決為可接受，記錄備查，不必主動修）**
-   - `ACCESSION_RE` 用 `$` 而非 `\Z`，允許結尾一個換行。字元類只有數字與破折號，
-     不可能夾帶 `/`、`\`、`..`，路徑注入防線實質上仍然成立
-   - `_retry_once()` 會開第二個最外層 scope，`last_cache_stats()` 因此只反映
-     重試那一趟，第一趟的命中數在 log 上消失
-   - 空的殘留資料夾（份數與容量都是 0）不會出現在 GUI 清單，也就永遠不會被
-     「全部清除」掃到。會自癒（下次抓那家時重新寫入），只是那個空殼會留著
-   - ticker 換手時（同代號換成另一家公司），冒名那趟會用新 cik 覆寫同名檔案，
-     兩邊互相 thrash。資料永遠是對的（cik 閘門擋著），只是變慢
 
 ## 執行順序建議（2026-08-22 更新）
 
@@ -499,10 +444,10 @@ I6. **快取層已知的小取捨（都已判決為可接受，記錄備查，�
 > **結論：不需要重新構思架構。** 現有 `filing_cache.py` 已是正確形狀，
 > 缺的是三塊「狀態與體驗」。
 >
-> **J1-J4 已完成**（2026-09-04，分支 `feat/local-filing-db`，**未 push、未併 master**）。
-> 落地在新的 `src/local_db.py`（狀態層）＋ `src/cli.py update-db` ＋ Tab3 快取面板。
-> **`fetcher_gaap` 的抓取迴圈一行都沒動**——「到底了沒」在迴圈外面推導。
-> 實測驗收見 CHANGELOG 2026-09-04 那則。**J5 尚未跑**（見下）。
+> **J1-J9 已完成並在 master 上**（見 `docs/CHANGELOG.md`）。落地在
+> `src/local_db.py`（狀態層）＋ `src/cli.py` 的 `update-db`／`db-status`
+> ＋ GUI 的「資料庫總覽」分頁。**`fetcher_gaap` 的抓取迴圈一行都沒動**
+> ——「到底了沒」在迴圈外面推導。下面只留還沒做完的 J6。
 
 J6. ⚠ **「抓到底」實際上是「抓到這個 CIK 的底」，不是公司歷史的底**
    （2026-09-05 跑 J5 batch 1 時發現，**這是新發現，設計書沒有預期到**）
@@ -608,3 +553,7 @@ D9. **外國私人發行人（Foreign Private Issuer）抓不到財報**（2026-
      2. **20-F 用 IFRS 命名空間，不是 US-GAAP——這是最大的工程量落點**。實際拉 TSM 20-F 的 XBRL `element_catalog`，1114 個科目**全部**是 `ifrs-full_` 前綴（如 `ifrs-full_Revenue`），一個 `us-gaap_` 都沒有。現有 `fetcher_gaap.py` 的 `IS_TEMPLATE`／`BS_TEMPLATE`／`CF_TEMPLATE` 整套科目對照表是針對 `us-gaap:` concept 建的，對 IFRS 科目**完全不適用**——不是換個 `form="20-F"` 參數就抓得到，是要另外設計一套 IFRS 科目對照表、可能還要處理 IFRS 特有的報表結構差異（例如 IFRS 允許的資產負債表排列、揭露顆粒度跟 US-GAAP 不完全一樣）
      3. **結論：只做 20-F 年報支援，範圍與工程量都不小，6-K 季報這條路線目前看起來不可行（沒有結構化資料源）**。原本設想的「先做 20-F 再看要不要做 6-K」變成「6-K 這步大概率做不了，只剩 20-F 值不值得單獨做」的判斷——年報頻率能不能滿足需求是 CTH 要考慮的重點（只有年報、沒有季報的比較功能，對分析師的用途打了折扣）
    - **風險：中偏大**，本質上是另建一套 IFRS 科目對照表與解析邏輯，工程量與現有 10-Q/10-K US-GAAP 模板相當，不是小改。值不值得做要看 CTH 覆蓋的外國發行人數量多不多，以及「只有年報沒有季報」能不能接受
+   - **⚠ 2026-09-18：CTH 的更新名單裡真的有三家**——ASML／STM／IFX，都是 20-F
+     外國私人發行人。今晚 218 家的抓取會失敗在這三家，**那是預期行為不是 bug**，
+     `scripts/overnight_summary.py` 的 `KNOWN_20F` 會把它們跟真正的失敗分開列。
+     要嘛之後支援 20-F（見上，工程量不小），要嘛把它們從名單移除。
