@@ -57,6 +57,11 @@ def meta_label(name: str) -> str:
     return _lookup("meta", name)
 
 
+def nongaap_label(name: str) -> str:
+    """Data_NonGAAP 列名 → 說明（B 欄）。A 欄是英文機器鍵，這裡回當前語言。"""
+    return _lookup("nongaap", name)
+
+
 def axis_label(axis: str) -> str:
     """維度軸 → 分類說明（Data_Segments 的 B 欄）。
 

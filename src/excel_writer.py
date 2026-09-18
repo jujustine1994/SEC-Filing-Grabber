@@ -26,7 +26,7 @@ from fetcher_gaap import StatementTable
 from excel_formatter import format_workbook
 from fiscal_input import apply_fiscal_year_input
 from i18n import t
-from zh_labels import zh_label, axis_label, ratio_label, meta_label
+from zh_labels import zh_label, axis_label, ratio_label, meta_label, nongaap_label
 
 # 版面：A 英文標準名 / B 中文說明 / C 公司原始 XBRL 標籤 / D 起各期數據
 # 中文說明表在 zh_labels.py，改那裡不影響任何計算邏輯（程式一律用 A 欄英文名比對）。
@@ -255,7 +255,8 @@ def _col_b(tbl: StatementTable, concept: str, row_offset: int) -> str:
 
     每張 sheet 的 A 欄住在不同的命名空間，所以要分流：三表是科目
     （`acct.*`）、Data_Segments 是維度軸（`axis.*`）、Data_Ratios 是比率名
-    （`ratio.*`）、Data_Meta 是欄位名（`meta.*`）。查不到一律留白。
+    （`ratio.*`）、Data_Meta 是欄位名（`meta.*`）、Data_NonGAAP 是列名
+    （`nongaap.*`）。查不到一律留白。
     """
     if tbl.sheet_name == "Data_Segments":
         raw_axis = tbl.labels[row_offset] if tbl.labels and row_offset < len(tbl.labels) else ""
@@ -264,6 +265,8 @@ def _col_b(tbl: StatementTable, concept: str, row_offset: int) -> str:
         return ratio_label(concept)
     if tbl.sheet_name == "Data_Meta":
         return meta_label(concept)
+    if tbl.sheet_name == "Data_NonGAAP":
+        return nongaap_label(concept)
     return zh_label(concept)
 
 

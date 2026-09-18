@@ -63,14 +63,14 @@ from fetcher_gaap import StatementTable
 # ── 版面常數（可調整）───────────────────────────────────────────────────────
 
 SECTION_CORE   = "Non-GAAP Core"
-SECTION_RECON  = "GAAP → Non-GAAP 調節"
+SECTION_RECON  = "GAAP to Non-GAAP Reconciliation"
 SECTION_OTHER  = "Other Non-GAAP (as reported)"
 SECTION_ANNUAL = "Annual (FY)"
 
 ALL_SECTIONS = (SECTION_CORE, SECTION_RECON, SECTION_OTHER, SECTION_ANNUAL)
 
 GAAP_PREFIX  = "  GAAP "          # 對照行縮排，視覺上掛在 Non-GAAP 那列下面
-RESIDUAL_ROW = "  + 其他 Non-GAAP 調整（殘差）"
+RESIDUAL_ROW = "  + Other Non-GAAP Adjustments (Residual)"
 FY_SUFFIX    = " (FY)"
 
 SRC_PR      = "8-K press release"
@@ -119,13 +119,13 @@ DERIVED_ROWS = {
 # 帶號金額，所以稅務影響通常是負的。
 
 ADDBACK_ROWS: list[tuple[str, str]] = [
-    ("  + 股權獎酬 SBC",        "Stock-Based Compensation"),
-    ("  + 無形資產攤銷",         "Amortization of Intangibles"),
-    ("  + 重組／資遣",           "Restructuring Charges"),
-    ("  + 減損",                 "Impairment Charges"),
-    ("  + 訴訟／和解",           "Litigation and Settlement"),
-    ("  + 併購相關費用",         "Acquisition-Related Costs"),
-    ("  + 調整項之稅務影響",     "Tax Effect of Adjustments"),
+    ("  + Stock-Based Compensation",     "Stock-Based Compensation"),
+    ("  + Amortization of Intangibles",  "Amortization of Intangibles"),
+    ("  + Restructuring Charges",        "Restructuring Charges"),
+    ("  + Impairment Charges",           "Impairment Charges"),
+    ("  + Litigation and Settlement",    "Litigation and Settlement"),
+    ("  + Acquisition-Related Costs",    "Acquisition-Related Costs"),
+    ("  + Tax Effect of Adjustments",    "Tax Effect of Adjustments"),
 ]
 
 _RECON_TOP    = "GAAP Net Income"
@@ -251,7 +251,7 @@ def build_nongaap_table(
     add(_RECON_TOP, SRC_PR_GAAP, lambda m: _get(m, "GAAP Net Income"))
     for display, key in ADDBACK_ROWS:
         add(display, SRC_PR, lambda m, k=key: _get(m, k))
-    add(RESIDUAL_ROW, "DERIVED = Non-GAAP 淨利 − GAAP 淨利 − 具名項目合計", _residual)
+    add(RESIDUAL_ROW, "DERIVED = Non-GAAP Net Income - GAAP Net Income - Named Items", _residual)
     add(_RECON_BOTTOM, SRC_PR, lambda m: _get(m, "Non-GAAP Net Income"))
 
     # ── Overflow：模板沒收的公司自訂指標，照原名保留 ─────────────────────

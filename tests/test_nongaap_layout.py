@@ -145,7 +145,7 @@ def test_addback_rows_always_present():
 
 def test_addback_picks_up_value():
     tbl = _built({"FY2025Q1": {"Stock-Based Compensation": 20.0}})
-    assert _row(tbl, "  + 股權獎酬 SBC")[0] == 20.0
+    assert _row(tbl, "  + Stock-Based Compensation")[0] == 20.0
 
 
 def test_residual_ties_the_bridge():

@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-18
+
+- **TODO E2 完成：`Data_NonGAAP` 版面的 i18n**。原本卡在「等 B2（Non-GAAP 改走
+  skill）定案」，重讀 B2 的內容發現它自己承諾「下游固定模板…一行都不用改」，
+  跟 E2 的卡點互相矛盾，所以解除依賴直接做。`nongaap_layout.py` 裡剩下的 7 個
+  中文顯示字串（調節表標題、殘差列、7 個 addback 項目）全部改成英文機器鍵，
+  跟著 `Data_Ratios` 的既有模式（A 欄英文機器鍵、B 欄依 locale 查表顯示）接上
+  `zh_labels.py` 新增的 `nongaap_label()`、`excel_writer._col_b()` 多一條
+  `Data_NonGAAP` 分流，四個 locale（`zh_tw`／`zh_cn`／`en`／`ja`）各補上
+  約 36 條 `nongaap.*` 翻譯。`metric_rules.py` 的 60 條中文詞彙表**不在範圍
+  內**——那是拿來比對 AI 回傳中文指標名的規則，跟畫面顯示語言無關，換 locale
+  也要留著。測試：`test_nongaap_layout.py` 一處寫死中文字串（`"  + 股權獎酬
+  SBC"`）改成英文後，相關測試（`test_nongaap_layout.py`／`test_i18n.py`／
+  `test_excel_writer.py`）113 條全過。
+
+- **TODO E5 查證：兩個舊猜測都排除，目前找不到「中途改輸入框」觸發網路錯誤
+  的路徑**。查了 `_preview_scan_worker`（ticker 是執行緒啟動時用參數傳入，
+  不是完成時回讀輸入框）、`net_retry.py`（整個模組零共用狀態，純函式）、
+  掃描鈕的重入防護（`_run_preview_scan` 立即 disable + `_update_button_states`
+  持續維持 disable，直到 `_scan_running` 清掉）——三個都查無問題。詳見
+  `docs/TODO.md` E5，還是要靠 CTH 實際重現（`logs/app.log` 那幾行）才能繼續。
+
 ## 2026-09-14
 
 - **維護：venv 改用 uv 管理的獨立 Python（不依賴系統 Python）**。原本 `venv`
