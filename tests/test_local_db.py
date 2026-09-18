@@ -851,3 +851,108 @@ def test_rows_can_be_sorted_by_how_stale_they_are():
     order = [r["ticker"] for r in
              local_db.sort_overview_rows(rows, "stale_days", descending=True)]
     assert order == ["BLK", "AAPL", "CRM"]      # 最久沒查的在最前，未知沉底
+
+
+# ── P1：中斷續跑的保證（TODO 最優先，2026-09-18）────────────────────────
+#
+# 本地資料庫抓滿一次要 11 小時，「半夜斷掉不能白費」是這套東西能用的前提。
+# 三條保證任何一條被破壞，中斷續跑都會**靜默失效**——而且要等到下次真的
+# 斷電才會發現。下面把三條都釘住。
+
+class _InterruptingEdgar(_FakeEdgar):
+    """抓到第 N 份就中斷，模擬半夜斷電／使用者關視窗。"""
+
+    def __init__(self, listings, stop_after: int):
+        super().__init__(listings)
+        self.stop_after = stop_after
+
+    def fetch(self, ticker, identity, max_filings, max_annual_filings):
+        self.fetched.append(ticker)
+        written = 0
+        for form, rows in self.listings[ticker].items():
+            for acc, filing_date in rows:
+                if written >= self.stop_after:
+                    raise KeyboardInterrupt("模擬半夜斷電")
+                _write_filing(ticker, acc, form=form, filing_date=filing_date)
+                written += 1
+        return None
+
+
+def test_an_interrupted_company_resumes_from_what_is_already_on_disk(cache_dir):
+    """**保證 1＋3**：逐份即時落檔 ＋ `plan_ticker()` 用「清單 vs 本地」比對。
+
+    中斷時已經抓到的那幾份必須留在硬碟上，重跑只補缺的。壞掉的話使用者
+    每次斷電都要從頭抓 11 小時。
+    """
+    listings = {"NVDA": {"10-Q": [(_acc(n), f"201{n}-05-01") for n in range(1, 6)],
+                         "10-K": []}}
+    # 第一輪：抓到第 2 份就斷
+    broken = _InterruptingEdgar(listings, stop_after=2)
+    with pytest.raises(KeyboardInterrupt):
+        _run(broken, ["NVDA"])
+    on_disk = local_db.cached_accessions("NVDA")
+    assert len(on_disk) == 2, "斷掉之前抓到的必須留在硬碟上"
+
+    # 第二輪：只補缺的 3 份
+    resumed = _FakeEdgar(listings)
+    fetched_before = set(local_db.cached_accessions("NVDA"))
+    report = _run(resumed, ["NVDA"])
+    assert report.updated == 1
+    assert len(local_db.cached_accessions("NVDA")) == 5
+    # 原本那 2 份沒有被重寫（accession 相同＝同一份，不會重複）
+    assert fetched_before <= local_db.cached_accessions("NVDA")
+
+
+def test_a_completed_company_is_skipped_entirely_on_rerun(cache_dir):
+    """**保證 3**：重跑時已完成的整家跳過，只花一次清單查詢。
+
+    218 家全完成的話，重跑要能在幾分鐘內掃完——不然「中斷後重跑」的代價
+    會高到讓人不敢中斷。
+    """
+    listings = {"NVDA": {"10-Q": [(_acc(1), "2013-05-01")], "10-K": []}}
+    edgar = _FakeEdgar(listings)
+    _run(edgar, ["NVDA"])
+    assert edgar.fetched == ["NVDA"]
+
+    again = _FakeEdgar(listings)
+    report = _run(again, ["NVDA"])
+    assert again.fetched == [], "已完成的不可以再進抓取迴圈"
+    assert again.listed == ["NVDA"], "但仍要問一次清單，否則發現不了新財報"
+    assert report.skipped == 1
+
+
+def test_a_truncated_cache_file_is_never_trusted(cache_dir):
+    """**保證 2**：斷電留下的半截檔案不可以被當成有效資料。
+
+    被採信的話那一份會**永遠**是壞的——有快取了就不會重抓，而且不報錯。
+    """
+    _write_filing("NVDA", _acc(1), form="10-Q", filing_date="2013-05-01")
+    path = filing_cache.ticker_dir("NVDA") / f"{_acc(1)}.json"
+    path.write_text('{"schema_version": 2, "accession', encoding="utf-8")
+
+    assert filing_cache.load_filing("NVDA", _acc(1), 320193) is None
+    assert filing_cache.list_cached_filings("NVDA") == []
+    # 而且下一輪會把它當成「沒有」重抓回來
+    listings = {"NVDA": {"10-Q": [(_acc(1), "2013-05-01")], "10-K": []}}
+    edgar = _FakeEdgar(listings)
+    _run(edgar, ["NVDA"])
+    assert edgar.fetched == ["NVDA"]
+
+
+def test_orphaned_tmp_files_are_not_mistaken_for_filings(cache_dir):
+    """**保證 2 的另一半**：`atomic_write_json()` 斷在中間會留下 `.tmp`。
+
+    那些檔案必須被完全忽略——被算成 filing 的話，份數會虛報，
+    `plan_ticker()` 就會誤判「已經抓齊了」而不再補抓。
+
+    ⚠ 這條**有兩道獨立防線**：`glob("*.json")`（`.tmp` 結尾根本不符）與
+    `ACCESSION_RE`（`stem` 帶 `.json.<pid>` 不符格式）。2026-09-18 反向驗證
+    時發現拆掉任何**一道**這條測試都還是綠的，兩道都拆才變紅——所以它釘的是
+    「行為」不是「某個實作」，換寫法也擋得住。
+    """
+    _write_filing("NVDA", _acc(1), form="10-Q", filing_date="2013-05-01")
+    d = filing_cache.ticker_dir("NVDA")
+    (d / f"{_acc(2)}.json.99999.tmp").write_text('{"schema_ver', encoding="utf-8")
+
+    assert local_db.cached_accessions("NVDA") == {_acc(1)}
+    assert len(filing_cache.list_cached_filings("NVDA")) == 1
