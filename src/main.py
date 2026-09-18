@@ -29,7 +29,9 @@ from i18n import t
 from config import load_config, save_config, CONFIG_PATH
 from errsafe import _exc_status
 from excel_writer import write_statements, check_output_writable
-from fetcher_gaap import collect_gaps, fetch_gaap_statements, report_progress
+from fetcher_gaap import (collect_gaps, fetch_gaap_statements,
+                          offline_report, report_progress,
+                          reset_offline_tracking)
 from net_retry import configure_timeouts
 from output_tables import append_ratio_table, has_any_data
 
@@ -304,6 +306,79 @@ def local_db_row_text(meta: dict | None) -> tuple[str, str]:
 def cache_buttons_state(is_running: bool) -> str:
     """抓取進行中鎖住兩顆清除鈕，不然會邊寫邊刪同一個資料夾。"""
     return "disabled" if is_running else "normal"
+
+
+# ── 資料庫總覽分頁（TODO J7）──────────────────────────────────────────────
+#
+# 純函式擺這裡、Tk 擺 class 裡，照 `local_db_row_text` 的慣例——Treeview 沒辦法
+# 離線測，但「一列長什麼樣」「匯出的 CSV 是什麼」可以。
+
+# Treeview 的欄位 identifier 一律**英文機器鍵**，只有 heading 顯示文字走 i18n
+# ——跟 `Data_Ratios` A 欄／B 欄同一個原則。
+# ⚠ 主欄位是 **period_span（財報期間）** 不是 filed_span（SEC 收件日）：
+# 分析師問的是「我有哪幾季的數字」。收件日仍留在 CSV 匯出與 db-status --json
+# 裡，需要時查得到，只是不值得佔 GUI 一欄。
+DB_OVERVIEW_COLUMNS = ("ticker", "filings", "period_span", "years",
+                       "bottom", "checked", "in_list", "size", "note")
+
+
+def db_checked_text(stale_days: int | None) -> str:
+    """「上次去 SEC 查這家」距今多久。相對時間比絕對日期直覺——重點是
+    「這筆資料新不新鮮」，不是「那天是幾號」。
+
+    ⚠ 這跟「最新申報日」是兩回事：一家顯示「已到底、最新申報 2026-06」，
+    如果那是三個月前查的，中間很可能已經出了新財報而我們不知道。
+    """
+    if stale_days is None:
+        return "—"
+    if stale_days == 0:
+        return t("gui.lbl.db_checked_today")
+    return t("gui.lbl.db_checked_days", n=stale_days)
+
+
+def db_overview_cells(row: dict) -> tuple[str, ...]:
+    """總覽的一列 → Treeview 的那幾格顯示文字。
+
+    `period_span` 是**財報期間**（從快取的 DataFrame 欄名抽出來的期末日），
+    ⚠ 不是 `filed_*` 那組 SEC 收件日——兩者差一整個期間，見
+    `local_db.period_end_of` 的說明。
+    """
+    span = "—"
+    if row["period_from"] and row["period_to"]:
+        span = f"{row['period_from'][:7]} ~ {row['period_to'][:7]}"
+    years = t("gui.lbl.db_years", n=f"{row['years']:.1f}") \
+        if row["years"] is not None else "—"
+    bottom = {
+        local_db.BOTTOM_YES: t("gui.lbl.db_bottom_yes"),
+        local_db.BOTTOM_NO: t("gui.lbl.db_bottom_no"),
+    }.get(row["bottom"], "—")
+    if row["bottom_stale"] and row["bottom"] != local_db.BOTTOM_UNKNOWN:
+        bottom += "?"
+    return (
+        row["ticker"],
+        str(row["filings"]),
+        span,
+        years,
+        bottom,
+        db_checked_text(row["stale_days"]),
+        "★" if row["in_list"] else "",
+        format_size(row["size_bytes"]),
+        "" if row["meta_ok"] else t("gui.lbl.db_needs_rebuild"),
+    )
+
+
+def db_overview_csv(rows) -> str:
+    """匯出用的 CSV 文字。標題列走 i18n（這是給人在 Excel 裡看的），
+    但**不含** BOM——BOM 由寫檔端加（見 `_export_db_overview`）。"""
+    import csv
+    import io
+
+    buf = io.StringIO()
+    writer = csv.writer(buf, lineterminator="\n")
+    writer.writerow([t(f"gui.col.db_{c}") for c in DB_OVERVIEW_COLUMNS])
+    for row in rows:
+        writer.writerow(db_overview_cells(row))
+    return buf.getvalue()
 
 
 def company_chip_entries(selected: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -660,10 +735,10 @@ class SECFetcherApp:
         self._build_tab1()
         self._build_tab2()
         self._build_tab4()
+        self._build_tab5()
         self._build_tab3()
-        # 切到 Tab3 時重畫快取清單——不輪詢，只在真的需要看的時候刷新。
-        # 實際判斷邏輯與 index 對應見 _on_tab_changed 的 docstring（單一
-        # 出處，避免兩處各記一份、之後改版又對不上）。
+        # 切到 Tab3／Tab5 時重畫清單——不輪詢，只在真的需要看的時候刷新。
+        # 實際判斷邏輯見 _on_tab_changed 的 docstring（單一出處）。
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
         self._update_identity_warnings()
 
@@ -1691,6 +1766,153 @@ class SECFetcherApp:
                                            command=self._run_comparison)
         self.compare_run_btn.grid(row=4, column=0, pady=8)
 
+    # ── Tab5：資料庫總覽（TODO J7）──────────────────────────────────────
+    #
+    # 為什麼單獨一個分頁、而不是把 Tab3 那個小面板加大：那個面板在「進階設定」
+    # 裡，語意是「維護動作」（清除、管理名單）；這頁是**看資產**，244 家要搜尋
+    # 要排序，塞在設定頁的 110px 捲動框裡用不了。兩邊資料同源，分工不同：
+    # 這頁純瀏覽**沒有任何清除鈕**（手滑的代價是幾小時重抓），維護留在 Tab3。
+
+    def _build_tab5(self):
+        tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(tab, text=t("gui.tab.database"))
+        self._tab_database = tab          # `_on_tab_changed` 用身分比對，不用 index
+        tab.columnconfigure(0, weight=1)
+        tab.rowconfigure(1, weight=1)
+
+        top = ttk.Frame(tab)
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        ttk.Label(top, text=t("gui.lbl.db_search")).pack(side="left")
+        self._db_search_var = tk.StringVar()
+        # 逐字即時篩選：244 家用捲的找不到，打兩個字母就到位
+        self._db_search_var.trace_add("write", lambda *_: self._refresh_db_overview())
+        ttk.Entry(top, textvariable=self._db_search_var, width=14).pack(
+            side="left", padx=(4, 10))
+        self._db_summary_label = ttk.Label(top, text="")
+        self._db_summary_label.pack(side="left")
+
+        tree_host = ttk.Frame(tab)
+        tree_host.grid(row=1, column=0, sticky="nsew")
+        tree_host.columnconfigure(0, weight=1)
+        tree_host.rowconfigure(0, weight=1)
+
+        # extended＝可以 Ctrl/Shift 多選，「更新選中的」才有意義
+        self._db_tree = ttk.Treeview(tree_host, columns=DB_OVERVIEW_COLUMNS,
+                                     show="headings", height=12,
+                                     selectmode="extended")
+        widths = {"ticker": 70, "filings": 55, "period_span": 125, "years": 55,
+                  "bottom": 62, "checked": 78, "in_list": 38, "size": 72,
+                  "note": 62}
+        for col in DB_OVERVIEW_COLUMNS:
+            self._db_tree.heading(
+                col, text=t(f"gui.col.db_{col}"),
+                command=lambda c=col: self._sort_db_overview(c))
+            self._db_tree.column(col, width=widths[col],
+                                 anchor="w" if col in ("ticker", "period_span", "note")
+                                 else "center")
+        self._db_tree.grid(row=0, column=0, sticky="nsew")
+        bar = ttk.Scrollbar(tree_host, orient="vertical",
+                            command=self._db_tree.yview)
+        bar.grid(row=0, column=1, sticky="ns")
+        self._db_tree.configure(yscrollcommand=bar.set)
+
+        # 排序狀態：欄位 + 升降。預設 ticker 升冪（總覽要的是「找得到某一家」）
+        self._db_sort_key = "ticker"
+        self._db_sort_desc = False
+        self._db_rows: list[dict] = []
+
+        footer = ttk.Frame(tab)
+        footer.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        # 「更新選中的」是這頁唯一會發動抓取的按鈕。放左邊、跟匯出隔開。
+        # ⚠ 這頁仍然**沒有清除鈕**——更新是可回復的（再抓一次就好），
+        # 清除不是，兩者不該放在同一排讓人按錯。
+        self._db_update_sel_btn = ttk.Button(
+            footer, text=t("gui.btn.db_update_selected"),
+            command=self._update_selected_companies)
+        self._db_update_sel_btn.pack(side="left")
+        ttk.Button(footer, text=t("gui.btn.cache_open_folder"),
+                   command=self._open_cache_folder).pack(side="left", padx=(4, 0))
+        ttk.Button(footer, text=t("gui.btn.db_export_csv"),
+                   command=self._export_db_overview).pack(side="right")
+        self._db_hint_label = ttk.Label(footer, text="", foreground="#8a6d00")
+        self._db_hint_label.pack(side="left", padx=10)
+
+    def _refresh_db_overview(self, reload_from_disk: bool = True):
+        """重畫總覽。`reload_from_disk=False` 給排序／篩選用——那兩個只是重排
+        已經讀進來的資料，不必再掃一次磁碟（244 家約 0.5 秒，逐字搜尋會很鈍）。
+        """
+        if not hasattr(self, "_db_tree"):
+            return
+        if reload_from_disk or not self._db_rows:
+            self._db_rows = local_db.overview_rows(self.cfg)
+
+        rows = local_db.filter_overview_rows(self._db_rows,
+                                             self._db_search_var.get())
+        rows = local_db.sort_overview_rows(rows, self._db_sort_key,
+                                           self._db_sort_desc)
+
+        self._db_tree.delete(*self._db_tree.get_children())
+        for row in rows:
+            self._db_tree.insert("", "end", values=db_overview_cells(row))
+
+        shown = local_db.overview_summary(rows)
+        total = local_db.overview_summary(self._db_rows)
+        text = t("gui.lbl.db_summary", n=total["companies"],
+                 filings=total["filings"],
+                 size=format_size(total["size_bytes"]))
+        if len(rows) != len(self._db_rows):
+            text += "　" + t("gui.lbl.db_filtered", n=shown["companies"])
+        self._db_summary_label.config(text=text)
+
+        stale = sum(1 for r in self._db_rows if not r["meta_ok"])
+        self._db_hint_label.config(
+            text=t("gui.lbl.db_stale_hint", n=stale) if stale else "")
+
+    def _update_selected_companies(self):
+        """只更新表格上選中的幾家。沒選就提示要先選——不要「沒選＝全部」，
+        那在 218 家的表上是一個 10 小時的誤觸。"""
+        tickers = [self._db_tree.item(i, "values")[0]
+                   for i in self._db_tree.selection()]
+        if not tickers:
+            messagebox.showinfo(t("gui.dlg.info_title"),
+                                t("gui.msg.db_select_first"))
+            return
+        self._start_local_db_update(tickers)
+
+    def _sort_db_overview(self, column: str):
+        """點欄位標題排序。同一欄再點一次就反向。"""
+        if column == self._db_sort_key:
+            self._db_sort_desc = not self._db_sort_desc
+        else:
+            self._db_sort_key = column
+            self._db_sort_desc = False
+        # 排序不重讀磁碟
+        self._refresh_db_overview(reload_from_disk=False)
+
+    def _export_db_overview(self):
+        """匯出目前**篩選後**的清單。匯出看到的東西，不是偷偷匯出全部。"""
+        from tkinter import filedialog
+
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV", "*.csv")],
+            initialfile="local_db_overview.csv")
+        if not path:
+            return
+        rows = local_db.sort_overview_rows(
+            local_db.filter_overview_rows(self._db_rows,
+                                          self._db_search_var.get()),
+            self._db_sort_key, self._db_sort_desc)
+        try:
+            # utf-8-sig：Excel 開沒有 BOM 的 UTF-8 CSV 會把中文顯示成亂碼，
+            # 這是 Windows Excel 的老問題，不是我們的編碼寫錯。
+            Path(path).write_text(db_overview_csv(rows), encoding="utf-8-sig")
+        except OSError as exc:
+            messagebox.showerror(t("gui.tab.database"),
+                                 f"{type(exc).__name__}: {exc}")
+            return
+        _write_log(f"db overview exported: {len(rows)} rows")
+        self._db_hint_label.config(text=t("gui.lbl.db_exported", n=len(rows)))
+
     def _browse_compare_output_dir(self):
         from tkinter import filedialog
         current = self.compare_outdir_var.get().strip() or str(PROJECT_ROOT / "output" / "compare")
@@ -2094,6 +2316,7 @@ class SECFetcherApp:
         """
         tab = ttk.Frame(self.notebook, padding=(4, 6))
         self.notebook.add(tab, text=t("gui.tab.settings"))
+        self._tab_settings = tab          # `_on_tab_changed` 用身分比對，不用 index
         _, inner = _build_fixed_height_scrollable(tab, height=self._TAB3_HEIGHT)
         self._build_settings_panel(inner)
         self._build_settings_footer(tab)
@@ -2112,14 +2335,22 @@ class SECFetcherApp:
     _TAB3_HEIGHT = 355
 
     def _on_tab_changed(self, event=None):
-        """切頁時的統一入口。目前只有 Tab3（進階設定）需要動作——切過去就重畫
-        快取清單，換取「不輪詢」。
+        """切頁時的統一入口。Tab3（進階設定）重畫快取清單、Tab5（資料庫總覽）
+        重讀總覽，換取「不輪詢」。
 
-        index 是 3、不是 2：分頁是依 `_build_tab1` → `_build_tab2` →
-        `_build_tab4` → `_build_tab3` 的呼叫順序 `notebook.add()`，所以
-        順位是 單一公司(0) / 批量更新(1) / 跨公司比較(2) / 進階設定(3)。"""
-        if self.notebook.index("current") == 3:
+        ⚠ **用分頁元件的身分比對，不用 index。** 原本這裡寫死 `== 3`，靠
+        `notebook.add()` 的呼叫順序推出來——2026-09-18 插入 Tab5 時就是這行
+        先壞掉（3 從「進階設定」變成「資料庫總覽」，快取清單再也不會刷新，
+        而且不會報錯）。身分比對對插入順序免疫。
+        """
+        try:
+            current = self.notebook.nametowidget(self.notebook.select())
+        except (tk.TclError, KeyError):
+            return
+        if current is getattr(self, "_tab_settings", None):
             self._refresh_cache_panel()
+        elif current is getattr(self, "_tab_database", None):
+            self._refresh_db_overview()
 
     def _build_settings_footer(self, tab):
         """存檔／還原固定在頁籤最下面（TODO E11）——原本存檔鍵在可捲動內容的
@@ -2345,6 +2576,17 @@ class SECFetcherApp:
             self._cache_clear_btns.append(btn)
         self._sync_cache_buttons()
 
+    def _log_offline_fallback(self):
+        """連不上 SEC、改用本地既有資料時要講出來（TODO J9）。
+
+        ⚠ 不可以靜默。離線退路拿到的是「上次連得上時的資料」，很可能漏掉
+        最新一季——使用者不知道就會拿舊數字當最新的用。Excel 的
+        `Data_Meta` → `Data Source` 欄也記了一份（log 關掉就沒了，Excel 不會）。
+        """
+        for ticker, forms in sorted(offline_report().items()):
+            self._log(t("gui.log.offline_fallback", ticker=ticker,
+                        forms="／".join(forms)), "WARN", to_file=True)
+
     def _fetch_running(self) -> bool:
         """這個視窗裡有沒有任何一趟抓取正在跑（Tab1／批次／跨公司比較）。"""
         return any_fetch_running(getattr(self, "is_running", False),
@@ -2358,7 +2600,8 @@ class SECFetcherApp:
         state = cache_buttons_state(self._fetch_running())
         for btn in getattr(self, "_cache_clear_btns", []):
             btn.config(state=state)
-        for name in ("_cache_clear_all_btn", "_localdb_run_btn", "_localdb_list_btn"):
+        for name in ("_cache_clear_all_btn", "_localdb_run_btn",
+                     "_localdb_list_btn", "_db_update_sel_btn"):
             btn = getattr(self, name, None)
             if btn is not None:
                 btn.config(state=state)
@@ -2482,9 +2725,16 @@ class SECFetcherApp:
             return
         # 一次貼多個（空白或逗號分隔）是刻意支援的——從別處複製一串 ticker
         # 過來是最常見的建名單方式。
-        local_db.add_tickers(self.cfg, re.split(r"[\s,;]+", raw))
+        added = local_db.add_tickers(self.cfg, re.split(r"[\s,;]+", raw))
         self._db_add_var.set("")
         self._db_save()
+        # 新增完直接問要不要抓——原本要自己再去按「更新本地庫」，而那會跑
+        # 整份名單（218 家、10 小時），不是使用者剛新增一家時想要的。
+        # ⚠ 仍然是**問**不是直接跑：抓取是幾分鐘起跳的動作，不該由打字觸發。
+        if added and messagebox.askyesno(
+                t("gui.dlg.db_update_title"),
+                t("gui.msg.db_fetch_now", tickers=", ".join(added))):
+            self._start_local_db_update(added)
 
     def _db_remove(self, ticker: str):
         """只從名單移除，**不碰快取檔案**——「不要再自動更新」跟「把抓過的
@@ -2498,13 +2748,17 @@ class SECFetcherApp:
         messagebox.showinfo(t("gui.dlg.info_title"),
                             t("gui.msg.db_imported", n=len(added)))
 
-    def _start_local_db_update(self):
-        """「更新本地庫」——走更新名單、一律拓到底、只暖快取不產 Excel。
+    def _start_local_db_update(self, tickers: list[str] | None = None):
+        """「更新本地庫」——一律拓到底、只暖快取不產 Excel。
 
-        走 `_start_worker()` 是為了共用那套防重入與按鈕鎖：兩趟同時對 SEC
-        發請求會加重 D11 那個「靜默少格」的風險（TODO I3 的同一個理由）。
+        `tickers=None` 走整份更新名單；給了就只跑那幾家（TODO J7 後續：
+        總覽分頁的「更新選中的」、名單彈窗新增後的「要現在抓嗎」都走這裡）。
+        **兩個入口共用同一套防護**——identity 檢查、二次確認、`_start_worker()`
+        的防重入與按鈕鎖。兩趟同時對 SEC 發請求會加重 D11 那個「靜默少格」的
+        風險（TODO I3 同一個理由），所以絕不另開一條繞過鎖的路。
         """
-        tickers = local_db.get_update_list(self.cfg)
+        tickers = local_db.normalize_tickers(
+            tickers if tickers is not None else local_db.get_update_list(self.cfg))
         if not tickers:
             messagebox.showinfo(t("gui.dlg.info_title"), t("gui.msg.db_list_empty"))
             return
@@ -3114,6 +3368,7 @@ class SECFetcherApp:
 
                 # 開帳本才拿得到缺漏明細。不開的話 fetch_gaap_statements 會
                 # 自己開一本，但那本在函式回傳後就沒了，這裡讀不到。
+                reset_offline_tracking()
                 with collect_gaps() as gaps, report_progress(_gaap_progress):
                     gaap_tables = fetch_gaap_statements(
                         ticker, identity, max_filings=max_filings,
@@ -3132,6 +3387,7 @@ class SECFetcherApp:
                 if gaps.has_gaps:
                     # 橘字警告 + 落檔。使用者不必自己去比對少了哪幾期。
                     self._log(gaps.summary(), "WARN", to_file=True)
+                self._log_offline_fallback()
                 if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
                     self._log(t("gui.log.financial_sector_warning", ticker=ticker))
                 step += 1
@@ -3228,6 +3484,7 @@ class SECFetcherApp:
                     self._set_progress(current, total_n,
                                         t("gui.status.fetching_gaap_n", current=current, total=total_n))
 
+                reset_offline_tracking()
                 with collect_gaps() as gaps, report_progress(_gaap_progress):
                     tables = fetch_gaap_statements(
                         ticker, identity, max_filings=max_filings, ai_config=ai_config,
@@ -3236,6 +3493,7 @@ class SECFetcherApp:
                     )
                 if gaps.has_gaps:
                     self._log(f"[{ticker}] {gaps.summary()}", "WARN", to_file=True)
+                self._log_offline_fallback()
 
                 if ticker.upper() in _FINANCIAL_SECTOR_TICKERS:
                     self._log(t("gui.log.financial_sector_warning", ticker=ticker))

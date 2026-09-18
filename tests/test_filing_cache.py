@@ -225,11 +225,16 @@ def test_memo_does_not_leak_between_statements():
 def cache_dir(tmp_path, monkeypatch):
     """把快取根目錄導到 tmp_path。`cache_root()` 每次呼叫重讀環境變數，
     所以 monkeypatch 就夠了，不用改模組層常數。"""
-    monkeypatch.setenv("APPDATA", str(tmp_path))
-    return tmp_path / "SEC Financial Tools" / "filing_cache"
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
+    return tmp_path / "filing_cache"
 
 
-def test_cache_root_follows_the_config_py_appdata_convention(cache_dir):
+def test_cache_root_defaults_to_the_project_local_db_folder(monkeypatch):
+    monkeypatch.delenv("SEC_LOCAL_DB_ROOT", raising=False)
+    assert filing_cache.cache_root() == filing_cache._project_root() / "local_db" / "filing_cache"
+
+
+def test_cache_root_honors_the_override_env_var(cache_dir):
     assert filing_cache.cache_root() == cache_dir
 
 
@@ -489,3 +494,56 @@ def test_listing_tolerates_one_ticker_vanishing_mid_scan(cache_dir, monkeypatch)
     rows = filing_cache.list_cached_tickers()
     # NVDA 消失了，但 AMD 還在
     assert [r["ticker"] for r in rows] == ["AMD"]
+
+
+# ── J9：離線退路用的本地盤點 ──────────────────────────────────────────────
+
+def _write_entry(cache_dir, ticker, accession, *, form, filing_date,
+                 schema=None):
+    path = cache_dir / ticker / f"{accession}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "schema_version": filing_cache.SCHEMA_VERSION if schema is None else schema,
+        "accession_no": accession, "form": form, "filing_date": filing_date,
+        "cached_at": "2026-09-05T00:00:00+08:00", "cik": 320193,
+        "edgartools_version": "5.29.0", "has_financials": True,
+        "dataframes": {k: None for k in filing_cache.STATEMENT_KEYS},
+    }, ensure_ascii=False), encoding="utf-8")
+
+
+def test_list_cached_filings_returns_newest_first(cache_dir):
+    _write_entry(cache_dir, "NVDA", "0000320193-20-000001",
+                 form="10-Q", filing_date="2020-05-01")
+    _write_entry(cache_dir, "NVDA", "0000320193-26-000002",
+                 form="10-Q", filing_date="2026-05-01")
+    rows = filing_cache.list_cached_filings("NVDA")
+    assert [r["filing_date"] for r in rows] == ["2026-05-01", "2020-05-01"]
+    assert rows[0]["accession"] == "0000320193-26-000002"
+
+
+def test_list_cached_filings_can_filter_by_form(cache_dir):
+    _write_entry(cache_dir, "NVDA", "0000320193-26-000001",
+                 form="10-Q", filing_date="2026-05-01")
+    _write_entry(cache_dir, "NVDA", "0000320193-26-000002",
+                 form="10-K", filing_date="2026-02-01")
+    assert [r["form"] for r in filing_cache.list_cached_filings("NVDA", form="10-K")] \
+        == ["10-K"]
+
+
+def test_list_cached_filings_skips_stale_schema(cache_dir):
+    """舊 schema 在 `load_filing()` 也讀不出來，列進清單只會讓離線退路
+    拿到一堆叫不出內容的項目。"""
+    _write_entry(cache_dir, "NVDA", "0000320193-26-000001",
+                 form="10-Q", filing_date="2026-05-01", schema=0)
+    assert filing_cache.list_cached_filings("NVDA") == []
+
+
+def test_list_cached_filings_ignores_the_meta_file(cache_dir):
+    _write_entry(cache_dir, "NVDA", "0000320193-26-000001",
+                 form="10-Q", filing_date="2026-05-01")
+    (cache_dir / "NVDA" / "_meta.json").write_text("{}", encoding="utf-8")
+    assert len(filing_cache.list_cached_filings("NVDA")) == 1
+
+
+def test_list_cached_filings_is_empty_for_an_unknown_ticker(cache_dir):
+    assert filing_cache.list_cached_filings("NOPE") == []

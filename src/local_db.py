@@ -28,13 +28,16 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import filing_cache
 
 META_FILENAME = "_meta.json"
-META_SCHEMA_VERSION = 1
+# 2：`forms[].period_oldest`／`period_newest`（真正的財報期間，
+# 不是 SEC 收件日）。升版會讓舊 meta 全部判無效並重建——正確，
+# 舊快照裡本來就沒有期間欄位。
+META_SCHEMA_VERSION = 2
 
 # 這個資料庫只認兩種表單：10-Q 與 10-K。分開記是必要的——`max_filings`（10-Q）
 # 與 `max_annual_filings`（10-K）是兩個獨立上限，一家公司可能 10-K 到底了、
@@ -172,11 +175,42 @@ def cached_accessions(ticker: str) -> set[str]:
     return {p.stem for p in paths if filing_cache.ACCESSION_RE.match(p.stem)}
 
 
+_PERIOD_COL_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+def period_end_of(entry: dict) -> str | None:
+    """一份 filing 涵蓋到的**財報期末日**，從快取的 DataFrame 欄名抽出來。
+
+    edgartools 的欄名是 `"2026-03-29 (Q1)"`（損益表／現金流量表，duration）
+    或 `"2024-03-31"`（資產負債表，instant）。**取最大值**＝這份申報的當期：
+    其餘日期欄是去年同期、YTD 等比較欄，一定比當期舊。
+
+    ⚠ 這跟 `filing_date`（SEC 收件日）是兩件事，差一整個期間——一份 2008-05
+    申報的 10-K 蓋的是 2007 年度。`_meta.json` 原本只存 `filing_date`，
+    「我有哪幾季的數字」這個問題答不出來，2026-09-18 才補上這個。
+
+    抓不到回 None（pre-XBRL 的負向快取 `dataframes` 是 null，本來就沒有期間）。
+    """
+    frames = (entry or {}).get("dataframes") or {}
+    best: str | None = None
+    for payload in frames.values():
+        columns = ((payload or {}).get("data") or {}).get("columns") or []
+        for col in columns:
+            m = _PERIOD_COL_RE.match(str(col).strip())
+            if m and (best is None or m.group(1) > best):
+                best = m.group(1)
+    return best
+
+
 def scan_filings(ticker: str) -> list[dict]:
-    """讀出該公司每一份快取檔的 (accession, form, filing_date, 版本)。
+    """讀出該公司每一份快取檔的 (accession, form, filing_date, 期末日, 版本)。
 
     比 `cached_accessions()` 貴得多（要真的開檔），**只在重建 meta 時走**。
     壞掉的檔案跳過不算——它在 `load_filing()` 那邊也一樣會被判無效。
+
+    ⚠ 這支是 `rebuild_meta` 慢的元兇（實測 2.75 秒/家）：為了幾個小欄位把
+    每份 70KB 的 JSON 整個 `json.load()` 進來。**但期末日是免費的**——
+    整份都已經解進記憶體了，多讀一組欄名不花額外成本。
     """
     rows: list[dict] = []
     for accession in sorted(cached_accessions(ticker)):
@@ -192,6 +226,7 @@ def scan_filings(ticker: str) -> list[dict]:
             "accession": accession,
             "form": str(entry.get("form") or ""),
             "filing_date": str(entry.get("filing_date") or ""),
+            "period_end": period_end_of(entry),
             "cached_at": str(entry.get("cached_at") or ""),
             "edgartools_version": entry.get("edgartools_version"),
             "cik": entry.get("cik"),
@@ -237,10 +272,18 @@ def rebuild_meta(ticker: str, previous: dict | None = None) -> dict:
         count = sum(1 for r in rows if r["form"] == form)
         old = prev_forms.get(form) or {}
         carried = old.get("reached_bottom")
+        # 期末日：pre-XBRL 的負向快取沒有期間，濾掉 None 再取範圍
+        periods = sorted(r["period_end"] for r in rows
+                         if r["form"] == form and r["period_end"])
         forms[form] = {
             "count": count,
+            # ⚠ oldest／newest 是 **SEC 收件日**，period_* 才是財報期間。
+            # 兩個都留著——「上次申報是什麼時候」與「我有哪幾季的數字」
+            # 是不同的問題，而且差一整個期間。
             "oldest": dates[0] if dates else None,
             "newest": dates[-1] if dates else None,
+            "period_oldest": periods[0] if periods else None,
+            "period_newest": periods[-1] if periods else None,
             "reached_bottom": carried,
             # 帶著舊值就一定標過期——目錄跟 meta 對不上代表份數變了，
             # 「到底了沒」很可能也跟著變。
@@ -277,6 +320,160 @@ def load_meta(ticker: str) -> dict | None:
     rebuilt = rebuild_meta(ticker, previous=meta)
     write_meta(ticker, rebuilt)
     return rebuilt
+
+
+# ── J7：資料庫總覽（GUI 分頁與 CLI `db-status` 共用的純資料層）────────────
+#
+# ⚠ **這一整段是唯讀的**，刻意走 `read_meta()` 而不是 `load_meta()`：後者對不上
+# 會當場 `rebuild_meta()` 並寫檔，一家要開 75 個 JSON——244 家全部過期時，
+# 「看一眼資料庫有什麼」會變成上萬次檔案讀取加 244 次寫入。總覽頁與 CLI 查詢
+# 都是「瞄一眼」的操作，不該有副作用，對不上就照實說「需重算」，把重算留給
+# 真正會動資料的「更新本地庫」。
+#
+# ⚠ 回傳的都是**英文機器鍵**（`bottom` 的 yes／no／unknown 等），顯示文字由
+# 呼叫端查 i18n——跟 `Data_Ratios` A 欄／B 欄那套同一個原則。
+
+BOTTOM_YES = "yes"
+BOTTOM_NO = "no"
+BOTTOM_UNKNOWN = "unknown"
+
+OVERVIEW_SORT_KEYS = ("ticker", "filings", "size_bytes", "filed_from",
+                      "period_from", "years", "stale_days")
+
+
+def _span_years(filed_from: str | None, filed_to: str | None) -> float | None:
+    """兩個申報日之間的年數，一位小數。`None` 代表算不出來。"""
+    start, end = _as_date(filed_from), _as_date(filed_to)
+    if start is None or end is None:
+        return None
+    return round((end - start).days / 365.25, 1)
+
+
+def days_since(iso_timestamp: str | None, *, today: date | None = None) -> int | None:
+    """`updated_at`（帶時區的 ISO 字串）→ 距今幾天。認不得回 None。
+
+    **為什麼要這個**：`updated_at` 是「上次去 SEC 查這家」的時間，跟
+    `forms[].newest`（最新申報日）是兩件事。一家顯示「已到底、最新申報
+    2026-06」，如果那是三個月前查的，中間很可能已經出了新財報而我們不知道。
+    2026-09-18 之前這個欄位**寫了但從來沒有人讀**，等於白存。
+    """
+    raw = str(iso_timestamp or "").strip()
+    if not raw:
+        return None
+    try:
+        # `_now_iso()` 產的是帶時區偏移的字串，比較前先轉成本地日期
+        stamp = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    seen = stamp.date()
+    reference = today or date.today()
+    return max(0, (reference - seen).days)
+
+
+def overview_row(ticker: str, cached: dict, in_list: bool) -> dict:
+    """一家公司在總覽頁的一列。`cached` 是 `list_cached_tickers()` 的那個 dict。
+
+    ⚠ `filed_from`／`filed_to` 是 **SEC 收件日**，不是財報期間——`_meta.json`
+    存的就是 `filing_date`（見 `rebuild_meta`）。一份 2008-05 申報的 10-K 蓋的
+    是 2007 年度，兩者差一整個期間。顯示端必須標成「申報日期」，標成「涵蓋
+    期間」會變成對財報分析師講假話。真正的財報期間在 Excel 的 `Data_Meta`
+    （`Oldest Period`／`Latest Period`，TODO J6 方向②）。
+    """
+    meta = read_meta(ticker)
+    forms = (meta or {}).get("forms") or {}
+    dates = [d for f in forms.values()
+             for d in (f.get("oldest"), f.get("newest")) if d]
+    filed_from = min(dates) if dates else None
+    filed_to = max(dates) if dates else None
+    periods = [d for f in forms.values()
+               for d in (f.get("period_oldest"), f.get("period_newest")) if d]
+    period_from = min(periods) if periods else None
+    period_to = max(periods) if periods else None
+
+    states = [forms.get(f, {}).get("reached_bottom") for f in FORMS]
+    if not forms:
+        bottom = BOTTOM_UNKNOWN
+    elif all(s is not None for s in states):
+        bottom = BOTTOM_YES
+    else:
+        bottom = BOTTOM_NO
+
+    return {
+        "ticker": ticker,
+        "filings": cached["count"],
+        "size_bytes": cached["size_bytes"],
+        "filed_from": filed_from,
+        "filed_to": filed_to,
+        "period_from": period_from,
+        "period_to": period_to,
+        # 年數改用**財報期間**算——那才是「我手上有幾年的數字」。
+        # 期間抓不到（舊 schema 或全是負向快取）才退回用申報日估。
+        "years": (_span_years(period_from, period_to)
+                  if period_from and period_to
+                  else _span_years(filed_from, filed_to)),
+        "bottom": bottom,
+        # 上一輪留下來的值，這輪還沒重算——顯示端加問號
+        "bottom_stale": any(forms.get(f, {}).get("reached_bottom_stale")
+                            for f in FORMS),
+        "in_list": in_list,
+        # meta 跟目錄對不上（或根本沒有 meta）。唯讀路徑不自癒，照實回報。
+        "meta_ok": bool(meta) and meta.get("file_count") == cached["count"],
+        "edgartools_version": (meta or {}).get("edgartools_version"),
+        # 「上次去 SEC 查這家」的時間。跟 filed_to（最新申報日）是兩件事：
+        # 前者是我們的動作，後者是公司的動作。
+        "updated_at": (meta or {}).get("updated_at"),
+        "stale_days": days_since((meta or {}).get("updated_at")),
+    }
+
+
+def overview_rows(cfg: dict | None = None) -> list[dict]:
+    """資料庫總覽的全部列。預設照 ticker 字母序——總覽頁要的是「找得到某一家」，
+    跟 Tab3 舊面板照容量排序（要的是「誰佔空間」）的用途不同。"""
+    in_list = set(get_update_list(cfg or {}))
+    rows = [overview_row(row["ticker"], row, row["ticker"] in in_list)
+            for row in filing_cache.list_cached_tickers()]
+    rows.sort(key=lambda r: r["ticker"])
+    return rows
+
+
+def overview_summary(rows) -> dict:
+    return {
+        "companies": len(rows),
+        "filings": sum(r["filings"] for r in rows),
+        "size_bytes": sum(r["size_bytes"] for r in rows),
+    }
+
+
+def filter_overview_rows(rows, query: str):
+    """依 ticker 篩選，不分大小寫、比對「包含」而非「開頭」——記得是 `AMD`
+    但打成 `md` 也要找得到。空字串回全部。"""
+    needle = (query or "").strip().upper()
+    if not needle:
+        return list(rows)
+    return [r for r in rows if needle in r["ticker"]]
+
+
+def sort_overview_rows(rows, key: str = "ticker", descending: bool = False):
+    """依欄位排序。不認得的 key 退回 ticker，不拋——排序是顯示層的事，
+    使用者點壞一個欄位標題不該讓整頁炸掉。
+
+    `None` 一律排在最後（不管升冪降冪）：算不出年數、沒有申報日的公司是
+    「資料不全」，把它們夾在中間會讓真正的極端值被埋起來。
+    """
+    if key not in OVERVIEW_SORT_KEYS:
+        key = "ticker"
+
+    def sort_key(row):
+        value = row.get(key)
+        return (value is None, value if value is not None else "")
+
+    ordered = sorted(rows, key=sort_key, reverse=descending)
+    if descending:
+        # reverse=True 會把「None 排最後」也一起翻過來，撥回去
+        missing = [r for r in ordered if r.get(key) is None]
+        present = [r for r in ordered if r.get(key) is not None]
+        ordered = present + missing
+    return ordered
 
 
 # ── J1：更新名單 ──────────────────────────────────────────────────────────

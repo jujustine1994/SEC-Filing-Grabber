@@ -1,4 +1,5 @@
 config.json
+local_db/
 output/
 !output/.gitkeep
 venv/

@@ -39,7 +39,7 @@ from contextvars import ContextVar
 import filing_cache
 from fetch_ledger import FetchLedger
 from i18n import t
-from net_retry import NetworkDownError, with_retry
+from net_retry import NetworkDownError, is_network_error, with_retry
 from override_engine import load_overrides, run_diagnosis, check_key_rows
 
 # 9 個關鍵科目的清單（品質檢查用）。定義在 excel_formatter，避免兩處各記一份。
@@ -392,16 +392,112 @@ def _save_to_disk_cache(ctx: dict, filing, obj) -> None:
             filing_cache.save_filing(ctx["ticker"], acc, dataframes=None,
                                      has_financials=False, **meta)
             return
+        # 六張表全抓（2026-09-18）。後三張目前沒有下游在讀，先存著——快取卡在
+        # 解析層與比對層之間，以後要加新報表不必重抓 SEC（一次 11 小時）。
+        #
+        # ⚠ **核心表與額外表的錯誤處理刻意不同**：
+        #
+        #   核心三張（IS/BS/CF）——例外**不攔**，讓它往外傳到最外層的
+        #     `except`，整份不寫快取、下次重試。攔下來記成 None 的話，
+        #     「損益表解析失敗」會被存成「這份沒有損益表」，而且因為有快取了
+        #     就再也不會重抓——等於把一期本來可能修好的資料**永久判死刑**。
+        #     `test_a_parse_failure_after_download_is_not_cached_either` 釘這條。
+        #
+        #   額外三張（權益變動／綜合損益／封面）——逐張各自 try，拿不到就記
+        #     None。這幾張本來就不是每份 filing 都有，讓它們拖垮整份快取
+        #     （連三張好的核心表一起陪葬）完全不划算。
         dfs = {}
-        for key, getter in (("income_statement", fin.income_statement),
-                            ("balance_sheet", fin.balance_sheet),
-                            ("cashflow_statement", fin.cashflow_statement)):
-            stmt = getter()
+        for key in filing_cache.CORE_STATEMENT_KEYS:
+            stmt = getattr(fin, key)()
             dfs[key] = None if stmt is None else stmt.to_dataframe()
+        for key in filing_cache.STATEMENT_KEYS:
+            if key in filing_cache.CORE_STATEMENT_KEYS:
+                continue
+            try:
+                stmt = getattr(fin, key)()
+                df = None if stmt is None else stmt.to_dataframe()
+                # 驗型別，不能只接 `to_dataframe()` 的回傳值：回出不是 DataFrame
+                # 的東西時要到 `save_filing()` 裡 `df.to_json()` 才炸，那時已經
+                # 離開這個 try，會被最外層吞掉 → 整份快取都不寫。
+                dfs[key] = df if isinstance(df, pd.DataFrame) else None
+            except Exception:                      # noqa: BLE001
+                dfs[key] = None
+        # ⚠ 不擋「三張核心表全是 None」的空殼——那是 SEC 的 XBRL 分階段強制
+        # 時程造成的**正常狀態**（見 ARCHITECTURE 與 verify_local_db.py：已實測
+        # 7 份重抓結果完全一樣）。擋掉會讓這些 filing 每次都重抓，永遠不收斂。
         filing_cache.save_filing(ctx["ticker"], acc, dataframes=dfs,
                                  has_financials=True, **meta)
     except Exception:
         return   # 快取寫入的任何一步失敗都不該讓這次抓取跟著壞（跟網路失敗同一個處理）
+
+
+class _OfflineFiling:
+    """離線退路用的 filing 替身（TODO J9）。
+
+    只帶 `_filing_obj()` 與 builder 會用到的那三個屬性。**`.obj()` 一定會炸**
+    ——這種物件只會為「已經在本地」的 filing 造出來，走到 `.obj()` 代表那份
+    快取其實讀不出來，那時就該失敗，不可以假裝有資料。
+    """
+
+    __slots__ = ("accession_no", "filing_date", "form")
+
+    def __init__(self, accession: str, filing_date: str, form: str):
+        self.accession_no = accession
+        self.filing_date = filing_date
+        self.form = form
+
+    def obj(self):
+        raise NetworkDownError(
+            f"離線退路：{self.accession_no} 的本地快取讀不出來，而且連不上 SEC")
+
+
+# 哪幾家、哪些 form 是靠離線退路撐的：`{ticker: {form, ...}}`。
+# **一定要顯示出來**——使用者必須知道「這批資料可能漏掉最新一季」。靜默退回
+# 就是 J6 那類「不報錯、只是資料比你以為的少」的失效模式，對財報工具最糟。
+#
+# **累積不覆寫**：跨公司比較一次抓十家，每家各自可能離線，覆寫的話只看得到
+# 最後一家。呼叫端要先 `reset_offline_tracking()` 再開始，才知道界線在哪。
+_offline_var: ContextVar[dict] = ContextVar("offline_tickers", default={})
+
+
+def reset_offline_tracking() -> None:
+    """開始一批抓取之前清空。不清的話會混到上一批的結果。"""
+    _offline_var.set({})
+
+
+def offline_report() -> dict[str, list[str]]:
+    """`{ticker: [form, ...]}`，空的代表全部正常連網。"""
+    return {t: sorted(f) for t, f in _offline_var.get().items()}
+
+
+def last_offline_forms() -> frozenset:
+    """單一公司用的簡便版：這一批裡任何一家用到的 form 集合。"""
+    return frozenset(f for forms in _offline_var.get().values() for f in forms)
+
+
+def _is_connectivity_failure(exc: BaseException) -> bool:
+    """這個例外是「連不上 SEC」還是「程式有 bug」？（TODO J9 的退路門檻）
+
+    ⚠ **不能直接用 `net_retry.is_network_error()`**：那支回答的是「該不該再
+    重試一輪」，所以對 `NetworkDownError`（＝已經重試完仍失敗）刻意回 False。
+    對退路來說那正是**最典型**的連不上情境，用錯函式的話退路永遠不會觸發
+    （2026-09-18 實測抓到——修 code review 的建議時自己引進來的）。
+
+    其餘型別（`TypeError`／`AttributeError`，edgartools 升版後最常見）一律
+    回 False，讓真正的 bug 照原樣炸出來，不要被偽裝成「離線」。
+    """
+    return isinstance(exc, NetworkDownError) or is_network_error(exc)
+
+
+def _offline_listing(ticker: str, form: str) -> list:
+    """連不上 SEC 時，用本地快取盤點出來的 filing 清單（TODO J9）。
+
+    ⚠ **只在網路失敗時走這條。** 正常情況一定要問 SEC，不然永遠發現不了
+    新申報——那是 J9 特別釘住的一條（見 `docs/TODO.md`）。
+    """
+    rows = filing_cache.list_cached_filings(ticker, form=form)
+    return [_OfflineFiling(r["accession"], r["filing_date"], r["form"])
+            for r in rows]
 
 
 def _list_filings(company, form: str, amendments: bool = False,
@@ -2497,6 +2593,14 @@ def _apply_shares_outstanding(tables: list[StatementTable],
         tbl.values[idx] = [shares_map.get(lbl) for lbl in tbl.quarter_labels]
 
 
+def _data_source_note(ticker: str) -> str:
+    """`Data_Meta` 的 `Data Source` 欄：這批數字的來源可不可靠（TODO J9）。"""
+    forms = sorted(_offline_var.get().get(ticker, ()))
+    if not forms:
+        return t("xls.meta.source_live")
+    return t("xls.meta.source_offline", forms="／".join(forms))
+
+
 def _build_meta_table(ticker: str, company_name: str,
                        tables: list[StatementTable],
                        fy_end_month: int = 12,
@@ -2558,7 +2662,8 @@ def _build_meta_table(ticker: str, company_name: str,
         concepts=["Ticker", "Company Name", "Fetched Date", "Quarters Available",
                   "Fiscal Year End Month", "Fiscal Year Span", "Latest Period", "Latest Period End",
                   "Oldest Period", "Oldest Period End",
-                  "Key Rows Complete", "Key Rows Missing", "Fetch Gaps"],
+                  "Key Rows Complete", "Key Rows Missing", "Fetch Gaps",
+                  "Data Source"],
         values=[
             [ticker]            * n_quarters,
             [company_name]      * n_quarters,
@@ -2575,6 +2680,10 @@ def _build_meta_table(ticker: str, company_name: str,
             # 抓取缺漏。GUI 的 log 關掉就沒了，但這份 Excel 三天後再打開
             # 還在——使用者真正會搞混的時點是那時候。
             [gap_note or t("xls.meta.none")] * n_quarters,
+            # TODO J9：這批數字是連得上 SEC 抓的，還是連不上時用本地既有資料
+            # 撐的？後者可能漏掉最新一季。同 Fetch Gaps 的理由——log 會消失，
+            # Excel 不會，而交報告的人三天後看的是 Excel。
+            [_data_source_note(ticker)] * n_quarters,
         ],
     )
 
@@ -2659,10 +2768,58 @@ def _fetch_gaap_impl(ticker: str, identity: str,
     set_identity(identity)
     company = Company(ticker)
     # cik 才是跟 SEC 打交道真正的鍵；ticker 只是會換手的別名。拿不到就不用快取。
-    _bind_disk_cache(ticker, getattr(company, "cik", None))
+    #
+    # ⚠ 用 try 而不是 `getattr(..., None)`：`.cik` 可能是會打網路的 lazy
+    # property，`getattr` 的預設值只吞 `AttributeError`，連線例外會直接把整趟
+    # 打掉——而那正是 J9 離線退路最需要活著的時刻（2026-09-18 code review）。
+    try:
+        _cik = company.cik
+    except Exception:                              # noqa: BLE001
+        _cik = None
+    if _cik is None:
+        # cik 拿不到時磁碟快取整段關閉（`_bind_disk_cache` 會提早 return），
+        # 那樣離線退路盤出來的每一份都會走到 `.obj()` 然後拋例外——**宣告
+        # 「已用本地資料」卻拿到全空的表**。改成從本地 meta 撈回 cik：那是
+        # 上次抓成功時記下來的，離線情境下正是唯一還拿得到的來源。
+        meta_cik = filing_cache.cached_cik(ticker)
+        if meta_cik is not None:
+            _cik = meta_cik
+    _bind_disk_cache(ticker, _cik)
 
-    filings_q = _list_filings(company, "10-Q") if fetch_quarterly else []
-    filings_k = _list_filings(company, "10-K") if fetch_annual else []
+    # TODO J9：清單抓失敗時退回本地盤點。**網路正常時行為完全不變**——
+    # 一定要先問 SEC，不然永遠發現不了新申報。只有在連不上、而且本地真的
+    # 有東西時才走退路，並且記下來讓呼叫端顯示「這批是離線資料」。
+    offline: set[str] = set()
+
+    def _listing(form: str) -> list:
+        try:
+            return _list_filings(company, form)
+        except Exception as exc:                   # noqa: BLE001
+            # ⚠ 只有**真的是連線問題**才走退路。攔裸 Exception 的話，
+            # edgartools 升版後常見的 TypeError／AttributeError 會被轉成
+            # 「連不上 SEC」、標上「離線資料」，真正的 bug 被蓋掉
+            # （2026-09-18 code review）。
+            if not _is_connectivity_failure(exc):
+                raise
+            rows = _offline_listing(ticker, form)
+            if not rows:
+                raise          # 本地也沒有 → 照舊往外拋，不要把「連不上」
+                               # 說成「這家公司沒有財報」
+            offline.add(form)
+            # 走 stderr，跟這個模組其他警告一致（stdout 可能是 --json 的
+            # 資料流）。英文：log 是給 AI／開發看的，畫面文字才走 i18n。
+            print(f"[{ticker}] OFFLINE FALLBACK for {form}: using "
+                  f"{len(rows)} cached filings; may be missing recent ones",
+                  file=sys.stderr)
+            return rows
+
+    filings_q = _listing("10-Q") if fetch_quarterly else []
+    filings_k = _listing("10-K") if fetch_annual else []
+    if offline:
+        # 累積不覆寫——跨公司比較一次跑十家，每家都要留得下來
+        tracked = dict(_offline_var.get())
+        tracked[ticker] = set(tracked.get(ticker, set())) | offline
+        _offline_var.set(tracked)
 
     if fetch_quarterly and not filings_q:
         raise ValueError(

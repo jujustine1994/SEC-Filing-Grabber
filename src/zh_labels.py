@@ -20,7 +20,21 @@ B 欄只是給人看的，程式一律用 A 欄的英文名做比對。所以譯
 
 from __future__ import annotations
 
+import re
+
 from i18n import t
+
+
+_RECON_PREFIX_RE = re.compile(r"^[+=\-]\s*")
+
+
+def _strip_recon_prefix(name: str) -> str:
+    """剝掉調節表的排版前綴：`"  + Stock-Based Compensation"` → 機器鍵。
+
+    只剝**開頭**的運算符號與縮排，不動名稱本身——`"Non-GAAP Net Income"`
+    中間那個連字號要留著。
+    """
+    return _RECON_PREFIX_RE.sub("", (name or "").strip())
 
 
 def _lookup(ns: str, key: str) -> str:
@@ -58,8 +72,20 @@ def meta_label(name: str) -> str:
 
 
 def nongaap_label(name: str) -> str:
-    """Data_NonGAAP 列名 → 說明（B 欄）。A 欄是英文機器鍵，這裡回當前語言。"""
-    return _lookup("nongaap", name)
+    """Data_NonGAAP 列名 → 說明（B 欄）。A 欄是英文機器鍵，這裡回當前語言。
+
+    ⚠ **要先剝掉調節表的排版前綴再查**。`nongaap_layout.ADDBACK_ROWS` 的
+    顯示名帶縮排與運算符號（`"  + Stock-Based Compensation"`、
+    `"= Non-GAAP Net Income"`），但 locale 的鍵是乾淨的機器鍵
+    （`nongaap.Stock-Based Compensation`）。不剝的話查的是
+    `nongaap.+ Stock-Based Compensation` → 查不到 → `_lookup()` 回空字串，
+    **7 個 addback 列的 B 欄會整排空白**，而且不報錯（2026-09-18 code review
+    實測抓到；E2 那次的測試只驗 A 欄，所以全綠）。
+
+    症狀特別容易被忽略：同一張表裡 `GAAP Net Income` 那幾列有中文、
+    `  + Stock-Based Compensation` 那幾列沒有，看起來像「這幾項剛好沒收錄」。
+    """
+    return _lookup("nongaap", _strip_recon_prefix(name))
 
 
 def axis_label(axis: str) -> str:

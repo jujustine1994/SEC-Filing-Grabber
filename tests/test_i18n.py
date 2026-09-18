@@ -394,3 +394,45 @@ def test_the_duplicate_key_detector_actually_detects(tmp_path):
         encoding="utf-8",
     )
     assert _duplicate_keys(fake) == ["gui.btn.ok"]
+
+
+# ── B 欄不可以整欄空白（2026-09-18 code review 後補）──────────────────────
+#
+# 這兩條是**結構性**防線：新增欄位卻忘了加翻譯時當場失敗，而不是等使用者
+# 打開 Excel 發現 B 欄空白。實際發生過兩次：
+#   - `Fetch Gaps`（既有）與 `Data Source`（J9 新增）都沒有 meta.* 翻譯
+#   - Data_NonGAAP 的 7 個 addback 列因為顯示名帶 "  + " 前綴而查不到
+
+@pytest.mark.parametrize("lang", ["zh_tw", "zh_cn", "en", "ja"])
+def test_every_data_meta_column_has_a_b_column_label(lang):
+    from fetcher_gaap import _build_meta_table
+    from i18n import set_lang
+    from zh_labels import meta_label
+    set_lang(lang)
+
+    import inspect
+    src = inspect.getsource(_build_meta_table)
+    start = src.index("concepts=[")
+    end = src.index("]", start)
+    concepts = [c.strip().strip('"\'')
+                for c in src[start + len("concepts=["):end].split(",")
+                if c.strip().strip('"\'')]
+
+    missing = [c for c in concepts if not meta_label(c)]
+    assert not missing, f"{lang}: Data_Meta 這幾欄沒有 B 欄說明 → {missing}"
+
+
+@pytest.mark.parametrize("lang", ["zh_tw", "zh_cn", "en", "ja"])
+def test_every_nongaap_row_has_a_b_column_label(lang):
+    """⚠ 查的是**顯示名**（帶 `"  + "` 前綴），不是機器鍵。
+
+    直接用機器鍵測的話這條永遠會過，但實際走 `_col_b()` 的是顯示名——
+    E2 那次就是這樣全綠卻壞掉的。
+    """
+    from i18n import set_lang
+    from nongaap_layout import ADDBACK_ROWS
+    from zh_labels import nongaap_label
+    set_lang(lang)
+
+    missing = [disp for disp, _key in ADDBACK_ROWS if not nongaap_label(disp)]
+    assert not missing, f"{lang}: Data_NonGAAP 這幾列沒有 B 欄說明 → {missing}"

@@ -1,5 +1,5 @@
 """
-filing_cache.py — 本地 filing 解析快取（%APPDATA%\\SEC Financial Tools\\filing_cache）。
+filing_cache.py — 本地 filing 解析快取（`<專案根目錄>/local_db/filing_cache/`）。
 
 快取卡在**解析層與比對層之間**：存的是 edgartools 解出來的三張 DataFrame
 （income statement / balance sheet / cashflow statement），比對層
@@ -10,6 +10,14 @@ hint regex、加比率、調 Q4 合成邏輯都不會讓快取失效——但 **
 事實來源是 `<accession>.json` 檔案本身，也是唯一的落地狀態——「哪些公司有
 快取」直接掃 `filing_cache/` 底下有哪些子資料夾回答（見 `list_cached_tickers()`），
 不維護額外的索引檔。
+
+**2026-09-18 從 `%APPDATA%` 搬到專案資料夾固定路徑**：這份資料是花真金白銀
+（SEC 網路請求時間）抓下來的，語意上是「永久資料庫」，不是「可隨時重建的
+快取」——但它原本躺在 `%APPDATA%`，那個位置在 Windows 語意上就是「系統可以
+清掉的東西」（重灌、系統清理工具、防毒軟體都可能動它）。201 家、13,921 份
+的資料就是這樣憑空消失的（起因是 GUI 的「全部清除」按鈕被按過，但放在
+`%APPDATA%` 這件事本身也是風險）。搬進專案資料夾底下的 `local_db/` 後，跟
+其他你會留意、會備份的專案檔案放在一起，`.gitignore` 排除掉不進版控。
 """
 from __future__ import annotations
 
@@ -22,12 +30,30 @@ from pathlib import Path
 
 import pandas as pd
 
-SCHEMA_VERSION = 1
+# 2（2026-09-18）：`STATEMENT_KEYS` 從三張表擴成六張（加 statement_of_equity、
+# comprehensive_income、cover）。**必須升版**——舊快取沒有那三個 key，
+# `payload_to_df(None)` 回 None 的語意是「這張表本來就不存在」，跟「當初根本
+# 沒抓」是兩件事。不升版的話舊檔會被當成「這家公司沒有股東權益變動表」，
+# 而且完全不報錯，正是這個專案最不能接受的失效模式。
+SCHEMA_VERSION = 2
 
 # SEC 的 accession number 格式固定，拿來當檔名前先驗——這同時是路徑注入的防線。
 ACCESSION_RE = re.compile(r"^\d{10}-\d{2}-\d{6}$")
 
-STATEMENT_KEYS = ("income_statement", "balance_sheet", "cashflow_statement")
+# edgartools 的 `Financials` 能給的六張表**全部都存**（2026-09-18 CTH 決定：
+# 「反正都要抓了，看有沒有辦法全抓」）。理由是快取卡在解析層與比對層之間——
+# 存下來的東西以後改模板、加新報表都不必重抓 SEC，而抓一次要 11 小時。
+#
+# 前三張是既有模板在用的；後三張目前**沒有任何下游在讀**，純粹是先存著：
+#   - statement_of_equity   股東權益變動表（實測 AAPL 25 列、ARLO 40 列）
+#   - comprehensive_income  綜合損益表（AAPL 15 列、ARLO 52 列）
+#   - cover                 封面頁（在外流通股數、entity 資訊、財年結束日等）
+STATEMENT_KEYS = ("income_statement", "balance_sheet", "cashflow_statement",
+                  "statement_of_equity", "comprehensive_income", "cover")
+
+# 模板比對層真正會讀的那幾張。`_CachedFinancials` 的替身只保證這幾個方法
+# 的行為跟真的 edgartools 物件一致。
+CORE_STATEMENT_KEYS = ("income_statement", "balance_sheet", "cashflow_statement")
 
 
 def _now_iso() -> str:
@@ -37,15 +63,20 @@ def _now_iso() -> str:
 
 # ── 路徑 ──────────────────────────────────────────────────────────────────
 #
-# 沿用 `config.py` 的 `%APPDATA%\SEC Financial Tools\`（**有空格**那個；
-# `override_engine.py` 用的是底線版 `SEC_Financial_Tools`，兩者歷史上就分岔了，
-# 這裡跟 config.py 對齊）。每次呼叫重讀環境變數，測試才好導到 tmp。
+# 固定放在專案資料夾底下的 `local_db/filing_cache/`——刻意不跟 `config.py`
+# 一樣走 `%APPDATA%`：這份資料是永久資料庫，不是可隨時重建的快取，不該放在
+# 語意上「系統可以清掉」的地方。`SEC_LOCAL_DB_ROOT` 環境變數可覆寫（只給
+# 測試用，導去 tmp_path），每次呼叫重讀環境變數。
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parent.parent
+
 
 def cache_root() -> Path:
-    appdata = os.environ.get("APPDATA")
-    if appdata:
-        return Path(appdata) / "SEC Financial Tools" / "filing_cache"
-    return Path.home() / ".sec_financial_tools" / "filing_cache"
+    override = os.environ.get("SEC_LOCAL_DB_ROOT")
+    if override:
+        return Path(override) / "filing_cache"
+    return _project_root() / "local_db" / "filing_cache"
 
 
 def ticker_dir(ticker: str) -> Path:
@@ -210,6 +241,18 @@ class _CachedFinancials:
     def cashflow_statement(self):
         return self._stmt("cashflow_statement")
 
+    # 2026-09-18 起也存這三張。目前沒有下游在讀，但替身要跟真物件一致——
+    # 少了的話「快取命中時拿不到、清快取重跑卻拿得到」，正是最難查的那種
+    # 不一致（見下面 `_CachedFiling` 刻意不定義 `__getattr__` 的理由）。
+    def statement_of_equity(self):
+        return self._stmt("statement_of_equity")
+
+    def comprehensive_income(self):
+        return self._stmt("comprehensive_income")
+
+    def cover(self):
+        return self._stmt("cover")
+
 
 class _CachedFiling:
     """替身的 filing 物件。只有 `.financials` 一個屬性。"""
@@ -339,6 +382,80 @@ def list_cached_tickers() -> list[dict]:
         rows.append({"ticker": directory.name, "count": count, "size_bytes": size})
     rows.sort(key=lambda r: (-r["size_bytes"], r["ticker"]))
     return rows
+
+
+def list_cached_filings(ticker: str, form: str | None = None) -> list[dict]:
+    """盤點本地有這家公司的哪些 filing → `[{accession, form, filing_date}, ...]`，
+    **新到舊**（跟 SEC 的清單順序一致）。
+
+    ⚠ 這是 TODO J9「離線退路」專用的。平常的抓取流程**不該**呼叫它——
+    正常情況一定要問 SEC「有哪些財報」，只看本地會永遠發現不了新申報
+    （見 `docs/TODO.md` J9 的「清單不可以本地優先」）。
+
+    要開每一份檔案才讀得到 `form`／`filing_date`，所以不便宜（實測約
+    2.75 秒/家）。這是例外路徑，可以接受。
+    """
+    version = edgartools_version()
+    if version is None:
+        return []                         # 讀不到版本時 `load_filing()` 也全關
+    rows: list[dict] = []
+    directory = ticker_dir(ticker)
+    try:
+        paths = list(directory.glob("*.json"))
+    except OSError:
+        return []
+    for path in paths:
+        if not ACCESSION_RE.match(path.stem):
+            continue                      # `_meta.json` 之類的不是 filing
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                entry = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(entry, dict):
+            continue
+        # ⚠ 要走**跟 `load_filing()` 同一組閘**，不能只擋 schema。
+        # 只擋 schema 的話，edgartools 升版後這裡照樣回報「有 25 份」，但每一
+        # 份 `load_filing()` 都回 None——離線退路會宣告「已用 25 份本地資料」，
+        # 實際上一份都讀不出來，最後產出一份空 Excel 被標成「離線資料」而不是
+        # 「讀不出來」。那樣 `if not rows: raise` 那道保護形同虛設
+        # （2026-09-18 code review 實測抓到）。
+        if entry.get("schema_version") != SCHEMA_VERSION:
+            continue
+        if entry.get("edgartools_version") != version:
+            continue
+        row_form = str(entry.get("form") or "")
+        if form is not None and row_form != form:
+            continue
+        rows.append({
+            "accession": path.stem,
+            "form": row_form,
+            "filing_date": str(entry.get("filing_date") or ""),
+        })
+    rows.sort(key=lambda r: r["filing_date"], reverse=True)
+    return rows
+
+
+def cached_cik(ticker: str) -> int | None:
+    """從本地任一份快取檔撈這家公司的 cik（TODO J9）。
+
+    **離線時唯一還拿得到 cik 的地方**。`Company(ticker).cik` 要連網，而
+    `_bind_disk_cache()` 沒有 cik 就整段關閉磁碟快取——那樣離線退路盤出來的
+    filing 全部會走到 `.obj()` 然後拋例外，變成「宣告用了本地資料、實際拿到
+    空表」。cik 是上次抓成功時寫進每一份快取檔的，直接讀回來就好。
+    """
+    for row in list_cached_filings(ticker)[:1]:
+        path = ticker_dir(ticker) / f"{row['accession']}.json"
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                cik = json.load(f).get("cik")
+        except (OSError, ValueError, AttributeError):
+            return None
+        try:
+            return int(cik)
+        except (TypeError, ValueError):
+            return None
+    return None
 
 
 def total_size_bytes() -> int:

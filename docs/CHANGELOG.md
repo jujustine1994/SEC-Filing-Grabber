@@ -1,5 +1,232 @@
 # Changelog
 
+## 2026-09-18（續八）
+
+- **code review（high）找到 7 個問題，全部修掉，另外多修一個它沒點到的**。
+  CTH 要把這套當 Claude 做財務分析的資料來源之前先審一次。
+  - **HIGH｜`Data_NonGAAP` 有 7 列的 B 欄整排空白**（既有問題，來自今天 E2
+    那個 commit）。`ADDBACK_ROWS` 的顯示名帶排版前綴（`"  + Stock-Based
+    Compensation"`），但 locale 鍵是乾淨的機器鍵，`_lookup()` 查
+    `nongaap.+ Stock-Based Compensation` → miss → 回空字串。症狀特別陰險：
+    同一張表裡 `GAAP Net Income` 那幾列有中文、addback 那幾列沒有，看起來像
+    「這幾項剛好沒收錄」。`nongaap_label()` 改成先剝掉 `+`／`=`／縮排再查。
+  - **MEDIUM｜離線退路宣告「用了 N 份本地資料」，但那 N 份可能一份都讀不出來**
+    （我的 J9）。`list_cached_filings()` 只擋 `schema_version`，而
+    `load_filing()` 是四道閘。edgartools 升版後兩者會分岔 → 退路印「using 25
+    cached filings」、`Data Source` 標「⚠ 離線資料」，實際產出一張空表。
+    已改成走同一組閘（加 `edgartools_version`）。
+  - **MEDIUM｜連不上 SEC 時 `cik` 也拿不到 → 磁碟快取整段關閉 → 退路靜默失效**
+    （我的 J9）。`_bind_disk_cache()` 沒有 cik 就提早 return，於是退路盤出來的
+    每一份都走到 `.obj()` 然後拋例外。新增 `filing_cache.cached_cik()` 從本地
+    快取檔撈 cik——離線時那是唯一還拿得到的來源。`.cik` 的取用也從
+    `getattr(..., None)` 改成 try（它可能是會打網路的 lazy property，
+    `getattr` 只吞 `AttributeError`）。
+  - **MEDIUM｜`Data Source` 欄沒有 B 欄翻譯**（我的 J9）。順手發現 **`Fetch
+    Gaps` 也沒有**（既有），兩個一起補齊四語系。
+  - **MEDIUM｜`db-status AAPL --rebuild` 會重算全部 244 家**（我的 J7）——
+    `targets` 完全沒看 `args.ticker`，想看一家要等 11 分鐘。修完 1.6 秒。
+  - **LOW｜`except Exception` 把 `TypeError` 也偽裝成「連不上 SEC」**（我的 J9）。
+  - **LOW｜Treeview 欄名 `filed_span` 打錯**（我的 J7，改名時漏改），害「財報
+    期間」那欄置中而不是靠左。
+  - ⚠ **修的過程中自己又差點放進一個 bug**：改用 `net_retry.is_network_error()`
+    當退路門檻，但那支回答的是「該不該**再重試**」，對 `NetworkDownError`
+    （＝已重試完仍失敗）刻意回 `False`——**離線退路會永遠不觸發**。實測才抓到。
+    改成語意正確的 `_is_connectivity_failure()` 並加測試釘住兩種語意的差別。
+  - **加了兩條結構性防線**（比單純補字串重要）：`test_i18n.py` 新增「每個
+    `Data_Meta` 欄位都要有 B 欄說明」與「每個 Non-GAAP 列都要有 B 欄說明」，
+    後者**用顯示名查、不是用機器鍵**——用機器鍵測的話這條永遠會過，E2 那次
+    就是這樣全綠卻壞掉的。兩條都做過反向驗證（故意拿掉翻譯 → 確實變紅）。
+  - 測試：`-m "not slow"` **1530 passed**，兩支 Tk 探針全過。
+
+## 2026-09-18（續七）
+
+- **TODO J9 完成：清單的離線退路**。原本完全快取的公司在 SEC 連不上時仍然
+  整趟失敗（ARLO 33 份全在本地也叫不出來，實測確認）。
+  - **關鍵設計：清單不可以「本地優先」，只能「網路失敗才退回」**。CTH 提出
+    「優先從本地拿、本地沒有才連網」時釐清了這個區別——財報**內容**本地優先
+    是對的（accession 一經申報就固定），但**清單**若也本地優先，結果是永遠
+    發現不了新財報、資料庫停在最後一次抓的那天**而且不報錯**，`plan_ticker()`
+    整套增量設計直接失效。
+  - 新增 `filing_cache.list_cached_filings()`（盤點本地有哪些，會過濾舊 schema）
+    與 `fetcher_gaap._OfflineFiling` 替身。替身的 `.obj()` **一定會炸**——
+    它只為「已經在本地」的 filing 造出來，走到 `.obj()` 代表快取其實讀不出來，
+    那時該失敗而不是假裝有資料。
+  - 本地也空的話**照舊往外拋**，不可以把「連不上 SEC」說成「這家公司沒有財報」。
+  - ⚠ **退路一定要看得見**（靜默退回＝J6 那類最糟的失效模式）：stderr 警告、
+    CLI 收尾清單、`compare --json` 的 `offline` 欄位、Excel `Data_Meta` 新增
+    **`Data Source`** 欄（即時抓取／⚠ 離線資料）、GUI log 橘字。四個 locale
+    各補 3 條字串。
+  - `offline_report()` 是**累積**的，`reset_offline_tracking()` 在每批抓取前
+    呼叫——跨公司比較一次十家，覆寫的話只看得到最後一家。
+  - 實測：SEC 完全連不上時，ARLO 從本地盤出 25 份 10-Q ＋ 8 份 10-K，
+    17 張表全部有資料，Revenue 六期數字與連網時**完全一致**。
+  - 測試：`test_filing_cache.py` +5、`test_fetcher_gaap_cache.py` +4，
+    `-m "not slow"` **1516 passed**，兩支 Tk 探針全過。
+
+## 2026-09-18（續六）
+
+- **新增 `cli.py compare`：跨公司比較的 JSON 出口（給 AI 用）**。CTH 的用途是
+  「快速推論時讓 Claude 把資料庫當資料來源問問題」，而原本 `comparison.py`
+  那套**只有 GUI 叫得到、只輸出 Excel**——AI 想比較四家公司得跑四次 `gaap`
+  再自己對齊財季，等於重造一次已經做好的輪子，而且對錯了不會報錯
+  （各家財年不同，ARLO 的 Q2 結束在 06-28、NVDA 在 07-27）。
+  - 支援 95 個報表科目 ＋ 59 個財務比率（`--list-metrics` 列出），預設抓
+    Revenue／Gross Profit／Operating Income／Net Income。
+  - 輸出含 `periods`（對齊過的日曆季）、`data`、`fiscal_labels`（各家自己的
+    財季標籤，對帳用）、`period_ends`、`synthetic_q4`（推算的 Q4 要標明）、
+    `failures`。
+  - **三個 bug 是手動實測才抓到的，已補測試釘住**：
+    1. 比率被當成金額除以 1e6——`Gross Margin (%)` 的 44.28 印成 `0.0M`，
+       數字還在但看起來像整欄沒資料
+    2. `_aligned_labels()` 換不成日曆季的殘留財季鍵（實測 FORM 帶出
+       `FY2011Q4`／`FY2013Q1`／`FY2013Q4`，值全是 None）混在 2025Q1 中間
+    3. 殘留鍵只從 `periods` 清掉、沒從 `data`／`fiscal_labels` 等 dict 清，
+       讀 JSON 的人會以為 `FY2018Q4: null` 是個真的期間
+  - 實測 ARLO vs FORM（2025Q1~2026Q2）：Revenue 119.1M vs 171.4M …
+    155.9M vs 258.2M；Gross Margin 44.28% vs 37.65% … 48.23% vs 50.70%。
+  - 測試：`tests/test_cli.py` +6（全部離線，換掉 `build_comparison`），
+    `-m "not slow"` **1507 passed**。
+
+## 2026-09-18（續五）
+
+- **六張表全抓**（`filing_cache.SCHEMA_VERSION` 1 → 2，CTH：「反正都要抓了，
+  看有沒有辦法全抓」）。`STATEMENT_KEYS` 從三張擴成六張，新增
+  `statement_of_equity`（股東權益變動表）、`comprehensive_income`（綜合損益表）、
+  `cover`（封面頁：在外流通股數、entity 資訊、財年結束日）。實測 AAPL／ARLO
+  的 10-K／10-Q **六張全部拿得到資料**（權益變動 25~40 列、綜合損益 15~52 列、
+  封面 29~60 列），不是空的。
+  - **為什麼值得**：快取卡在解析層與比對層之間，存下來的東西以後改模板、
+    加新報表都不必重抓 SEC——而抓滿 218 家要 11 小時。後三張目前**沒有任何
+    下游在讀**，純粹先存著。
+  - **必須升 schema**：舊快取沒有那三個 key，`payload_to_df(None)` 回 None 的
+    語意是「這張表本來就不存在」，跟「當初根本沒抓」是兩件事。不升版的話舊檔
+    會被當成「這家沒有股東權益變動表」而且完全不報錯。
+  - ⚠ **核心表與額外表的錯誤處理刻意不同**（寫測試釘住兩個方向）：核心三張
+    （IS/BS/CF）解析失敗時例外**不攔**，整份不寫快取、下次重試——攔下來記成
+    None 等於把「解析失敗」存成「這份沒有損益表」，而且有了快取就再也不會
+    重抓，一期資料**永久判死刑**。額外三張則逐張各自 try，拿不到記 None，
+    不讓它們拖垮三張好好的核心表。第一版我把兩者用同一套處理，被既有的
+    `test_a_parse_failure_after_download_is_not_cached_either` 抓出來。
+  - ⚠ 另外修掉自己引入的一個錯誤防護：原本加了「核心三張全 None 就不寫快取」，
+    但 ARCHITECTURE 與 `verify_local_db.py` 都寫明**「空殼」是 SEC XBRL 分階段
+    強制造成的正常狀態、已實測重抓結果完全一樣**，擋掉會讓那些 filing 永遠
+    重抓、永不收斂。已移除。
+  - `_CachedFinancials` 替身補上三個對應方法——少了會變成「快取命中時拿不到、
+    清快取重跑卻拿得到」，正是 `_CachedFiling` 刻意不定義 `__getattr__` 要防的
+    那種靜默不一致。
+  - 測試：`tests/test_fetcher_gaap_cache.py` +4（六張全存、額外表壞掉不拖垮核心、
+    核心表壞掉仍整份不寫、替身也要有那三個方法），`-m "not slow"` **1501 passed**。
+
+- **釐清並記錄本地資料庫的定位，發現一個實質缺口**。CTH 提出「本地有快取，
+  跨公司比較從內部拿，AI 調用此工具做財務分析」這個定位後查證：
+  - ✅ **架構符合**：快取只掛在 `fetcher_gaap._filing_obj()` 一個點，
+    `comparison.py:17` 直接呼叫 `fetch_gaap_statements()`，而那支本體就開了
+    `_disk_cache_scope()`——所以跨公司比較與 `cli.py`（AI 介面）本來就吃得到，
+    不必特別支援。
+  - ❌ **缺口（新發現，實測確認）**：`_list_filings()` 每次都要連 SEC，沒有
+    離線退路。把它改成直接拋 `NetworkDownError`、ARLO 33 份全在本地，
+    `fetch_gaap_statements()` 仍然整個失敗。CTH 決定今晚跑完再修，記在 TODO J9。
+  - 文件：README 新增「這工具的定位」段落（三條路徑共用一個資料庫的對照表），
+    `ARCHITECTURE.md` 補「一個掛勾點服務三條路徑」的圖與離線缺口。原本這個
+    定位**只寫在設計書裡**，README 與 ARCHITECTURE 都沒有。
+
+## 2026-09-18（續四）
+
+- **J7 後續三項：新增即抓、只抓幾家、真正的財報期間與「上次查」**（CTH 提的
+  三個問題查完程式碼後的結果：兩個有、一個半有，缺的補上）。
+  - **① 新增公司 → 觸發抓取**。原本新增只寫名單、不抓（刻意的，見
+    `cli.py` 的說明：改名單跟跑幾小時的抓取混在一起，手滑代價差太多）。
+    現在名單彈窗新增完會**問**「要現在抓嗎」，按是就只抓剛新增那幾家。
+    仍然是問不是直接跑——抓取是幾分鐘起跳的動作，不該由打字觸發。
+  - **② 只抓選中的幾家**。總覽分頁的 Treeview 改成可多選（Ctrl／Shift），
+    footer 加「更新選中的」。**沒選不等於全部**——在 218 家的表上那是一個
+    10 小時的誤觸，所以沒選就只跳提示。
+    `_start_local_db_update(tickers=None)` 統一入口：三個呼叫端（整份名單、
+    選中的、新增的）共用同一套 identity 檢查、二次確認與 `_start_worker()`
+    防重入鎖，不另開繞過鎖的路（D11／TODO I3 的理由）。
+  - **③ 真正的財報期間**（`META_SCHEMA_VERSION` 1 → 2）。原本 meta 只存
+    `filing_date`（SEC 收件日），「我有哪幾季的數字」答不出來。新增
+    `period_end_of()` 從快取的 DataFrame 欄名（`"2026-03-29 (Q1)"` 或資產
+    負債表的裸日期）抽出期末日，**取最大值**＝該份申報的當期（其餘是去年
+    同期等比較欄）。`forms[].period_oldest`／`period_newest` 跟收件日那組
+    並存，兩個問題分開答。總覽與 `db-status` 的主欄位改顯示財報期間，
+    **年數也改用期間算**——那才是「我手上有幾年的數字」。
+    ⚠ **成本是零**：`scan_filings()` 本來就把整份 JSON 讀進記憶體了
+    （這正是它 2.75 秒/家的原因），多讀一組欄名不花額外成本。
+    收件日仍留在 CSV 匯出與 `--json` 裡，需要時查得到。
+  - **④ 「上次查」欄**。`meta["updated_at"]` 從 2026-09-04 就在寫，但 grep
+    整個 `src/` **從來沒有任何一處讀過**，等於白存。新增 `days_since()`
+    換算成相對時間（今天／N 天前），總覽與 `db-status` 各加一欄，可排序。
+    這解決一個實際問題：看到「已到底、最新期間 2026-03」，你不知道那是今天
+    查的還是三個月前查的——中間很可能已經出了新財報。時鐘不同步導致
+    `updated_at` 看起來在未來時夾到 0，不顯示「-1 天前」。
+  - 測試：`tests/test_local_db.py` +15（含期末日挑當期不挑比較欄、裸日期、
+    負向快取、schema 升版讓舊 meta 失效、`days_since` 的五種輸入），
+    `-m "not slow"` **1497 passed**。探針擴到 **26 項**（新增：沒選就按只跳
+    提示、只把選中的傳下去、不是傳 None、上次查有值、期間顯示的是 03 季末
+    不是 05 收件月）。四個 locale 各再補 6 條字串。
+
+## 2026-09-18（續三）
+
+- **TODO J7 完成：資料庫「裡面有哪些公司」，UI 跟 AI 都查得到**。
+  - **GUI 新分頁「資料庫總覽」**（插在跨公司比較與進階設定之間）。`ttk.Treeview`
+    表格，欄位：代號／份數／申報日期範圍／年數／到底了／名單★／大小／註記。
+    點欄位標題排序（同一欄再點反向）、搜尋框即時篩選、匯出 CSV（`utf-8-sig`，
+    沒 BOM 的話 Excel 開中文是亂碼）。**這頁沒有任何清除鈕**——清除是維護動作，
+    留在 Tab3 舊面板；這頁純瀏覽，手滑的代價是幾小時重抓。
+  - **CLI `db-status`**（不連網，244 家實測 0.53 秒）。`--json` 給 AI 吃。
+    刻意不叫 `list-db`：跟既有 `update-db --list`（印的是「更新名單」＝要抓誰）
+    只差一個字，兩個都叫 list 保證有人搞混「名單」跟「實際有什麼」。
+  - ⚠ **欄位叫「申報日期範圍」不是「涵蓋期間」**。`_meta.json` 存的
+    `oldest`／`newest` 是 **SEC 收件日**（`rebuild_meta` 取的是 `filing_date`），
+    一份 2008-05 申報的 10-K 蓋的是 2007 年度。掛「涵蓋期間」等於在財報工具裡
+    講假話。真正的財報期間在 Excel 的 `Data_Meta`（J6 方向②）。有測試釘住這條
+    語意（`test_overview_cells_label_the_span_as_filed_dates`）。
+  - ⚠ **總覽與 CLI 都走 `read_meta()` 不走 `load_meta()`**：後者對不上會當場
+    重建並寫檔，一家要開 75 個 JSON。「瞄一眼資料庫」不該有副作用，對不上就
+    照實顯示「需重算」。`db-status --rebuild` 是唯一會寫檔的路徑，且要明確要求。
+  - **年數欄把 J6 攤開來**：ARM 2.0 年、BLK 1.0 年、AVGO 7.0 年 vs 其他 17 年，
+    一眼看得出誰的歷史被換 CIK 截斷。**刻意只顯示數字、不加 ⚠**——分不出
+    「換過 CIK」與「本來就晚上市」（PLTR 2020 IPO，4 年很正常），加警示符號
+    是臆測，跟 J6 方向②「把靜默變可見、不做臆測」的定調衝突。
+  - **順手修掉一個會靜默失效的 bug**：`_on_tab_changed` 原本寫死
+    `index == 3`，靠 `notebook.add()` 的呼叫順序推出來。插入新分頁後 3 會從
+    「進階設定」變成「資料庫總覽」，快取面板再也不刷新**而且不報錯**。改成用
+    分頁元件身分比對（`self._tab_settings` / `self._tab_database`），對插入
+    順序免疫。探針有一條專門釘這個。
+  - **實測數字**：總覽讀取 244 家 / 18,300 份 / 1.29 GB 合成資料庫 **0.53 秒**
+    （原本擔心要背景執行緒，量完發現不必）。反過來 `--rebuild` **很慢**：
+    `scan_filings()` 為了讀 4 個小欄位把每份 70KB 的 filing JSON 整個
+    `json.load()` 進來，**2.75 秒/家、244 家約 11 分鐘**，所以加了進度輸出，
+    也在 help 與提示裡寫清楚「多數情況不必跑，下次 update-db 會順便修」。
+  - 測試：`tests/test_local_db.py` +14、`tests/test_cli.py` +6，
+    `-m "not slow"` **1482 passed**。GUI 走
+    `scripts/probe_db_overview_gui.py`（19 項全過），照專案「Tk 用探針、純函式
+    寫自動測試」的慣例。四個 locale 各補 17 條字串。
+
+## 2026-09-18（續二）
+
+- **本地資料庫搬家：`%APPDATA%` → 專案資料夾 `local_db/filing_cache/`**。
+  對話中發現 J5 跑滿的 201 家、13,921 份快取整個從這台機器消失，`config.json`
+  也一起不見，且確認沒有第二台機器可能跑過。追出最可能的成因是 GUI Tab3
+  的「全部清除」按鈕（`filing_cache.clear_all()`）——雖有二次確認對話框，但
+  沒有備份、按下去就是真的全刪。**更根本的問題**：這份資料放在 `%APPDATA%`，
+  那個位置在 Windows 語意上就是「系統可以清掉的快取」（重灌、系統清理工具、
+  防毒軟體都可能動它），但它實際上是花真金白銀（SEC 網路請求時間）換來的
+  **永久資料庫**，位置的語意跟用途不符。CTH 決定把它當永久資料庫規模化保存，
+  搬到專案資料夾固定路徑，`.gitignore` 排除掉不進版控。`filing_cache.cache_root()`
+  改成預設回傳 `<專案根目錄>/local_db/filing_cache/`，另開
+  `SEC_LOCAL_DB_ROOT` 環境變數供測試覆寫（原本借用 `APPDATA` 這條路，四個
+  測試檔的 fixture 一併改用新變數）。`config.json` 維持放在 `%APPDATA%`
+  不動——那份重建成本低（手動打幾個 ticker），不在這次的保護範圍內。
+  **原始 SEC filing（未解析的 XBRL/HTML）刻意不另存一份**：CTH 確認過，只存
+  「拆分後」這層（既有設計）就足夠達成「同一家公司不重工」的目標，原始檔案
+  體積會是拆分後資料的數倍，目前沒有必要多存。
+  下一步：201 家＋新增的 40 家（美股資料夾掃到的，扣掉 3 家 20-F 外國申報人：
+  ASML／STM／IFX）要重新抓一次，粗估 ~10 小時。`docs/TODO.md` J7（查詢介面）
+  待做，另補一條 J8 記錄這次搬家的後續（重抓、以及要不要幫「全部清除」按鈕
+  加防呆）。
+
 ## 2026-09-18（續）
 
 - **TODO J6 方向②完成：「資料最早自哪一期」攤開來顯示，不再要使用者自己回推**。

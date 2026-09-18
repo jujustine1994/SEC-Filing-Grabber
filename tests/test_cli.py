@@ -546,7 +546,7 @@ def test_fy_end_month_from_mmdd(mmdd, expected):
 @pytest.fixture
 def db_cfg(tmp_path, monkeypatch):
     """把 config.json 與快取根目錄都導到 tmp_path。"""
-    monkeypatch.setenv("APPDATA", str(tmp_path))
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
     import config
     path = tmp_path / "config.json"
     monkeypatch.setattr(config, "CONFIG_PATH", path)
@@ -629,3 +629,175 @@ def test_update_db_returns_nonzero_when_a_company_failed(db_cfg, monkeypatch):
                         lambda *a, **k: local_db.UpdateReport(results=[
                             local_db.TickerResult("AAPL", "failed", error="X: boom")]))
     assert cli.main(["update-db", "--config-path", str(db_cfg)]) == 1
+
+
+# ── db-status（TODO J7）─────────────────────────────────────────────────────
+#
+# 完全不連網——這支只掃本地資料夾。這裡連 `_FakeEdgar` 都不需要。
+
+@pytest.fixture
+def db_status_cache(tmp_path, monkeypatch):
+    """把快取根目錄導到 tmp_path，並塞兩家公司進去。"""
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
+    import filing_cache
+    import local_db
+    for ticker, count in (("AAPL", 2), ("NVDA", 1)):
+        d = filing_cache.ticker_dir(ticker)
+        d.mkdir(parents=True, exist_ok=True)
+        for n in range(count):
+            acc = f"0000320193-2{n}-00000{n}"
+            (d / f"{acc}.json").write_text(json.dumps({
+                "schema_version": filing_cache.SCHEMA_VERSION,
+                "accession_no": acc, "form": "10-Q",
+                "filing_date": f"20{10 + n}-05-01",
+                "cached_at": "2026-09-05T00:00:00+08:00", "cik": 320193,
+                "edgartools_version": "5.29.0", "has_financials": True,
+            }, ensure_ascii=False), encoding="utf-8")
+        local_db.load_meta(ticker)          # 先讓 meta 生出來
+    return tmp_path
+
+
+def test_db_status_lists_what_is_actually_cached(db_status_cache, capsys):
+    assert cli.main(["db-status"]) == 0
+    out = capsys.readouterr().out
+    assert "AAPL" in out and "NVDA" in out
+    assert "2 家" in out
+
+
+def test_db_status_can_filter_to_one_company(db_status_cache, capsys):
+    assert cli.main(["db-status", "nvda"]) == 0
+    out = capsys.readouterr().out
+    assert "NVDA" in out
+    assert "AAPL" not in out
+
+
+def test_db_status_json_carries_the_root_path_and_per_company_rows(
+        db_status_cache, capsys):
+    assert cli.main(["db-status", "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["companies"] == 2
+    assert payload["filings"] == 3
+    assert "filing_cache" in payload["root"]
+    rows = {r["ticker"]: r for r in payload["companies_detail"]}
+    assert rows["AAPL"]["filings"] == 2
+    # 收件日與財報期間**兩組都給**，欄名分開，呼叫端不會混用
+    assert rows["AAPL"]["filed_from"] == "2010-05-01"
+    assert "period_from" in rows["AAPL"]
+    assert "stale_days" in rows["AAPL"]
+
+
+def test_db_status_on_an_empty_database_says_so_instead_of_crashing(
+        tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "nope"))
+    assert cli.main(["db-status"]) == 0
+    assert "空的" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("text, width, expected", [
+    ("AAPL", 8, "AAPL    "),      # 半形：補到 8
+    ("代號", 8, "代號    "),        # 全形 2 字 = 4 格，補 4 個空格
+    ("到底", 6, "到底  "),
+])
+def test_pad_counts_display_width_not_characters(text, width, expected):
+    """中文標題混英文資料，按字數補空格一定歪。"""
+    assert cli._pad(text, width) == expected
+
+
+# ── compare（跨公司比較 → 給 AI 的 JSON 出口）──────────────────────────────
+#
+# 完全離線：把 `cli.cmd_compare` 裡 import 的 `build_comparison` 換掉。
+# 下面三條釘的都是 2026-09-18 手動實測才發現的 bug。
+
+class _FakeCompareResult:
+    def __init__(self, metrics, fiscal_labels=None, period_ends=None,
+                 synthetic_q4=None, failures=()):
+        self.metrics = metrics
+        self.fiscal_labels = fiscal_labels or {}
+        self.period_ends = period_ends or {}
+        self.synthetic_q4 = synthetic_q4 or {}
+        self.failures = list(failures)
+
+
+@pytest.fixture
+def fake_compare(monkeypatch):
+    """回傳一個可以塞資料的 hook。順便擋掉 identity 檢查。"""
+    monkeypatch.setattr(cli, "resolve_identity", lambda x: "T t@e.com")
+    box = {}
+
+    def _install(result):
+        import comparison
+        monkeypatch.setattr(comparison, "build_comparison",
+                            lambda *a, **kw: result)
+        box["result"] = result
+    return _install
+
+
+def test_compare_drops_periods_where_every_company_is_empty(fake_compare, capsys):
+    """`_aligned_labels()` 換不成日曆季的財季標籤會原樣留著（值全是 None）。
+
+    實測 FORM 帶出 `FY2011Q4`／`FY2013Q1`／`FY2013Q4` 三個全空的鍵，混在
+    2025Q1、2025Q2 中間——既難看，也會讓讀 JSON 的人以為那是真的期間。
+    """
+    fake_compare(_FakeCompareResult(
+        metrics={"Revenue": {
+            "ARLO": {"FY2018Q4": None, "2025Q1": 119.0, "2025Q2": 129.0},
+            "FORM": {"FY2018Q4": None, "2025Q1": 171.0, "2025Q2": 195.0},
+        }},
+        fiscal_labels={"ARLO": {"FY2018Q4": "FY2018Q4", "2025Q1": "FY2025Q1"}},
+        synthetic_q4={"ARLO": {"FY2018Q4", "2025Q1"}},
+    ))
+    assert cli.main(["compare", "ARLO", "FORM", "--metrics", "Revenue",
+                     "--json", "-"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["periods"] == ["2025Q1", "2025Q2"]
+    # 殘留鍵也要從每個 dict 清掉，不是只清 periods
+    assert set(payload["data"]["Revenue"]["ARLO"]) == {"2025Q1", "2025Q2"}
+    assert "FY2018Q4" not in payload["fiscal_labels"]["ARLO"]
+    assert payload["synthetic_q4"]["ARLO"] == ["2025Q1"]
+
+
+def test_compare_does_not_format_ratios_as_millions(fake_compare, capsys):
+    """比率不可以除以 1e6。
+
+    `Gross Margin (%)` 的值是 44.28（百分比），當成金額格式化會印成
+    `0.0M`——數字其實還在，但看起來像整欄沒資料。
+    """
+    fake_compare(_FakeCompareResult(
+        metrics={"Gross Margin (%)": {"ARLO": {"2025Q1": 44.28}},
+                 "Revenue": {"ARLO": {"2025Q1": 119066000.0}}},
+    ))
+    assert cli.main(["compare", "ARLO", "FORM", "--metrics",
+                     "Revenue", "Gross Margin (%)"]) == 0
+    out = capsys.readouterr().out
+    assert "44.28" in out
+    assert "0.0M" not in out
+    assert "119.1M" in out          # 金額那條仍然照金額格式化
+
+
+def test_compare_needs_at_least_two_companies(fake_compare, capsys):
+    # CliError 走 main() 的攔截 → 回傳 2，不是拋 SystemExit
+    assert cli.main(["compare", "AAPL"]) == 2
+    assert "兩家" in capsys.readouterr().err
+
+
+def test_compare_rejects_unknown_metrics(fake_compare, capsys):
+    """打錯指標名要當場說，不要抓了十分鐘才發現整欄是空的。"""
+    assert cli.main(["compare", "AAPL", "MSFT", "--metrics", "Reveune"]) == 2
+    err = capsys.readouterr().err
+    assert "Reveune" in err and "--list-metrics" in err
+
+
+def test_compare_list_metrics_covers_statements_and_ratios(capsys):
+    assert cli.main(["compare", "--list-metrics"]) == 0
+    out = capsys.readouterr().out
+    assert "Revenue" in out and "Gross Margin (%)" in out
+
+
+def test_compare_reports_failures_with_nonzero_exit(fake_compare, capsys):
+    from comparison import CompanyFetchError
+    fake_compare(_FakeCompareResult(
+        metrics={"Revenue": {"ARLO": {"2025Q1": 119.0}}},
+        failures=[CompanyFetchError("FORM", "NetworkDownError")],
+    ))
+    assert cli.main(["compare", "ARLO", "FORM", "--json", "-"]) == 1
+    assert "FORM" in capsys.readouterr().err

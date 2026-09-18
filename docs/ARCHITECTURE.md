@@ -877,11 +877,100 @@ XBRL 解析 19.9 秒、`to_dataframe` 28.4 秒。**edgartools 不會跨呼叫快
   不是放在 `_ledger() is None` 那個分支裡——`main.py`／`cli.py` 會自己先開
   `collect_gaps()`，那條路不會走到遞迴
 
+## 資料庫總覽：UI 與 AI 的查詢入口（TODO J7，2026-09-18）
+
+「資料庫裡有哪些公司」有三條路，用途不同不要混：
+
+| 入口 | 連網 | 用途 | 成本 |
+|---|---|---|---|
+| GUI 分頁「資料庫總覽」 | 否 | 人看：排序、搜尋、匯出 CSV | 244 家 0.53s |
+| `cli.py db-status [--json]` | 否 | AI／腳本看：一行拿到完整清單 | 同上 |
+| `scripts/audit_local_db.py` | **是** | 「完整嗎、該補哪幾家」 | 每家 2 次 SEC 請求 |
+
+⚠ `update-db --list` 印的是**更新名單**（config 裡「要抓誰」），**不是**實際
+快取了誰。兩者可以完全不同——名單上有但還沒抓、抓過但已從名單移除，都正常。
+
+**唯讀原則**：總覽與 `db-status` 走 `local_db.read_meta()`，**不**走
+`load_meta()`。後者發現 meta 跟目錄對不上會當場 `rebuild_meta()` 並寫檔，一家
+要開 75 個 JSON——「瞄一眼資料庫有什麼」不該有副作用，也不該花 11 分鐘。對不上
+就照實顯示「需重算」，重算留給 `db-status --rebuild`（明確要求）或下一次
+「更新本地庫」（順便修）。
+
+⚠ **「申報日期」與「財報期間」是兩個欄位，不要混用。** `_meta.json` 兩組都存：
+
+| meta 欄位 | 是什麼 | 來源 |
+|---|---|---|
+| `forms[].oldest` / `newest` | **SEC 收件日** | `filing_date` |
+| `forms[].period_oldest` / `period_newest` | **財報期間**（schema 2 起） | 快取 DataFrame 的欄名 |
+
+一份 2008-05 申報的 10-K 蓋的是 2007 年度，兩者差一整個期間。總覽與
+`db-status` 的主欄位顯示**財報期間**（分析師問的是「我有哪幾季的數字」），
+年數也用它算；收件日留在 CSV 匯出與 `--json`。期末日由
+`local_db.period_end_of()` 從欄名（`"2026-03-29 (Q1)"`，或資產負債表的裸日期）
+抽出來**取最大值**＝當期，其餘日期欄是去年同期等比較欄。這條有測試釘住——
+對財報工具來說，把收件日標成財報期間是會誤導使用者的錯誤，不是措辭問題。
+
+**「上次查」**：`meta["updated_at"]` 是「上次去 SEC 查這家」的時間，跟
+`period_newest`（公司最新一期財報）是兩件事。一家顯示「已到底、最新期間
+2026-03」，若那是三個月前查的，中間很可能已經出了新財報。這個欄位從 J2 就在
+寫，但直到 2026-09-18 才有人讀（`local_db.days_since()`）。
+
+**已知成本**：`rebuild_meta()` → `scan_filings()` 為了讀 4 個小欄位把每份 70KB
+的 filing JSON 整個 `json.load()` 進來，實測 **2.75 秒/家**（244 家約 11 分鐘）。
+正常抓取時 meta 是即時寫的，踩不到；只有「明確要求重算」會付這筆。要不要修見
+`docs/TODO.md` J7 最後一條。
+
+## 本地財報資料庫的定位：一個掛勾點服務三條路徑
+
+**專案定位**（CTH 2026-09-04 指定、2026-09-18 再確認）：財報資料抓一次就存在
+本地，之後所有用途都從本地拿——產 Excel、跨公司比較、**以及 AI 透過 `cli.py`
+調用**。不是「順手加的快取」，是核心資產。
+
+之所以做得到，是因為快取只掛在**一個**函式上：
+
+```
+GUI Tab1 單一公司 ─┐
+GUI Tab2 批量更新 ─┤
+GUI 跨公司比較    ─┼→ fetch_gaap_statements() ─→ _disk_cache_scope()
+cli.py gaap（AI）─┘        （comparison.py:17            └→ _filing_obj() ─→ 快取
+CLI update-db     ─┘          也是呼叫這支）
+```
+
+`comparison.py` 直接 `from fetcher_gaap import fetch_gaap_statements`，而那支在
+本體開了 `with _disk_cache_scope(), _parse_cache_scope():`——所以**跨公司比較
+與 AI 調用完全不必特別支援快取，它們本來就在裡面**。要加新的資料出口
+（例如新的 skill、新的報表），只要走 `fetch_gaap_statements()` 就自動享有。
+
+**清單的離線退路**（TODO J9，2026-09-18 完成）。`_list_filings()` →
+`company.get_filings()` 仍然**每次都先問 SEC**——這一點不能改成本地優先，
+否則永遠發現不了新申報（accession 不變、但「有哪些」會變）。只有在**連不上
+而且本地真的有資料**時才退回 `filing_cache.list_cached_filings()` 盤點出來的
+清單；本地也空的話照舊往外拋，不可以把「連不上」說成「這家沒有財報」。
+
+⚠ **退路一定要看得見**，四個地方都有：
+
+| 出口 | 怎麼顯示 |
+|---|---|
+| `fetcher_gaap` | stderr 印 `OFFLINE FALLBACK for <form>` |
+| `cli.py`（gaap／compare） | 收尾列出哪幾家、哪些 form 用了退路 |
+| `cli.py compare --json` | `offline` 欄位：`{ticker: [form, ...]}` |
+| Excel `Data_Meta` | `Data Source` 欄：即時抓取 / ⚠ 離線資料 |
+| GUI | log 橘字警告（`gui.log.offline_fallback`） |
+
+靜默退回就是 J6 那類「不報錯、只是資料比你以為的少」的失效模式——使用者會拿
+上次連得上時的舊數字當最新的做判斷。`reset_offline_tracking()` 要在每批抓取
+前呼叫，`offline_report()` 是**累積**的（跨公司比較一次十家，覆寫只看得到最後一家）。
+
 ## 本地 filing 快取（`filing_cache.py`，2026-09-03）
 
 **卡在哪一層**：解析層與比對層之間。`_filing_obj()`（`fetcher_gaap.py`）解出
 edgartools 的 income statement / balance sheet / cashflow statement 三張
-DataFrame 之後，原封不動存進 `%APPDATA%\SEC Financial Tools\filing_cache\`；
+DataFrame 之後，原封不動存進 `<專案根目錄>\local_db\filing_cache\`（**2026-09-18
+從 `%APPDATA%` 搬過來**——這份資料是花 SEC 網路請求時間換來的永久資料庫，不是
+「系統可以隨便清掉」的快取，`%APPDATA%` 那個位置語意不對，201 家、13,921 份
+就是這樣連著設定檔一起憑空消失過一次。搬進專案資料夾後跟其他會被留意/備份
+的檔案放一起，`.gitignore` 排除掉不進版控；可用 `SEC_LOCAL_DB_ROOT` 環境變數
+覆寫，只給測試導去 tmp 用）；
 `IS/BS/CF_TEMPLATE` 那套科目比對規則、hint regex、Q4 合成邏輯，永遠在快取
 **之上**即時重跑，不進快取檔。所以以後改比對規則、加比率、調模板都不會讓
 快取失效——**但 edgartools 升版會**，靠每份快取檔裡的 `edgartools_version`
@@ -926,7 +1015,7 @@ filing 物件的其他屬性，快取命中的路徑會安靜地把整份 filing
 **⚠ edgartools 自己也有一層持久化 HTTP 快取，這個專案的清除動作碰不到它**：
 `~/.edgar/_tcache`（Hishel-File，規則對 `/Archives/edgar/data` 是「快取到
 天荒地老」）跟這裡的 `filing_cache.py` 是完全獨立的兩層。
-`filing_cache.clear_ticker()` 只清這個專案自己 `%APPDATA%` 底下那份，
+`filing_cache.clear_ticker()` 只清這個專案自己 `local_db/filing_cache/` 底下那份，
 **不會**動到 `~/.edgar/_tcache`——如果只清這邊就量「冷跑」，量到的其實是
 「本專案快取沒有、但 edgartools 自己的 HTTP 快取可能還在」的混合狀態，不是
 真正對 SEC 重新握手一次。下面的數字是把兩層都清乾淨（`filing_cache.clear_ticker`

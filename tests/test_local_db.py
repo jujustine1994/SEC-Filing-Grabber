@@ -24,8 +24,8 @@ import local_db
 @pytest.fixture
 def cache_dir(tmp_path, monkeypatch):
     """把快取根目錄導到 tmp_path（跟 test_filing_cache.py 同一招）。"""
-    monkeypatch.setenv("APPDATA", str(tmp_path))
-    return tmp_path / "SEC Financial Tools" / "filing_cache"
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
+    return tmp_path / "filing_cache"
 
 
 def _acc(n: int) -> str:
@@ -143,6 +143,9 @@ def test_rebuild_meta_counts_per_form_with_oldest_and_newest(cache_dir):
     assert meta["cik"] == 320193
     assert meta["forms"]["10-Q"] == {
         "count": 2, "oldest": "2024-08-01", "newest": "2025-08-01",
+        # `_write_filing` 寫的 dataframes 是 {k: None}，抽不出期末日 → None。
+        # 有期間的情況由 test_rebuild_meta_records_real_fiscal_periods 蓋。
+        "period_oldest": None, "period_newest": None,
         "reached_bottom": None, "reached_bottom_stale": False,
     }
     assert meta["forms"]["10-K"]["count"] == 1
@@ -570,3 +573,281 @@ def test_skip_path_falls_back_to_rebuild_when_meta_is_missing_a_form(cache_dir):
 ])
 def test_meta_is_reusable(meta, ok):
     assert local_db._meta_is_reusable(meta, 1) is ok
+
+
+# ── J7：資料庫總覽（唯讀純函式）──────────────────────────────────────────
+
+def _row(ticker="AAPL", **kw):
+    """總覽的一列，只填測試關心的欄位。"""
+    base = {"ticker": ticker, "filings": 10, "size_bytes": 1000,
+            "filed_from": "2008-05-01", "filed_to": "2026-06-01",
+            "period_from": "2008-03-29", "period_to": "2026-03-28",
+            "years": 18.0, "bottom": local_db.BOTTOM_YES, "bottom_stale": False,
+            "in_list": True, "meta_ok": True, "edgartools_version": "5.29.0",
+            "updated_at": "2026-09-18T10:00:00+08:00", "stale_days": 0}
+    return {**base, **kw}
+
+
+def test_overview_row_reports_filed_dates_not_fiscal_periods(cache_dir):
+    """`filed_from`／`filed_to` 是 SEC 收件日。這條釘的是語意，不是格式——
+    顯示端要據此標成「申報日期」，標成「涵蓋期間」就是講假話。"""
+    _write_filing("AAPL", _acc(1), form="10-K", filing_date="2008-05-01")
+    _write_filing("AAPL", _acc(2), form="10-Q", filing_date="2026-06-01")
+    local_db.load_meta("AAPL")          # 先讓 meta 生出來
+
+    cached = {"ticker": "AAPL", "count": 2, "size_bytes": 999}
+    row = local_db.overview_row("AAPL", cached, in_list=False)
+    assert row["filed_from"] == "2008-05-01"
+    assert row["filed_to"] == "2026-06-01"
+    assert row["years"] == 18.1
+
+
+def test_overview_row_never_writes_to_disk(cache_dir):
+    """總覽是唯讀的。`load_meta()` 會自癒並寫檔，`overview_row()` 不可以——
+    244 家「瞄一眼」不該變成上萬次檔案讀取加一輪寫入。"""
+    _write_filing("NVDA", _acc(1), form="10-Q", filing_date="2020-05-01")
+    meta_file = local_db.meta_path("NVDA")
+    assert not meta_file.exists()        # 還沒有 meta，正是最會誘發自癒的狀態
+
+    cached = {"ticker": "NVDA", "count": 1, "size_bytes": 100}
+    row = local_db.overview_row("NVDA", cached, in_list=False)
+
+    assert not meta_file.exists()        # 沒有被偷偷建出來
+    assert row["meta_ok"] is False       # 而且照實回報「對不上」
+    assert row["filings"] == 1           # 份數仍然正確（來自目錄，不是 meta）
+
+
+def test_overview_row_flags_meta_that_disagrees_with_the_directory(cache_dir):
+    _write_filing("META", _acc(1), form="10-Q", filing_date="2020-05-01")
+    local_db.load_meta("META")
+    _write_filing("META", _acc(2), form="10-Q", filing_date="2021-05-01")
+
+    cached = {"ticker": "META", "count": 2, "size_bytes": 100}
+    assert local_db.overview_row("META", cached, in_list=False)["meta_ok"] is False
+
+
+def test_overview_rows_are_alphabetical_and_mark_the_update_list(cache_dir):
+    for ticker in ("NVDA", "AAPL", "MSFT"):
+        _write_filing(ticker, _acc(1), form="10-Q", filing_date="2020-05-01")
+
+    rows = local_db.overview_rows({"local_db_tickers": ["AAPL"]})
+    assert [r["ticker"] for r in rows] == ["AAPL", "MSFT", "NVDA"]
+    assert [r["in_list"] for r in rows] == [True, False, False]
+
+
+def test_overview_summary_totals():
+    rows = [_row("AAPL", filings=75, size_bytes=1000),
+            _row("NVDA", filings=60, size_bytes=500)]
+    assert local_db.overview_summary(rows) == {
+        "companies": 2, "filings": 135, "size_bytes": 1500}
+
+
+def test_filter_matches_anywhere_in_the_ticker_ignoring_case():
+    rows = [_row("AMD"), _row("AAPL"), _row("NVDA")]
+    assert [r["ticker"] for r in local_db.filter_overview_rows(rows, "md")] == ["AMD"]
+    # NVDA 也含 "A"，所以三家裡有兩家中
+    assert len(local_db.filter_overview_rows(rows, "a")) == 3
+    assert len(local_db.filter_overview_rows(rows, "")) == 3
+
+
+def test_sort_puts_missing_values_last_in_both_directions():
+    """算不出年數的公司是「資料不全」，升冪降冪都該沉底。
+    降冪若直接 `reverse=True`，`None` 會被翻到最前面，把真正的極端值埋掉。"""
+    rows = [_row("AAPL", years=18.1), _row("BLK", years=None), _row("CRM", years=2.0)]
+
+    asc = local_db.sort_overview_rows(rows, "years")
+    assert [r["ticker"] for r in asc] == ["CRM", "AAPL", "BLK"]
+
+    desc = local_db.sort_overview_rows(rows, "years", descending=True)
+    assert [r["ticker"] for r in desc] == ["AAPL", "CRM", "BLK"]
+
+
+def test_sort_falls_back_to_ticker_when_the_key_is_unknown():
+    """點壞一個欄位標題不該讓整頁炸掉。"""
+    rows = [_row("NVDA"), _row("AAPL")]
+    assert [r["ticker"] for r in local_db.sort_overview_rows(rows, "nope")] \
+        == ["AAPL", "NVDA"]
+
+
+# ── J7：總覽的顯示層（`main.py` 的純函式，Treeview 本身用探針驗）──────────
+
+def test_overview_cells_show_fiscal_periods_not_filed_dates(cache_dir):
+    """主欄位顯示的必須是**財報期間**，不是 SEC 收件日。兩者差一整個期間，
+    分析師問的是「我有哪幾季的數字」。"""
+    from i18n import set_lang
+    from main import DB_OVERVIEW_COLUMNS, db_overview_cells
+    set_lang("zh_tw")
+
+    from locales.zh_tw import STRINGS
+    assert "財報期間" == STRINGS["gui.col.db_period_span"]
+
+    cells = db_overview_cells(_row(period_from="2008-03-29", period_to="2026-03-28",
+                                   filed_from="2008-05-01", filed_to="2026-06-01"))
+    assert len(cells) == len(DB_OVERVIEW_COLUMNS)
+    # 顯示 03/29 那組（財報期間），不是 05/01 那組（收件日）
+    assert cells[DB_OVERVIEW_COLUMNS.index("period_span")] == "2008-03 ~ 2026-03"
+
+
+def test_overview_cells_render_missing_values_as_dashes():
+    from main import DB_OVERVIEW_COLUMNS, db_overview_cells
+    cells = db_overview_cells(_row(period_from=None, period_to=None, years=None,
+                                   bottom=local_db.BOTTOM_UNKNOWN, stale_days=None))
+    assert cells[DB_OVERVIEW_COLUMNS.index("period_span")] == "—"
+    assert cells[DB_OVERVIEW_COLUMNS.index("checked")] == "—"
+    assert cells[DB_OVERVIEW_COLUMNS.index("years")] == "—"
+    assert cells[DB_OVERVIEW_COLUMNS.index("bottom")] == "—"
+
+
+def test_overview_cells_mark_stale_bottom_with_a_question_mark():
+    """`reached_bottom` 是上一輪留下的值就加問號——不加的話，一個「已到底」
+    看起來跟真的重算過一樣可信。"""
+    from main import DB_OVERVIEW_COLUMNS, db_overview_cells
+    idx = DB_OVERVIEW_COLUMNS.index("bottom")
+    assert db_overview_cells(_row(bottom_stale=True))[idx].endswith("?")
+    assert not db_overview_cells(_row(bottom_stale=False))[idx].endswith("?")
+    # 本來就沒有 meta 的不加問號——「—?」沒有意義
+    assert db_overview_cells(
+        _row(bottom=local_db.BOTTOM_UNKNOWN, bottom_stale=True))[idx] == "—"
+
+
+def test_overview_cells_flag_rows_whose_snapshot_is_stale():
+    from main import DB_OVERVIEW_COLUMNS, db_overview_cells
+    idx = DB_OVERVIEW_COLUMNS.index("note")
+    assert db_overview_cells(_row(meta_ok=True))[idx] == ""
+    assert db_overview_cells(_row(meta_ok=False))[idx] != ""
+
+
+def test_overview_csv_has_a_header_and_one_line_per_company():
+    from main import DB_OVERVIEW_COLUMNS, db_overview_csv
+    text = db_overview_csv([_row("AAPL"), _row("NVDA")])
+    lines = text.strip().splitlines()
+    assert len(lines) == 3                       # 標題 + 2 家
+    assert len(lines[0].split(",")) == len(DB_OVERVIEW_COLUMNS)
+    assert lines[1].startswith("AAPL")
+    assert lines[2].startswith("NVDA")
+
+
+# ── J7 後續：真正的財報期間、上次更新時間、只抓幾家（2026-09-18）──────────
+
+def _write_filing_with_periods(ticker, accession, *, form, filing_date, period_cols):
+    """帶真實 DataFrame 欄名的快取檔——期末日就是從這些欄名抽出來的。"""
+    import pandas as pd
+    df = pd.DataFrame({"concept": ["Revenue"], "label": ["Revenues"],
+                       **{c: [1.0] for c in period_cols}})
+    path = filing_cache.ticker_dir(ticker) / f"{accession}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "schema_version": filing_cache.SCHEMA_VERSION,
+        "accession_no": accession, "form": form, "filing_date": filing_date,
+        "cached_at": "2026-09-05T00:00:00+08:00", "cik": 320193,
+        "edgartools_version": "5.29.0", "has_financials": True,
+        "dataframes": {"income_statement": filing_cache.df_to_payload(df),
+                       "balance_sheet": None, "cashflow_statement": None},
+    }, ensure_ascii=False), encoding="utf-8")
+
+
+def test_period_end_picks_the_latest_column_not_the_comparative():
+    """一份 10-Q 的欄位含去年同期，當期是**最新**那個。挑錯會讓期間整段偏一年。"""
+    import pandas as pd
+    df = pd.DataFrame({"concept": ["Rev"], "label": ["Revenues"],
+                       "2026-03-29 (Q1)": [1.0], "2025-03-30 (Q1)": [0.9]})
+    entry = {"dataframes": {"income_statement": filing_cache.df_to_payload(df)}}
+    assert local_db.period_end_of(entry) == "2026-03-29"
+
+
+def test_period_end_handles_bare_dates_from_the_balance_sheet():
+    """資產負債表的欄名是裸日期（instant），沒有 `(Q1)` 後綴。"""
+    import pandas as pd
+    df = pd.DataFrame({"concept": ["Cash"], "2024-03-31": [1.0]})
+    entry = {"dataframes": {"balance_sheet": filing_cache.df_to_payload(df)}}
+    assert local_db.period_end_of(entry) == "2024-03-31"
+
+
+def test_period_end_is_none_for_negative_cache_entries():
+    """pre-XBRL 的負向快取 `dataframes` 是 null，本來就沒有期間，不該炸。"""
+    assert local_db.period_end_of({"dataframes": None}) is None
+    assert local_db.period_end_of({}) is None
+
+
+def test_rebuild_meta_records_real_fiscal_periods(cache_dir):
+    """meta 要同時存收件日與財報期間——兩者差一整個期間。"""
+    _write_filing_with_periods("AAPL", _acc(1), form="10-K",
+                               filing_date="2008-05-01",
+                               period_cols=["2007-12-29 (FY)", "2006-12-30 (FY)"])
+    _write_filing_with_periods("AAPL", _acc(2), form="10-K",
+                               filing_date="2026-06-01",
+                               period_cols=["2026-03-28 (FY)"])
+    meta = local_db.rebuild_meta("AAPL")
+    form = meta["forms"]["10-K"]
+    assert (form["oldest"], form["newest"]) == ("2008-05-01", "2026-06-01")
+    assert (form["period_oldest"], form["period_newest"]) \
+        == ("2007-12-29", "2026-03-28")
+
+
+def test_overview_years_come_from_fiscal_periods_not_filed_dates(cache_dir):
+    """年數要用財報期間算——那才是「我手上有幾年的數字」。"""
+    _write_filing_with_periods("AAPL", _acc(1), form="10-K",
+                               filing_date="2008-05-01",
+                               period_cols=["2007-12-29 (FY)"])
+    _write_filing_with_periods("AAPL", _acc(2), form="10-K",
+                               filing_date="2026-06-01",
+                               period_cols=["2025-12-27 (FY)"])
+    local_db.load_meta("AAPL")
+    row = local_db.overview_row("AAPL", {"ticker": "AAPL", "count": 2,
+                                         "size_bytes": 100}, in_list=False)
+    assert (row["period_from"], row["period_to"]) == ("2007-12-29", "2025-12-27")
+    # 期間跨 18.0 年，收件日跨 18.1 年——取的是前者
+    assert row["years"] == local_db._span_years("2007-12-29", "2025-12-27")
+
+
+def test_schema_bump_invalidates_old_metas(cache_dir):
+    """schema 從 1 升到 2，舊 meta 沒有 period_* 欄位，必須整份重建。"""
+    _write_filing("AAPL", _acc(1), form="10-Q", filing_date="2020-05-01")
+    local_db.write_meta("AAPL", {"schema_version": 1, "ticker": "AAPL",
+                                 "file_count": 1, "forms": {}})
+    assert local_db.read_meta("AAPL") is None       # 舊版一律判無效
+
+
+@pytest.mark.parametrize("stamp, expected", [
+    ("2026-09-18T10:00:00+08:00", 0),
+    ("2026-09-15T10:00:00+08:00", 3),
+    ("", None),
+    (None, None),
+    ("not a timestamp", None),
+])
+def test_days_since_converts_updated_at(stamp, expected):
+    """`updated_at` 在 2026-09-18 之前寫了但從來沒人讀，等於白存。"""
+    assert local_db.days_since(stamp, today=date(2026, 9, 18)) == expected
+
+
+def test_days_since_never_returns_negative():
+    """時鐘不同步／時區換算讓 updated_at 看起來在未來時，不要顯示「-1 天前」。"""
+    assert local_db.days_since("2026-09-20T10:00:00+08:00",
+                               today=date(2026, 9, 18)) == 0
+
+
+def test_overview_row_exposes_when_we_last_checked(cache_dir):
+    _write_filing("NVDA", _acc(1), form="10-Q", filing_date="2020-05-01")
+    local_db.load_meta("NVDA")
+    row = local_db.overview_row("NVDA", {"ticker": "NVDA", "count": 1,
+                                         "size_bytes": 10}, in_list=False)
+    assert row["updated_at"]                 # meta 剛寫，有時間戳
+    assert row["stale_days"] == 0
+
+
+def test_checked_text_reads_as_relative_time():
+    from i18n import set_lang
+    from main import db_checked_text
+    set_lang("zh_tw")
+    assert db_checked_text(0) == "今天"
+    assert "3" in db_checked_text(3)
+    assert db_checked_text(None) == "—"
+
+
+def test_rows_can_be_sorted_by_how_stale_they_are():
+    """「哪幾家最久沒查」是實際會問的問題，所以 stale_days 要能排序。"""
+    rows = [_row("AAPL", stale_days=0), _row("BLK", stale_days=90),
+            _row("CRM", stale_days=None)]
+    order = [r["ticker"] for r in
+             local_db.sort_overview_rows(rows, "stale_days", descending=True)]
+    assert order == ["BLK", "AAPL", "CRM"]      # 最久沒查的在最前，未知沉底

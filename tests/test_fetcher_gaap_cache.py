@@ -3,6 +3,7 @@
 `filing_cache.py` 自己的儲存層測試在 tests/test_filing_cache.py。這裡釘的是
 「什麼時候會打網路、什麼時候不會」，以及那幾條踩到會餵錯資料的邊界。
 """
+import json
 import threading
 from unittest.mock import MagicMock
 
@@ -25,8 +26,8 @@ ACC_OLD = "0001045810-19-000001"
 
 @pytest.fixture
 def cache_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("APPDATA", str(tmp_path))
-    return tmp_path / "SEC Financial Tools" / "filing_cache"
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
+    return tmp_path / "filing_cache"
 
 
 def _df():
@@ -337,3 +338,195 @@ def test_last_cache_stats_is_isolated_across_threads(cache_dir):
         "NVDA": (24, 25),  # hits=24, total=hits+misses=24+1=25
         "AAPL": (5, 15),   # hits=5, total=5+10=15
     }
+
+
+# ── 六張表全抓（2026-09-18）────────────────────────────────────────────────
+
+def test_all_six_statements_are_cached(cache_dir):
+    """核心三張＋額外三張（權益變動／綜合損益／封面）全部落檔。
+
+    額外那三張目前沒有下游在讀，存著是為了「以後加新報表不必重抓 SEC」——
+    抓一次 218 家要 11 小時，而快取卡在解析層與比對層之間，本來就該把解析
+    得到的東西全部留下。
+    """
+    filing = _fake_filing()
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(filing)
+
+    entry = json.loads(filing_cache.filing_path("NVDA", ACC).read_text(encoding="utf-8"))
+    assert set(entry["dataframes"]) == set(filing_cache.STATEMENT_KEYS)
+    assert len(filing_cache.STATEMENT_KEYS) == 6
+
+
+def test_a_broken_extra_statement_does_not_sink_the_core_three(cache_dir):
+    """額外表炸掉只記 None，**核心三張照樣落檔**。
+
+    反過來做的話（讓例外往外傳）等於三張好好的核心表跟著陪葬，下次重抓
+    還是踩到同一張壞掉的額外表，永遠收斂不了。
+    """
+    filing = _fake_filing()
+    fin = filing.obj.return_value.financials
+    fin.statement_of_equity.side_effect = RuntimeError("no equity section")
+    fin.cover.side_effect = RuntimeError("weird cover")
+
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(filing)
+
+    path = filing_cache.filing_path("NVDA", ACC)
+    assert path.exists()                      # 有寫，沒有整份放棄
+    entry = json.loads(path.read_text(encoding="utf-8"))
+    assert entry["dataframes"]["statement_of_equity"] is None
+    assert entry["dataframes"]["cover"] is None
+    assert entry["dataframes"]["income_statement"] is not None   # 核心的還在
+
+
+def test_a_broken_core_statement_still_blocks_the_whole_cache(cache_dir):
+    """對照組：核心表炸掉仍然整份不寫。
+
+    這是跟上一條相反的方向，兩條一起釘住「核心不容忍、額外容忍」的分界。
+    核心表被記成 None 的話，「解析失敗」會被存成「這份沒有損益表」，而且
+    因為有快取了就再也不會重抓——一期資料被永久判死刑。
+    """
+    filing = _fake_filing()
+    filing.obj.return_value.financials.balance_sheet.side_effect = RuntimeError("bad xbrl")
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(filing)
+    assert not filing_cache.filing_path("NVDA", ACC).exists()
+
+
+def test_cache_hit_exposes_the_extra_statements_too(cache_dir):
+    """替身物件要跟真的 edgartools 物件一致。
+
+    少了這幾個方法的話會變成「快取命中時拿不到、清快取重跑卻拿得到」——
+    `_CachedFiling` 刻意不定義 `__getattr__` 就是為了不讓這種不一致靜默發生。
+    """
+    filing = _fake_filing()
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(filing)
+
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        cached = _filing_obj(_fake_filing())
+    assert isinstance(cached, filing_cache._CachedFiling)
+    for key in filing_cache.STATEMENT_KEYS:
+        assert hasattr(cached.financials, key), key
+        getattr(cached.financials, key)()      # 叫得動，不拋
+
+
+# ── J9：清單的離線退路 ────────────────────────────────────────────────────
+
+def test_offline_fallback_uses_local_listing_when_sec_is_unreachable(
+        cache_dir, monkeypatch):
+    """SEC 連不上、但本地有資料 → 用本地清單撐過去，而且要記下來。
+
+    沒有這條退路的話，明明 33 份都在硬碟上卻整趟失敗（2026-09-18 實測確認）。
+    """
+    import fetcher_gaap as fg
+    filing = _fake_filing()
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(filing)                     # 先讓本地有一份
+
+    monkeypatch.setattr(fg, "_list_filings",
+                        lambda *a, **kw: (_ for _ in ()).throw(
+                            NetworkDownError("SEC down")))
+    rows = fg._offline_listing("NVDA", "10-Q")
+    assert [r.accession_no for r in rows] == [ACC]
+    assert rows[0].form == "10-Q"
+
+
+def test_offline_stub_refuses_to_pretend_it_can_download(cache_dir):
+    """替身的 `.obj()` 一定要炸。
+
+    這種物件只會為「已經在本地」的 filing 造出來，走到 `.obj()` 代表那份
+    快取其實讀不出來——那時該失敗，不可以假裝有資料。
+    """
+    import fetcher_gaap as fg
+    stub = fg._OfflineFiling("0001045810-25-000123", "2025-08-27", "10-Q")
+    with pytest.raises(NetworkDownError):
+        stub.obj()
+
+
+def test_offline_tracking_accumulates_across_companies(cache_dir):
+    """跨公司比較一次跑十家，每家各自可能離線。覆寫的話只看得到最後一家。"""
+    import fetcher_gaap as fg
+    fg.reset_offline_tracking()
+    assert fg.offline_report() == {}
+
+    tracked = dict(fg._offline_var.get())
+    tracked["ARLO"] = {"10-Q"}
+    fg._offline_var.set(tracked)
+    tracked = dict(fg._offline_var.get())
+    tracked["FORM"] = {"10-K", "10-Q"}
+    fg._offline_var.set(tracked)
+
+    assert fg.offline_report() == {"ARLO": ["10-Q"], "FORM": ["10-K", "10-Q"]}
+    assert fg.last_offline_forms() == frozenset({"10-Q", "10-K"})
+
+    fg.reset_offline_tracking()
+    assert fg.offline_report() == {}
+
+
+def test_offline_listing_is_empty_when_nothing_is_cached(cache_dir):
+    """本地也沒有就回空 → 呼叫端要照舊把網路例外往外拋，**不可以**把
+    「連不上 SEC」說成「這家公司沒有財報」。"""
+    import fetcher_gaap as fg
+    assert fg._offline_listing("NOPE", "10-Q") == []
+
+
+# ── J9 的退路門檻（2026-09-18 code review 後補）───────────────────────────
+
+def test_connectivity_predicate_accepts_network_down_error():
+    """`NetworkDownError` **必須**算連線失敗。
+
+    ⚠ 不能直接用 `net_retry.is_network_error()`：那支回答的是「該不該再重試」，
+    對 `NetworkDownError`（已經重試完仍失敗）刻意回 False。用錯的話離線退路
+    **永遠不會觸發**——而那正是最典型的連不上情境。修 code review 建議時
+    真的踩到過這個。
+    """
+    import fetcher_gaap as fg
+    from net_retry import is_network_error
+    exc = NetworkDownError("down")
+    assert is_network_error(exc) is False          # 重試語意：不要再試
+    assert fg._is_connectivity_failure(exc) is True   # 退路語意：就是連不上
+
+
+@pytest.mark.parametrize("exc", [TypeError("bug"), AttributeError("bug"),
+                                 ValueError("bug")])
+def test_connectivity_predicate_rejects_real_bugs(exc):
+    """edgartools 升版後最常見的就是這幾種。被偽裝成「離線」的話，真正的
+    bug 會被蓋掉，而且資料還被標成「離線資料」。"""
+    import fetcher_gaap as fg
+    assert fg._is_connectivity_failure(exc) is False
+
+
+def test_offline_listing_respects_the_edgartools_version_gate(cache_dir, monkeypatch):
+    """只擋 schema 不夠——升版後那些檔案 `load_filing()` 全部讀不出來。
+
+    不擋的話退路會宣告「已用 N 份本地資料」，實際上一份都叫不出內容，
+    最後產出一份空表被標成「離線資料」而不是「讀不出來」。
+    """
+    import fetcher_gaap as fg
+    filing = _fake_filing()
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(filing)
+    assert len(fg._offline_listing("NVDA", "10-Q")) == 1
+
+    monkeypatch.setattr(filing_cache, "edgartools_version", lambda: "99.0.0")
+    assert fg._offline_listing("NVDA", "10-Q") == []
+
+
+def test_cached_cik_is_readable_without_network(cache_dir):
+    """離線時 `Company(ticker).cik` 要連網，而沒有 cik 的話磁碟快取整段關閉
+    ——退路會盤出清單卻一份都讀不出來。cik 要能從本地快取撈回。"""
+    filing = _fake_filing()
+    with _disk_cache_scope(), _parse_cache_scope():
+        _bind_disk_cache("NVDA", 1045810)
+        _filing_obj(filing)
+    assert filing_cache.cached_cik("NVDA") == 1045810
+    assert filing_cache.cached_cik("NOPE") is None

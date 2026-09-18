@@ -63,6 +63,74 @@
 沒事（`scripts/check_fye_drift.py`，離線可重驗）。`label_agrees_with_fiscal_label`
 抓得到「選進來的那幾份有問題」，抓不到「該選進來卻被 `--years` 漏掉」的那一類。
 
+## `compare`：跨公司比較（AI 要畫圖就用這條）
+
+```bash
+./venv/Scripts/python.exe src/cli.py compare ARLO FORM NVDA --json out.json
+./venv/Scripts/python.exe src/cli.py compare AAPL MSFT --metrics Revenue "Gross Margin (%)" --years 2023-2026
+./venv/Scripts/python.exe src/cli.py compare AAPL MSFT --annual          # 比年報
+./venv/Scripts/python.exe src/cli.py compare --list-metrics              # 95 個科目 + 59 個比率
+```
+
+**為什麼不要自己跑四次 `gaap` 再合併**：各家財年不同，同一個「Q2」不是同一段
+時間（ARLO 的 Q2 結束在 06-28、NVDA 在 07-27）。`comparison.py` 已經把日曆季
+對齊、財季對照、缺季留白這些做完了，這條就是把它接出來。自己合併等於重造
+輪子，而且**對錯了不會報錯**。
+
+輸出的 JSON：
+
+- `periods`——對齊過的**日曆季**清單，這是唯一的期間事實來源
+- `data`：`{指標: {ticker: {日曆季: 值}}}`。每個 dict 的鍵**剛好**等於 `periods`
+- `fiscal_labels`：`{ticker: {日曆季: 那家自己的財季標籤}}`。各家財年不同時
+  的對帳依據——同一欄 NVDA 是 FY2026Q2、AMD 是 FY2025Q2
+- `period_ends`：每家每一欄的實際期末日
+- `synthetic_q4`：**推算出來的 Q4**。SEC 沒有 Q4 的 10-Q，季報表裡的 Q4 一律是
+  「年報 − Q1 − Q2 − Q3」算的，要標出來
+- `failures`：哪幾家整家抓失敗（回傳碼 1）
+
+⚠ 指標名是**英文機器鍵**，跟 Excel A 欄同一套。打錯會當場擋下（回傳碼 2），
+不會讓你抓了十分鐘才發現整欄是空的。比率的值是百分比或倍數本身
+（`Gross Margin (%)` = 44.28），**不是金額**，不要再除以 1e6。
+
+## `db-status`：資料庫裡實際有哪些公司（TODO J7）
+
+**AI／腳本要查資料庫內容就用這條。不連網，244 家實測 0.53 秒。**
+
+```bash
+./venv/Scripts/python.exe src/cli.py db-status                 # 人看的表格
+./venv/Scripts/python.exe src/cli.py db-status --json          # 給 AI 吃
+./venv/Scripts/python.exe src/cli.py db-status NVDA AMD        # 只看這幾家
+./venv/Scripts/python.exe src/cli.py db-status --rebuild       # 先重算過期的 meta（很慢，見下）
+```
+
+⚠ **跟另外兩個東西分清楚，三者答的是不同問題**：
+
+| 要問的 | 用哪個 | 連網 |
+|---|---|---|
+| 資料庫**實際有**哪些公司 | `db-status` | 否 |
+| 名單上**要抓**哪些公司 | `update-db --list` | 否 |
+| 哪幾家**不完整、該補** | `scripts/audit_local_db.py` | **是**（每家 2 次請求） |
+
+`update-db --list` 印的是 `config["local_db_tickers"]`，那是「要保持新鮮的清單」，
+跟「快取裡真的有什麼」是兩個集合，可以完全不同。
+
+`--json` 每家給這些欄位（**英文機器鍵**）：
+
+- `period_from` / `period_to`——**財報期間**（手上有哪幾季的數字）
+- `filed_from` / `filed_to`——**SEC 收件日**，跟上面差一整個期間，不要混用
+- `years`、`filings`、`size_bytes`
+- `bottom`（`yes`／`no`／`unknown`）、`bottom_stale`
+- `updated_at`、`stale_days`——**上次去 SEC 查這家**是多久以前。一家「已到底、
+  最新期間 2026-03」如果是 120 天前查的，中間很可能已經出新財報
+- `in_list`（在不在更新名單）、`meta_ok`（meta 快照跟目錄對不對得上）
+
+**唯讀**：這條走 `read_meta()`，不會寫任何檔。meta 對不上就照實回報
+`meta_ok: false`（顯示「需重算」），不當場自癒。
+
+⚠ **`--rebuild` 很慢**：`scan_filings()` 為了讀幾個小欄位把每份 70KB 的 filing
+JSON 整個 `json.load()` 進來，實測 **2.75 秒/家、244 家約 11 分鐘**。多數情況
+不必跑——下一次 `update-db` 會順便把 meta 修好。
+
 ## `update-db`：更新本地財報資料庫（TODO J3）
 
 ```bash
