@@ -48,10 +48,33 @@ $env:PYTHONIOENCODING = "utf-8"
 # [Text.Encoding]::GetEncoding(950)`。
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
+# ⚠ **寫 log 一定要能失敗而不中斷**（2026-09-18 實跑第一次踩到）。
+# 原本直接 `Add-Content`，實跑時反覆噴：
+#     Add-Content : 由於另一個處理序正在使用檔案 '...overnight_*.log'
+# `Add-Content` 每次呼叫都「開檔→寫→關檔」，密集寫入時會跟自己前一次的
+# 關檔還沒完成撞上（防毒即時掃描會放大這個窗口）。
+#
+# **抓取本身不受影響**（那幾行 log 掉了而已），但畫面被錯誤訊息洗版，
+# 看起來像出大事，而且真正重要的訊息被埋掉。
+function Write-Log([string]$line) {
+    for ($i = 0; $i -lt 5; $i++) {
+        try {
+            # -Append + StreamWriter 語意，比 Add-Content 少一次開關檔
+            [System.IO.File]::AppendAllText(
+                $LogFile, $line + [Environment]::NewLine,
+                [System.Text.UTF8Encoding]::new($false))
+            return
+        } catch {
+            Start-Sleep -Milliseconds (20 * ($i + 1))
+        }
+    }
+    # 五次都寫不進去就放棄這一行——**絕對不能讓寫 log 失敗中斷抓取**
+}
+
 function Log($msg) {
     $line = "[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $msg
     Write-Host $line
-    Add-Content -Path $LogFile -Value $line -Encoding utf8
+    Write-Log $line
 }
 
 # ── 前置檢查：早點失敗，不要 218 家全部失敗才發現 ──────────────────────
@@ -148,7 +171,7 @@ function Invoke-Pass($tickerList, $passName) {
                 $line = "$_"
                 # edgartools 的雜訊，不是我們的錯誤
                 if ($line -notmatch '^(No XBRL attachments|Failed to resolve)') {
-                    Add-Content -Path $LogFile -Value $line -Encoding utf8
+                    Write-Log $line
                     Write-Host $line
                 }
             }
