@@ -186,6 +186,8 @@ STRINGS: dict[str, str] = {
     "meta.Fiscal Year Span": 'Fiscal year span',
     "meta.Latest Period": 'Latest period',
     "meta.Latest Period End": 'Latest period end date',
+    "meta.Oldest Period": 'Oldest period on file (this is not necessarily the company\'s full history if it changed CIK after a reorg)',
+    "meta.Oldest Period End": 'End date of the oldest period on file',
     "meta.Key Rows Complete": 'How many of the 9 key lines have a value in at least one of the last 4 periods',
     "meta.Key Rows Missing": 'Key lines that are empty across all of the last 4 periods',
 
@@ -238,6 +240,7 @@ STRINGS: dict[str, str] = {
     "xls.sheet_desc.Data_Meta": 'Filing information (ticker, company name, fetch date)',
     "xls.sheet_desc.segment_detail": 'Segment detail: {axis}',
     "xls.index.fetched_on": 'Fetched: {date}',
+    "xls.index.data_from": 'Data from: {period}',
     "xls.index.data_through": 'Data through: {period}',
     "xls.index.period_end_paren": ' (period end {end})',
     "xls.index.fy_span": 'Fiscal year: {span}',

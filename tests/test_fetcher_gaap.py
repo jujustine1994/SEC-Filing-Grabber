@@ -2073,6 +2073,30 @@ def test_meta_latest_period_blank_without_quarterly_table():
     assert all(not v for v in m.values[m.concepts.index("Latest Period")]) or            m.values[m.concepts.index("Latest Period")] == []
 
 
+# ── Data_Meta 再補：最舊期間（TODO J6，2026-09-18）───────────────────────
+#
+# 「已到底」判定的是這個 CIK 的底，不是公司真正歷史的底——公司改組換過 CIK
+# 時（DIS／BLK 實測案例），使用者會以為拿到 18 年、實際只有 7 年。這一列
+# 把最舊一期攤開來講，不用自己拿 Quarters Available 回推。
+
+def test_meta_reports_oldest_period():
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [_q_table_with_periods()], fy_end_month=12)
+    assert m.values[m.concepts.index("Oldest Period")][0] == "FY2025Q3"
+
+
+def test_meta_reports_oldest_period_end_date():
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [_q_table_with_periods()], fy_end_month=12)
+    assert m.values[m.concepts.index("Oldest Period End")][0] == "2025-09-28"
+
+
+def test_meta_oldest_period_blank_without_quarterly_table():
+    from fetcher_gaap import _build_meta_table
+    m = _build_meta_table("T", "Test Inc", [])
+    assert all(not v for v in m.values[m.concepts.index("Oldest Period")])
+
+
 # ── 財季編號改用期末日反推（2026-08-22）─────────────────────────────────────
 #
 # edgartools 欄名裡的 `(Qn)` 對 52/53 週財年制的公司會標錯（實測 NVDA、INTC），

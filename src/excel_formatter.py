@@ -343,9 +343,15 @@ def _build_index_sheet(wb: Workbook, tables: list) -> None:
 
     latest_period = _meta_value("Latest Period")
     latest_end    = _meta_value("Latest Period End")
+    oldest_period = _meta_value("Oldest Period")
     fy_span       = _meta_value("Fiscal Year Span")
 
     bits = [t("xls.index.fetched_on", date=date.today())]
+    if oldest_period:
+        # TODO J6：「已到底」判定的是這個 CIK 的底，公司改組換過 CIK
+        # （DIS／BLK 實測案例）時歷史會比想像中短很多，放在第一頁最上方
+        # 讓使用者一眼看到「資料最早自哪一期」，不用自己回推
+        bits.append(t("xls.index.data_from", period=oldest_period))
     if latest_period:
         bits.append(t("xls.index.data_through", period=latest_period)
                     + (t("xls.index.period_end_paren", end=latest_end) if latest_end else ""))

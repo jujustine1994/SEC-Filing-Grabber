@@ -170,6 +170,8 @@ STRINGS: dict[str, str] = {
     "meta.Fiscal Year Span": '財年起訖',
     "meta.Latest Period": '最新期間',
     "meta.Latest Period End": '最新期末日',
+    "meta.Oldest Period": '最舊期間（⚠ 公司若改組換過 CIK，這不等於公司真正上市以來的歷史）',
+    "meta.Oldest Period End": '最舊一期的期末日',
     "meta.Key Rows Complete": '9 個關鍵科目中有幾個「最近 4 期至少一期有值」',
     "meta.Key Rows Missing": '最近 4 期全空的關鍵科目',
 
@@ -222,6 +224,7 @@ STRINGS: dict[str, str] = {
     "xls.sheet_desc.Data_Meta": '申報資訊（Ticker、公司名、抓取日期）',
     "xls.sheet_desc.segment_detail": 'Segment 細項：{axis}',
     "xls.index.fetched_on": '抓取日期：{date}',
+    "xls.index.data_from": '資料最早自：{period}',
     "xls.index.data_through": '資料最新至：{period}',
     "xls.index.period_end_paren": '（期末 {end}）',
     "xls.index.fy_span": '財年起訖：{span}',

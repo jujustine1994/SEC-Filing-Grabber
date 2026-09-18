@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-09-18（續）
+
+- **TODO J6 方向②完成：「資料最早自哪一期」攤開來顯示，不再要使用者自己回推**。
+  J5 跑 batch 1 時發現至少 9/134 家的「已到底」判定其實是「這個 CIK 的底」，
+  不是公司真正歷史的底——公司改組換過 CIK 時（DIS/DOW/CI 併購重組後只剩
+  7 年、BLK 只剩 2 年），`reached_bottom` 判定本身沒有錯，但使用者會以為拿到
+  18 年。`fetcher_gaap._build_meta_table` 的 `Data_Meta` 新增 `Oldest Period`／
+  `Oldest Period End`（跟既有的 `Latest Period`／`Latest Period End` 對稱）；
+  `excel_formatter._build_index_sheet` 第一頁頂端那列 metadata 也加了
+  「資料最早自：{period}」，刻意放在「資料最新至」前面——第一頁最上方最顯眼的
+  位置，不用翻到 Data_Meta 或自己拿 Quarters Available 回推。四個 locale
+  補了翻譯，`zh_tw`／`zh_cn` 的欄位說明直接寫「⚠ 公司若改組換過 CIK，這不等於
+  公司真正上市以來的歷史」提醒使用者。**只是把既有資料攤開，沒有動抓取或
+  `reached_bottom` 的判定邏輯**。TODO 裡的方向①（撿回舊 CIK 併資料，有正確性
+  風險）與③（疑似改組旗標）還沒做，要 CTH 決定要不要繼續。
+  測試：新增 4 條（`test_meta_reports_oldest_period` 等），`-m "not slow"`
+  1461 passed。
+
 ## 2026-09-18
 
 - **TODO E2 完成：`Data_NonGAAP` 版面的 i18n**。原本卡在「等 B2（Non-GAAP 改走

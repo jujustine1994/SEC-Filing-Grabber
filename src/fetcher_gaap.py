@@ -2534,6 +2534,16 @@ def _build_meta_table(ticker: str, company_name: str,
         ends = q_tbl.period_ends or []
         latest_end = ends[-1] if ends and ends[-1] else _period_end(latest_label, fy_end_month)
 
+    # 最舊期間（TODO J6）：「已到底」判定的是這個 CIK 的底，不是公司真正歷史
+    # 的底——公司改組換過 CIK 時（DIS/BLK 都是實測案例），舊 CIK 的申報不在
+    # 這份清單裡，使用者會以為拿到 18 年、實際只有 7 年。這一列把最舊一期
+    # 攤開來講，不用自己拿 Quarters Available 回推
+    oldest_label, oldest_end = "", ""
+    if q_tbl is not None and q_tbl.quarter_labels:
+        oldest_label = q_tbl.quarter_labels[0]
+        ends = q_tbl.period_ends or []
+        oldest_end = ends[0] if ends and ends[0] else _period_end(oldest_label, fy_end_month)
+
     # 財年起訖：結算月的下個月為起月。AAPL 9 月結算 → 財年 10 月起。
     start_month = fy_end_month % 12 + 1
     fy_span = t("xls.meta.fy_span_value", start=start_month, end=fy_end_month)
@@ -2547,6 +2557,7 @@ def _build_meta_table(ticker: str, company_name: str,
         # 品質檢查（原本在已移除的 Index sheet）也併到這裡。
         concepts=["Ticker", "Company Name", "Fetched Date", "Quarters Available",
                   "Fiscal Year End Month", "Fiscal Year Span", "Latest Period", "Latest Period End",
+                  "Oldest Period", "Oldest Period End",
                   "Key Rows Complete", "Key Rows Missing", "Fetch Gaps"],
         values=[
             [ticker]            * n_quarters,
@@ -2557,6 +2568,8 @@ def _build_meta_table(ticker: str, company_name: str,
             [fy_span]           * n_quarters,
             [latest_label]      * n_quarters,
             [latest_end]        * n_quarters,
+            [oldest_label]      * n_quarters,
+            [oldest_end]        * n_quarters,
             [score]             * n_quarters,
             [missing_txt]       * n_quarters,
             # 抓取缺漏。GUI 的 log 關掉就沒了，但這份 Excel 三天後再打開

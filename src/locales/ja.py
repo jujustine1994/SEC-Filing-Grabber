@@ -184,6 +184,8 @@ STRINGS: dict[str, str] = {
     "meta.Fiscal Year Span": '会計年度の期間',
     "meta.Latest Period": '最新期',
     "meta.Latest Period End": '最新期の末日',
+    "meta.Oldest Period": '最古の期（⚠ 組織再編でCIKが変わった会社の場合、これは上場来の全履歴ではない）',
+    "meta.Oldest Period End": '最古の期の末日',
     "meta.Key Rows Complete": '主要9科目のうち「直近4期に1期以上値がある」ものの数',
     "meta.Key Rows Missing": '直近4期がすべて空の主要科目',
 
@@ -236,6 +238,7 @@ STRINGS: dict[str, str] = {
     "xls.sheet_desc.Data_Meta": '提出書類情報（ティッカー、会社名、取得日）',
     "xls.sheet_desc.segment_detail": 'セグメント内訳：{axis}',
     "xls.index.fetched_on": '取得日：{date}',
+    "xls.index.data_from": 'データ開始期：{period}',
     "xls.index.data_through": 'データ最新期：{period}',
     "xls.index.period_end_paren": '（期末 {end}）',
     "xls.index.fy_span": '会計年度：{span}',

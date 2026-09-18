@@ -773,11 +773,13 @@ def _index_wb_with_meta():
         filing_dates=["", ""],
         concepts=["Ticker", "Company Name", "Fetched Date", "Quarters Available",
                   "Fiscal Year End Month", "Fiscal Year Span", "Latest Period", "Latest Period End",
+                  "Oldest Period", "Oldest Period End",
                   "Key Rows Complete", "Key Rows Missing"],
         values=[["AAPL"]*2, ["Apple Inc."]*2, ["2026-08-03"]*2, ["2"]*2,
                 ["9"]*2, ["10 月 – 9 月"]*2, ["FY2026Q1"]*2, ["2026-03-29"]*2,
+                ["FY2025Q3"]*2, ["2025-09-28"]*2,
                 ["9/9"]*2, ["無"]*2],
-        ticker="AAPL", labels=[""]*10,
+        ticker="AAPL", labels=[""]*12,
     )
     wb = Workbook()
     wb.active.title = "Data_Financials(Q)"
@@ -791,6 +793,11 @@ def _index_text(ws):
 
 def test_index_shows_latest_period():
     assert "FY2026Q1" in _index_text(_index_wb_with_meta())
+
+
+def test_index_shows_oldest_period():
+    """TODO J6：使用者要在第一頁就看到資料最早自哪一期，不用自己回推涵蓋年數。"""
+    assert "FY2025Q3" in _index_text(_index_wb_with_meta())
 
 
 def test_index_shows_latest_period_end_date():
