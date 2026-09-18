@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-09-18（續十五）
+
+- **修 `overnight_update_db.ps1` 的中文亂碼**（CTH 實跑第一次就踩到）。
+  畫面出現 `updated嚗憓?52 隞踝?`（應該是「updated（新增 52 份）」）。
+  - **根因：要兩個設定都對，缺一個就壞。** `PYTHONIOENCODING=utf-8` 叫 Python
+    **用 UTF-8 輸出**（這個有設），`[Console]::OutputEncoding` 叫 PowerShell
+    **用 UTF-8 解讀**原生指令的輸出（**這個漏了**）。雙擊 .bat 開的是全新 cmd
+    視窗、那裡是 cp950，PowerShell 就把 UTF-8 位元組當 cp950 解。
+  - ⚠ **壞掉的文字會寫進 log**，不是只有畫面難看——`Log()` 拿到的已經是解錯
+    的字串，隔天再看也救不回來。
+  - ⚠ **在開發者自己的 PowerShell 裡測不出來**：那個 session 的
+    `OutputEncoding` 通常已經是 utf-8，所以我先前端對端測了好幾次都是好的。
+    要重現得先 `[Console]::OutputEncoding = [Text.Encoding]::GetEncoding(950)`
+    ——這樣做一次就完整重現了 CTH 看到的那串字。重現方法連同修法一起註解在
+    程式裡。
+  - **這是第四個 PowerShell 5.1 的坑**（前三：`.ps1` 要 UTF-8 BOM、
+    `0x80000001` 要明寫 `[uint32]`、原生執行檔的 stderr 合併要交給 cmd）。
+  - **抓取完全不受影響**：實跑中驗證 AAOI 52/52、AAPL 75/75、ADI 75/75 全部
+    通過四道閘、六張表都在。亂碼只在顯示層，所以**沒有停掉重跑**。
+  - 當晚那一輪的摘要會是亂碼，但摘要是從各段 `--json` 重算的，隨時可以重跑
+    `scripts/overnight_summary.py`，或直接 `cli.py db-status` 看即時狀態。
+
 ## 2026-09-18（續十四）
 
 - **量出現行比對層對三種來源的命中率，確認「us-gaap 的 6-K 幾乎免費」**

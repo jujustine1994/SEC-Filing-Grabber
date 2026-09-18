@@ -34,6 +34,20 @@ New-Item -ItemType Directory -Force $OutDir | Out-Null
 
 $env:PYTHONIOENCODING = "utf-8"
 
+# ⚠ **兩個都要設，缺一個中文就變亂碼**（2026-09-18 實跑第一次踩到）：
+#   - `PYTHONIOENCODING`（上面）叫 Python **用 UTF-8 輸出**
+#   - `[Console]::OutputEncoding`（下面）叫 PowerShell **用 UTF-8 解讀**原生
+#     指令的輸出。雙擊 .bat 開的是全新 cmd 視窗，那裡是 cp950，PowerShell 會
+#     把 Python 吐出來的 UTF-8 位元組當 cp950 解 → `updated嚗憓?52 隞踝?`
+#
+# ⚠ 而且**壞掉的文字會寫進 log**，不是只有畫面難看——`Log()` 寫檔時拿到的
+# 已經是解錯的字串了，隔天再看也救不回來。
+#
+# ⚠ 在開發者自己的 PowerShell 裡測不出來：那個 session 的 OutputEncoding
+# 通常已經是 utf-8。要重現得先 `[Console]::OutputEncoding =
+# [Text.Encoding]::GetEncoding(950)`。
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 function Log($msg) {
     $line = "[{0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $msg
     Write-Host $line
