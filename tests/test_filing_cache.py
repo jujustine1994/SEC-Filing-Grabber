@@ -547,3 +547,50 @@ def test_list_cached_filings_ignores_the_meta_file(cache_dir):
 
 def test_list_cached_filings_is_empty_for_an_unknown_ticker(cache_dir):
     assert filing_cache.list_cached_filings("NOPE") == []
+
+
+# ── 6-K 的 R 檔判定快取（TODO D9 A 路線）─────────────────────────────────
+#
+# 外國私人發行人的 6-K 是大雜燴：ARM 33 份裡只有 9 份有財報。判準是
+# `R*.htm` 的數量 > 1，但問一份 6-K 有幾個 R 檔要一次 index 請求——
+# Sony 有 1,055 份 6-K，每輪重問等於 1,055 次請求。所以判定結果要落檔，
+# 而且**跟 filing 快取分開存**（判定不是財報內容，不該讓 `file_count` 變動）。
+
+def test_sixk_probe_roundtrips_the_r_file_count_per_accession(cache_dir):
+    filing_cache.save_sixk_probe("ARM", {"0001045810-25-000123": 68,
+                                         "0001045810-25-000124": 1})
+    assert filing_cache.load_sixk_probe("ARM") == {
+        "0001045810-25-000123": 68,
+        "0001045810-25-000124": 1,
+    }
+
+
+def test_sixk_probe_is_empty_for_a_ticker_that_was_never_probed(cache_dir):
+    assert filing_cache.load_sixk_probe("ARM") == {}
+
+
+def test_sixk_probe_falls_back_to_empty_when_the_file_is_corrupt(cache_dir):
+    """半截檔不能讓抓取炸掉——判定沒了就重問一次，成本是請求不是正確性。"""
+    (cache_dir / "ARM").mkdir(parents=True)
+    (cache_dir / "ARM" / filing_cache.SIXK_PROBE_FILENAME).write_text(
+        '{"0001045810-25-0001', encoding="utf-8")
+    assert filing_cache.load_sixk_probe("ARM") == {}
+
+
+def test_sixk_probe_drops_entries_that_are_not_accession_to_int(cache_dir):
+    """手改過／舊版寫的髒資料一律不採信，回頭重問。"""
+    (cache_dir / "ARM").mkdir(parents=True)
+    (cache_dir / "ARM" / filing_cache.SIXK_PROBE_FILENAME).write_text(
+        json.dumps({"0001045810-25-000123": 68, "junk": 5,
+                    "0001045810-25-000124": "many"}), encoding="utf-8")
+    assert filing_cache.load_sixk_probe("ARM") == {"0001045810-25-000123": 68}
+
+
+def test_sixk_probe_file_is_not_counted_as_a_cached_filing(cache_dir):
+    """跟 `_meta.json` 同一個理由：它在 filing 資料夾裡，但它不是 filing。
+    算進去會讓 `_meta_is_reusable()` 的 `file_count` 對不上，每次都重建 meta。"""
+    _write_entry(cache_dir, "ARM", "0001045810-25-000123",
+                 form="6-K", filing_date="2026-07-29")
+    filing_cache.save_sixk_probe("ARM", {"0001045810-25-000124": 1})
+    assert filing_cache._dir_stats(cache_dir / "ARM")[0] == 1
+    assert len(filing_cache.list_cached_filings("ARM")) == 1

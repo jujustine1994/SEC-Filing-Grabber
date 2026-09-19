@@ -302,6 +302,106 @@ def _cache_key(filing) -> str | None:
     return str(acc) if acc else None
 
 
+# ── 外國私人發行人：6-K 裡哪幾份是季報（TODO D9 A 路線）──────────────────
+#
+# FPI 不交 10-Q／10-K，交 6-K（季報）＋ 20-F（年報）。6-K 是大雜燴：ARM 33 份
+# 裡只有 9 份含財報。2026-09-18 實測三種判準，只有 `R*.htm` 的數量做到 33/33
+# 完全分離（有財報 61~72 個、沒有的全部剛好 1 個）——R 檔是 SEC 財報檢視器
+# 從 XBRL 三表產生的，有三表才會有一堆。`EX-101.CAL` 只有 32/33（假陽性）。
+#
+# ⚠ 判定要落檔。問一份有幾個 R 檔要一次 index 請求，Sony 有 1,055 份 6-K、
+# 野村 1,244 份——每輪重問等於每家上千次請求。一份申報的附件不會變，所以
+# 問過就永遠不必再問。
+
+FPI_QUARTERLY_FORM = "6-K"
+FPI_ANNUAL_FORM = "20-F"
+
+
+def _r_file_count(filing) -> int | None:
+    """這份申報有幾個 `R*.htm`。**讀不到 index 回 `None`，不是 0。**
+
+    ⚠ 「讀到了，0 個」跟「讀不到」是兩件事，混在一起會出大錯（2026-09-19
+    實測抓到）：ARM 沒財報的 6-K 是 **1 個** R 檔，TM（豐田）的是 **0 個**。
+    把 0 當成「讀不到」而走保守路徑的話，TM 的 **634 份 6-K 全部留下來**，
+    正好是 A 路線要避免的那件事。
+    """
+    try:
+        return sum(1 for a in filing.attachments
+                   if str(getattr(a, "document_type", "")) == "HTML"
+                   and str(getattr(a, "document", "")).startswith("R"))
+    except Exception:                          # noqa: BLE001
+        return None
+
+
+def _filings_with_statements(ticker: str, filings) -> list:
+    """從 6-K 清單裡挑出真的含財報的那幾份。
+
+    ⚠ **判定失敗（index 讀不到）一律留著、而且不寫進快取**。多下載一份沒用的
+    6-K 只是浪費一次請求；誤丟掉一份有財報的 6-K 是**那一季永久消失、完全
+    沒有症狀**——跟 `derive_reached_bottom()` 對日期解析失敗的處理同一個方向。
+    """
+    probe = filing_cache.load_sixk_probe(ticker)
+    kept: list = []
+    dirty = False
+    for filing in filings or ():
+        key = _cache_key(filing)
+        if key is None:
+            kept.append(filing)               # 沒有快取鍵，跟 `_filing_obj()` 一樣照走
+            continue
+        count = probe.get(key)
+        if count is None:
+            count = _r_file_count(filing)
+            if count is None:                 # 讀不到 index：保守留著，下次重問
+                kept.append(filing)
+                continue
+            probe[key] = count
+            dirty = True
+        if count > 1:
+            kept.append(filing)
+    if dirty:
+        filing_cache.save_sixk_probe(ticker, probe)
+    return kept
+
+
+def _resolve_listings(ticker: str, listing, *, fetch_quarterly: bool = True,
+                      fetch_annual: bool = True) -> dict:
+    """這家公司的季報／年報清單要從哪一組表單拿。
+
+    `listing(form)` 是注入點（正式路徑帶離線退路，測試換成假清單）。
+
+    ⚠ **只有「沒有 10-Q」才去問 6-K**。正常美股 214 家連問都不問——對 Sony
+    那種公司，多問一次 6-K 清單是上千份的差別，對正常公司則是白白多一次請求。
+    同理 20-F 只在確定是 FPI（或本來就只抓年報）時才問。
+
+    回傳 `forms` 讓呼叫端知道這一輪用的是哪一組——`local_db` 的「到底了沒」
+    是按 form 分開記的，記錯 form 會讓那家公司永遠判不出到底。
+    """
+    quarterly = listing("10-Q") if fetch_quarterly else []
+    fpi = False
+    if fetch_quarterly and not quarterly:
+        quarterly = _filings_with_statements(ticker, listing(FPI_QUARTERLY_FORM))
+        fpi = bool(quarterly)
+        if not quarterly:
+            raise ValueError(
+                f"No 10-Q or 6-K filings with financial statements found for "
+                f"ticker '{ticker}'. The ticker may be invalid, or the company "
+                "may be a Level I ADR with no SEC filings."
+            )
+
+    annual = listing("10-K") if fetch_annual else []
+    if fetch_annual and not annual and (fpi or not fetch_quarterly):
+        annual = listing(FPI_ANNUAL_FORM)
+        fpi = fpi or bool(annual)
+    if not fetch_quarterly and not annual:
+        raise ValueError(
+            f"No 10-K or 20-F filings found for ticker '{ticker}'. "
+            "The ticker may be invalid or the company may not file annual reports."
+        )
+
+    forms = ((FPI_QUARTERLY_FORM, FPI_ANNUAL_FORM) if fpi else ("10-Q", "10-K"))
+    return {"quarterly": quarterly, "annual": annual, "forms": forms}
+
+
 # ── 本地磁碟快取（跨執行有效）────────────────────────────────────────────
 #
 # 跟上面的 `_parse_cache`（G9，只活在一次執行的記憶體裡）是**兩層不同的快取**，
@@ -2813,24 +2913,20 @@ def _fetch_gaap_impl(ticker: str, identity: str,
                   file=sys.stderr)
             return rows
 
-    filings_q = _listing("10-Q") if fetch_quarterly else []
-    filings_k = _listing("10-K") if fetch_annual else []
+    # 沒有 10-Q 的公司退到 6-K／20-F（TODO D9 A 路線）。正常美股不會多問。
+    resolved = _resolve_listings(ticker, _listing,
+                                 fetch_quarterly=fetch_quarterly,
+                                 fetch_annual=fetch_annual)
+    filings_q = resolved["quarterly"]
+    filings_k = resolved["annual"]
     if offline:
         # 累積不覆寫——跨公司比較一次跑十家，每家都要留得下來
         tracked = dict(_offline_var.get())
         tracked[ticker] = set(tracked.get(ticker, set())) | offline
         _offline_var.set(tracked)
 
-    if fetch_quarterly and not filings_q:
-        raise ValueError(
-            f"No 10-Q filings found for ticker '{ticker}'. "
-            "The ticker may be invalid or the company may not file 10-Qs."
-        )
-    if not fetch_quarterly and not filings_k:
-        raise ValueError(
-            f"No 10-K filings found for ticker '{ticker}'. "
-            "The ticker may be invalid or the company may not file 10-Ks."
-        )
+    # 「一份都沒有」的 ValueError 移進 `_resolve_listings()`——那裡才知道
+    # 10-Q 與 6-K 兩條路都試過了，訊息才講得準。
 
     # Apply year range filter
     filings_q = _filter_filings_by_year(filings_q, start_year, end_year)

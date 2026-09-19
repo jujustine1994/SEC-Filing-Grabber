@@ -956,3 +956,129 @@ def test_orphaned_tmp_files_are_not_mistaken_for_filings(cache_dir):
 
     assert local_db.cached_accessions("NVDA") == {_acc(1)}
     assert len(filing_cache.list_cached_filings("NVDA")) == 1
+
+
+# ── D9：外國私人發行人的表單組（6-K／20-F）────────────────────────────────
+#
+# FPI 沒有 10-Q／10-K，狀態層原本把 `FORMS = ("10-Q", "10-K")` 寫死，
+# 對這種公司會整組判空——「到底了沒」永遠是 None（每輪重掃）、meta 永遠
+# 判不可沿用（每輪重建）。表單組要跟著這家公司實際交什麼走。
+
+FPI_LISTINGS = {"6-K": [("s1", "2026-07-29")], "20-F": [("f1", "2026-05-20")]}
+
+
+def test_form_set_follows_what_the_company_actually_files():
+    assert local_db.form_set(["10-Q", "10-K"]) == ("10-Q", "10-K")
+    assert local_db.form_set(["6-K", "20-F"]) == ("6-K", "20-F")
+    assert local_db.form_set([]) == ("10-Q", "10-K")
+
+
+def test_plan_skips_a_finished_foreign_issuer(cache_dir):
+    """ARM 抓完之後要跟其他 214 家一樣整家跳過（0.7 秒），不是每輪重抓。"""
+    plan = _plan(FPI_LISTINGS, {"s1", "f1"})
+    assert plan["skip"] is True
+    assert set(plan["forms"]) == {"6-K", "20-F"}
+
+
+def test_plan_does_not_skip_when_a_new_6k_appeared(cache_dir):
+    listings = {"6-K": [("s2", "2026-11-01"), ("s1", "2026-07-29")],
+                "20-F": [("f1", "2026-05-20")]}
+    plan = _plan(listings, {"s1", "f1"})
+    assert plan["skip"] is False
+    assert plan["new_count"] == 1
+
+
+def test_rebuild_meta_records_the_foreign_issuer_forms(cache_dir):
+    _write_filing("ARM", _acc(1), form="6-K", filing_date="2026-07-29")
+    _write_filing("ARM", _acc(2), form="20-F", filing_date="2026-05-20")
+    meta = local_db.rebuild_meta("ARM")
+    assert set(meta["forms"]) == {"6-K", "20-F"}
+    assert meta["forms"]["6-K"]["count"] == 1
+    assert meta["forms"]["20-F"]["count"] == 1
+
+
+def test_a_foreign_issuer_meta_is_reusable(cache_dir):
+    """兩個 form 的完整統計都在就可以沿用。用 10-Q／10-K 去檢查 FPI 的 meta
+    會永遠判不可沿用 → 每次 `load_meta()` 都重建整份。"""
+    meta = {"file_count": 1, "forms": {"6-K": {"count": 1}, "20-F": {"count": 0}}}
+    assert local_db._meta_is_reusable(meta, 1) is True
+
+
+def test_a_foreign_issuer_that_reached_bottom_shows_as_done(cache_dir):
+    """GUI 第 4 分頁的「到底了」欄。寫死 10-Q／10-K 的話 ARM 永遠顯示「否」。"""
+    _write_filing("ARM", _acc(1), form="6-K", filing_date="2026-07-29")
+    meta = local_db.rebuild_meta("ARM")
+    for form in ("6-K", "20-F"):
+        meta["forms"].setdefault(form, {"count": 0})
+        meta["forms"][form]["reached_bottom"] = "no_more_filings"
+        meta["forms"][form]["reached_bottom_stale"] = False
+    local_db.write_meta("ARM", meta)
+
+    row = local_db.overview_row("ARM", {"ticker": "ARM", "count": 1,
+                                        "size_bytes": 10}, in_list=True)
+    assert row["bottom"] == local_db.BOTTOM_YES
+
+
+def test_update_lists_6k_and_20f_for_a_company_with_no_10q(monkeypatch, cache_dir):
+    """⚠ 這條擋的是 D9 最惡劣的症狀：**靜默留 0 份空殼**。
+
+    `_default_list_filings()` 只問 10-Q／10-K 的話，ARM 兩邊都回空清單，
+    `plan_ticker()` 會判「清單用完了＝已到底」→ 整家跳過，而且不報錯。
+    名單裡放一家 FPI 就會安靜地留一個 0 份的資料夾。
+    """
+    import types
+    import fetcher_gaap
+
+    asked: list[str] = []
+
+    def _fake_filing(acc, r_files):
+        att = types.SimpleNamespace(document=f"R1.htm", document_type="HTML")
+        return types.SimpleNamespace(
+            accession_no=acc, filing_date="2026-07-29",
+            attachments=[att] * r_files)
+
+    def _fake_list(company, form, **kw):
+        asked.append(form)
+        return {"6-K": [_fake_filing(_acc(1), 68), _fake_filing(_acc(2), 1)],
+                "20-F": [_fake_filing(_acc(3), 70)]}.get(form, [])
+
+    monkeypatch.setattr(fetcher_gaap, "Company",
+                        lambda t: types.SimpleNamespace(cik=1111111))
+    monkeypatch.setattr(fetcher_gaap, "set_identity", lambda i: None)
+    monkeypatch.setattr(fetcher_gaap, "_list_filings", _fake_list)
+
+    listings, cik = local_db._default_list_filings("ARM", "CTH tester@example.com")
+
+    assert set(listings) == {"6-K", "20-F"}
+    # 沒財報的那份 6-K（R 檔只有 1 個）不能進清單——進了就永遠判不到底
+    assert [a for a, _ in listings["6-K"]] == [_acc(1)]
+    assert listings["20-F"] and cik == 1111111
+    assert asked[0] == "10-Q"          # 先問 10-Q，沒有才退到 6-K
+
+
+def test_update_writes_meta_for_a_foreign_issuer(cache_dir):
+    """實跑 `cli.py update-db ARM` 撞到的 `KeyError`：更新迴圈有三處
+    `for form in FORMS` 寫死 10-Q／10-K，FPI 的 meta 裡根本沒有那兩個鍵。
+    整家失敗、只留 12 份沒有 meta 的檔案。"""
+    edgar = _FakeEdgar({"ARM": {"6-K": [(_acc(1), "2026-07-29")],
+                                "20-F": [(_acc(2), "2026-05-20")]}})
+    report = _run(edgar, ["ARM"])
+
+    assert report.failed == 0 and report.updated == 1
+    meta = local_db.load_meta("ARM")
+    assert meta["forms"]["6-K"]["reached_bottom"] == "no_more_filings"
+    assert meta["forms"]["20-F"]["reached_bottom_stale"] is False
+    assert set(report.results[0].forms) == {"6-K", "20-F"}
+
+
+def test_second_run_skips_a_finished_foreign_issuer(cache_dir):
+    """跳過那條路另有一處寫死 FORMS（沿用 meta 時）。ARM 第二輪要跟其他
+    214 家一樣 0.7 秒跳過。"""
+    edgar = _FakeEdgar({"ARM": {"6-K": [(_acc(1), "2026-07-29")],
+                                "20-F": [(_acc(2), "2026-05-20")]}})
+    _run(edgar, ["ARM"])
+    report = _run(edgar, ["ARM"])
+
+    assert edgar.fetched == ["ARM"]            # 沒有第二次抓取
+    assert report.skipped == 1 and report.failed == 0
+    assert local_db.load_meta("ARM")["forms"]["6-K"]["count"] == 1

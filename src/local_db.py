@@ -39,10 +39,23 @@ META_FILENAME = "_meta.json"
 # 舊快照裡本來就沒有期間欄位。
 META_SCHEMA_VERSION = 2
 
-# 這個資料庫只認兩種表單：10-Q 與 10-K。分開記是必要的——`max_filings`（10-Q）
-# 與 `max_annual_filings`（10-K）是兩個獨立上限，一家公司可能 10-K 到底了、
-# 10-Q 還沒，合記會誤判成整家到底，然後**永遠不再往下挖**。
+# 一家公司的表單組是「季報表單 ＋ 年報表單」兩格。分開記是必要的——
+# `max_filings`（季）與 `max_annual_filings`（年）是兩個獨立上限，一家公司
+# 可能年報到底了、季報還沒，合記會誤判成整家到底，然後**永遠不再往下挖**。
+#
+# 兩組表單（TODO D9）：美國國內申報人交 10-Q／10-K，外國私人發行人（ARM）
+# 交 6-K／20-F。⚠ **不能寫死一組**——寫死 10-Q／10-K 的話 FPI 會整組判空：
+# 「到底了沒」永遠是 None（每輪重掃到底）、meta 永遠判不可沿用（每輪重建），
+# 而且兩種症狀都不會報錯。
 FORMS = ("10-Q", "10-K")
+FPI_FORMS = ("6-K", "20-F")
+
+
+def form_set(names) -> tuple[str, str]:
+    """這家公司是哪一組表單。看到任何一個 FPI 表單就整組算 FPI，
+    認不出來（空的、舊 meta）一律回國內那組——那是 214 家的常態。"""
+    seen = {str(n or "") for n in (names or ())}
+    return FPI_FORMS if seen & set(FPI_FORMS) else FORMS
 
 # EDGAR 從 2008 才開始要求 XBRL，更早的申報解析不出三張表。
 # ⚠ 這個值跟 `fetcher_gaap._XBRL_CUTOFF` 必須一致（`test_local_db.py` 有釘）。
@@ -145,7 +158,8 @@ def plan_ticker(listings: dict, cached_accessions, *, version_ok: bool = True) -
     cached = set(cached_accessions or ())
     forms: dict[str, dict] = {}
     new_count = 0
-    for form in FORMS:
+    used = form_set(listings.keys())
+    for form in used:
         available = listings.get(form) or []
         new = _new_accessions(available, cached)
         new_count += len(new)
@@ -155,7 +169,7 @@ def plan_ticker(listings: dict, cached_accessions, *, version_ok: bool = True) -
             "new": len(new),
         }
     skip = (version_ok and new_count == 0
-            and all(forms[f]["reached_bottom"] is not None for f in FORMS))
+            and all(forms[f]["reached_bottom"] is not None for f in used))
     return {"skip": skip, "new_count": new_count, "forms": forms}
 
 
@@ -266,7 +280,9 @@ def rebuild_meta(ticker: str, previous: dict | None = None) -> dict:
     rows = scan_filings(ticker)
     prev_forms = (previous or {}).get("forms") or {}
     forms: dict[str, dict] = {}
-    for form in FORMS:
+    # 目錄是事實來源，所以表單組先看快取檔實際是什麼 form；目錄空的（清過、
+    # 全是負向快取）才退回上一版 meta 記的那組。
+    for form in form_set([r["form"] for r in rows] or list(prev_forms)):
         dates = sorted(r["filing_date"] for r in rows
                        if r["form"] == form and r["filing_date"])
         count = sum(1 for r in rows if r["form"] == form)
@@ -390,7 +406,8 @@ def overview_row(ticker: str, cached: dict, in_list: bool) -> dict:
     period_from = min(periods) if periods else None
     period_to = max(periods) if periods else None
 
-    states = [forms.get(f, {}).get("reached_bottom") for f in FORMS]
+    used = form_set(forms)
+    states = [forms.get(f, {}).get("reached_bottom") for f in used]
     if not forms:
         bottom = BOTTOM_UNKNOWN
     elif all(s is not None for s in states):
@@ -414,7 +431,7 @@ def overview_row(ticker: str, cached: dict, in_list: bool) -> dict:
         "bottom": bottom,
         # 上一輪留下來的值，這輪還沒重算——顯示端加問號
         "bottom_stale": any(forms.get(f, {}).get("reached_bottom_stale")
-                            for f in FORMS),
+                            for f in used),
         "in_list": in_list,
         # meta 跟目錄對不上（或根本沒有 meta）。唯讀路徑不自癒，照實回報。
         "meta_ok": bool(meta) and meta.get("file_count") == cached["count"],
@@ -661,7 +678,8 @@ def _meta_is_reusable(meta: dict | None, file_count: int) -> bool:
     forms = meta.get("forms")
     if not isinstance(forms, dict):
         return False
-    return all(isinstance(forms.get(f), dict) and "count" in forms[f] for f in FORMS)
+    return all(isinstance(forms.get(f), dict) and "count" in forms[f]
+               for f in form_set(forms))
 
 
 def _default_list_filings(ticker: str, identity: str) -> tuple[dict, int | None]:
@@ -670,18 +688,29 @@ def _default_list_filings(ticker: str, identity: str) -> tuple[dict, int | None]
     ⚠ 這是整個「跳過」判斷唯一的網路成本。`_list_filings()` 本身帶退避重試
     （2026-08-25 實測 201 家重建撞到 6 家逾時全部發生在這一步）。
     """
-    from fetcher_gaap import Company, _cache_key, _list_filings, set_identity
-    set_identity(identity)
-    company = Company(ticker)
-    listings = {}
-    for form in FORMS:
-        rows = []
-        for filing in _list_filings(company, form):
-            accession = _cache_key(filing)
+    import fetcher_gaap
+    fetcher_gaap.set_identity(identity)
+    company = fetcher_gaap.Company(ticker)
+
+    # ⚠ **表單組要跟抓取端用同一個判斷**（`_resolve_listings`）。各自判的話，
+    # 清單這邊列 A 組、抓取那邊抓 B 組，`derive_reached_bottom()` 比對的就是
+    # 兩份不相干的東西——永遠判不到底（每輪重抓）或永遠判到底（永遠不補），
+    # 兩種都不報錯。6-K 的 R 檔過濾也在那支裡面，這裡自然跟著一致。
+    resolved = fetcher_gaap._resolve_listings(
+        ticker, lambda form: fetcher_gaap._list_filings(company, form))
+
+    def _rows(filings):
+        out = []
+        for filing in filings:
+            accession = fetcher_gaap._cache_key(filing)
             if accession is None:
                 continue
-            rows.append((accession, str(getattr(filing, "filing_date", "") or "")))
-        listings[form] = rows
+            out.append((accession, str(getattr(filing, "filing_date", "") or "")))
+        return out
+
+    quarterly_form, annual_form = resolved["forms"]
+    listings = {quarterly_form: _rows(resolved["quarterly"]),
+                annual_form: _rows(resolved["annual"])}
     return listings, getattr(company, "cik", None)
 
 
@@ -778,10 +807,14 @@ def update_local_db(tickers, identity: str, *,
             # 的 75 份檔案全部開一遍，201 家就是 16,000 次開檔，跳過的意義少一半。
             # 上面的 `load_meta()` 已經確認過它跟目錄對得上，份數沒變、內容沒變，
             # 唯一要更新的就是下面那圈剛算出來的 `reached_bottom` 與時間戳。
+            # ⚠ 表單組一律看**這一輪的清單**，不要寫死 10-Q／10-K——FPI 的
+            # meta 裡根本沒有那兩個鍵，寫死會整家 `KeyError`（2026-09-19 實跑
+            # `cli.py update-db ARM` 撞到，12 份檔案照樣落地但沒有 meta）。
+            used_forms = form_set(listings.keys())
             if plan["skip"] and _meta_is_reusable(meta, len(new_cached)):
                 forms = meta["forms"]
                 meta = dict(meta)
-                meta["forms"] = {f: dict(forms[f]) for f in FORMS}
+                meta["forms"] = {f: dict(forms[f]) for f in used_forms}
                 meta["updated_at"] = filing_cache._now_iso()
             else:
                 meta = rebuild_meta(ticker, previous=read_meta(ticker))
@@ -790,7 +823,8 @@ def update_local_db(tickers, identity: str, *,
                     meta["cik"] = int(cik)
                 except (TypeError, ValueError):
                     pass
-            for form in FORMS:
+            for form in used_forms:
+                meta["forms"].setdefault(form, {"count": 0})
                 meta["forms"][form]["reached_bottom"] = derive_reached_bottom(
                     listings.get(form) or [], new_cached)
                 meta["forms"][form]["reached_bottom_stale"] = False
@@ -798,7 +832,7 @@ def update_local_db(tickers, identity: str, *,
 
         report.results.append(TickerResult(
             ticker, status, new_filings=plan["new_count"], error=error, gaps=gaps,
-            forms={f: plan["forms"][f]["reached_bottom"] for f in FORMS}))
+            forms={f: r["reached_bottom"] for f, r in plan["forms"].items()}))
         emit("ticker_done", ticker=ticker, status=status, index=index,
              total=len(targets), new_filings=plan["new_count"], gaps=gaps,
              error=error)

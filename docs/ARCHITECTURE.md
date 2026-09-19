@@ -1018,6 +1018,20 @@ SEC accession number（`0000866787-25-000123.json`）。**`<accession>.json`
 `stat()` 加總，不開額外的索引檔——公司數量最多幾十家，掃資料夾的成本可以
 忽略，比維護一份索引跟磁碟隨時同步的心智成本低得多。
 
+**資料夾裡的另外兩個檔**（都不是 filing，檔名故意不合 `ACCESSION_RE`，
+所以 `_dir_stats()`／`list_cached_filings()` 不會把它們算進份數）：
+
+| 檔案 | 誰寫的 | 內容 |
+|---|---|---|
+| `_meta.json` | `local_db.py` | 份數、涵蓋期間、`reached_bottom`、上次更新時間的快照 |
+| `_sixk_probe.json` | `fetcher_gaap.py` | **只有外國私人發行人才有**：`{accession: R*.htm 檔數}`。6-K 哪幾份含財報的判定結果（TODO D9） |
+
+`_sixk_probe.json` 刻意**不併進 `_meta.json`**：判定不是財報內容，混進去會
+讓「目錄是事實來源、meta 只是快照」這條規則失焦。它存在的理由是成本——問一份
+6-K 有幾個 R 檔要一次 index 請求，而 TM 有 634 份 6-K、Sony 1,055 份、
+野村 1,244 份。一份申報的附件不會變，所以問過就永遠不必再問（ARM 實測：
+第一輪 17.6 秒、第二輪 0.0 秒）。
+
 **四道閘**（`load_filing()`，任一沒過就當無快取、照舊打 SEC 重抓，不拋例外）：
 1. JSON 能解析（檔案沒被中斷寫入或手動改壞）
 2. `schema_version` 跟現在的 `filing_cache.SCHEMA_VERSION` 相符

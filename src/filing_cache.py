@@ -477,3 +477,39 @@ def clear_ticker(ticker: str) -> bool:
 def clear_all() -> int:
     """刪掉所有公司的快取，回傳刪掉幾家。"""
     return sum(1 for row in list_cached_tickers() if clear_ticker(row["ticker"]))
+
+
+# ── 6-K 的 R 檔判定快取（TODO D9 A 路線）─────────────────────────────────
+
+SIXK_PROBE_FILENAME = "_sixk_probe.json"
+
+
+def sixk_probe_path(ticker: str) -> Path:
+    return ticker_dir(ticker) / SIXK_PROBE_FILENAME
+
+
+def load_sixk_probe(ticker: str) -> dict[str, int]:
+    """`{accession: R*.htm 檔數}`。問一份 6-K 有幾個 R 檔要一次 index 請求，
+    存下來之後就永遠不必再問（一份申報的附件不會變）。
+
+    ⚠ **獨立檔，不併進 `_meta.json`**：判定不是財報內容，混進去會讓
+    `file_count` 這條「目錄是事實來源」的規則失焦。檔名不合 `ACCESSION_RE`，
+    所以 `_dir_stats()`／`list_cached_filings()` 本來就不會把它當 filing。
+
+    認不出來的一律丟掉回 `{}`／略過那一筆——重問的成本是請求，採信髒資料的
+    成本是那幾季的財報被永久跳過（而且完全沒有症狀）。
+    """
+    try:
+        with open(sixk_probe_path(ticker), encoding="utf-8") as f:
+            raw = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {k: v for k, v in raw.items()
+            if ACCESSION_RE.match(str(k)) and isinstance(v, int)
+            and not isinstance(v, bool)}
+
+
+def save_sixk_probe(ticker: str, probes: dict) -> bool:
+    return atomic_write_json(sixk_probe_path(ticker), dict(probes or {}))

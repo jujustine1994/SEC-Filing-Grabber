@@ -8,10 +8,14 @@
 判準用實際行為而不是靠猜：這個工具是用 10-Q 抓季報的，`fetch_gaap_statements()`
 拿不到 10-Q 就直接 raise。所以「有幾份 10-Q」就是會不會出事的直接指標。
 
-順便記 10-K 與 20-F 的份數，分辨三種情況：
-  - 有 10-Q          → 正常
-  - 無 10-Q、有 20-F → D9 外國私人發行人，抓不到（預期，不是 bug）
-  - 無 10-Q、無 20-F → 其他問題（SEC 查不到這個代號？剛上市？）
+順便記 10-K／20-F 的份數與「含財報的 6-K 有幾份」，分辨四種情況
+（2026-09-19 D9 A 路線上線後改的，原本是三種）：
+  - 有 10-Q                    → 正常
+  - 無 10-Q、有含財報的 6-K    → **FPI 但抓得到**（ARM 這型，6-K 季報＋20-F 年報）
+  - 無 10-Q、只有 20-F         → 只抓得到年報。季報沒有結構化來源，
+                                 而且若是 IFRS，比對層只命中 10/24 列
+                                 （準則要用 `probe_foreign_issuer.py` 實測）
+  - SEC 查無此代號             → ADR Level I 走 Rule 12g3-2(b) 豁免，SEC 根本沒資料
 
 ⚠ **不可以靠註冊地或公司名稱猜**，兩個方向都會猜錯。2026-09-18 實測 218 家：
   - 猜錯方向一：NXPI（荷蘭）、LIN（英國）、ACN（愛爾蘭）、TEL（瑞士）
@@ -37,6 +41,7 @@ sys.path.insert(0, r"C:\Users\CTH\Documents\Code\SEC Financial Tools\src")
 from config import load_config          # noqa: E402
 import local_db                          # noqa: E402
 from edgar import Company, set_identity  # noqa: E402
+from fetcher_gaap import _filings_with_statements  # noqa: E402
 
 set_identity(load_config()["identity"])
 tickers = local_db.get_update_list(load_config())
@@ -45,12 +50,18 @@ print(f"掃 {len(tickers)} 家…", flush=True)
 rows = []
 for i, ticker in enumerate(tickers, 1):
     row = {"ticker": ticker, "10-Q": None, "10-K": None, "20-F": None,
-           "error": "", "name": ""}
+           "6-K": None, "6-K-fin": None, "error": "", "name": ""}
     try:
         c = Company(ticker)
         row["name"] = str(getattr(c, "name", "") or "")[:40]
         for form in ("10-Q", "10-K", "20-F"):
             row[form] = len(list(c.get_filings(form=form)))
+        if not row["10-Q"]:
+            # 沒有 10-Q 才去看 6-K——正常公司連問都不該問（Sony 有 1,055 份）。
+            # 過濾用的是 `R*.htm` 數量，跟正式抓取同一支函式，判定會落檔重用。
+            six = list(c.get_filings(form="6-K"))
+            row["6-K"] = len(six)
+            row["6-K-fin"] = len(_filings_with_statements(ticker, six))
     except Exception as exc:                       # noqa: BLE001
         row["error"] = f"{type(exc).__name__}: {exc}"[:80]
     rows.append(row)
@@ -68,7 +79,10 @@ print(f"\n寫入 {out}")
 bad = [r for r in rows if not r["10-Q"] or r["error"]]
 print(f"\n=== 沒有 10-Q 或查詢失敗的：{len(bad)} 家 ===")
 for r in bad:
-    kind = ("D9 外國私人發行人（只有 20-F）" if r["20-F"] else
-            "其他問題" if not r["error"] else "查詢失敗")
+    kind = ("查無此代號（ADR Level I，SEC 沒有資料）" if r["error"] else
+            f"FPI 但抓得到：6-K 季報 {r['6-K-fin']} 份 ＋ 20-F 年報"
+            if r["6-K-fin"] else
+            "只抓得到年報（6-K 沒有財報；IFRS 的話比對層還會再掉一截）"
+            if r["20-F"] else "其他問題（剛上市？）")
     print(f"  {r['ticker']:<6} {r['name']:<34} 10-Q={r['10-Q']} "
-          f"20-F={r['20-F']}  → {kind}")
+          f"20-F={r['20-F']} 6-K(含財報)={r['6-K-fin']}  → {kind}")
