@@ -1022,6 +1022,47 @@ def _col_to_quarter_label(col_name: str, fy_end_month: int = 12) -> str:
     return col_name
 
 
+ANNUAL_FORMS = ("10-K", "20-F")
+
+
+def _bs_quarter_label(is_q_col, bs_col, fy_end_month: int,
+                      form: str = "") -> str:
+    """資產負債表這一欄的財季標籤（G13）。
+
+    BS 的欄是**裸日期**（instant，`"2024-03-31"`），沒有 `(Qn)`／`(FY)` 後綴，
+    所以標籤原本一律跟同一份 filing 的 IS 借。
+
+    ⚠ **借之前要先確認兩邊講的是同一天。** 借錯的後果不是空白而是
+    **對的資料掛錯日期**——SNOW `0001640147-22-000044`（本該是 FY2023Q1）
+    的 IS 被 edgartools 解成只有 `2022-01-31 (FY)` 一欄，BS 卻是
+    `['2022-04-30', '2022-01-31']`。借下去，2022-04-30 的餘額就被標成
+    `FY2022`／期末 2022-01-31，跟真正的 FY2022Q4 那欄並排、數字互相矛盾
+    （Goodwill 502,614,000 vs 8,449,000，差在 2022 年 3 月併購 Streamlit），
+    而且 FY2023Q1 因為 dedup 整季消失。
+
+    日期對不上就不借，改用 BS 自己的期末日推算財季。**不能退回
+    `_col_to_quarter_label(bs_col)`**——那支的正則要後綴，裸日期會原樣回傳，
+    標籤變成字串 `"2022-04-30"`，欄位排序與下游的 `MATCH` 都會怪。
+    """
+    period_end = str(bs_col or "").strip()[:10]
+    if is_q_col and (not period_end
+                     or _col_to_period_end(is_q_col) == period_end):
+        return _col_to_quarter_label(is_q_col, fy_end_month)
+    # 延後 import：fiscal_input -> excel_formatter -> fetcher_gaap 會循環匯入
+    from fiscal_input import fiscal_quarter_of, fy_start_month
+    start_month = fy_start_month(fy_end_month)
+    if str(form or "").upper().startswith(ANNUAL_FORMS):
+        # ⚠ 年報自己推也要推成**年度標籤**。推成 `FY2017Q4` 的話年表會混進一欄
+        # 季標籤，`_synthesize_q4()`（Q4 ＝ 年報 − Q1 − Q2 − Q3）會拿它當季度值
+        # 去減。實例 GD `0000040533-18-000008`：IS `2016-12-31 (FY)`、
+        # BS `2017-12-31`，差一整年。
+        label = fiscal_quarter_of(period_end, start_month)
+        return label.split("Q")[0] if label else _col_to_quarter_label(
+            str(bs_col), fy_end_month)
+    return (fiscal_quarter_of(period_end, start_month)
+            or _col_to_quarter_label(str(bs_col), fy_end_month))
+
+
 def _col_to_period_end(col_name: str) -> str:
     """edgartools 欄名 → 期末日。`"2026-03-29 (Q1)"` → `"2026-03-29"`。
 
@@ -1629,6 +1670,7 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
     """
     bs_overrides = bs_overrides or {}
     periods: dict[str, tuple[str, dict[int, Any]]] = {}
+    period_end_map: dict[str, str] = {}
     row_labels: dict[int, str] = {}
     gaap_overflow: dict[str, dict] = {}  # {concept_key: {"label": str, "periods": {q: val}}}
     ng_overflow: dict[str, dict] = {}
@@ -1667,9 +1709,25 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
         if bs_col is None:
             continue
 
-        label = _col_to_quarter_label(is_q_col, fy_end_month) if is_q_col else _col_to_quarter_label(bs_col, fy_end_month)
+        label = _bs_quarter_label(is_q_col, bs_col, fy_end_month,
+                                  form=str(getattr(filing, "form", "") or ""))
         if label in periods:
-            continue
+            # ⚠ **撞欄不等於重複資料，不可以直接丟。** 推算的季會錯——
+            # `fiscal_quarter_of()` 用月份切季，對 52/53 週財年制（KR 的 Q1 是
+            # 16 週、5 月下旬結束）算成下一季，撞上真正的那一季。實測 KR 有
+            # 9 個期別的資產負債表因此整份消失（每份 35~38 格）。
+            # 退而求其次：先借 IS 的標籤，再不行用裸日期——標籤不好看，
+            # 但**資料留著**，下游看得到也對得回去。
+            for alt in (_col_to_quarter_label(is_q_col, fy_end_month) if is_q_col else "",
+                        str(bs_col or "").strip()[:10]):
+                if alt and alt not in periods:
+                    label = alt
+                    break
+            else:
+                continue
+        # BS 的欄名就是期末日，記下來不花成本。只存在於 BS 的那一季
+        # （G13 修好後回來的 SNOW FY2023Q1）少了它，合併表的期末日會是空字串。
+        period_end_map[label] = str(bs_col or "").strip()[:10]
 
         consumed: set[int] = set()
         row_vals: dict[int, Any] = {}
@@ -1746,6 +1804,7 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
     gaap_tbl = StatementTable(
         sheet_name="Data_BS",
         quarter_labels=sorted_labels,
+        period_ends=[period_end_map.get(lbl, "") for lbl in sorted_labels],
         filing_dates=filing_dates,
         concepts=concepts_g,
         labels=labels_g,
@@ -2156,6 +2215,36 @@ def _with_gap_columns(all_qs: list[str], period_ends: list[str]) -> list[str]:
     return sorted(filled)
 
 
+_ANNUAL_LABEL_RE = re.compile(r"^FY\d{4}$")
+
+
+def _values_for(tbl: StatementTable, label: str) -> list:
+    """這張表在某個財季標籤下的所有值。沒有這一欄回空 list。"""
+    try:
+        col = tbl.quarter_labels.index(label)
+    except ValueError:
+        return []
+    return [row[col] for row in tbl.values if col < len(row)]
+
+
+def _is_empty_annual_column(label: str, *tables: StatementTable) -> bool:
+    """**季表**裡這一欄是不是「純年度標籤而且整欄皆空」的空殼（G13）。
+
+    季表本來不該有 `FY2022` 這種標籤。SNOW `0001640147-22-000044` 的 IS／CF
+    被 edgartools 解成只有 `2022-01-31 (FY)` 一欄，於是季表長出這麼一欄，
+    期末日跟真正的 FY2022Q4 重複——使用者看到兩欄標著同一個日期。
+
+    ⚠ **只丟空的**。有值就留著：寧可讓人看到一欄怪標籤，也不要無聲刪數字。
+
+    ⚠⚠ **這條規則絕對不能套到年表**——年表的標籤全部長這樣，套下去整張年表
+    消失，`_synthesize_q4()`（Q4 ＝ 年報 − Q1 − Q2 − Q3）跟著算不出來。
+    呼叫端用 `sheet_name` 的 `(Q)` 把關。
+    """
+    if not _ANNUAL_LABEL_RE.match(label or ""):
+        return False
+    return all(v is None for tbl in tables for v in _values_for(tbl, label))
+
+
 def _merge_financials(is_tbl: StatementTable,
                        bs_tbl: StatementTable,
                        cf_tbl: StatementTable,
@@ -2172,6 +2261,9 @@ def _merge_financials(is_tbl: StatementTable,
         | set(bs_tbl.quarter_labels)
         | set(cf_tbl.quarter_labels)
     )
+    if "(Q)" in sheet_name:
+        all_qs = [q for q in all_qs
+                  if not _is_empty_annual_column(q, is_tbl, bs_tbl, cf_tbl)]
 
     # Build date map (IS takes priority over BS over CF)
     date_map: dict[str, str] = {}

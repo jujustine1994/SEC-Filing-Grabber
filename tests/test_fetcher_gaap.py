@@ -3354,3 +3354,178 @@ def test_da_prefers_the_combined_row_over_a_standalone_intangibles_row(row_name)
                  extra=[("us-gaap_AmortizationOfIntangibleAssets",
                          "Amortization of acquisition-related intangibles", "AmortizationOfIntangibles")])
     assert _match_template_row(row_name, df) == "Depreciation and amortization"
+
+
+# ── G13：BS 跟 IS 借標籤時，日期必須對得上 ────────────────────────────────
+#
+# BS 的欄是裸日期（instant），推不出財季，所以標籤是跟同一份 filing 的 IS 借的
+# （`_build_bs_table()`）。⚠ **但 IS 挑到的欄跟 BS 挑到的欄日期不一樣時，
+# 借來的標籤就是錯的**——值是 A 期的，標籤寫 B 期。
+#
+# 實例 SNOW `0001640147-22-000044`（2022-06-03 申報的 10-Q，本該是 FY2023Q1）：
+#   IS: ['2022-01-31 (FY)']              ← edgartools 上游就只解出年度欄
+#   BS: ['2022-04-30', '2022-01-31']
+# 結果季表長出一欄標籤 `FY2022`、期末日 2022-01-31，裡面裝的卻是 2022-04-30
+# 的餘額（Goodwill 502,614,000，併購 Streamlit 之後才有的數字；真正的
+# 2022-01-31 只有 8,449,000）。使用者看到**兩欄標同一個日期、資產負債表互相
+# 矛盾**，而且 FY2023Q1 整季消失。
+
+def _make_bs_df(*cols_and_vals):
+    """BS DataFrame，欄名是裸日期。`cols_and_vals` 是 (欄名, 商譽值)。"""
+    data = {
+        "concept": ["us-gaap_Goodwill"],
+        "label": ["Goodwill"],
+        "standard_concept": ["Goodwill"],
+        "abstract": [False],
+        "is_breakdown": [False],
+        "level": [3],
+        "dimension_member_label": [None],
+    }
+    for col, val in cols_and_vals:
+        data[col] = [val]
+    return pd.DataFrame(data)
+
+
+def _make_mixed_filing(is_col, bs_cols, filing_date="2022-06-03", form="10-Q"):
+    is_stmt = MagicMock()
+    is_stmt.to_dataframe.return_value = _make_is_df_minimal(is_col)
+    bs_stmt = MagicMock()
+    bs_stmt.to_dataframe.return_value = _make_bs_df(*bs_cols)
+    fin = MagicMock()
+    fin.income_statement.return_value = is_stmt
+    fin.balance_sheet.return_value = bs_stmt
+    fin.cashflow_statement.return_value = is_stmt
+    obj = MagicMock(); obj.financials = fin
+    filing = MagicMock(); filing.obj.return_value = obj
+    filing.filing_date = filing_date
+    filing.form = form
+    return filing
+
+
+def test_bs_does_not_borrow_a_label_whose_date_disagrees_with_its_own():
+    """SNOW 那份：BS 的值是 2022-04-30 的，就不能標成 IS 那個 2022-01-31。"""
+    filing = _make_mixed_filing("2022-01-31 (FY)",
+                                [("2022-04-30", 502614000.0),
+                                 ("2022-01-31", 8449000.0)])
+    tbl, _ = _build_bs_table([filing], max_filings=8, fy_end_month=1)
+    assert tbl.quarter_labels == ["FY2023Q1"]
+
+
+def test_bs_keeps_borrowing_when_the_dates_agree():
+    """正常 10-Q：IS `2022-04-30 (Q1)`、BS `2022-04-30`，照借不誤。
+    這條擋的是「修 G13 時順手把所有公司的 BS 標籤來源換掉」。"""
+    filing = _make_mixed_filing("2022-04-30 (Q1)", [("2022-04-30", 1.0)])
+    tbl, _ = _build_bs_table([filing], max_filings=8, fy_end_month=1)
+    assert tbl.quarter_labels == ["FY2023Q1"]
+
+
+def test_annual_bs_still_gets_the_plain_fy_label():
+    """年報：IS `2025-09-27 (FY)`、BS `2025-09-27`，日期一致 → 借到 `FY2025`。
+    ⚠ 年表能建起來全靠這條，弄壞會讓每家每年的 Q4 一起消失
+    （Q4 ＝ 年報 − Q1 − Q2 − Q3）。"""
+    filing = _make_mixed_filing("2025-09-27 (FY)", [("2025-09-27", 1.0)],
+                                filing_date="2025-10-31")
+    tbl, _ = _build_bs_table([filing], max_filings=8, fy_end_month=9)
+    assert tbl.quarter_labels == ["FY2025"]
+
+
+def test_bs_table_records_its_own_period_end():
+    """BS 的欄名**就是期末日**，記下來不花任何成本。
+
+    ⚠ 沒記的話，只存在於 BS 的那一季（G13 修好後回來的 SNOW FY2023Q1 就是
+    這種）在合併表裡期末日是空字串——`period_ends` 是 G6 補欄、日曆季對齊、
+    Excel 期間標籤共同的依據，空的會一路歪下去。
+    """
+    filing = _make_mixed_filing("2022-01-31 (FY)",
+                                [("2022-04-30", 502614000.0)])
+    tbl, _ = _build_bs_table([filing], max_filings=8, fy_end_month=1)
+    assert tbl.quarter_labels == ["FY2023Q1"]
+    assert tbl.period_ends == ["2022-04-30"]
+
+
+# ── G13 收尾：季表不留純年度標籤的空殼欄 ─────────────────────────────────
+
+def _one_col_table(sheet, label, period_end, concept, val, filing_date="2022-06-03"):
+    return StatementTable(
+        sheet_name=sheet, quarter_labels=[label], period_ends=[period_end],
+        filing_dates=[filing_date], concepts=[concept], labels=[""], values=[[val]],
+    )
+
+
+def test_quarterly_sheet_drops_an_empty_annual_labelled_column():
+    """SNOW 那份壞掉的 10-Q 會在**季表**留一欄標籤 `FY2022`、期末 2022-01-31，
+    整欄皆空（BS 的值修好後已經搬回 FY2023Q1）。留著的話使用者仍然看到
+    兩欄標同一個期末日，其中一欄全空。"""
+    is_tbl = _one_col_table("Data_IS", "FY2022", "2022-01-31", "Revenue", None)
+    bs_tbl = _one_col_table("Data_BS", "FY2023Q1", "2022-04-30", "Goodwill", 502614000.0)
+    cf_tbl = StatementTable(sheet_name="Data_CF", quarter_labels=[], period_ends=[],
+                            filing_dates=[], concepts=[], labels=[], values=[])
+
+    merged = _merge_financials(is_tbl, bs_tbl, cf_tbl,
+                               sheet_name="Data_Financials(Q)", fy_end_month=1)
+    assert "FY2022" not in merged.quarter_labels
+    assert "FY2023Q1" in merged.quarter_labels
+
+
+def test_quarterly_sheet_keeps_an_annual_labelled_column_that_has_values():
+    """⚠ 只丟**空的**。有值的話丟掉就是靜默弄丟資料——寧可讓使用者看到
+    一欄怪標籤，也不要無聲刪數字。"""
+    is_tbl = _one_col_table("Data_IS", "FY2022", "2022-01-31", "Revenue", 123.0)
+    bs_tbl = StatementTable(sheet_name="Data_BS", quarter_labels=[], period_ends=[],
+                            filing_dates=[], concepts=[], labels=[], values=[])
+    cf_tbl = StatementTable(sheet_name="Data_CF", quarter_labels=[], period_ends=[],
+                            filing_dates=[], concepts=[], labels=[], values=[])
+
+    merged = _merge_financials(is_tbl, bs_tbl, cf_tbl,
+                               sheet_name="Data_Financials(Q)", fy_end_month=1)
+    assert "FY2022" in merged.quarter_labels
+
+
+def test_annual_sheet_keeps_its_annual_labels():
+    """⚠⚠ 年表的標籤**全部**是 `FY\d{4}`。這條規則漏進年表就是整張年表消失，
+    連帶 `_synthesize_q4()`（Q4 ＝ 年報 − Q1 − Q2 − Q3）算不出來。"""
+    is_tbl = _one_col_table("Data_IS", "FY2022", "2022-01-31", "Revenue", None)
+    bs_tbl = _one_col_table("Data_BS", "FY2022", "2022-01-31", "Goodwill", 8449000.0)
+    cf_tbl = StatementTable(sheet_name="Data_CF", quarter_labels=[], period_ends=[],
+                            filing_dates=[], concepts=[], labels=[], values=[])
+
+    merged = _merge_financials(is_tbl, bs_tbl, cf_tbl,
+                               sheet_name="Data_Financials(Y)", fy_end_month=1)
+    assert merged.quarter_labels == ["FY2022"]
+
+
+def test_annual_bs_with_a_disagreeing_date_still_gets_an_annual_label():
+    """⚠ 年報走到「日期對不上」那條分支時，標籤仍然要是 `FY2017`，不能變成
+    `FY2017Q4`——年表混進季標籤，`_synthesize_q4()` 會拿它當季度值去減。
+
+    實例 GD `0000040533-18-000008`（10-K）：IS `2016-12-31 (FY)`、
+    BS `2017-12-31`，差一整年。KR 有 9 份同一種。
+    """
+    filing = _make_mixed_filing("2016-12-31 (FY)", [("2017-12-31", 1.0)],
+                                filing_date="2018-02-05", form="10-K")
+    tbl, _ = _build_bs_table([filing], max_filings=8, fy_end_month=12)
+    assert tbl.quarter_labels == ["FY2017"]
+
+
+def test_a_recomputed_bs_label_never_evicts_a_quarter_that_is_already_filled():
+    """⚠ **推算的季撞到已經有資料的欄時，寧可退回原本的標籤也不要丟資料。**
+
+    `fiscal_quarter_of()` 用月份切季，對 52/53 週財年制會算錯——KR 的 Q1 是
+    16 週、5 月下旬才結束，月份法算成 Q2。撞上真正的 Q2 之後，`_build_bs_table`
+    的 dedup（`if label in periods: continue`）會**整份跳過**，實測 KR 9 個期別
+    的資產負債表（每份 35~38 格）就這樣消失。
+
+    ⚠ 這條的反面才是重點：不是「算對季」（那要另外處理週制），是
+    **「算錯的時候不可以順手把資料弄不見」**。
+    """
+    newer = _make_mixed_filing("2010-08-14 (Q2)", [("2010-08-14", 23276000000.0)],
+                               filing_date="2010-09-20")
+    older = _make_mixed_filing("2010-02-13 (Q4)", [("2010-05-22", 22881000000.0)],
+                               filing_date="2010-06-28")
+
+    tbl, _ = _build_bs_table([newer, older], max_filings=8, fy_end_month=1)
+
+    assert len(tbl.quarter_labels) == 2, "撞欄的那份被整份丟掉了"
+    vals = [v for row in tbl.values for v in row if v is not None]
+    assert 22881000000.0 in vals
+    assert 23276000000.0 in vals
