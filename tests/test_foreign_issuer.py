@@ -195,3 +195,110 @@ def test_annual_only_mode_still_finds_the_20f(cache_dir):
     assert result["annual"] == ["annual"]
     assert result["forms"] == ("6-K", "20-F")
     assert "10-Q" not in calls
+
+
+# ── 財年結束月：沒有年報清單時的探測 ──────────────────────────────────────
+#
+# ⚠ **這是 D9 之後才長出來的漏洞，而且完全靜默**（2026-09-20 實測發現）。
+# 只抓季報（`--quarterly-only`／GUI 只勾 10-Q）時 `filings_k` 是空的，
+# `_fetch_gaap_impl()` 會探一份年報來判財年結束月——原本寫死問 `"10-K"`，
+# FPI 交的是 20-F，探不到就 fallback 成 12（日曆年）。
+#
+# ARM 財年 3 月底結束，實測兩種抓法對**同一個期末日**給出不同標籤：
+#
+#   期末日 2024-09-30 → 季+年「FY2025Q2」（對）、只抓季報「FY2024Q3」（錯 2 季）
+#   期末日 2024-12-31 → 季+年「FY2025Q3」（對）、只抓季報「FY2024Q4」（錯 2 季）
+#
+# 不報錯、不警告，整份 Excel 的期間標籤靜靜地錯掉——正是這個專案最不能接受的
+# 失效模式（跟 G13 同一類）。
+
+def test_fy_end_month_probe_asks_for_the_annual_form_of_this_filer_type(monkeypatch):
+    """FPI 要探 20-F。寫死 10-K 的話 ARM 探不到，財年結束月會 fallback 成 12。"""
+    import fetcher_gaap
+
+    asked = []
+    monkeypatch.setattr(fetcher_gaap, "_list_filings",
+                        lambda company, form: asked.append(form) or ["annual"])
+    monkeypatch.setattr(fetcher_gaap, "_detect_fy_end_month", lambda filings: 3)
+
+    month = fetcher_gaap._probe_fy_end_month(object(), "20-F")
+
+    assert asked == ["20-F"]
+    assert month == 3
+
+
+def test_fy_end_month_probe_still_asks_for_10k_for_a_domestic_filer(monkeypatch):
+    """214 家的常態不可以被改壞。"""
+    import fetcher_gaap
+
+    asked = []
+    monkeypatch.setattr(fetcher_gaap, "_list_filings",
+                        lambda company, form: asked.append(form) or ["annual"])
+    monkeypatch.setattr(fetcher_gaap, "_detect_fy_end_month", lambda filings: 9)
+
+    assert fetcher_gaap._probe_fy_end_month(object(), "10-K") == 9
+    assert asked == ["10-K"]
+
+
+def test_fy_end_month_falls_back_to_december_when_no_annual_filing_exists(monkeypatch):
+    """真的一份年報都沒有時才回 12。這條退路本身是對的——錯的是連問都問錯表單。"""
+    import fetcher_gaap
+
+    monkeypatch.setattr(fetcher_gaap, "_list_filings", lambda company, form: [])
+
+    assert fetcher_gaap._probe_fy_end_month(object(), "20-F") == 12
+
+
+# ── GUI 預覽（`preview_sheets`）────────────────────────────────────────────
+#
+# ⚠ 預覽寫死問 `"10-Q"`，沒有就整個 `return empty`。FPI 因此在 GUI 掃描時
+# **拿不到最新期別／期末日／申報日**（三欄全空），但抓取本身是好的——使用者
+# 看到空白會以為這家抓不到。2026-09-20 實測 ARM 三欄全空、AAPL 正常。
+
+def test_preview_falls_back_to_6k_for_a_foreign_private_issuer(cache_dir, monkeypatch):
+    """沒有 10-Q 就退到含財報的 6-K，跟 `_resolve_listings()` 同一個判準。"""
+    import fetcher_gaap
+
+    sixk = _fake_6k(ACC_WITH, r_files=68, filing_date="2026-07-29")
+    sixk.period_of_report = "2026-06-30"
+
+    company = MagicMock()
+    company.get_filings.side_effect = lambda form, amendments=False: (
+        [sixk] if form == "6-K" else [])
+    company.fiscal_year_end = "0331"          # ARM：財年 3 月底結束
+
+    monkeypatch.setattr(fetcher_gaap, "Company", lambda t: company)
+    monkeypatch.setattr(fetcher_gaap, "set_identity", lambda i: None)
+
+    result = fetcher_gaap.preview_sheets("ARM", "Test test@test.com")
+
+    assert result["latest_period_end"] == "2026-06-30"
+    assert result["filing_date"] == "2026-07-29"
+    assert result["latest_label"] == "FY2027Q1"   # 財年 3 月底 → 4~6 月是 Q1
+
+
+def test_preview_does_not_ask_for_6k_when_the_company_files_10q(cache_dir, monkeypatch):
+    """214 家的常態：多問一次 6-K 對 Sony 那種公司是上千份的差別，不可以白問。"""
+    import fetcher_gaap
+
+    tenq = MagicMock()
+    tenq.period_of_report = "2025-12-27"
+    tenq.filing_date = "2026-02-01"
+    tenq.accession_no = "0000320193-26-000001"
+
+    asked = []
+
+    def get_filings(form, amendments=False):
+        asked.append(form)
+        return [tenq] if form == "10-Q" else []
+
+    company = MagicMock()
+    company.get_filings.side_effect = get_filings
+    company.fiscal_year_end = "0926"
+
+    monkeypatch.setattr(fetcher_gaap, "Company", lambda t: company)
+    monkeypatch.setattr(fetcher_gaap, "set_identity", lambda i: None)
+
+    fetcher_gaap.preview_sheets("AAPL", "Test test@test.com")
+
+    assert "6-K" not in asked

@@ -285,15 +285,22 @@ def local_db_row_text(meta: dict | None) -> tuple[str, str]:
     """`_meta.json` → GUI 那一列要顯示的 (涵蓋期間, 到底了沒)。
 
     拆成純函式是為了能離線測——Tk 的部分照專案現況用探針手動驗。
-    三個 form 合起來看：只要有一個 form 還沒到底就顯示「未到底」，因為
+    兩個 form 合起來看：只要有一個 form 還沒到底就顯示「未到底」，因為
     「還要不要再挖」是整家一起決定的。標記過期（`reached_bottom_stale`）的
     加問號——那個值是上一輪留下來的，這輪還沒重算。
+
+    ⚠ **表單組要問 `local_db.form_set()`，不可以寫死 10-Q／10-K。** 外國私人
+    發行人交的是 6-K／20-F，寫死的話 `states` 全是 `None`，ARM 這型**永遠顯示
+    未到底**——明明兩個 form 都 `no_more_filings`，使用者卻會一直以為還要再挖
+    （2026-09-20 實測發現；`reached_bottom_stale` 那行同理，不然 FPI 的問號
+    永遠不會出現）。
     """
     forms = (meta or {}).get("forms") or {}
     dates = [d for f in forms.values() for d in (f.get("oldest"), f.get("newest")) if d]
     span = f"{min(dates)[:7]}~{max(dates)[:7]}" if dates else "—"
-    states = [forms.get(f, {}).get("reached_bottom") for f in ("10-Q", "10-K")]
-    stale = any(forms.get(f, {}).get("reached_bottom_stale") for f in ("10-Q", "10-K"))
+    pair = local_db.form_set(forms.keys())
+    states = [forms.get(f, {}).get("reached_bottom") for f in pair]
+    stale = any(forms.get(f, {}).get("reached_bottom_stale") for f in pair)
     if not forms:
         bottom = "—"
     elif all(s is not None for s in states):

@@ -402,6 +402,19 @@ def _resolve_listings(ticker: str, listing, *, fetch_quarterly: bool = True,
     return {"quarterly": quarterly, "annual": annual, "forms": forms}
 
 
+def _probe_fy_end_month(company, annual_form: str) -> int:
+    """沒有年報清單時，探一份年報來判財年結束月。探不到回 12（日曆年）。
+
+    ⚠ **`annual_form` 一定要用這家公司那一組的年報表單，不可以寫死 `"10-K"`。**
+    只抓季報時 `filings_k` 是空的，就會走到這裡；FPI 交的是 20-F，問 10-K 探不到
+    就 fallback 成 12，然後**整份 Excel 的期間標籤靜靜地錯掉**——ARM 財年 3 月底，
+    實測同一個期末日 2024-09-30 在「季+年」是 FY2025Q2、在「只抓季報」變成
+    FY2024Q3，差兩季，不報錯也不警告（2026-09-20 發現，跟 G13 同一類失效模式）。
+    """
+    probe = _list_filings(company, annual_form)[:1]
+    return _detect_fy_end_month(probe) if probe else 12
+
+
 # ── 本地磁碟快取（跨執行有效）────────────────────────────────────────────
 #
 # 跟上面的 `_parse_cache`（G9，只活在一次執行的記憶體裡）是**兩層不同的快取**，
@@ -3056,8 +3069,10 @@ def _fetch_gaap_impl(ticker: str, identity: str,
     if filings_k:
         fy_end_month = _detect_fy_end_month(filings_k)
     elif fetch_quarterly and filings_q:
-        _probe_k = _list_filings(company, "10-K")[:1]
-        fy_end_month = _detect_fy_end_month(_probe_k) if _probe_k else 12
+        # `resolved["forms"][1]` 是這家公司那一組的年報表單（10-K 或 20-F）。
+        # 寫死 "10-K" 的話 FPI 探不到 → fallback 12 → 期間標籤整份錯（見
+        # `_probe_fy_end_month()` 的註解）。
+        fy_end_month = _probe_fy_end_month(company, resolved["forms"][1])
     else:
         fy_end_month = 12
 
@@ -3189,6 +3204,14 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
     set_identity(identity)
     company = Company(ticker)
     filings_q = _list_filings(company, "10-Q")
+    if not filings_q:
+        # 沒有 10-Q 就退到含財報的 6-K，跟 `_resolve_listings()` 同一個判準。
+        # ⚠ **只有「真的沒有 10-Q」才問**——多問一次 6-K 對 Sony（1,055 份）、
+        # 野村（1,244 份）是上千份的差別，對正常美股則是白白多一次請求。
+        # 不補這條的話 FPI 在 GUI 掃描時三欄全空（最新期別／期末日／申報日），
+        # 但抓取本身是好的，使用者看到空白會以為這家抓不到（2026-09-20 實測 ARM）。
+        filings_q = _filings_with_statements(
+            ticker, _list_filings(company, FPI_QUARTERLY_FORM))
     if not filings_q:
         return empty
 

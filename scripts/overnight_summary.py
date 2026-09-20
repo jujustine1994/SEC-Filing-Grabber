@@ -18,6 +18,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
+# ⚠ Windows 主控台預設 cp950，`⚠`／`✅` 這類符號編不出去會讓整支腳本掛掉
+# （`UnicodeEncodeError`）。`errors="replace"` 是保險：真的編不出去的字印成
+# `?`，不要讓一個符號炸掉整趟輸出。專案慣例，見 `cli.py` 的 `_force_utf8_io()`。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
+
 import filing_cache          # noqa: E402
 import local_db              # noqa: E402
 

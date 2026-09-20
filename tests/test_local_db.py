@@ -461,6 +461,34 @@ def test_row_text_marks_a_stale_reached_bottom_with_a_question_mark():
     assert local_db_row_text(meta)[1].endswith("?")
 
 
+def test_row_text_reads_the_form_pair_of_a_foreign_private_issuer():
+    """⚠ **不可以寫死 10-Q／10-K。** FPI 交的是 6-K／20-F，寫死的話
+    `states` 全是 None，ARM 這型在 GUI「資料庫總覽」**永遠顯示未到底**——
+    明明兩個 form 都 `no_more_filings`，使用者卻會一直以為還要再挖
+    （2026-09-20 實測 ARM 就是這樣）。"""
+    from main import local_db_row_text
+    import i18n
+    meta = {"forms": {
+        "6-K": {"oldest": "2023-11-09", "newest": "2026-07-29",
+                "reached_bottom": "no_more_filings"},
+        "20-F": {"oldest": "2024-05-29", "newest": "2026-05-26",
+                 "reached_bottom": "no_more_filings"}}}
+    span, bottom = local_db_row_text(meta)
+    assert span == "2023-11~2026-07"
+    assert bottom == i18n.t("gui.lbl.db_bottom_yes")
+
+
+def test_row_text_marks_a_stale_reached_bottom_for_an_fpi_too():
+    """過期標記也要跟著看對表單，不然 FPI 的問號永遠不會出現。"""
+    from main import local_db_row_text
+    meta = {"forms": {
+        "6-K": {"oldest": "2023-11-09", "newest": "2026-07-29",
+                "reached_bottom": "no_more_filings", "reached_bottom_stale": True},
+        "20-F": {"oldest": "2024-05-29", "newest": "2026-05-26",
+                 "reached_bottom": "no_more_filings"}}}
+    assert local_db_row_text(meta)[1].endswith("?")
+
+
 def test_row_text_survives_a_missing_meta():
     """meta 還沒建（或剛被刪）時 GUI 不能炸——這個清單每次切到 Tab3 都會畫。"""
     from main import local_db_row_text

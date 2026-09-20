@@ -7,7 +7,9 @@ audit_local_db.py — 本地財報資料庫的體檢（TODO J5 的前置與收�
 「完整且最新」＝三個條件同時成立（跟 `local_db.plan_ticker()` 判斷「整家跳過」
 的邏輯是同一套，所以這支的結論跟 `update-db` 實際會不會跳過**保證一致**）：
 
-  1. 10-Q 與 10-K **都到底了**（`reached_bottom` 不是 null）
+  1. 這家那一組表單**都到底了**（`reached_bottom` 不是 null）。
+     國內申報人是 10-Q＋10-K，外國私人發行人是 6-K＋20-F——組別由
+     `plan_ticker()` 內部的 `form_set()` 決定，這支腳本照它回的 key 走
   2. SEC 上**沒有新的 filing** 是本地沒有的
   3. 快取是**現在這個 edgartools 版本**解出來的
 
@@ -62,8 +64,14 @@ def audit_one(ticker: str, identity: str) -> dict:
 
     row["version_ok"] = version_ok
     row["new_filings"] = plan["new_count"]
-    row["forms"] = {f: plan["forms"][f]["reached_bottom"] for f in local_db.FORMS}
-    row["available"] = {f: plan["forms"][f]["available"] for f in local_db.FORMS}
+    # ⚠ **表單組直接用 `plan["forms"]` 自己的 key，不可以寫死 `local_db.FORMS`。**
+    # `plan_ticker()` 內部已經走 `form_set()`，外國私人發行人回的是 6-K／20-F，
+    # 拿 10-Q 去取就是 `KeyError` **整支腳本當場炸掉**（不是誤判）——而這支是
+    # 「J5 每批跑完的收尾工具」，批次裡只要有一家 FPI 就收不了尾
+    # （2026-09-20 實測 ARM）。用 plan 回什麼就取什麼，不可能跟它分岔。
+    used = tuple(plan["forms"])
+    row["forms"] = {f: plan["forms"][f]["reached_bottom"] for f in used}
+    row["available"] = {f: plan["forms"][f]["available"] for f in used}
     row["complete"] = plan["skip"]
     row["meta_version"] = (meta or {}).get("edgartools_version")
 
@@ -74,7 +82,7 @@ def audit_one(ticker: str, identity: str) -> dict:
     elif plan["new_count"]:
         row["reason"] = f"有 {plan['new_count']} 份新 filing 沒抓"
     else:
-        unfinished = [f for f in local_db.FORMS
+        unfinished = [f for f in used
                       if plan["forms"][f]["reached_bottom"] is None]
         row["reason"] = f"還沒到底：{'／'.join(unfinished)}"
     return row
