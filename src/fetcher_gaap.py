@@ -412,7 +412,32 @@ def _probe_fy_end_month(company, annual_form: str) -> int:
     FY2024Q3，差兩季，不報錯也不警告（2026-09-20 發現，跟 G13 同一類失效模式）。
     """
     probe = _list_filings(company, annual_form)[:1]
+    month = _fy_end_month_from_annuals(probe)
+    if month is not None:
+        return month
     return _detect_fy_end_month(probe) if probe else 12
+
+
+def _fy_end_month_from_annuals(annuals) -> int | None:
+    """年報清單 → 財年結束月。拿不到回 `None`。
+
+    **預覽與主路徑共用的唯一依據**（J11 後續，2026-09-20）。`period_of_report`
+    是 filing 清單裡就有的欄位，**不必解全文**——而解全文（`_detect_fy_end_month()`
+    走 `_filing_obj()`）是抓取流程最慢的步驟之一。
+
+    全庫 215 家實測，跟解全文的結果 **215/215 完全一致**；同一批比對裡
+    `Company.fiscal_year_end` 屬性只有 206/215（JNJ／ONTO 的標籤因此差了一整個
+    財年，見 CHANGELOG 2026-09-20 續五）。
+
+    ⚠ **拿不到一律回 `None`，不可以自己填 12。** 財年結束月是所有期間標籤的
+    基準，把「不知道」說成「12 月」的話，AAPL 那種公司每個標籤都差一季，
+    而且不報錯。要不要退到解全文由呼叫端決定。
+    """
+    for filing in (annuals or [])[:1]:
+        por = str(getattr(filing, "period_of_report", "") or "")
+        if len(por) >= 7 and por[5:7].isdigit() and 1 <= int(por[5:7]) <= 12:
+            return int(por[5:7])
+    return None
 
 
 # ── 本地磁碟快取（跨執行有效）────────────────────────────────────────────
@@ -3067,7 +3092,11 @@ def _fetch_gaap_impl(ticker: str, identity: str,
 
     overrides = load_overrides(ticker)
     if filings_k:
-        fy_end_month = _detect_fy_end_month(filings_k)
+        # 先問 `period_of_report`（不必解全文），拿不到才退回解全文——
+        # 退路保留著，所以行為不會比以前差。見 `_fy_end_month_from_annuals()`。
+        fy_end_month = _fy_end_month_from_annuals(filings_k)
+        if fy_end_month is None:
+            fy_end_month = _detect_fy_end_month(filings_k)
     elif fetch_quarterly and filings_q:
         # `resolved["forms"][1]` 是這家公司那一組的年報表單（10-K 或 20-F）。
         # 寫死 "10-K" 的話 FPI 探不到 → fallback 12 → 期間標籤整份錯（見
@@ -3233,12 +3262,7 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
     # 不用 `_detect_fy_end_month()` 的理由沒變——那個要 `filing.obj()` 解全文，
     # 快速掃描用不起。但預覽的成本上限是「不要解全文」，**不是「不要問清單」**，
     # 而清單裡的 `period_of_report` 就已經夠準（J11，2026-09-20）。
-    fy_end_month = None
-    annuals = _list_filings(company, annual_form)
-    if annuals:
-        por = str(getattr(annuals[0], "period_of_report", "") or "")
-        if len(por) >= 7 and por[5:7].isdigit() and 1 <= int(por[5:7]) <= 12:
-            fy_end_month = int(por[5:7])
+    fy_end_month = _fy_end_month_from_annuals(_list_filings(company, annual_form))
     if fy_end_month is None:
         # 年報一份都沒有（剛上市、只交過一份 10-Q）才退回屬性——比直接用 12 月好。
         raw_fy = str(getattr(company, "fiscal_year_end", "") or "").strip()

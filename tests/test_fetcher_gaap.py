@@ -1593,6 +1593,77 @@ def test_fetch_gaap_excluded_sheets_removes_seg(mock_ov, mock_id, mock_co):
     assert "Data_Seg_Revenue" not in sheet_names
 
 
+# ── 財年結束月：預覽與主路徑共用同一個依據（J11 後續）──────────────────
+#
+# J11 修好了「預覽算錯」，但兩條路仍是**兩套依據**：預覽走年報清單的
+# `period_of_report`、主路徑走 `_detect_fy_end_month()` 解 10-K 全文。
+# 結果目前 215/215 相同，但那是「兩個方法碰巧都對」，不是同一個方法——
+# 哪天其中一邊改了又會分岔。
+#
+# 統一到 `period_of_report`：全庫 215 家實測跟解全文 100% 一致，而且**不必
+# 解全文**（那是抓取流程最慢的步驟之一）。解全文保留成退路，行為不會比以前差。
+
+
+def _ann(period_of_report):
+    f = MagicMock()
+    f.period_of_report = period_of_report
+    return f
+
+
+def test_fy_end_month_comes_from_the_annual_filing_period_without_parsing_it():
+    """有 `period_of_report` 就不必解全文——省掉抓取流程裡最慢的一步。"""
+    from fetcher_gaap import _fy_end_month_from_annuals
+
+    assert _fy_end_month_from_annuals([_ann("2025-09-27")]) == 9
+
+
+def test_fy_end_month_is_none_when_the_annual_period_is_unusable():
+    """拿不到就回 None，讓呼叫端決定要不要退到解全文——不可以自己填 12，
+    那會把「不知道」說成「12 月」，而財年結束月是所有期間標籤的基準。"""
+    from fetcher_gaap import _fy_end_month_from_annuals
+
+    assert _fy_end_month_from_annuals([]) is None
+    assert _fy_end_month_from_annuals([_ann("")]) is None
+    assert _fy_end_month_from_annuals([_ann("not-a-date")]) is None
+    assert _fy_end_month_from_annuals([_ann("2025-13-01")]) is None
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+@patch("fetcher_gaap.load_overrides", return_value={})
+@patch("fetcher_gaap._detect_fy_end_month")
+def test_the_main_path_does_not_parse_the_10k_when_the_period_is_available(
+        mock_detect, mock_ov, mock_id, mock_co):
+    """主路徑要跟預覽同源。`_detect_fy_end_month()` 被呼叫就代表還在解全文。"""
+    q = _make_filing()
+    k = _make_k_filing()
+    k.period_of_report = "2024-12-28"
+    company = _make_mock_company_fgs(q_filings=[q], k_filings=[k])
+    mock_co.return_value = company
+
+    fetch_gaap_statements("TEST", "Test test@test.com")
+
+    mock_detect.assert_not_called()
+
+
+@patch("fetcher_gaap.Company")
+@patch("fetcher_gaap.set_identity")
+@patch("fetcher_gaap.load_overrides", return_value={})
+@patch("fetcher_gaap._detect_fy_end_month", return_value=6)
+def test_the_main_path_still_falls_back_to_parsing_when_the_period_is_missing(
+        mock_detect, mock_ov, mock_id, mock_co):
+    """`period_of_report` 拿不到時要退回解全文——行為不可以比以前差。"""
+    q = _make_filing()
+    k = _make_k_filing()
+    k.period_of_report = ""
+    company = _make_mock_company_fgs(q_filings=[q], k_filings=[k])
+    mock_co.return_value = company
+
+    fetch_gaap_statements("TEST", "Test test@test.com")
+
+    mock_detect.assert_called()
+
+
 # ── preview_sheets ────────────────────────────────────────────────────────────
 
 @patch("fetcher_gaap.Company")
