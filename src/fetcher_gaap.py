@@ -1113,13 +1113,33 @@ def _is_q_col(col_name: str) -> bool:
 
 
 def _current_q_col(df) -> str | None:
-    """Return the first quarterly (non-YTD) period column from a filing's DataFrame."""
+    """這份 filing 的**當期**期間欄（非 YTD）。
+
+    ⚠ **取期末日最新的，不是取第一欄**（G13a）。原本直接回傳第一個符合的欄，
+    等於完全相信 edgartools 的欄順序——大多數情況第一欄就是當期，但**不保證**：
+    CSCO `0000858877-16-000117`（10-K）的 IS 欄是
+    `['2015-07-25 (FY)', '2016-07-30 (FY)', '2014-07-26 (FY)']`，當期排在中間。
+    挑第一欄就是拿**去年**的年報數字當今年，而且完全沒有症狀。
+
+    ⚠ YTD 欄一律不考慮（`_is_q_col()` 擋掉）——那是累計值，拿來當單季會把
+    Q2 灌成半年。BMY `0000014272-13-000005` 的最新欄正好是 YTD。
+
+    ⚠ 期末日解不出來的欄**不參與比大小**（拿去排序會跟真日期混在一起），
+    只在沒有別的候選時當退路。
+    """
+    best: str | None = None
+    best_end = ""
     for col in df.columns:
-        if col in META_COLS:
+        if col in META_COLS or not _is_q_col(col):
             continue
-        if _is_q_col(col):
-            return col
-    return None
+        end = _col_to_period_end(col)
+        if not end:
+            if best is None:
+                best = col
+            continue
+        if end > best_end:
+            best, best_end = col, end
+    return best
 
 
 def _ytd_col(df) -> str | None:

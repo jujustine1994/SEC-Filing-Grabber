@@ -3529,3 +3529,53 @@ def test_a_recomputed_bs_label_never_evicts_a_quarter_that_is_already_filled():
     vals = [v for row in tbl.values for v in row if v is not None]
     assert 22881000000.0 in vals
     assert 23276000000.0 in vals
+
+
+# ── G13(a)：當期欄要挑「期末日最新的」，不是「第一欄」 ───────────────────
+#
+# `_current_q_col()` 原本回傳**第一個**符合的期間欄，等於完全相信 edgartools
+# 的欄順序。大多數情況第一欄就是當期，但**不保證**：
+#   CSCO `0000858877-16-000117`（10-K）的 IS 欄是
+#   ['2015-07-25 (FY)', '2016-07-30 (FY)', '2014-07-26 (FY)']——當期 2016
+#   排在中間，挑第一欄就拿到**去年**的年報數字，而且不會有任何症狀。
+
+def _df_with_cols(*cols):
+    data = {
+        "concept": ["us-gaap_RevenueFromContractWithCustomer"],
+        "label": ["Net sales"],
+        "standard_concept": ["Revenue"],
+        "abstract": [False],
+        "is_breakdown": [False],
+        "level": [4],
+        "dimension_member_label": [None],
+    }
+    for i, c in enumerate(cols):
+        data[c] = [float(i + 1)]
+    return pd.DataFrame(data)
+
+
+def test_current_q_col_picks_the_newest_period_not_the_first_column():
+    """CSCO 那份：當期 2016-07-30 排在中間。"""
+    df = _df_with_cols("2015-07-25 (FY)", "2016-07-30 (FY)", "2014-07-26 (FY)")
+    assert _current_q_col(df) == "2016-07-30 (FY)"
+
+
+def test_current_q_col_is_unchanged_when_the_first_column_is_already_newest():
+    """214 家的常態走這條，行為必須完全不變。"""
+    df = _df_with_cols("2026-03-29 (Q1)", "2025-03-30 (Q1)")
+    assert _current_q_col(df) == "2026-03-29 (Q1)"
+
+
+def test_current_q_col_never_picks_a_ytd_column_even_if_it_is_newer():
+    """⚠ YTD 是**累計值**，拿它當單季會把 Q2 的數字灌成半年。
+    BMY `0000014272-13-000005`：IS 是
+    ['2012-06-30 (Q2)', '2013-06-30 (YTD)', '2012-06-30 (YTD)']
+    ——最新的那一欄正好是 YTD。"""
+    df = _df_with_cols("2012-06-30 (Q2)", "2013-06-30 (YTD)", "2012-06-30 (YTD)")
+    assert _current_q_col(df) == "2012-06-30 (Q2)"
+
+
+def test_current_q_col_ignores_columns_without_a_parseable_date():
+    """期末日解不出來的欄不能拿去比大小——排序會把它跟真正的日期混在一起。"""
+    df = _df_with_cols("(Q1)", "2026-03-29 (Q1)")
+    assert _current_q_col(df) == "2026-03-29 (Q1)"
