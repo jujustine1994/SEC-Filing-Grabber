@@ -1032,12 +1032,38 @@ SEC accession number（`0000866787-25-000123.json`）。**`<accession>.json`
 野村 1,244 份。一份申報的附件不會變，所以問過就永遠不必再問（ARM 實測：
 第一輪 17.6 秒、第二輪 0.0 秒）。
 
-**四道閘**（`load_filing()`，任一沒過就當無快取、照舊打 SEC 重抓，不拋例外）：
+**五道閘**（`load_filing()`，任一沒過就當無快取、照舊打 SEC 重抓，不拋例外）：
 1. JSON 能解析（檔案沒被中斷寫入或手動改壞）
 2. `schema_version` 跟現在的 `filing_cache.SCHEMA_VERSION` 相符
 3. `cik` 跟這次抓取的公司相符（防 ticker 換手撞名）
 4. `edgartools_version` 跟現在裝的套件版本相符（`importlib.metadata.version()`
    讀出來，讀不到就整次不用快取）
+5. `require_keys` 要的那幾張表都在這份檔案的 `fetched_keys` 裡（見下節）。
+   **負向快取跳過這道閘**——它沒有 `dataframes`，「哪張表沒抓」對它沒有意義，
+   拿這道閘擋它會讓 pre-XBRL 舊申報每趟都重打 SEC、永遠不收斂
+
+### `fetched_keys`：分得清「這張表不存在」與「當初根本沒抓」（2026-09-20）
+
+`dataframes` 裡的 `null` 原本有兩個意思，光看值分不出來：這家公司真的沒有
+這張表（正常），或者存檔當下的 `STATEMENT_KEYS` 還沒有這張表、根本沒去抓。
+
+分不出來的代價 2026-09-18 付過一次：三張表擴成六張時，舊檔的
+`statement_of_equity` 會被讀成「這家公司沒有股東權益變動表」，**不報錯、
+Excel 默默少一張表**——只能升 `SCHEMA_VERSION` 把整庫作廢，重抓 11 小時。
+
+`save_filing()` 現在把當下的 `STATEMENT_KEYS` 明寫進 `fetched_keys`，
+`load_filing(require_keys=...)` 據此判斷這次要的表在不在。預設
+`require_keys=CORE_STATEMENT_KEYS`（IS/BS/CF）——日常產 Excel 的路徑不該
+因為某張沒人在讀的 extras 沒抓就整份重抓。要用到 extras 的新功能自己傳
+（`require_keys=("statement_of_equity",)`），只有當初真的沒抓的那些會重抓。
+
+> **⚠ 加欄位前先問：能不能從舊檔既有資訊推導出來？能，就不要動
+> `SCHEMA_VERSION`。** `fetched_keys` 這次加欄位本身就是第一個案例——既有的
+> 14,417 份都沒有這個欄位，但它們全是 `schema_version=2`，而 v2 的定義就是
+> 「六張表全抓」，所以 `load_filing()` 讀到缺欄位時直接推導補上（推導結果會
+> 寫回 `entry`，下游一律讀 `entry["fetched_keys"]`，不必每個呼叫點各自判舊檔）。
+> **實測 14,417 份全部讀得出來、0 份被擋、全部推導成六張，一個位元組都沒改。**
+> 升版是核彈級動作（全庫作廢重抓 11 小時），能推導就別用。
 
 **負向快取 vs 網路失敗**：`has_financials: false` 是負向快取，代表這份
 filing 解析**成功**但沒有 XBRL financials（多半是 pre-XBRL 的舊申報）——

@@ -7,6 +7,12 @@ filing_cache.py — 本地 filing 解析快取（`<專案根目錄>/local_db/fil
 hint regex、加比率、調 Q4 合成邏輯都不會讓快取失效——但 **edgartools 升版
 會**，那是另一條軸線，靠 `edgartools_version` 欄位擋（見 `load_filing`）。
 
+⚠ **加欄位前先問：能不能從舊檔既有資訊推導出來？能，就不要動
+`SCHEMA_VERSION`。** 升版是核彈級動作——全庫作廢、重抓 11 小時。
+`fetched_keys`（2026-09-20）是第一個照這條規矩做的案例：既有 14,417 份都
+沒有這個欄位，但它們全是 `schema_version=2`，而 v2 的定義就是「六張表全抓」，
+所以 `load_filing()` 讀到缺欄位時直接推導補上，檔案一個位元組都不用改。
+
 事實來源是 `<accession>.json` 檔案本身，也是唯一的落地狀態——「哪些公司有
 快取」直接掃 `filing_cache/` 底下有哪些子資料夾回答（見 `list_cached_tickers()`），
 不維護額外的索引檔。
@@ -271,12 +277,21 @@ def cached_filing(entry: dict) -> _CachedFiling:
 #
 # `<accession>.json` **是否存在，才是「這份 filing 有沒有快取」的事實來源**。
 
-def load_filing(ticker: str, accession: str, cik: int) -> dict | None:
-    """讀一份快取。四道閘任一沒過就回 None（視同無快取，照舊打 SEC 重抓）：
-    JSON 可解析、`schema_version`、`cik`、`edgartools_version`。
+def load_filing(ticker: str, accession: str, cik: int,
+                require_keys=CORE_STATEMENT_KEYS) -> dict | None:
+    """讀一份快取。五道閘任一沒過就回 None（視同無快取，照舊打 SEC 重抓）：
+    JSON 可解析、`schema_version`、`cik`、`edgartools_version`、`require_keys`。
 
     正確性優先於速度——寧可那次變慢，也不要餵錯公司的資料或吃到舊版
     parser 的 bug。任何情況都不拋例外。
+
+    `require_keys` 是「這次要用到哪幾張表」。預設只要核心三張——日常產
+    Excel 的路徑不該因為某張沒人在讀的 extras 沒抓就整份重抓。要用到
+    extras 的新功能自己傳（例如 `require_keys=("statement_of_equity",)`），
+    只有當初真的沒抓的那些會回 None 去重抓。
+
+    回傳的 entry 保證有 `fetched_keys`（舊檔會就地推導補上），下游一律讀
+    它就好，不必每個呼叫點各自再判一次舊檔。
     """
     version = edgartools_version()
     if version is None:
@@ -296,6 +311,20 @@ def load_filing(ticker: str, accession: str, cik: int) -> dict | None:
     if entry.get("edgartools_version") != version:
         return None
     if entry.get("cik") != cik:
+        return None
+    # 第五道閘。`fetched_keys` 是 2026-09-20 加的欄位，既有的 14,417 份都沒有
+    # ——但它們全是 `schema_version=2`，而 v2 的定義就是「六張表全抓」
+    # （2026-09-18 那次改版），所以推導得出來，**不必升版讓全庫作廢重抓**。
+    # 這次加欄位本身就是這條規矩的第一個案例：能從舊檔既有資訊推導出來的
+    # 欄位，就不要動 `SCHEMA_VERSION`。
+    fetched = entry.get("fetched_keys")
+    if not isinstance(fetched, list):
+        fetched = list(STATEMENT_KEYS)
+    entry["fetched_keys"] = fetched
+    # ⚠ 負向快取（pre-XBRL，`has_financials=False`）不受這道閘管。它根本沒有
+    # `dataframes`，「哪張表沒抓」對它沒有意義；拿 `require_keys` 去擋它會讓
+    # 那些舊申報每趟都重打一次 SEC，永遠不收斂。
+    if entry.get("has_financials") and not set(require_keys or ()) <= set(fetched):
         return None
     return entry
 
@@ -325,6 +354,14 @@ def save_filing(ticker: str, accession: str, *, form: str, filing_date: str,
         "cached_at": _now_iso(),
         "cik": cik,
         "edgartools_version": version,
+        # 存檔當下的 `STATEMENT_KEYS`。有了它，`dataframes` 裡的 `null` 才沒有
+        # 歧義：key 在這份清單裡 → 這家公司真的沒有這張表；不在 → 當初沒抓。
+        # 分不出這兩件事的代價 2026-09-18 付過一次（三張擴六張，舊檔的
+        # `statement_of_equity` 被讀成「這家公司沒有股東權益變動表」，不報錯、
+        # Excel 默默少一張表，只能整庫重抓 11 小時）。
+        # 負向快取也照寫——那時這個欄位不帶意義（沒有 `dataframes`），但一律
+        # 存在能讓下游少一種分支，`load_filing()` 的第五道閘本來就會跳過它。
+        "fetched_keys": list(STATEMENT_KEYS),
         "has_financials": bool(has_financials),
         "dataframes": payloads,
     }

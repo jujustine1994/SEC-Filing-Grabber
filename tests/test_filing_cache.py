@@ -407,6 +407,88 @@ def test_load_rejects_an_entry_whose_version_is_null_when_the_environment_has_no
     assert filing_cache.load_filing("NVDA", ACC, 1045810) is None
 
 
+# ── fetched_keys：分得清「這張表不存在」與「當初根本沒抓」──────────────────
+#
+# `dataframes` 裡的 `null` 有兩個意思，光看值分不出來：
+#   - 這家公司真的沒有這張表（正常，例如很多公司沒有獨立的綜合損益表）
+#   - 存檔當下的 `STATEMENT_KEYS` 還沒有這張表，根本沒去抓
+#
+# 分不出來的代價在 2026-09-18 付過一次：三張表擴成六張時，舊檔的
+# `statement_of_equity` 會被讀成「這家公司沒有股東權益變動表」，不報錯、
+# Excel 默默少一張表——只好整庫作廢重抓 11 小時。`fetched_keys` 把「當初抓了
+# 哪些」明寫進檔案，以後再擴 `STATEMENT_KEYS` 就不必升 `SCHEMA_VERSION`。
+
+
+def test_save_records_which_statements_were_fetched(cache_dir):
+    """存檔時把當下的 `STATEMENT_KEYS` 明寫進去——這是 `null` 有沒有歧義的關鍵。"""
+    _save_sample()
+    raw = json.loads(filing_cache.filing_path("NVDA", ACC).read_text(encoding="utf-8"))
+    assert raw["fetched_keys"] == list(filing_cache.STATEMENT_KEYS)
+
+
+def test_load_infers_fetched_keys_for_files_written_before_the_field_existed(cache_dir):
+    """14,417 份既有快取都沒有這個欄位，但它們全是 `schema_version=2`，
+    而 v2 的定義就是「六張表全抓」——推導得出來就不必升版重抓。
+
+    推導結果要寫回 `entry`，下游才能一律讀 `entry["fetched_keys"]`，
+    不必每個呼叫點各自再判一次舊檔。
+    """
+    _save_sample()
+    path = filing_cache.filing_path("NVDA", ACC)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    del raw["fetched_keys"]                      # 模擬既有的 14,417 份
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    entry = filing_cache.load_filing("NVDA", ACC, 1045810)
+    assert entry is not None
+    assert entry["fetched_keys"] == list(filing_cache.STATEMENT_KEYS)
+
+
+def test_load_returns_none_when_a_required_statement_was_never_fetched(cache_dir):
+    """要一張當初沒抓的表 → 整份視同無快取，照舊連網重抓。
+
+    回 `None` 而不是回一份缺料的 entry：跟既有四道閘同一個路數，呼叫端
+    不必多學一種「半有效」狀態。這是未來擴 `STATEMENT_KEYS` 時真正會走到的路。
+    """
+    _save_sample()
+    path = filing_cache.filing_path("NVDA", ACC)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["fetched_keys"] = [k for k in raw["fetched_keys"] if k != "cover"]
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    assert filing_cache.load_filing("NVDA", ACC, 1045810, require_keys=("cover",)) is None
+    # 沒被拿掉的那些照樣讀得出來——缺一張不該讓整份報廢
+    assert filing_cache.load_filing(
+        "NVDA", ACC, 1045810, require_keys=("income_statement",)) is not None
+
+
+def test_load_requires_only_the_core_statements_by_default(cache_dir):
+    """預設只要 IS/BS/CF——日常產 Excel 的路徑不該因為某張 extras 沒抓就重抓。"""
+    _save_sample()
+    path = filing_cache.filing_path("NVDA", ACC)
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw["fetched_keys"] = list(filing_cache.CORE_STATEMENT_KEYS)
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    assert filing_cache.load_filing("NVDA", ACC, 1045810) is not None
+    # 反面：同一份檔案，明講要 extras 就該擋下來。少了這半條，整個測試在
+    # 「還沒實作」跟「預設值寫錯成六張」兩種情況下都會通過，等於沒在測東西。
+    assert filing_cache.load_filing(
+        "NVDA", ACC, 1045810, require_keys=("cover",)) is None
+
+
+def test_required_keys_check_does_not_reject_a_negative_cache(cache_dir):
+    """負向快取（pre-XBRL）根本沒有 `dataframes`，「哪張表沒抓」對它沒有意義。
+    拿 `require_keys` 去擋它會讓那些舊申報每趟都重打 SEC，永遠不收斂。"""
+    filing_cache.save_filing(
+        "NVDA", ACC, form="10-Q", filing_date="2008-05-01", cik=1045810,
+        dataframes=None, has_financials=False)
+    entry = filing_cache.load_filing(
+        "NVDA", ACC, 1045810, require_keys=filing_cache.STATEMENT_KEYS)
+    assert entry is not None
+    assert entry["has_financials"] is False
+
+
 # ── GUI 用的統計與清除 ────────────────────────────────────────────────────────
 
 def test_listing_scans_the_folder_no_global_index_needed(cache_dir):
