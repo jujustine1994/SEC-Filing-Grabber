@@ -335,7 +335,9 @@ H6-1. **hint 放寬後仍抓不到的案例——已診斷，還沒決定要不�
 快取卡在**解析層與比對層之間**——存的是 edgartools 解出來的三張 DataFrame，
 `IS/BS/CF_TEMPLATE` 那套科目比對永遠在快取之上即時重跑。所以以後改 hint regex、
 加比率、調 Q4 合成邏輯都**不會**讓快取失效；但 **edgartools 升版會**，那條軸線靠
-每份快取檔裡的 `edgartools_version` 欄位擋。詳細機制、四道閘、實測數字見
+每份快取檔裡的 `edgartools_version` 欄位擋。**擴 `STATEMENT_KEYS`（加存新報表）
+也不會**了——2026-09-20 起靠 `fetched_keys` 分辨「這張表不存在」與「當初根本
+沒抓」，舊檔推導、不升版、不重抓。詳細機制、五道閘、實測數字見
 `docs/ARCHITECTURE.md`「本地 filing 快取」一節。
 
 **目前狀態**：快取**已經生效**、已驗收、**已合併 master**（`83c3b62`）。
@@ -380,6 +382,20 @@ I5. **修正案（10-Q/A、10-K/A）現況本來就不抓**（承快取設計書
 > `src/local_db.py`（狀態層）＋ `src/cli.py` 的 `update-db`／`db-status`
 > ＋ GUI 的「資料庫總覽」分頁。**`fetcher_gaap` 的抓取迴圈一行都沒動**
 > ——「到底了沒」在迴圈外面推導。下面只留還沒做完的 J6。
+
+J10. **`verify_local_db.py` 沒跟上 D9 的 FPI 分岔，ARM 永遠被判「有問題」**
+   （2026-09-20 發現。**不是 D9 或 fetched_keys 造成的**——拿 `efd3182`
+   當時的腳本跑同一家，結果一模一樣，是既有問題）
+   - **症狀**：`verify_local_db.py ARM` 印
+     `✗ meta 10-Q count=None 但實際 0 份；meta 10-K count=None 但實際 0 份`
+   - **根因**：ARM 是外國私人發行人，交的是 6-K／20-F。`local_db.form_set()`
+     會依 meta 裡的表單名分岔到 `FPI_FORMS`，但驗證腳本那段**寫死 10-Q／10-K**
+   - **影響僅限驗證腳本的判讀，資料本身沒事**：同一次跑五道閘 12/12 = 100% 全過
+   - **修法**：那段改用 `local_db.form_set()`，跟正式程式碼同一個判準
+     （跟這支腳本「直接用正式程式碼的函式判，不另外寫一套」的原則一致）
+   - **順帶**：有問題的公司那行 print 用了 `✗`，Windows 預設 cp950 console
+     會丟 `UnicodeEncodeError` 整支炸掉（要 `PYTHONIOENCODING=utf-8` 才跑得完）。
+     **只有在「真的驗出問題」時才會炸**，所以一路沒被發現
 
 J6. ⚠ **「抓到底」實際上是「抓到這個 CIK 的底」，不是公司歷史的底**
    （2026-09-05 跑 J5 batch 1 時發現，**這是新發現，設計書沒有預期到**）

@@ -9,9 +9,12 @@ verify_local_db.py — 本地財報資料庫的**格式驗證**（TODO J5 每批
 
 ## 驗什麼
 
-**A. 四道閘（最關鍵）**——對每一份快取檔實際呼叫 `filing_cache.load_filing()`。
+**A. 五道閘（最關鍵）**——對每一份快取檔實際呼叫 `filing_cache.load_filing()`。
    它回 `None` 就代表**下次抓取會當作沒有快取、整份重新下載**，那份檔案等於白抓。
-   四道閘是：JSON 可解析／`schema_version`／`cik` 相符／`edgartools_version` 相符。
+   五道閘是：JSON 可解析／`schema_version`／`cik` 相符／`edgartools_version` 相符／
+   `require_keys` 要的表都在 `fetched_keys` 裡。⚠ 這裡走 `require_keys` 的**預設值**
+   ＝核心三張（IS/BS/CF），所以這支答的是「核心三張能不能用」——`statement_of_equity`
+   那類 extras 沒抓到**不會**被判成問題（那是「當初沒抓」，不是「檔案壞了」）。
    這一項直接用正式程式碼的函式，不是另外寫一套判斷——**不可能跟實際行為分岔**。
 
 **B. 反序列化**——把命中的快取餵給 `cached_filing()`，實際取出三張 DataFrame。
@@ -92,7 +95,7 @@ def verify_ticker(ticker: str) -> dict:
 
     dates = []
     for accession in accessions:
-        # ── A. 四道閘：用正式程式碼判，不另外寫一套 ──
+        # ── A. 五道閘：用正式程式碼判，不另外寫一套 ──
         entry = filing_cache.load_filing(ticker, accession, cik)
         if entry is None:
             out["dead"].append(accession)
@@ -185,7 +188,7 @@ def verify_ticker(ticker: str) -> dict:
 
     if out["dead"]:
         out["problems"].append(
-            f"{len(out['dead'])} 份過不了 load_filing 的四道閘（下次會整份重抓）")
+            f"{len(out['dead'])} 份過不了 load_filing 的五道閘（下次會整份重抓）")
     if out["unreadable"]:
         out["problems"].append(f"{len(out['unreadable'])} 份讀不出來")
     if out["bad_dataframe"]:
@@ -232,7 +235,7 @@ def main(argv=None) -> int:
     print(f"\n驗證完成（{elapsed:.0f}s）")
     print(f"  公司            {len(targets)} 家")
     print(f"  filing 檔       {tot_files} 份")
-    print(f"  過四道閘        {tot_loadable} 份"
+    print(f"  過五道閘        {tot_loadable} 份"
           f"（{tot_loadable / max(tot_files, 1):.1%}）")
     print(f"    有 financials {tot_fin} 份")
     print(f"    負向快取      {tot_neg} 份"
@@ -250,7 +253,7 @@ def main(argv=None) -> int:
     if bad:
         print("  -> " + " ".join(bad))
     else:
-        print("\n✅ 格式全部正確——每一份都過得了 load_filing 的四道閘、"
+        print("\n✅ 格式全部正確——每一份都過得了 load_filing 的五道閘、"
               "三張表都反序列化得回來、meta 跟目錄一致。")
 
     if args.json:

@@ -303,7 +303,7 @@ def test_edgartools_version_returns_none_when_package_not_found(monkeypatch):
     assert filing_cache.edgartools_version() is None
 
 
-# ── 單份 filing 的讀寫與四道閘 ────────────────────────────────────────────
+# ── 單份 filing 的讀寫與五道閘 ────────────────────────────────────────────
 
 ACC = "0001045810-25-000123"
 
