@@ -1110,3 +1110,44 @@ def test_second_run_skips_a_finished_foreign_issuer(cache_dir):
     assert edgar.fetched == ["ARM"]            # 沒有第二次抓取
     assert report.skipped == 1 and report.failed == 0
     assert local_db.load_meta("ARM")["forms"]["6-K"]["count"] == 1
+
+
+# ── 殘留 .tmp 的清理（P1(b)）────────────────────────────────────────────
+
+def test_update_clears_stale_tmp_files_left_by_a_killed_process(cache_dir):
+    """`run_localdb_batch.sh` 記過實測：一個 process 連跑 67 家會在第 16 家
+    被系統因記憶體不足砍掉。那時 `atomic_write_json()` 的 `except` 根本跑不到，
+    半截的 `.tmp` 就留在磁碟上。不影響正確性（兩道防線都擋著），只是會累積。"""
+    import os
+    import time
+    import filing_cache
+
+    directory = filing_cache.ticker_dir("META")
+    directory.mkdir(parents=True, exist_ok=True)
+    stale = directory / f"{_acc(9)}.9999.tmp"
+    stale.write_text("{half-writ", encoding="utf-8")
+    old = time.time() - 7200
+    os.utime(stale, (old, old))
+
+    edgar = _FakeEdgar({"META": {"10-Q": [(_acc(1), "2013-05-01")],
+                                 "10-K": [(_acc(2), "2013-02-01")]}})
+    _run(edgar, ["META"])
+
+    assert not stale.exists()
+
+
+def test_update_leaves_a_tmp_that_another_instance_is_still_writing(cache_dir):
+    """兩個實例並行時（`run_localdb_batch.sh` 分段跑就是這個形狀），清掉別人
+    正在寫的 tmp 會讓它的 `os.replace()` 失敗——比殘留一個檔案嚴重得多。"""
+    import filing_cache
+
+    directory = filing_cache.ticker_dir("META")
+    directory.mkdir(parents=True, exist_ok=True)
+    fresh = directory / f"{_acc(9)}.1234.tmp"
+    fresh.write_text("{being-written", encoding="utf-8")
+
+    edgar = _FakeEdgar({"META": {"10-Q": [(_acc(1), "2013-05-01")],
+                                 "10-K": [(_acc(2), "2013-02-01")]}})
+    _run(edgar, ["META"])
+
+    assert fresh.exists()

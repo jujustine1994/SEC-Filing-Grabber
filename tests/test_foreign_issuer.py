@@ -302,3 +302,95 @@ def test_preview_does_not_ask_for_6k_when_the_company_files_10q(cache_dir, monke
     fetcher_gaap.preview_sheets("AAPL", "Test test@test.com")
 
     assert "6-K" not in asked
+
+
+# ── 預覽的財年結束月要跟主路徑同源（J11）──────────────────────────────────
+#
+# 預覽原本走 `Company.fiscal_year_end` 屬性（免費，已在物件上），主路徑走
+# `_detect_fy_end_month()`（解 10-K 全文）。**兩個依據，會分岔。**
+#
+# 全庫 215 家實測（基準＝解全文）：
+#   `period_of_report` 月份 …… 215/215 = 100.0%
+#   `fiscal_year_end` 屬性 …… 206/215 = 95.8%（ADI／DIS／HD／JNJ／LULU／
+#                               MU／ONTO／SNDK／TGT 九家對不上）
+#
+# 其中 **JNJ 與 ONTO 的標籤真的錯了，而且差一整個財年**：
+#   JNJ  預覽 FY2027Q2 vs 實抓 FY2026Q2
+#   ONTO 預覽 FY2026Q2 vs 實抓 FY2027Q2
+#
+# 改用年報清單的 `period_of_report`：準確度跟解全文一樣（100%），成本只是一次
+# filing 清單請求——預覽的成本上限是「不要解全文」，不是「不要問清單」。
+
+def _annual(period_of_report: str):
+    f = MagicMock()
+    f.period_of_report = period_of_report
+    return f
+
+
+def test_preview_takes_the_fiscal_year_end_from_the_annual_filing_not_the_attribute(
+        cache_dir, monkeypatch):
+    """屬性跟年報期末日打架時要信年報——JNJ／ONTO 就是這樣差掉一整個財年。"""
+    import fetcher_gaap
+
+    tenq = MagicMock()
+    tenq.period_of_report = "2026-06-28"
+    tenq.filing_date = "2026-07-15"
+
+    company = MagicMock()
+    company.get_filings.side_effect = lambda form, amendments=False: (
+        [tenq] if form == "10-Q" else [_annual("2025-12-28")] if form == "10-K" else [])
+    company.fiscal_year_end = "0101"          # 屬性說 1 月（JNJ 實際就是這樣錯的）
+
+    monkeypatch.setattr(fetcher_gaap, "Company", lambda t: company)
+    monkeypatch.setattr(fetcher_gaap, "set_identity", lambda i: None)
+
+    result = fetcher_gaap.preview_sheets("JNJ", "Test test@test.com")
+
+    # 年報期末日 2025-12-28 → 財年 12 月底 → 曆年制 → 6/28 是 Q2
+    assert result["latest_label"] == "FY2026Q2"
+
+
+def test_preview_asks_the_annual_form_of_this_filer_type(cache_dir, monkeypatch):
+    """FPI 要問 20-F，不是 10-K——問錯就拿不到期末日，白花一次請求又退回屬性。"""
+    import fetcher_gaap
+
+    sixk = _fake_6k(ACC_WITH, r_files=68, filing_date="2026-07-29")
+    sixk.period_of_report = "2026-06-30"
+
+    asked = []
+
+    def get_filings(form, amendments=False):
+        asked.append(form)
+        return {"6-K": [sixk], "20-F": [_annual("2026-03-31")]}.get(form, [])
+
+    company = MagicMock()
+    company.get_filings.side_effect = get_filings
+    company.fiscal_year_end = ""               # 屬性拿不到，只能靠年報
+
+    monkeypatch.setattr(fetcher_gaap, "Company", lambda t: company)
+    monkeypatch.setattr(fetcher_gaap, "set_identity", lambda i: None)
+
+    result = fetcher_gaap.preview_sheets("ARM", "Test test@test.com")
+
+    assert "20-F" in asked and "10-K" not in asked
+    assert result["latest_label"] == "FY2027Q1"   # 財年 3 月底 → 4~6 月是 Q1
+
+
+def test_preview_falls_back_to_the_attribute_when_no_annual_filing_exists(
+        cache_dir, monkeypatch):
+    """剛上市、只交過一份 10-Q 的公司沒有年報可問——退回屬性比直接用 12 月好。"""
+    import fetcher_gaap
+
+    tenq = MagicMock()
+    tenq.period_of_report = "2026-06-27"
+    tenq.filing_date = "2026-07-31"
+
+    company = MagicMock()
+    company.get_filings.side_effect = lambda form, amendments=False: (
+        [tenq] if form == "10-Q" else [])
+    company.fiscal_year_end = "0926"           # AAPL：財年 9 月底
+
+    monkeypatch.setattr(fetcher_gaap, "Company", lambda t: company)
+    monkeypatch.setattr(fetcher_gaap, "set_identity", lambda i: None)
+
+    assert fetcher_gaap.preview_sheets("AAPL", "x")["latest_label"] == "FY2026Q3"

@@ -489,6 +489,65 @@ def test_required_keys_check_does_not_reject_a_negative_cache(cache_dir):
     assert entry["has_financials"] is False
 
 
+# ── 殘留 .tmp 的清理（P1(b)）────────────────────────────────────────────
+#
+# `atomic_write_json()` 失敗時會自己 `unlink()`，所以正常路徑不留 .tmp。
+# 殘留只發生在 **process 被強制中止**時（kill、記憶體不足——`run_localdb_batch.sh`
+# 的註解記過實測：一個 process 連跑 67 家會在第 16 家被系統砍掉），那時
+# `except` 根本跑不到。不影響正確性（`ACCESSION_RE` 與 `glob("*.json")` 兩道
+# 防線都擋著），只是佔空間。
+#
+# ⚠ **不可以無條件清掉所有 .tmp**：檔名帶 PID 是為了讓兩個實例並行時不互踩，
+# 清掉別人正在寫的那份會讓它的 `os.replace()` 失敗。所以只清「夠舊」的——
+# 正在寫的 tmp 不會存在超過幾秒。
+
+
+def _touch_tmp(directory, name, age_seconds):
+    import os
+    import time
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / name
+    path.write_text("{}", encoding="utf-8")
+    old = time.time() - age_seconds
+    os.utime(path, (old, old))
+    return path
+
+
+def test_stale_tmp_files_are_cleared(cache_dir):
+    stale = _touch_tmp(filing_cache.ticker_dir("NVDA"),
+                       f"{ACC}.9999.tmp", age_seconds=7200)
+
+    assert filing_cache.clear_stale_tmp("NVDA") == 1
+    assert not stale.exists()
+
+
+def test_a_tmp_file_another_process_is_still_writing_is_left_alone(cache_dir):
+    """檔名帶 PID 就是為了讓兩個實例並行不互踩。清掉別人正在寫的那份，
+    它的 `os.replace()` 會失敗——那比殘留一個檔案嚴重得多。"""
+    fresh = _touch_tmp(filing_cache.ticker_dir("NVDA"),
+                       f"{ACC}.1234.tmp", age_seconds=5)
+
+    assert filing_cache.clear_stale_tmp("NVDA") == 0
+    assert fresh.exists()
+
+
+def test_clearing_tmp_never_touches_a_real_filing(cache_dir):
+    """`.json` 是真資料，抓一次要 11 小時。這條是最重要的一條。"""
+    _save_sample()
+    real = filing_cache.filing_path("NVDA", ACC)
+    _touch_tmp(filing_cache.ticker_dir("NVDA"), f"{ACC}.9999.tmp", age_seconds=7200)
+
+    filing_cache.clear_stale_tmp("NVDA")
+
+    assert real.exists()
+    assert filing_cache.load_filing("NVDA", ACC, 1045810) is not None
+
+
+def test_clearing_tmp_on_a_missing_folder_is_not_an_error(cache_dir):
+    """還沒抓過的公司沒有資料夾——清理是順手做的事，不可以因此中斷抓取。"""
+    assert filing_cache.clear_stale_tmp("NEVERFETCHED") == 0
+
+
 # ── GUI 用的統計與清除 ────────────────────────────────────────────────────────
 
 def test_listing_scans_the_folder_no_global_index_needed(cache_dir):

@@ -767,6 +767,11 @@ def update_local_db(tickers, identity: str, *,
             report.stopped = True
             break
         emit("ticker_start", ticker=ticker, index=index, total=len(targets))
+        # 順手清掉上次被強制中止（kill／記憶體不足）留下的半截 .tmp。
+        # 只清「夠舊」的——並行的另一個實例正在寫的那份不能動，見
+        # `filing_cache.clear_stale_tmp()`。整家跳過的公司也清，成本只是
+        # 一次 glob，而那正是最容易累積殘留的情況（每輪都掃到、從不寫入）。
+        filing_cache.clear_stale_tmp(ticker)
         try:
             listings, cik = list_filings(ticker, identity)
         except Exception as exc:                      # noqa: BLE001 — 一家壞掉不能拖垮整批

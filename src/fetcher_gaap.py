@@ -3203,8 +3203,10 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
 
     set_identity(identity)
     company = Company(ticker)
+    annual_form = "10-K"
     filings_q = _list_filings(company, "10-Q")
     if not filings_q:
+        annual_form = FPI_ANNUAL_FORM
         # 沒有 10-Q 就退到含財報的 6-K，跟 `_resolve_listings()` 同一個判準。
         # ⚠ **只有「真的沒有 10-Q」才問**——多問一次 6-K 對 Sony（1,055 份）、
         # 野村（1,244 份）是上千份的差別，對正常美股則是白白多一次請求。
@@ -3219,10 +3221,30 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
     period_end = str(getattr(latest, "period_of_report", "") or "")
     filing_date = str(getattr(latest, "filing_date", "") or "")
 
-    # 財年結束月：走 Company.fiscal_year_end 屬性（一次請求，已經在 company 物件上），
-    # 不用 _detect_fy_end_month()——那個要 filing.obj() 抓 10-K 全文，太慢，快速掃描用不起。
-    raw_fy = str(getattr(company, "fiscal_year_end", "") or "").strip()
-    fy_end_month = int(raw_fy[:2]) if len(raw_fy) == 4 and raw_fy.isdigit() and 1 <= int(raw_fy[:2]) <= 12 else 12
+    # 財年結束月：走**年報清單裡的 `period_of_report`**（一次 filing 清單請求）。
+    #
+    # ⚠ 原本走 `Company.fiscal_year_end` 屬性，跟主路徑的 `_detect_fy_end_month()`
+    # 是兩個依據，**會分岔**。全庫 215 家實測（基準＝解全文）：
+    #     `period_of_report` …… 215/215 ＝ 100.0%
+    #     `fiscal_year_end`  …… 206/215 ＝ 95.8%
+    # 其中 **JNJ 與 ONTO 的標籤真的錯了，而且差一整個財年**（JNJ 預覽 FY2027Q2
+    # vs 實抓 FY2026Q2；ONTO 反向）。
+    #
+    # 不用 `_detect_fy_end_month()` 的理由沒變——那個要 `filing.obj()` 解全文，
+    # 快速掃描用不起。但預覽的成本上限是「不要解全文」，**不是「不要問清單」**，
+    # 而清單裡的 `period_of_report` 就已經夠準（J11，2026-09-20）。
+    fy_end_month = None
+    annuals = _list_filings(company, annual_form)
+    if annuals:
+        por = str(getattr(annuals[0], "period_of_report", "") or "")
+        if len(por) >= 7 and por[5:7].isdigit() and 1 <= int(por[5:7]) <= 12:
+            fy_end_month = int(por[5:7])
+    if fy_end_month is None:
+        # 年報一份都沒有（剛上市、只交過一份 10-Q）才退回屬性——比直接用 12 月好。
+        raw_fy = str(getattr(company, "fiscal_year_end", "") or "").strip()
+        fy_end_month = (int(raw_fy[:2])
+                        if len(raw_fy) == 4 and raw_fy.isdigit() and 1 <= int(raw_fy[:2]) <= 12
+                        else 12)
     start_month = fy_end_month % 12 + 1
     latest_label = fiscal_quarter_of(period_end, start_month)
 
