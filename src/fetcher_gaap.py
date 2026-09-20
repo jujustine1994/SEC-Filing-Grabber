@@ -37,7 +37,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 import filing_cache
-from fetch_ledger import FetchLedger
+from fetch_ledger import FetchLedger, MissingCurrentPeriod
 from i18n import t
 from net_retry import NetworkDownError, is_network_error, with_retry
 from override_engine import load_overrides, run_diagnosis, check_key_rows
@@ -1110,6 +1110,31 @@ def _col_to_period_end(col_name: str) -> str:
     return m.group(1) if m else ""
 
 
+def _note_missing_current_period(filing, q_col: str | None) -> None:
+    """這份 filing 的報表裡沒有它自己那一期 → 記進缺漏帳本（G13(a)）。
+
+    **只偵測、不補值**（第一步）。現在的症狀是**整季空白而且完全不報錯**，
+    使用者不知道是公司沒報、SEC 沒有、還是工具壞了。根因在 edgartools 的期間
+    篩選門檻（見 `fetch_ledger.MissingCurrentPeriod` 的說明）。
+
+    判準用 `period_of_report`——那是 SEC 官方認定「這份 filing 報的是哪一期」，
+    不是我們猜的。一個判斷涵蓋所有型：
+
+        ISRG 型   挑到的是去年同期      `2017-03-31 (Q1)` != `2018-03-31`
+        DELL 型   報表裡只剩年度欄      `2023-02-03 (FY)` != `2023-05-05`
+        最慘的    連一個期間欄都沒有    `q_col is None`
+
+    ⚠ **拿不到 `period_of_report` 一律不記。** 那時無從判斷，把「不知道」報成
+    「有缺漏」會讓使用者對警告失去信任——而這個專案的缺漏警告是要被當真的。
+    """
+    period = str(getattr(filing, "period_of_report", "") or "").strip()
+    if not period:
+        return
+    if q_col is not None and _col_to_period_end(q_col) == period:
+        return
+    _note_gap(_filing_ref(filing), MissingCurrentPeriod(period))
+
+
 def _detect_fy_end_month(filings_k: list) -> int:
     """Detect company's fiscal year end month from 10-K filings.
 
@@ -1524,6 +1549,9 @@ def _build_is_table(
             continue
 
         q_col = _current_q_col(df)
+        # 這份 filing 的報表裡有沒有它自己那一期？沒有就出聲（G13(a)）。
+        # ⚠ **只記帳，不改流程**——下面的 `continue` 與既有行為完全一樣。
+        _note_missing_current_period(filing, q_col)
         if q_col is None:
             continue
 

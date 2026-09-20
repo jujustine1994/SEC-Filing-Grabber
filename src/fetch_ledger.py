@@ -30,6 +30,20 @@ from net_retry import NetworkDownError, is_network_error, sec_reachable
 _MAX_LISTED = 6
 
 
+class MissingCurrentPeriod(Exception):
+    """這份 filing 解析成功了，但報表裡**沒有它自己那一期**（G13(a)）。
+
+    成因在 edgartools：`period_selector` 的動態門檻要求「這一期至少有 N 個 fact
+    被歸類成該報表」，N 由**同一份 filing 裡其他期間的豐富度**算出來。實測 ISRG
+    `0001035267-18-000048`：門檻 25、當期只有 21 個（因為當期沒有維度拆分，
+    而比較期的 72 個裡很多是同一個 concept 的維度細項）→ **當期整個被丟掉**。
+
+    ⚠ **這是資料問題不是網路問題，而且分類時不可以去戳 SEC。** 能拋出這個例外
+    就代表那份 filing 已經下載並解析完畢，網路顯然是通的。誤判成 `network` 會
+    觸發 D11-B 的整趟重試，而重試一百次結果都一樣——那是 edgartools 的行為。
+    """
+
+
 @dataclass(frozen=True)
 class Gap:
     """一期沒拿到的紀錄。
@@ -80,6 +94,10 @@ class FetchLedger:
         # 恢復，於是斷網被報成「SEC 連得上，是資料問題」，方向完全相反。
         # （is_network_error 刻意把 NetworkDownError 排除在外——那個函式
         #  回答的是「要不要再重試一輪」，跟這裡問的不是同一件事。）
+        # 走到這裡代表 filing 已經解析成功，網路是通的——不必也不該再戳一次。
+        # 擺在網路判斷之前：這種缺漏跟連線狀態無關，任何情況都是資料問題。
+        if isinstance(exc, MissingCurrentPeriod):
+            return "data"
         if isinstance(exc, NetworkDownError) or is_network_error(exc):
             return "network"        # 例外自己就說了，不必再戳
         if self._probe_result is None:

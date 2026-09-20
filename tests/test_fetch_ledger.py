@@ -200,3 +200,37 @@ def test_retry_does_not_absorb_data_kind_gaps():
     retry_led = FetchLedger(probe=_net_probe(True))
     led.absorbed_by_retry(retry_led)
     assert [g.where for g in led.gaps] == ["FY2025Q1"]
+
+
+# ── 「當期整期不在報表裡」是資料問題，不是網路問題（G13(a)）──────────────
+#
+# edgartools 的期間篩選門檻會把當期整個丟掉（見 TODO G13(a)：ISRG
+# `0001035267-18-000048` 的動態門檻是 25 個 fact，當期只有 21 個）。
+# 症狀是**整季空白而且不報錯**——使用者不知道是公司沒報、SEC 沒有、還是工具壞了。
+#
+# ⚠ **一定要分類成 `data`，而且不可以去戳 SEC。** 走到這個判斷時，那份 filing
+# 已經成功下載並解析完畢了——網路顯然是通的。誤判成 `network` 會觸發 D11-B
+# 的整趟重試，而重試一百次結果都一樣（那是 edgartools 的行為，不是網路）。
+
+def test_a_missing_current_period_is_data_not_network_without_probing():
+    """走到這裡代表 filing 已經解析成功了，網路是通的，不必也不該再戳一次。"""
+    from fetch_ledger import FetchLedger, MissingCurrentPeriod
+
+    probed = []
+    ledger = FetchLedger(probe=lambda: probed.append(1) or True)
+    ledger.record("2018-03-31", MissingCurrentPeriod("2018-03-31"))
+
+    assert ledger.gaps[0].kind == "data"
+    assert probed == [], "不該為了分類這種缺漏去戳 SEC"
+
+
+def test_a_missing_current_period_does_not_trigger_the_retry_path():
+    """`data` 類缺漏不重試——重試一百次結果都一樣。"""
+    from fetch_ledger import FetchLedger, MissingCurrentPeriod
+
+    ledger = FetchLedger(probe=lambda: True)
+    for _ in range(5):
+        ledger.record("x", MissingCurrentPeriod("x"))
+
+    assert ledger.network_blamed is False
+    assert ledger.give_up_retrying is False

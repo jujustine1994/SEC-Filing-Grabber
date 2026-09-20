@@ -394,3 +394,102 @@ def test_preview_falls_back_to_the_attribute_when_no_annual_filing_exists(
     monkeypatch.setattr(fetcher_gaap, "set_identity", lambda i: None)
 
     assert fetcher_gaap.preview_sheets("AAPL", "x")["latest_label"] == "FY2026Q3"
+
+
+# ── 當期整期不在報表裡，要出聲（G13(a) 第一步：偵測）────────────────────
+#
+# edgartools 的期間篩選門檻會把當期整個丟掉（根因見 TODO G13(a)）。
+# **現在的症狀是整季空白而且完全不報錯**——使用者不知道是公司沒報、SEC 沒有、
+# 還是工具壞了。這一步不碰任何數字，只讓它出聲。
+#
+# 判準用 `period_of_report`：那是 SEC 官方認定「這份 filing 報的是哪一期」，
+# 不是我們猜的。一個判斷涵蓋所有型：
+#   ISRG 型 —— 挑到的是去年同期（`2017-03-31` != `2018-03-31`）
+#   DELL 型 —— 報表裡只剩年度欄（`2023-02-03 (FY)` != `2023-05-05`）
+
+def _filing_with_period(period_of_report):
+    f = MagicMock()
+    f.period_of_report = period_of_report
+    f.accession_no = "0001035267-18-000048"
+    f.filing_date = "2018-04-18"
+    f.form = "10-Q"
+    return f
+
+
+def test_a_filing_whose_statement_lacks_its_own_period_is_recorded_as_a_gap():
+    """ISRG 型：報表裡挑得到欄，但那是**去年同期**。"""
+    import fetcher_gaap
+    from fetch_ledger import FetchLedger
+
+    ledger = FetchLedger(probe=lambda: True)
+    token = fetcher_gaap._ledger_var.set(ledger)
+    try:
+        fetcher_gaap._note_missing_current_period(
+            _filing_with_period("2018-03-31"), "2017-03-31 (Q1)")
+    finally:
+        fetcher_gaap._ledger_var.reset(token)
+
+    assert len(ledger.gaps) == 1
+    assert ledger.gaps[0].kind == "data"
+    assert "2018-03-31" in ledger.gaps[0].where
+
+
+def test_a_statement_with_only_an_annual_column_is_also_recorded():
+    """DELL／SNOW 型：季報的損益表只剩年度欄。"""
+    import fetcher_gaap
+    from fetch_ledger import FetchLedger
+
+    ledger = FetchLedger(probe=lambda: True)
+    token = fetcher_gaap._ledger_var.set(ledger)
+    try:
+        fetcher_gaap._note_missing_current_period(
+            _filing_with_period("2023-05-05"), "2023-02-03 (FY)")
+    finally:
+        fetcher_gaap._ledger_var.reset(token)
+
+    assert len(ledger.gaps) == 1
+
+
+def test_no_usable_column_at_all_is_recorded_too():
+    import fetcher_gaap
+    from fetch_ledger import FetchLedger
+
+    ledger = FetchLedger(probe=lambda: True)
+    token = fetcher_gaap._ledger_var.set(ledger)
+    try:
+        fetcher_gaap._note_missing_current_period(_filing_with_period("2018-03-31"), None)
+    finally:
+        fetcher_gaap._ledger_var.reset(token)
+
+    assert len(ledger.gaps) == 1
+
+
+def test_a_healthy_filing_is_not_recorded():
+    """⚠ 最重要的一條：99.9% 的 filing 是好的，不可以誤報。"""
+    import fetcher_gaap
+    from fetch_ledger import FetchLedger
+
+    ledger = FetchLedger(probe=lambda: True)
+    token = fetcher_gaap._ledger_var.set(ledger)
+    try:
+        fetcher_gaap._note_missing_current_period(
+            _filing_with_period("2018-03-31"), "2018-03-31 (Q1)")
+    finally:
+        fetcher_gaap._ledger_var.reset(token)
+
+    assert ledger.gaps == []
+
+
+def test_a_filing_without_a_period_of_report_is_not_recorded():
+    """拿不到 `period_of_report` 就無從判斷——不可以把「不知道」報成「有缺漏」。"""
+    import fetcher_gaap
+    from fetch_ledger import FetchLedger
+
+    ledger = FetchLedger(probe=lambda: True)
+    token = fetcher_gaap._ledger_var.set(ledger)
+    try:
+        fetcher_gaap._note_missing_current_period(_filing_with_period(""), "2017-03-31 (Q1)")
+    finally:
+        fetcher_gaap._ledger_var.reset(token)
+
+    assert ledger.gaps == []
