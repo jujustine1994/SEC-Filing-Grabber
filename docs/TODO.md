@@ -258,10 +258,48 @@ G13. **期間欄挑錯／財季算錯——BS 那半已修，IS 那半還開著*
      總營收等於這個數字」**——同一個期間會有多個 Revenue 系列的 concept
      （總額、分類別、扣除項），上表取的是第一個命中的，不可以拿來當答案。
 
-     **下一步（技術路線，不是產品判斷）**：從 filing 自己的 XBRL instance 直接
-     取該期間的 fact，繞過 edgartools 的 statement render。`fetcher_facts.py`
-     的 fact 解析邏輯（`duration_days()`／`classify_period()`／`pick_fact()`）
-     可以重用，**但資料要改從那份 filing 的 XBRL 讀，不是打 companyfacts API**。
+     **✅ 2026-09-20 根因查明：是 edgartools 的期間篩選門檻把當期整個丟掉。**
+
+     以 ISRG `0001035267-18-000048`（10-Q，`period_of_report=2018-03-31`）逐層
+     追蹤 `edgar.xbrl.period_selector.select_periods()`：
+
+     | 步驟 | 結果 | 含當期？ |
+     |---|---|---|
+     | `reporting_periods` | 11 個 | ✅ |
+     | `_filter_by_document_date()` | 10 個 | ✅ |
+     | `_select_duration_periods()` | 2 個（2018Q1、2017Q1） | ✅ |
+     | **`_filter_periods_with_sufficient_data()`** | **1 個（只剩 2017Q1）** | ❌ **就是這裡** |
+
+     **為什麼被丟掉**——那一關要求「這一期至少要有 N 個 fact 被歸類成
+     `IncomeStatement`」，而 N 是**動態算出來的**（`_calculate_dynamic_thresholds()`，
+     edgartools issue #464 為了擋掉「只有 1~2 個 concept 的稀疏歷史期間」而加）：
+
+         動態門檻 = 25 個
+         當期   2018Q1：21 個  ← 低於門檻，整期被丟掉
+         比較期 2017Q1：72 個
+
+     **⚠ 諷刺的地方**：當期只有 21 個是因為它**沒有維度拆分**；比較期 72 個裡
+     很多是同一個 concept 的維度細項（`CostOfRevenue` 就出現 4 次）。
+     **門檻由「比較期的維度豐富度」拉高，反而把「當期」擠掉了。**
+
+     **資料確認可取**（同一份 filing 的 XBRL，不是別的來源）：
+
+         us-gaap:SalesRevenueNet         = 847,500,000   ← 2018Q1 總營收
+         us-gaap:SalesRevenueGoodsNet    = 694,800,000
+         us-gaap:SalesRevenueServicesNet = 152,700,000
+         us-gaap:CostOfRevenue           = 253,700,000
+
+     **⚠ 官方 API 繞不過去**：`xbrl.render_statement("IncomeStatement",
+     period_filter="duration_2018-01-01_2018-03-31")` 實測**回傳 0 個資料欄**，
+     指定期間沒用。要拿只能走 `xbrl.facts.get_facts()` 自己挑。
+
+     **下一步（技術路線，不是產品判斷）**：
+     - (i) 繞過 statement render，從 `xbrl.facts` 取當期 fact。資料來源仍是
+       **那份 filing 自己的 XBRL**，符合「來源統一」。`fetcher_facts.py` 的
+       `duration_days()`／`classify_period()`／`pick_fact()` 可重用，
+       **但資料要從 filing 的 XBRL 讀，不是打 companyfacts API**。
+     - (ii) 這是 edgartools 上游的行為問題，值得開 issue 回報（有完整重現：
+       ISRG `0001035267-18-000048`、門檻 25 vs 當期 21）。
    - (b) **52/53 週財年制的財年年份會差一整個財年**（2026-09-20 實測重新定性，
      **原本寫的 KR 症狀量不到，真正的症狀是另一個**）
 
