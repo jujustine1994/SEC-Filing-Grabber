@@ -156,11 +156,19 @@ def build_report() -> int:
                            if r["sheets"][sheet][field]), key=lambda x: -x[1])
 
         mismatch = [r["ticker"] for r in have if r["sheets"][sheet]["template_mismatch"]]
-        print(f"【{sheet}】{len(have)} 家")
+        annual = sheet.endswith("(Y)")
+        print(f"【{sheet}】{len(have)} 家"
+              + ("   ⚠ Excel 的 Index 頁只判季表，年表這幾個數字僅供參考" if annual else ""))
         print(f"  模板對不上        {len(mismatch):3d} 家  {mismatch[:8]}")
-        for label, field in (("有〔矛盾〕標紅", "contradictions"),
-                             ("有〔中間有洞〕", "holed"),
-                             ("有缺季", "missing_quarters")):
+        fields = [("有〔矛盾〕標紅", "contradictions"), ("有〔中間有洞〕", "holed")]
+        if not annual:
+            # ⚠ **年表不可以算「缺季」。** `missing_quarters()` 是用「相鄰期末日
+            # 差幾季」判的，年表相鄰差 365 天＝4 季，於是每兩年報 3 季缺口——
+            # AAPL 17 年會報 48 段，**100% 假警報**。正式路徑
+            # （`excel_formatter._quality()`）只對 `Data_Financials(Q)` 做判斷，
+            # 年表根本不判，所以 Excel 的 Index 頁不會出現這個假警報。
+            fields.append(("有缺季", "missing_quarters"))
+        for label, field in fields:
             hits = pick(field)
             print(f"  {label:16s}  {len(hits):3d} 家  {hits[:6]}")
         print()
