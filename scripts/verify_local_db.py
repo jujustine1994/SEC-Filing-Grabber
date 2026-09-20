@@ -51,6 +51,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 import filing_cache          # noqa: E402
 import local_db              # noqa: E402
 
+# ⚠ Windows 主控台預設 cp950，`✗`／`✅` 編不出去就整支掛掉（實測
+# `UnicodeEncodeError: 'cp950' codec can't encode character '✗'`）。
+# **只有在真的驗出問題時才會炸**——正常路徑印不到 `✗`，所以這個坑一路沒被
+# 發現，偏偏「驗出問題」正是最需要看到輸出的時候。
+# `errors="replace"` 是保險：編不出去的字印成 `?`，不要讓一個符號炸掉整趟輸出。
+# 跟 `cli.py` 的 `_force_utf8_io()` 同一個模式（那支是主程式，這支是腳本，
+# 不 import 它是為了不把整個 CLI 模組拖進來）。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError, OSError):
+        pass
+
 # 期間欄之外的欄位（edgartools 的 meta 欄）。用來判斷「這張表有沒有真的期間資料」。
 META_COLS = {
     "concept", "label", "standard_concept", "level", "abstract", "dimension",
@@ -175,7 +188,12 @@ def verify_ticker(ticker: str) -> dict:
         if meta.get("file_count") != out["files"]:
             out["problems"].append(
                 f"meta file_count={meta.get('file_count')} 但實際 {out['files']} 份")
-        for form in local_db.FORMS:
+        # ⚠ **不可以寫死 `local_db.FORMS`（10-Q／10-K）**。外國私人發行人交的是
+        # 6-K／20-F，寫死的話 ARM 這型永遠被判「meta 10-Q count=None 但實際 0 份」
+        # ——資料其實好好的（同一次跑五道閘 12/12 全過），只是拿錯表單去比。
+        # 用 `form_set()` 跟正式程式碼同一個判準，符合這支腳本「直接用正式程式碼
+        # 的函式判、不另外寫一套」的原則（TODO J10，2026-09-20 修）。
+        for form in local_db.form_set((meta.get("forms") or {}).keys()):
             recorded = (meta.get("forms", {}).get(form) or {}).get("count")
             actual = out["forms"].get(form, 0)
             if recorded != actual:
