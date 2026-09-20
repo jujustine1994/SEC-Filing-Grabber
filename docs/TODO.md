@@ -236,9 +236,32 @@ G13. **期間欄挑錯／財季算錯——BS 那半已修，IS 那半還開著*
      KR 8、DELL 2、SNOW 1 ——但 GD 那 3 份要照上面那條排除，其餘也要逐份確認
      不是同一個誤判。
 
-     **下一步**：`fetcher_facts.py` 已經是現成的 companyfacts 路徑。要決定的是
-     「IS 缺當期時要不要退到 companyfacts 補」，那是產品判斷題（牽動
-     「as reported vs 官方彙整」的立場），不是技術問題。
+     **✅ CTH 2026-09-20 決定：來源要統一，只從那份 filing 自己的 XBRL 取，
+     不引入 companyfacts 當資料來源。**
+
+     **而且不需要**——再查一層 `accn`（companyfacts 每筆 fact 都帶「這筆是哪份
+     filing 報的」），四案的 accn **全部就是那份 filing 自己**：
+
+     | 公司 | 缺的當期 | 報這筆的 filing | 跟缺料的那份是同一份？ |
+     |---|---|---|---|
+     | ISRG | 2018-03-31 | `0001035267-18-000048` | ✅ |
+     | DELL | 2023-05-05 | `0001571996-23-000019` | ✅ |
+     | SNOW | 2022-04-30 | `0001640147-22-000044` | ✅ |
+     | KR | 2026-05-23 | `0001104659-26-078236` | ✅ |
+
+     所以這**不是「要不要用別的來源」的產品判斷題，是單純的解析問題**：
+     那份 filing 的 XBRL 裡有，`edgartools` 的 `income_statement()` 沒把它
+     render 出來（多半是 presentation linkbase 沒把那一期掛進損益表的
+     column set）。
+
+     ⚠ **查證的是「那份 filing 報過該期間的 Revenue 類 fact」，不是「該期間的
+     總營收等於這個數字」**——同一個期間會有多個 Revenue 系列的 concept
+     （總額、分類別、扣除項），上表取的是第一個命中的，不可以拿來當答案。
+
+     **下一步（技術路線，不是產品判斷）**：從 filing 自己的 XBRL instance 直接
+     取該期間的 fact，繞過 edgartools 的 statement render。`fetcher_facts.py`
+     的 fact 解析邏輯（`duration_days()`／`classify_period()`／`pick_fact()`）
+     可以重用，**但資料要改從那份 filing 的 XBRL 讀，不是打 companyfacts API**。
    - (b) **52/53 週財年制的財年年份會差一整個財年**（2026-09-20 實測重新定性，
      **原本寫的 KR 症狀量不到，真正的症狀是另一個**）
 
