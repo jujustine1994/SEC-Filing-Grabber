@@ -824,6 +824,68 @@ def test_build_cf_table_q2_ytd_subtracted_from_q1():
     assert gaap_tbl.values[ni_idx][q2_col] == pytest.approx(q2_ni)
 
 
+# ── CF 的期別標籤一定要跟著「資料那一欄」走（2026-09-21）────────────────
+#
+# ⚠ **原本的邏輯是「標籤跟 IS 借、資料從 CF 取」——兩個不同的欄。**
+# 只要兩邊挑到不同年份，就會把**去年的現金流標成今年**，而且完全不報錯。
+#
+# 全庫 6,186 份實測，99.9% 兩邊一致，但那 4 份不一致的全是**整年錯位**：
+#
+#   LMT  `0000936468-18-000053`
+#        CF 欄 ['2018-06-24', '2017-06-25 (YTD)']  ← 當期是裸日期、認不出來，
+#              `_ytd_col` 只好挑到去年那欄
+#        IS 欄 ['2018-06-24 (Q2)', ...]            ← 挑到當期
+#        → 去年的 CF 資料被標成 FY2018Q2
+#
+#   BMY  `0000014272-13-000005`
+#        CF 的 YTD 是當期（2013-06-30），IS 卻只有去年的單季欄（2012-06-30 Q2）
+#        → 當期的 CF 資料被標成 FY2012Q2
+#
+# 兩種方向都發生過，所以「優先信 IS」或「優先信 CF」都是錯的。
+# **標籤必須從資料那一欄自己推**，這樣標籤與數字永遠同期。
+
+
+def test_cf_label_follows_the_column_the_data_came_from():
+    """CF 的 YTD 欄是當期、IS 的單季欄是去年時，標籤要跟著 CF 走。
+
+    重現 BMY：IS 只有去年的 `(Q2)` 欄，CF 的 YTD 是當期。
+    修之前標籤跟 IS 借 → 當期資料被標成去年。
+    """
+    filing = _make_cf_filing("2024-06-30 (Q2)", "2025-06-30 (YTD)",
+                             ni=200.0, ocf=300.0, filing_date="2025-07-30")
+    gaap_tbl, _ = _build_cf_table([filing], max_filings=80)
+
+    assert "FY2025Q2" in gaap_tbl.quarter_labels, (
+        f"資料來自 2025-06-30 的欄，標籤就該是 FY2025Q2，"
+        f"拿到 {gaap_tbl.quarter_labels}")
+    assert "FY2024Q2" not in gaap_tbl.quarter_labels
+
+
+def test_cf_is_still_collected_when_the_income_statement_has_no_quarter_column():
+    """IS 也只有 YTD 欄時，CF 不可以被連坐丟掉。
+
+    重現 CHTR 2012~2016：IS 與 CF 都只有 `(YTD)` 欄，於是
+    `if ytd_col is None or is_q_col is None: continue` 把整份 CF 丟掉，
+    連續五年只有 Q1 有值（實測 9 份 filing、78 格）。
+    """
+    is_df = _make_is_df_minimal("2025-06-30 (YTD)")      # IS 只有 YTD，沒有單季欄
+    cf_df = _make_cf_df_minimal("2025-06-30 (YTD)", 200.0, 300.0)
+    mock_is = MagicMock(); mock_is.to_dataframe.return_value = is_df
+    mock_cf = MagicMock(); mock_cf.to_dataframe.return_value = cf_df
+    mock_fin = MagicMock()
+    mock_fin.income_statement.return_value = mock_is
+    mock_fin.cashflow_statement.return_value = mock_cf
+    mock_tenq = MagicMock(); mock_tenq.financials = mock_fin
+    filing = MagicMock()
+    filing.obj.return_value = mock_tenq
+    filing.filing_date = "2025-07-30"
+
+    gaap_tbl, _ = _build_cf_table([filing], max_filings=80)
+
+    assert "FY2025Q2" in gaap_tbl.quarter_labels, (
+        f"IS 沒有單季欄不該讓 CF 整份消失，拿到 {gaap_tbl.quarter_labels}")
+
+
 # ── Task 4: Revenue fallback expansion ────────────────────────────────────────
 
 def _make_is_df_revenues_only(period_col="2024-03-31 (Q1)", val=1000.0):

@@ -105,6 +105,27 @@ def _ledger() -> FetchLedger | None:
     return _ledger_var.get()
 
 
+# CF 的 YTD 拆算退而求其次用了累計值的紀錄（2026-09-21 診斷用）。
+# 只記錄、不改行為——先量清楚影響範圍再決定怎麼修。
+_cf_fallback_var: ContextVar[list] = ContextVar("cf_cumulative_fallback", default=[])
+
+
+def reset_cf_fallbacks() -> None:
+    _cf_fallback_var.set([])
+
+
+def cf_fallbacks() -> list:
+    """上一趟抓取裡，有哪幾期的 CF 是「拆不出單季、直接用累計值」。"""
+    return list(_cf_fallback_var.get())
+
+
+def _note_cf_cumulative_fallback(label: str) -> None:
+    try:
+        _cf_fallback_var.get().append(str(label))
+    except Exception:                      # noqa: BLE001 — 診斷不能拖垮抓取
+        pass
+
+
 def _note_gap(where, exc: BaseException) -> None:
     """記一期沒抓到。沒開帳本時（單獨呼叫某個 builder 的測試）靜靜略過。"""
     led = _ledger()
@@ -1976,22 +1997,37 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
             print(f"[fetcher_gaap] CF warning: {type(exc).__name__}", file=sys.stderr)
             continue
 
+        # ⚠ **標籤一定要從「資料那一欄」自己推，不可以跟 IS 借。**
+        #
+        # 原本走 YTD 路徑時是「標籤跟 IS 借、資料從 CF 取」——兩個不同的欄。
+        # 只要兩邊挑到不同年份，就會把**去年的現金流標成今年**，而且不報錯。
+        # 全庫 6,186 份實測 99.9% 一致，但那 4 份不一致的全是整年錯位，
+        # 而且**兩個方向都發生過**，所以「優先信 IS」或「優先信 CF」都不對：
+        #
+        #   LMT `0000936468-18-000053`：CF 欄是 `['2018-06-24', '2017-06-25 (YTD)']`
+        #       ——當期是**裸日期**認不出來，`_ytd_col()` 只好挑去年那欄，
+        #       標籤卻跟 IS 借到當期 → 去年的資料標成 FY2018Q2
+        #   BMY `0000014272-13-000005`：CF 的 YTD 是當期，IS 只有去年的單季欄
+        #       → 當期的資料標成 FY2012Q2
+        #
+        # 標籤跟著資料走，兩者就永遠同期。LMT 那份會改標成 FY2017Q2，
+        # 跟已收集的撞欄而被跳過——那是對的，那份 filing 的 CF 本來就沒有當期。
+        #
+        # ⚠ 同時拿掉 `is_q_col is None` 的連坐條件：IS 沒有單季欄不該讓 CF
+        # 整份消失（CHTR 2012~2016 就是這樣連續五年只有 Q1，實測 9 份、78 格）。
         q_col = _current_q_col(df)
         if q_col is not None:
-            label = _col_to_quarter_label(q_col, fy_end_month)
-            if label in collected:
-                continue
             is_ytd = False
             data_col = q_col
         else:
             ytd_col = _ytd_col(df)
-            if ytd_col is None or is_q_col is None:
-                continue
-            label = _col_to_quarter_label(is_q_col, fy_end_month)
-            if label in collected:
+            if ytd_col is None:
                 continue
             is_ytd = True
             data_col = ytd_col
+        label = _col_to_quarter_label(data_col, fy_end_month)
+        if label in collected:
+            continue
 
         consumed: set[int] = set()
         row_vals: dict[int, Any] = {}
@@ -2087,6 +2123,16 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
                     for i in range(len(CF_TEMPLATE))
                 }
             else:
+                # ⚠ **這一行把累計值當成單季寫出去，而且不報錯。**
+                # 實測 COST FY2025Q3：CF 欄只有 `2025-05-11 (YTD)`（251 天、
+                # 前三季累計 94.68 億），前一季 Q2 的 CF 欄是**裸日期**
+                # （`2025-02-16`，沒有 `(Q2)` 也沒有 `(YTD)`）所以整份被跳過，
+                # 於是這裡沒有基準可減 → 94.68 億被標成「FY2025Q3 單季」。
+                # 使用者看到的是錯的數字，不是空白。
+                #
+                # 先記錄不改行為（2026-09-21 診斷）：要先量出全庫有多少格踩在
+                # 這條路上，才能決定「改成留空」的影響範圍。
+                _note_cf_cumulative_fallback(label)
                 standalone[label] = row_vals  # no prior YTD — keep cumulative as best-effort
 
     # ── Convert YTD overflow to standalone (mirrors template subtraction above) ──
