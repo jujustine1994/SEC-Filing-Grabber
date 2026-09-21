@@ -521,3 +521,23 @@ IS 與 CF 的期間慣例**根本不同**：10-Q 的損益表通常同時報單�
 大公司。**
 
 **正確做法**：兩列都比，任一對得上就算通過。
+
+## 陷阱九：「資料在不在」與「該不該撈」是兩回事
+
+用 `standard_concept` 去快取裡找「這一期這個科目有沒有值」，會把**同一個正規化
+名稱、但實際是別的科目**的那些算進來。模板的比對規則除了 `std_concept` 還有
+`fallback_suffix`、`label_hint`、`match` 等過濾條件，**只比 `std_concept` 太寬鬆**。
+
+**實測**：NEM 2015-06-30 的損益表裡有
+
+    std=CostOfGoodsAndServicesSold | label='Exploration' | 48,000,000
+
+edgartools 把**探勘費用**正規化成 `CostOfGoodsAndServicesSold`。正式路徑正確地
+沒把它當成 `Cost of Revenue`，但只比 `std_concept` 的腳本會判成「資料在手上、
+是我們沒撈出來」。
+
+**後果**：`classify_holes.py` 算出的「真缺 4,176 格」**是上界，不是實數**。
+
+**正確做法**：要嘛用完整的模板規則比對（但那等於重寫一份比對層，會分岔），
+要嘛承認這個方法只能給上界。**判斷單一案例請用 `scripts/diag_rowprobe.py`**
+——它會列出 dataframe 裡所有長得像的候選，人看得出哪個才是對的。
