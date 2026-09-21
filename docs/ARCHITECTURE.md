@@ -46,6 +46,39 @@
 | docs/RECIPIENT-README.txt | 給收件人看的說明，打包時改名為 `先讀我.txt` 放進 zip。只講兩件事：填 SEC EDGAR Identity、首次啟動選語言 |
 | dist/ | 打包產物（gitignored） |
 
+
+## venv 位置
+
+**venv 不在專案資料夾裡**，而是在：
+
+```
+%USERPROFILE%\venvs\SEC Financial Tools\
+```
+
+實際路徑：`C:\Users\CTH\venvs\SEC Financial Tools\`
+
+**為什麼要搬出去**：這個專案在 `Documents\Code` 底下，Google Drive 桌面版正在
+備份整個 `Documents\Code`（2026-09-21 從
+`%LOCALAPPDATA%\Google\DriveFS\root_preference_sqlite.db` 的 `roots` 表確認，
+`root_id=4`）。venv 跟著被同步會出事：
+
+- `site-packages` 底下的目錄被設成唯讀 → uv 換套件版本時 `RemoveDirectory`
+  一律回 `ERROR_ACCESS_DENIED`（`os error 5 存取被拒`），套件更新整個失敗
+- 產生大量 `xxx (1).py` 影子檔（同步工具的衝突命名）
+- 套件被切成兩半（實測 `idna` 被刪到只剩影子檔，變成 namespace package，
+  `idna.__file__` 是 `None`）
+
+Drive 桌面版**不支援排除子資料夾**，只能整個資料夾勾或不勾，而 `Documents\Code`
+底下有一半專案沒有 git remote、Drive 是它們唯一的備份，所以不能關掉備份，
+只能把 venv 搬到同步範圍外。完整說明見 `windows-tool.md`「venv 位置」。
+
+**新機器或重裝時什麼都不用做**：`launcher.ps1` 會自己建。手動建的指令：
+
+```powershell
+uv venv "$env:USERPROFILE\venvs\SEC Financial Tools" --python 3.13
+uv pip install -r requirements.txt --python "$env:USERPROFILE\venvs\SEC Financial Tools\Scripts\python.exe"
+```
+
 ## Data Flow
 
 ```

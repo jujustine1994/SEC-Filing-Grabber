@@ -6,6 +6,20 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ScriptDir
 
 # ======================================
+# venv 位置（刻意放在專案資料夾外）
+# ======================================
+# 這個專案在 Documents\Code 底下，而 Google Drive 桌面版正在備份整個
+# Documents\Code（2026-09-21 從 root_preference_sqlite.db 的 roots 表確認，
+# root_id=4）。venv 跟著被同步會出事：site-packages 底下的目錄被設成唯讀
+# → uv 換套件版本時 RemoveDirectory 一律回 ERROR_ACCESS_DENIED
+# （os error 5 存取被拒）；另外會生出一堆 "xxx (1).py" 影子檔，套件被同步
+# 工具切成兩半（實測 idna 被刪到只剩影子檔，變成 namespace package）。
+# Drive 桌面版不支援排除子資料夾，只能整個資料夾勾或不勾，所以改成把 venv
+# 放到同步範圍外的集中目錄。詳見 windows-tool.md「venv 位置」。
+$VenvPath   = Join-Path $env:USERPROFILE "venvs\SEC Financial Tools"
+$VenvPython = Join-Path $VenvPath "Scripts\python.exe"
+
+# ======================================
 # 執行紀錄（必加，須放在 trap 之前，閃退才記得到）
 # 完整規則見 windows-tool.md「執行紀錄」。開檔→寫→關檔，不持有 handle（地雷十）；
 # 用 UTF8Encoding($false) 不寫 BOM（地雷十一），不可用 Add-Content -Encoding UTF8。
@@ -100,7 +114,7 @@ if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
 # [2/2] 檢查虛擬環境
 # ======================================
 Write-Host "[2/2] 檢查虛擬環境..." -ForegroundColor Cyan
-if (-not (Test-Path "venv")) {
+if (-not (Test-Path $VenvPython)) {
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Cyan
     Write-Host "    SEC Financial Fetcher - 首次安裝說明" -ForegroundColor Cyan
@@ -131,7 +145,8 @@ if (-not (Test-Path "venv")) {
         Write-Step "下載/建立 Python 虛擬環境中（電腦若沒有 Python 會自動下載，約 20MB）..."
         # 指定 3.13：不寫版號時 uv 只會找現成直譯器，找不到就報錯而不會下載。
         # 寫了版號，本機有 3.13 就用本機的，沒有才下載 uv 自管版本。
-        uv venv venv --python 3.13
+        New-Item -ItemType Directory -Force (Split-Path $VenvPath) | Out-Null
+        uv venv "$VenvPath" --python 3.13
         if ($LASTEXITCODE -ne 0) {
             Write-Log "venv creation failed (uv venv exit $LASTEXITCODE)" "ERROR"
             Write-Host "[ERROR] 建立虛擬環境失敗，多半是下載 Python 時連不上網路。" -ForegroundColor Red
@@ -143,7 +158,7 @@ if (-not (Test-Path "venv")) {
         #    不知道是卡住還是正常在跑」的根因）——uv 預設會逐一印出「正在下載哪個
         #    套件＋進度條」，這是使用者唯一看得懂「電腦沒當機、只是在裝東西」的
         #    畫面，不可靜音。
-        uv pip install -r requirements.txt --python venv\Scripts\python.exe
+        uv pip install -r requirements.txt --python "$VenvPython"
         if ($LASTEXITCODE -ne 0) {
             Write-Log "package install failed (uv pip install exit $LASTEXITCODE)" "ERROR"
             Write-Host "[ERROR] 套件安裝失敗，請確認網路連線後重新執行。" -ForegroundColor Red
@@ -156,7 +171,7 @@ if (-not (Test-Path "venv")) {
 } else {
     Write-Host "[OK] 虛擬環境已就緒，檢查套件更新..." -ForegroundColor Green
     # 清理損壞的 dist-info（METADATA 遺失時 uv 拒絕安裝）
-    $broken = Get-ChildItem "venv\Lib\site-packages" -Directory -Filter "*dist-info" -ErrorAction SilentlyContinue | Where-Object {
+    $broken = Get-ChildItem (Join-Path $VenvPath "Lib\site-packages") -Directory -Filter "*dist-info" -ErrorAction SilentlyContinue | Where-Object {
         -not (Test-Path (Join-Path $_.FullName "METADATA"))
     }
     foreach ($dir in $broken) {
@@ -165,13 +180,13 @@ if (-not (Test-Path "venv")) {
     }
     # ⚠ 不加 -q：平時沒有更新時 uv 幾乎瞬間印完「Audited N packages」，代價很小；
     #    一旦真的有更新要下載，使用者才看得到在裝什麼，不會誤以為卡住。
-    uv pip install -r requirements.txt --python venv\Scripts\python.exe
+    uv pip install -r requirements.txt --python "$VenvPython"
 }
 
-. ".\venv\Scripts\Activate.ps1"
+. (Join-Path $VenvPath "Scripts\Activate.ps1")
 
 # $pyVer 改成問 venv 自己（原本問的是系統 Python，現在已經不一定存在）
-$pyVer = (& ".\venv\Scripts\python.exe" --version 2>&1 | Out-String).Trim()
+$pyVer = (& "$VenvPython" --version 2>&1 | Out-String).Trim()
 Write-Log "Environment ready | $pyVer | $uvVer"
 
 Write-Host ""

@@ -56,7 +56,7 @@
 
 | 項目 | 為什麼 |
 |---|---|
-| `venv/` | 400 MB，`launcher.ps1` 會在收件人電腦上自己建 |
+| `venv/` | 2026-09-21 起 venv 已搬到專案外（`%USERPROFILE%\venvs\SEC Financial Tools\`），專案內正常不會有這個資料夾。這條留著當保險：真的出現就是誤建的，一定要排除，`launcher.ps1` 會在收件人電腦上自己建 |
 | `.git/` | 7.4 MB，且含完整開發史 |
 | `company_cache.json` | 414 KB，程式會自己重建 |
 | `output/*.xlsx`、`output/_final/` | CTH 的實測輸出檔（14 個），是個人資料 |
@@ -188,8 +188,9 @@ Remove-Item -Recurse -Force -LiteralPath $Stage
 Remove-Item -Recurse -Force -LiteralPath $Verify
 ```
 
-> ⚠ 若 §5 的驗證是在解出來的複本上實跑過 `uv venv`，那裡會多出一個
-> 幾百 MB 的 `venv/`，記得一起清掉。
+> ⚠ 若 §5 的驗證是在解出來的複本上實跑過 `launcher.ps1`，venv 會建在
+> `%USERPROFILE%\venvs\SEC Financial Tools\`（專案外），**不會**污染複本。
+> 但驗證完記得把那個 venv 清掉或還原，否則會蓋掉你自己開發用的那份。
 
 ---
 
@@ -209,5 +210,6 @@ Remove-Item -Recurse -Force -LiteralPath $Verify
 
 1. `launcher.ps1` 改過的話，**必須由 CTH 親自雙擊 `啟動器.bat` 實測**
    （規則檔硬性要求：含互動安裝的流程，AI 不得只看程式碼就宣稱完成）。
-   最有意義的測法是在一台沒有 Python 的電腦、或把 `venv/` 改名後重跑。
+   最有意義的測法是在一台沒有 Python 的電腦、或把
+   `%USERPROFILE%\venvs\SEC Financial Tools\` 改名後重跑。
 2. `dist/` 底下的舊 zip 要不要一起清掉。
