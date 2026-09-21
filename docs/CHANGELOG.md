@@ -1,6 +1,33 @@
 # Changelog
 
-## 2026-09-21
+## 2026-09-21（續二）
+
+### 這一天的來龍去脈（本專案當天的異動一次看完）
+
+CTH 抽查 2026-09-14 那輪「10 個 Windows 工具專案 venv 改用 uv」有沒有做確實，
+一路查下去翻出三層問題，本專案當天的異動都是這條線上的：
+
+- **第一層**：9/14 的遷移有些沒做確實。urusai upload 重建後根本沒裝到 pytest
+  （`requirements.txt` 只列執行期依賴），測試直接跑不動，而它的 CHANGELOG 還寫著
+  「測試 90 條全過」——那是舊 venv 的結果。另外查出 3 個專案（AV Code Rename、
+  Excel repair、FanCheck）當初根本沒被納入那輪遷移，還掛在 python.org 版系統 Python 上。
+- **第二層**：9/14 有 3 個專案不是乾淨重建，是在舊 `site-packages` 上直接疊裝，
+  留下一堆孤兒 `dist-info`（同一套件掛新舊兩份 metadata，`uv pip list` 會列兩次）。
+  同時發現 4 個專案有測試卻沒把 pytest 寫進 requirements，只是 venv 還沒重建過所以沒爆。
+- **第三層（真正的病根）**：清乾淨重建後幾小時內又被污染。查出 `Documents\Code`
+  整個被 Google Drive 桌面版備份（從 `root_preference_sqlite.db` 的 `roots` 表確認，
+  `root_id=4`、`state=2`），venv 放專案裡就會被同步，`site-packages` 目錄被設成唯讀、
+  產生 `xxx (1).py` 影子檔、套件被切成兩半。清查當下 **13 個專案的 venv 全部**中招。
+  所以最後把 venv 全部搬到 `%USERPROFILE%\venvs\` 並改了規則檔 `windows-tool.md`，
+  以後新專案一律建在專案外。
+
+**本專案當天的異動**：
+
+1. venv 搬到專案外，並同步更新 `docs/PACKAGING.md`（commit `28dbdb3`）
+
+同一輪處理的還有其他 12 個專案，以及全域規則檔 `windows-tool.md`
+（新增「venv 位置」章節）、`windows-tool-templates.md`、`windows-tool-pitfalls.md`。
+
 
 ### 維護：venv 搬到專案資料夾外（`%USERPROFILE%\venvs\SEC Financial Tools\`）
 
@@ -28,6 +55,12 @@ Drive 桌面版不支援排除子資料夾，只能整個資料夾勾或不勾�
   全部改用新路徑；建立前會先 `New-Item` 補出 `%USERPROFILE%\venvs\` 父目錄
 - `ARCHITECTURE.md`：新增「venv 位置」章節（為什麼搬、手動重建指令）
 - 專案內舊 venv 已刪除（先清唯讀屬性才刪得掉）
+
+另外更新 `docs/PACKAGING.md`：原本寫「打包一定要排除 400 MB 的 `venv/`」、
+「最有意義的測法是把 `venv/` 改名後重跑」，venv 現在根本不在專案內，這兩條會誤導。
+改成指向新路徑，並補一句警告——**在解壓出來的複本上跑 `launcher.ps1` 驗證時，
+venv 會建在 `%USERPROFILE%\venvs\SEC Financial Tools\` 而不是複本內，會蓋掉
+你自己開發用的那一份**，驗證完要記得清掉或還原。
 
 `venv` **不能用 `mv` 搬**，`Scripts\*.exe` 內嵌絕對路徑，一定要重建。
 
