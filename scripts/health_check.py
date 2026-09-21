@@ -74,6 +74,82 @@ def _has(value) -> bool:
         isinstance(value, float) and value != value)
 
 
+# 三張表合併在同一張 sheet，區塊標題就是分界線。
+# ⚠ 現金流那塊的標題是 **"Cash Flow"**，不是 "Cash Flow Statement"——寫錯的話
+# 整個 CF 區塊抓不到，跨表比對會安靜地變成「比了 0 期」（實測踩到）。
+_SECTION_TITLES = ("Income Statement", "Balance Sheet", "Cash Flow",
+                   "Cash Flow Statement")
+_CF_SECTION = ("Cash Flow", "Cash Flow Statement")
+
+
+def _sectioned_rows(table):
+    """`{區塊: {列名: 值}}`。
+
+    ⚠ **一定要按區塊分，不可以用列名當鍵。** `Net Income` 在損益表與現金流量表
+    **各有一列**，用名字取會拿 IS 那列當 CF 那列——`diag_celldiff2.py` 的註解
+    記過這個坑（2026-08-24 因此憑空生出 3,659 個假異動）。
+    """
+    out, current = {}, None
+    for i, name in enumerate(table.concepts or []):
+        if name in _SECTION_TITLES:
+            current = name
+            out.setdefault(current, {})
+            continue
+        if current is None or name in _HEADER_ROWS:
+            continue
+        out[current].setdefault(name, table.values[i] if i < len(table.values) else [])
+    return out
+
+
+def _cross_checks(table) -> dict:
+    """跨表一致性與會計恆等式。**自己跟自己對，不依賴任何外部基準。**
+
+    只做定義明確的兩項：
+
+    - **Net Income**：損益表與現金流量表第一行本來就該是同一個數字
+    - **會計恆等式**：`Total Assets` 對得上 `Total Liabilities & Equity`
+
+    ⚠ **沒有做「BS 的 Cash vs CF 的 Ending Cash」**——BS 那一列的
+    `standard_concept` 是 `CashAndMarketableSecurities`（**含有價證券**），
+    跟 CF 的期末現金定義不同，直接比會產生大量假警報。
+    """
+    sec = _sectioned_rows(table)
+    is_rows = sec.get("Income Statement", {})
+    bs_rows = sec.get("Balance Sheet", {})
+    cf_rows = {}
+    for key in _CF_SECTION:
+        if sec.get(key):
+            cf_rows = sec[key]
+            break
+    n = len(table.period_ends or table.quarter_labels or [])
+
+    def compare(a, b, tol=1.0):
+        """兩列逐期比。回傳 (兩邊都有值的期數, 對不上的期數)。"""
+        both = mismatch = 0
+        for i in range(n):
+            x = a[i] if i < len(a) else None
+            y = b[i] if i < len(b) else None
+            if not (_has(x) and _has(y)):
+                continue
+            try:
+                x, y = float(x), float(y)
+            except (TypeError, ValueError):
+                continue
+            both += 1
+            if abs(x - y) > tol:
+                mismatch += 1
+        return both, mismatch
+
+    ni_both, ni_bad = compare(is_rows.get("Net Income", []),
+                              cf_rows.get("Net Income", []))
+    eq_both, eq_bad = compare(bs_rows.get("Total Assets", []),
+                              bs_rows.get("Total Liabilities & Equity", []))
+    return {
+        "net_income_compared": ni_both, "net_income_mismatch": ni_bad,
+        "balance_compared": eq_both, "balance_mismatch": eq_bad,
+    }
+
+
 def check_one(ticker: str, identity: str) -> dict:
     """跑一家，回傳這家的體檢結果。走正式路徑，不另寫一套判斷。"""
     started = time.time()
@@ -100,6 +176,7 @@ def check_one(ticker: str, identity: str) -> dict:
                          "filled": sum(1 for v in values if _has(v)),
                          "periods": len(values)})
         row["sheets"][name] = {
+            "cross": _cross_checks(table),
             "total_periods": report_.total_periods or 0,
             "empty_rows": report_.empty_but_plausible,
             "holed": len(report_.holed),
@@ -171,6 +248,25 @@ def build_report() -> int:
         for label, field in fields:
             hits = pick(field)
             print(f"  {label:16s}  {len(hits):3d} 家  {hits[:6]}")
+        print()
+
+    # ── 2.5 跨表一致性（自己跟自己對，不依賴外部基準）──
+    sheet = "Data_Financials(Q)"
+    have = [r for r in rows if sheet in r["sheets"] and r["sheets"][sheet].get("cross")]
+    if have:
+        ni_bad = [(r["ticker"], r["sheets"][sheet]["cross"]["net_income_mismatch"])
+                  for r in have if r["sheets"][sheet]["cross"]["net_income_mismatch"]]
+        eq_bad = [(r["ticker"], r["sheets"][sheet]["cross"]["balance_mismatch"])
+                  for r in have if r["sheets"][sheet]["cross"]["balance_mismatch"]]
+        ni_tot = sum(r["sheets"][sheet]["cross"]["net_income_compared"] for r in have)
+        eq_tot = sum(r["sheets"][sheet]["cross"]["balance_compared"] for r in have)
+        print("【跨表一致性】不依賴外部基準，自己跟自己對")
+        print(f"  Net Income（損益表 vs 現金流量表）  比了 {ni_tot} 期，"
+              f"對不上 {sum(n for _, n in ni_bad)} 期、{len(ni_bad)} 家")
+        print(f"    {sorted(ni_bad, key=lambda x: -x[1])[:8]}")
+        print(f"  會計恆等式（總資產 vs 負債+權益）   比了 {eq_tot} 期，"
+              f"對不上 {sum(n for _, n in eq_bad)} 期、{len(eq_bad)} 家")
+        print(f"    {sorted(eq_bad, key=lambda x: -x[1])[:8]}")
         print()
 
     # ── 3. 模板列覆蓋率（最重要的一段）──
