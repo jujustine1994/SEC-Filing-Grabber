@@ -452,8 +452,38 @@ _collect_overflow(df, consumed, data_col, quarter_label, gaap_out, ng_out)
 Q2/Q3 overflow 使用與模板行相同的跨 filing 減法：
 - Filing loop 內：對所有 filing（含 YTD）收集原始 overflow 值至 `overflow_per_filing[label]`
 - Loop 結束後：非 YTD 季 → 直接使用原始值；YTD 季 → `raw[q] - raw[prev_q]`
-- 若前一季無對應 concept → 保持 None（與模板行行為一致）
+- 若前一季無對應 concept → 保持 None
 - 驗證：`pytest -m "slow and cf_overflow"` 15/15 PASSED（COHR/LITE/AAPL/NVDA/GOOGL）
+
+> **⚠ 這裡原本寫「與模板行行為一致」，那是錯的（2026-09-21 更正）。** overflow
+> 行拆不出來時保持 `None`，**模板行卻走 best-effort 把累計值當單季寫出去**
+> （`standalone[label] = row_vals  # no prior YTD`）——兩者行為相反，而且
+> **overflow 行才是對的**。模板行那條路會給出錯誤數字且不報錯，實測 KR 還有
+> 17 個期別踩在上面。診斷用 `fetcher_gaap.cf_fallbacks()` 可以列出來。
+
+**期間欄怎麼挑、標籤怎麼來（2026-09-21 重寫這一段）：**
+
+| 情況 | 資料欄 | 標籤來源 |
+|---|---|---|
+| CF 有單季欄 `(Qn)` | 那一欄 | `_col_to_quarter_label(該欄)` |
+| 只有 `(YTD)` 欄 | 那一欄 | **同一欄**，不跟 IS 借 |
+| 只有裸日期欄 | `_bare_date_col()` 取期末日最新的 | 同一欄，但**自己算**（見下） |
+
+- **⚠ 標籤一定要從「資料那一欄」自己推。** 原本走 YTD 路徑時是「標籤跟 IS 借、
+  資料從 CF 取」，兩個不同的欄；只要兩邊挑到不同年份就把**去年的現金流標成
+  今年**。全庫 6,186 份實測 99.9% 一致，但那 4 份不一致的全是整年錯位，而且
+  **兩個方向都發生過**（LMT 是 CF 挑到去年、BMY 是 IS 挑到去年），所以
+  「優先信 IS」或「優先信 CF」都是錯的。實測 LMT FY2018Q2 舊版顯示
+  2,578,000,000，而 SEC 原始資料裡 2018 上半年只有 560,000,000。
+- **⚠ 裸日期欄一律是累計值。** SEC 原始 duration 查 11 家 65 個樣本：
+  167 天 ×59、174 ×2、173／165／158 各 1、274 ×1——**沒有一個是單季**。
+  不補這條的話整份 CF 被丟掉，傷害還會往後傳（COST 因此只剩 34/67 期）。
+  **不要用「IS 同一天標 `(Qn)`」去推**，那樣會得到「97.5% 是單季」的錯誤結論
+  ——IS 與 CF 的期間慣例根本不同。
+- **⚠ 裸日期只在 CF 特別處理，不可以改 `_col_to_quarter_label()`。** 那個函式
+  對沒有標記的欄是「原樣傳回」，那是 **BS 的 instant 欄**要的行為（時點值不
+  屬於任何一季）。改共用函式會把 BS 一起改壞——`test_col_to_quarter_label_instant_passthrough`
+  釘著這條。
 
 ## IS Post-processing Fallbacks
 
