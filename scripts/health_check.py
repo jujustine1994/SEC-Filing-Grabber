@@ -140,8 +140,19 @@ def _cross_checks(table) -> dict:
                 mismatch += 1
         return both, mismatch
 
-    ni_both, ni_bad = compare(is_rows.get("Net Income", []),
-                              cf_rows.get("Net Income", []))
+    # ⚠ **CF 的第一行是「合併淨利（含非控制權益）」，IS 的 `Net Income` 是
+    # 「歸屬母公司」。** 對有 NCI 的公司兩者本來就不同，直接比會把會計慣例
+    # 當成 bug——實測 AMT／WMT／CL／PFE 各 68 期「全部對不上」，但其中
+    # 66／65／60／54 期都對得上 IS 的 `Net Income incl. NCI` 那列。
+    #
+    # 所以兩列都比，**任一對得上就算通過**。⚠ 抽樣驗證這條時不可以挑
+    # NVDA／AAPL——那兩家根本沒有 NCI，`Net Income incl. NCI` 整列是 None，
+    # 驗不出這個差異（我就是這樣漏掉的）。
+    cf_ni = cf_rows.get("Net Income", [])
+    ni_both, ni_bad = compare(is_rows.get("Net Income", []), cf_ni)
+    nci_both, nci_bad = compare(is_rows.get("Net Income incl. NCI", []), cf_ni)
+    if nci_bad < ni_bad:
+        ni_both, ni_bad = max(ni_both, nci_both), nci_bad
     eq_both, eq_bad = compare(bs_rows.get("Total Assets", []),
                               bs_rows.get("Total Liabilities & Equity", []))
     return {
