@@ -886,6 +886,81 @@ def test_cf_is_still_collected_when_the_income_statement_has_no_quarter_column()
         f"IS 沒有單季欄不該讓 CF 整份消失，拿到 {gaap_tbl.quarter_labels}")
 
 
+# ── CF 的「裸日期欄」一律是累計值（2026-09-21）──────────────────────────
+#
+# 有些公司的 CF 期間欄沒有 `(Qn)` 也沒有 `(YTD)` 標記，只有一個日期
+# （`'2025-02-16'`）。`_is_q_col()` 與 `_ytd_col()` 都認不出來，於是**整份 CF
+# 被丟掉**，而且傷害會往後傳：那一季空白 → 下一季少了相減的基準 →
+# 走 best-effort 把累計值當單季寫出去。COST 的 17 個 best-effort 正好對應
+# 它的 17 份裸日期 filing。
+#
+# **裸日期到底是單季還是累計？拿 SEC 原始 duration 查了 11 家、65 個樣本：**
+#
+#     167 天 × 59（COST／AZO／PEP／MAR）      兩季累計
+#     174 天 ×  2（LMT／LHX）
+#     173 / 165 / 158 天 各 1（COF／LIN／MP）
+#     274 天 ×  1（MCHP）                     三季累計
+#
+# **沒有一個是單季（~90 天）。** ⚠ 先前用「IS 同一天標 `(Qn)`」推測出的
+# 「97.5% 是單季」**是錯的**——IS 與 CF 的期間慣例根本不同（IS 同時報單季與
+# 累計，CF 通常只報累計），所以判準只能用 SEC 的 duration。
+
+
+def test_a_bare_date_cf_column_is_treated_as_cumulative():
+    """CF 只有裸日期欄時要當累計處理，不可以整份丟掉。
+
+    重現 COST Q2：CF 欄是 `['2025-02-16', '2024-02-18']`，兩個都沒有標記。
+    """
+    q1 = _make_cf_filing("2025-03-31 (Q1)", "2025-03-31 (Q1)",
+                         ni=100.0, ocf=150.0, filing_date="2025-04-30")
+    q2 = _make_cf_filing("2025-06-30 (Q2)", "2025-06-30",      # ← 裸日期
+                         ni=230.0, ocf=330.0, filing_date="2025-07-30")
+
+    gaap_tbl, _ = _build_cf_table([q2, q1], max_filings=80)
+
+    assert "FY2025Q2" in gaap_tbl.quarter_labels, (
+        f"裸日期欄不該讓整份 CF 消失，拿到 {gaap_tbl.quarter_labels}")
+    ni_idx = gaap_tbl.concepts.index("Net Income")
+    q2_col = gaap_tbl.quarter_labels.index("FY2025Q2")
+    # 當成累計 → Q2 單季 = 230 − 100 = 130
+    assert gaap_tbl.values[ni_idx][q2_col] == pytest.approx(130.0)
+
+
+def test_a_labelled_ytd_column_wins_over_a_bare_date_one():
+    """有標記的 YTD 欄優先——裸日期只是退路，不可以改變既有行為。
+
+    重現 LMT `0000936468-18-000053`：CF 欄是
+    `['2018-06-24', '2017-06-25 (YTD)']`，當期是裸日期、去年才有標記。
+    ⚠ 這條釘的是「不要為了用裸日期而改變既有的挑欄順序」。
+    """
+    import fetcher_gaap
+
+    df = pd.DataFrame({
+        "concept": ["us-gaap_NetIncomeLoss"], "label": ["Net income"],
+        "standard_concept": ["NetIncome"], "abstract": [False],
+        "is_breakdown": [False], "level": [3], "dimension_member_label": [None],
+        "2018-06-24": [100.0], "2017-06-25 (YTD)": [200.0],
+    })
+    assert fetcher_gaap._ytd_col(df) == "2017-06-25 (YTD)"
+
+
+def test_the_newest_bare_date_column_is_the_one_used():
+    """多個裸日期欄時取期末日最新的——跟 `_current_q_col()` 同一個原則。
+
+    COST Q2 的兩個裸日期是當期與去年同期（`2025-02-16` / `2024-02-18`），
+    取錯就是拿去年的數字當今年（G13(a) 踩過這個坑）。
+    """
+    import fetcher_gaap
+
+    df = pd.DataFrame({
+        "concept": ["us-gaap_NetIncomeLoss"], "label": ["Net income"],
+        "standard_concept": ["NetIncome"], "abstract": [False],
+        "is_breakdown": [False], "level": [3], "dimension_member_label": [None],
+        "2024-02-18": [200.0], "2025-02-16": [300.0],
+    })
+    assert fetcher_gaap._bare_date_col(df) == "2025-02-16"
+
+
 # ── Task 4: Revenue fallback expansion ────────────────────────────────────────
 
 def _make_is_df_revenues_only(period_col="2024-03-31 (Q1)", val=1000.0):

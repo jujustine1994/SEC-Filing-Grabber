@@ -1125,9 +1125,14 @@ def _bs_quarter_label(is_q_col, bs_col, fy_end_month: int,
 def _col_to_period_end(col_name: str) -> str:
     """edgartools 欄名 → 期末日。`"2026-03-29 (Q1)"` → `"2026-03-29"`。
 
+    **標記是可選的**：有些公司的欄名只有裸日期（`"2025-02-16"`，沒有 `(Qn)`
+    也沒有 `(YTD)`，實測 11 家 66 份）。裸日期一樣是個期末日，取得出來才算得出
+    財季標籤——不然那一欄的標籤會變成日期字串本身。
+
     抓不到回空字串——下游會退回從財季標籤反推的年月。
     """
-    m = re.match(r"(\d{4}-\d{2}-\d{2})\s+\(\w+\)", (col_name or "").strip())
+    m = re.fullmatch(r"(\d{4}-\d{2}-\d{2})(?:\s+\(\w+\))?",
+                     (col_name or "").strip())
     return m.group(1) if m else ""
 
 
@@ -1235,6 +1240,35 @@ def _ytd_col(df) -> str | None:
         if m and m.group(1).upper() == "YTD":
             return col
     return None
+
+
+def _bare_date_col(df) -> str | None:
+    """沒有 `(Qn)`／`(YTD)` 標記、只有一個日期的期間欄，取期末日最新的。
+
+    **CF 的裸日期欄一律是累計值。** 拿 SEC 原始 duration 查了 11 家、65 個樣本：
+
+        167 天 × 59（COST／AZO／PEP／MAR）      兩季累計
+        174 天 ×  2（LMT／LHX）
+        173／165／158 天 各 1（COF／LIN／MP）
+        274 天 ×  1（MCHP）                     三季累計
+
+    **沒有一個是單季（~90 天）。** ⚠ 不要用「IS 同一天標 `(Qn)`」去推——
+    實測那樣推會得到「97.5% 是單季」的**錯誤**結論，因為 IS 與 CF 的期間慣例
+    根本不同（IS 同時報單季與累計，CF 通常只報累計）。
+
+    ⚠ **取最新的，不是取第一個**：COST Q2 的兩個裸日期是當期與去年同期
+    （`2025-02-16` / `2024-02-18`），取錯就是拿去年的數字當今年（G13(a) 的坑）。
+    """
+    best, best_end = None, ""
+    for col in df.columns:
+        if col in META_COLS:
+            continue
+        text = str(col).strip()
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            continue
+        if text > best_end:
+            best, best_end = col, text
+    return best
 
 
 def _prev_quarter_label(label: str) -> str | None:
@@ -2016,16 +2050,34 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
         # ⚠ 同時拿掉 `is_q_col is None` 的連坐條件：IS 沒有單季欄不該讓 CF
         # 整份消失（CHTR 2012~2016 就是這樣連續五年只有 Q1，實測 9 份、78 格）。
         q_col = _current_q_col(df)
+        bare_col = None
         if q_col is not None:
             is_ytd = False
             data_col = q_col
         else:
+            # 有標記的 YTD 欄優先；沒有才退到裸日期欄（一律是累計，見
+            # `_bare_date_col()`）。不補這條的話整份 CF 會被丟掉，而且傷害
+            # 往後傳——那一季空白，下一季就少了相減的基準。
             ytd_col = _ytd_col(df)
+            bare_col = _bare_date_col(df) if ytd_col is None else None
+            ytd_col = ytd_col or bare_col
             if ytd_col is None:
                 continue
             is_ytd = True
             data_col = ytd_col
-        label = _col_to_quarter_label(data_col, fy_end_month)
+        if bare_col is not None and data_col == bare_col:
+            # ⚠ **裸日期不能丟給 `_col_to_quarter_label()`**——它對沒有標記的
+            # 欄是「原樣傳回」，那是 **BS 的 instant 欄**要的行為（時點值本來
+            # 就不屬於任何一季）。CF 的裸日期是**累計期間**，語意完全不同，
+            # 所以這裡自己算財季。共用那個函式會把 BS 一起改壞
+            # （`test_col_to_quarter_label_instant_passthrough` 釘著）。
+            from fiscal_input import fiscal_quarter_of, fy_start_month
+            label = fiscal_quarter_of(_col_to_period_end(data_col),
+                                      fy_start_month(fy_end_month))
+        else:
+            label = _col_to_quarter_label(data_col, fy_end_month)
+        if not label:
+            continue
         if label in collected:
             continue
 
