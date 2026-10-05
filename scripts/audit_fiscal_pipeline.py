@@ -69,6 +69,7 @@ def audit(ticker, output):
         gaps=[asdict(g) for g in ledger.gaps],
         tables=[asdict(t) for t in tables])
     (output/(ticker+'.json')).write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
+    return result
 
 
 def main():
