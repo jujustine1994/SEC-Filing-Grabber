@@ -3,7 +3,7 @@
 Focus applies only to the document's exact end date, never comparative periods.
 Missing/conflicting/invalid metadata returns None; no month heuristic here.
 """
-from datetime import date
+from datetime import date, timedelta
 import re
 import pandas as pd
 
@@ -83,7 +83,7 @@ def build_period_map(records):
         try: date.fromisoformat(end)
         except (ValueError,TypeError): continue
         if form in ('10-K','20-F'): annual_dates.add(end)
-        if form=='10-Q': quarterly_dates.add(end)
+        if form in ('10-Q','6-K'): quarterly_dates.add(end)
         if focus and focus[0]==end:
             if focus[2]=='FY' and form in ('10-K','20-F'):
                 put((end,True),f'FY{focus[1]}')
@@ -101,7 +101,16 @@ def build_period_map(records):
     for chain in chains:
         offsets={int(periods[(end,True)][2:])-i for i,end in enumerate(chain)
                  if (end,True) in periods and (end,True) not in conflict}
-        if len(offsets)!=1: continue
+        if len(offsets)!=1:
+            if offsets:
+                # Conflicting annual focus is not authority. Keeping its
+                # direct mappings would deduplicate away a different year.
+                ceiling=(date.fromisoformat(chain[-1])+timedelta(days=400)).isoformat()
+                for key in list(periods):
+                    if chain[0] <= key[0] <= ceiling:
+                        periods.pop(key,None)
+                        conflict.discard(key)
+            continue
         offset=offsets.pop()
         for i,end in enumerate(chain):
             put((end,True),f'FY{offset+i}')
@@ -121,4 +130,19 @@ def build_period_map(records):
             for key,label in proposed.items():
                 periods[key]=label
                 conflict.discard(key)
+    anchors=sorted(end for end in annual_dates if (end,True) in periods and (end,True) not in conflict)
+    for end in quarterly_dates:
+        key=(end,False)
+        if key not in periods or end in annual_dates: continue
+        previous=next((d for d in reversed(anchors) if d<end),None)
+        following=next((d for d in anchors if d>end),None)
+        expected=None
+        if previous and following and 330 <= (date.fromisoformat(following)-date.fromisoformat(previous)).days <= 400:
+            expected=int(periods[(following,True)][2:])
+        elif previous and not following and 50 <= (date.fromisoformat(end)-date.fromisoformat(previous)).days <= 300:
+            expected=int(periods[(previous,True)][2:])+1
+        if expected is not None and int(periods[key][2:6])!=expected:
+            # Do not rename/rank a partial year. Reject impossible focus and
+            # let the caller retain its existing fallback, visibly uncertain.
+            periods.pop(key,None)
     return {k:v for k,v in periods.items() if k not in conflict}

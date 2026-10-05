@@ -1062,6 +1062,16 @@ def test_build_cf_table_q2_ytd_without_q1_does_not_publish_cumulative_as_quarter
     assert gaap_tbl.values[ni_idx][q2_col] is None
 
 
+def test_standalone_q2_is_not_a_cumulative_base_for_q3():
+    q1 = _make_cf_filing('2025-03-31 (Q1)','2025-03-31 (Q1)',100,150,'2025-04-30')
+    q2 = _make_cf_filing('2025-06-30 (Q2)','2025-06-30 (Q2)',80,80,'2025-07-30')
+    q3 = _make_cf_filing('2025-09-30 (Q3)','2025-09-30 (YTD)',300,450,'2025-10-30')
+    table, _ = _build_cf_table([q3,q2,q1],80)
+    row = table.values[table.concepts.index('Net Income')]
+    assert row[table.quarter_labels.index('FY2025Q2')] == 80
+    assert row[table.quarter_labels.index('FY2025Q3')] is None
+
+
 # ── Override integration tests ────────────────────────────────────────────────
 
 def _make_filing_odd_concepts(period_col="2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30"):
@@ -1174,6 +1184,16 @@ def test_cf_overflow_q1_standalone_captured():
     idx = gaap_tbl.labels.index("us-gaap_SpecialItemCashFlow")
     q1_col = gaap_tbl.quarter_labels.index("FY2025Q1")
     assert gaap_tbl.values[idx][q1_col] == pytest.approx(20.0)
+
+
+def test_cf_overflow_standalone_q2_is_not_a_ytd_base():
+    q1 = _make_cf_filing_with_overflow('2025-03-31 (Q1)','2025-03-31 (Q1)',100,150,20,'2025-04-30')
+    q2 = _make_cf_filing_with_overflow('2025-06-30 (Q2)','2025-06-30 (Q2)',80,80,30,'2025-07-30')
+    q3 = _make_cf_filing_with_overflow('2025-09-30 (Q3)','2025-09-30 (YTD)',300,450,100,'2025-10-30')
+    table, _ = _build_cf_table([q3,q2,q1],80)
+    row = table.values[table.labels.index('us-gaap_SpecialItemCashFlow')]
+    assert row[table.quarter_labels.index('FY2025Q2')] == 30
+    assert row[table.quarter_labels.index('FY2025Q3')] is None
 
 
 def test_cf_overflow_q2_ytd_subtracted():

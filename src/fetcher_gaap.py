@@ -2177,7 +2177,10 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
         collected[label] = (str(filing.filing_date), row_vals, is_ytd)
         period_sources[label] = dict(accession=_cache_key(filing),
             end=_col_to_period_end(data_col),column=str(data_col),label=label)
-        ytd_raw[label] = row_vals  # Q1 standalone doubles as Q1 YTD base
+        # Only a real cumulative column, or the first fiscal quarter, is a
+        # cumulative subtraction base. A standalone Q2 is not six-month YTD.
+        if is_ytd or label.endswith('Q1'):
+            ytd_raw[label] = row_vals
 
     empty_ng = StatementTable(
         sheet_name="Data_CF_NG", quarter_labels=[], filing_dates=[],
@@ -2256,7 +2259,7 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
                 prev_lbl = _prev_quarter_label(q_lbl)
                 prev_ov = overflow_per_filing.get(prev_lbl, {})
                 prev_val = prev_ov[ov_key][2] if ov_key in prev_ov else None
-                if raw_val is not None and prev_val is not None:
+                if prev_lbl in ytd_raw and raw_val is not None and prev_val is not None:
                     out[ov_key]["periods"][q_lbl] = raw_val - prev_val
 
     filing_dates = [collected[lbl][0] for lbl in sorted_labels]
@@ -3273,6 +3276,8 @@ def _fetch_gaap_impl(ticker: str, identity: str,
             focus=cover_focus(_financials_of(_filing_obj(filing)))
             focus=corrected_focus(_cache_key(filing), focus)
             end=str(getattr(filing, 'report_date', '') or '')[:10]
+            if str(getattr(filing,'form',''))=='6-K':
+                end=focus[0] if focus else ''  # SEC report date may be release date.
             if not end and focus: end=focus[0]
             records.append((end,str(getattr(filing,'form','')),focus))
         except Exception:

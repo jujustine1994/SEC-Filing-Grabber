@@ -55,6 +55,28 @@ def test_complete_anchored_sequence_rejects_stale_quarter_dei():
     assert build_period_map(records)[('2021-03-31',False)]=='FY2021Q1'
 
 
+def test_conflicting_annual_chain_revokes_direct_labels_before_deduplication():
+    records=[(f'{y}-01-31','10-K',(f'{y}-01-31',focus,'FY')) for y,focus in [(2024,2024),(2025,2025),(2026,2025)]]
+    records.append(('2026-04-30','10-Q',('2026-04-30',2026,'Q1')))
+    assert not build_period_map(records)
+
+
+def test_financial_six_k_gets_same_complete_chain_protection_as_ten_q():
+    records=[('2024-03-31','20-F',('2024-03-31',2024,'FY')),
+             ('2025-03-31','20-F',('2025-03-31',2025,'FY')),
+             ('2024-06-30','6-K',('2024-06-30',2024,'Q1')),
+             ('2024-09-30','6-K',('2024-09-30',2024,'Q2')),
+             ('2024-12-31','6-K',('2024-12-31',2024,'Q3'))]
+    assert build_period_map(records)[('2024-06-30',False)]=='FY2025Q1'
+
+
+def test_partial_year_rejects_quarter_focus_for_already_ended_fiscal_year():
+    records=[('2024-03-31','20-F',('2024-03-31',2024,'FY')),
+             ('2025-03-31','20-F',('2025-03-31',2025,'FY')),
+             ('2025-06-30','6-K',('2025-06-30',2025,'Q1'))]
+    assert ('2025-06-30',False) not in build_period_map(records)
+
+
 def test_verified_source_correction_is_accession_and_value_guarded():
     from period_identity import corrected_focus
     focus=('2024-02-03',2024,'FY')
