@@ -70,6 +70,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 from fiscal_input import fiscal_quarter_of, fy_start_month   # noqa: E402
+from fiscal_audit import label_anomalies
 
 import filing_cache
 CACHE = filing_cache.cache_root()
@@ -124,11 +125,14 @@ def verify(ticker: str, identity: str) -> list:
     """
     import fetcher_gaap
 
-    tables = fetcher_gaap.fetch_gaap_statements(ticker, identity, max_filings=40)
+    tables = fetcher_gaap.fetch_gaap_statements(ticker, identity, max_filings=80)
     pairs = []
     for table in tables:
         if table.sheet_name != "Data_Financials(Q)":
             continue
+        issues = label_anomalies(table.quarter_labels, table.period_ends)
+        if issues['unclassified'] or issues['duplicate_ends'] or issues['collisions']:
+            print(f'{ticker} additional period anomalies: {issues}', flush=True)
         pairs = [(e, l) for e, l in zip(table.period_ends, table.quarter_labels)
                  if e and LABEL.match(str(l))]
     by_fy = collections.defaultdict(list)
