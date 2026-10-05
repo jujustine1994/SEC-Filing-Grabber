@@ -1,7 +1,10 @@
 import sys
+import json
+import pytest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scripts'))
 from compare_fiscal_audits import compare
+import compare_fiscal_audits as cli
 
 
 def result(labels, values, ends=None):
@@ -42,3 +45,17 @@ def test_same_filing_date_for_multiple_periods_uses_financial_end_provenance():
     source['tables'].append(dict(sheet_name='Data_Meta',quarter_labels=['FY2018Q4','FY2019Q4'],
                                 filing_dates=['2019-08-09']*2,period_ends=[],concepts=['Source'],values=[['a','b']]))
     assert not compare(source,source)['metadata_changes']
+
+
+@pytest.mark.parametrize('mode',['errors','empty','stale'])
+def test_cli_refuses_failed_or_empty_measurements(tmp_path,monkeypatch,mode):
+    before=tmp_path/'before';after=tmp_path/'after'
+    before.mkdir();after.mkdir()
+    if mode=='stale':
+        for folder in (before,after):
+            (folder/'TEST.json').write_text(json.dumps(result(['FY2020Q4'],[100])),encoding='utf-8')
+    if mode!='empty':
+        for folder in (before,after):
+            (folder/'TEST.error.json').write_text('{"error":"failed"}',encoding='utf-8')
+    monkeypatch.setattr(sys,'argv',['compare',str(before),str(after),'--output',str(tmp_path/'comparison')])
+    assert cli.main()!=0

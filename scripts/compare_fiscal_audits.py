@@ -52,9 +52,12 @@ def compare(before, after):
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('before',type=Path);parser.add_argument('after',type=Path);parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
+    errors_before=sorted(p.name for p in args.before.glob('*.error.json'))
+    errors_after=sorted(p.name for p in args.after.glob('*.error.json'))
     old={p.stem for p in args.before.glob('*.json') if not p.name.endswith('.error.json')}
     new={p.stem for p in args.after.glob('*.json') if not p.name.endswith('.error.json')}
-    summary=dict(before_count=len(old),after_count=len(new),missing_before=sorted(new-old),missing_after=sorted(old-new),companies={})
+    summary=dict(before_count=len(old),after_count=len(new),errors_before=errors_before,errors_after=errors_after,
+                 missing_before=sorted(new-old),missing_after=sorted(old-new),companies={})
     for ticker in sorted(old&new):
         try:
             a=json.loads((args.before/(ticker+'.json')).read_text(encoding='utf-8'))
@@ -66,7 +69,7 @@ def main():
             summary['companies'][ticker]=dict(error=type(exc).__name__)
     (args.output/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2),encoding='utf-8')
     print('Compared',len(old&new),'companies; missing',len(old^new),flush=True)
-    return int(bool(old^new or any('error' in v for v in summary['companies'].values())))
+    return int(bool(not old or not new or errors_before or errors_after or old^new or any('error' in v for v in summary['companies'].values())))
 
 
 if __name__=='__main__': raise SystemExit(main())
