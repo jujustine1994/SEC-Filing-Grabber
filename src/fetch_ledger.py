@@ -44,6 +44,10 @@ class MissingCurrentPeriod(Exception):
     """
 
 
+class MissingStandalonePeriod(MissingCurrentPeriod):
+    """A cumulative cash flow cannot be converted to a verified standalone quarter."""
+
+
 @dataclass(frozen=True)
 class Gap:
     """一期沒拿到的紀錄。

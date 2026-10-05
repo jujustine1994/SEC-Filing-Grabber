@@ -1041,8 +1041,8 @@ def test_build_cf_table_q3_ytd_subtracted_from_q2_ytd():
     assert gaap_tbl.values[ni_idx][q3_col] == pytest.approx(q3_ni)
 
 
-def test_build_cf_table_q2_ytd_without_q1_keeps_raw():
-    """When Q1 is absent, Q2 YTD value is kept as-is (best-effort)."""
+def test_build_cf_table_q2_ytd_without_q1_does_not_publish_cumulative_as_quarter():
+    """No subtraction base: preserve source bytes, but do not mislabel YTD as a quarter."""
     ytd_ni = 230.0
     q2 = _make_cf_filing("2025-06-30 (Q2)", "2025-06-30 (YTD)", ytd_ni, ytd_ni * 1.5, "2025-07-30")
 
@@ -1051,7 +1051,7 @@ def test_build_cf_table_q2_ytd_without_q1_keeps_raw():
     assert "FY2025Q2" in gaap_tbl.quarter_labels
     ni_idx = gaap_tbl.concepts.index("Net Income")
     q2_col = gaap_tbl.quarter_labels.index("FY2025Q2")
-    assert gaap_tbl.values[ni_idx][q2_col] == pytest.approx(ytd_ni)
+    assert gaap_tbl.values[ni_idx][q2_col] is None
 
 
 # ── Override integration tests ────────────────────────────────────────────────
@@ -2482,6 +2482,23 @@ def test_ending_cash_is_a_balance_and_must_not_be_ytd_subtracted():
     q2_pos = gaap_tbl.quarter_labels.index("FY2025Q2")
     # 錯誤行為會給 950 − 900 = 50
     assert gaap_tbl.values[cash_idx][q2_pos] == pytest.approx(950.0)
+
+
+def test_missing_cf_base_preserves_balance_and_records_data_gap():
+    import fetcher_gaap as fg
+    from fetch_ledger import MissingStandalonePeriod
+    q2 = _make_cf_filing_with_cash("2025-06-30 (Q2)", "2025-06-30 (YTD)",
+                                  ni=230.0, ocf=330.0, cash=950.0,
+                                  filing_date="2025-07-30")
+    fg.reset_cf_fallbacks()
+    with fg.collect_gaps() as ledger:
+        table, _ = _build_cf_table([q2], max_filings=80)
+    assert table.values[table.concepts.index("Ending Cash")][0] == 950.0
+    assert table.values[table.concepts.index("Operating Cash Flow")][0] is None
+    assert table.values[table.concepts.index("Free Cash Flow")][0] is None
+    assert fg.cf_fallback_details()[0]["missing_base"] == "FY2025Q1"
+    assert fg.cf_fallback_details()[0]["raw_values"][fg._CF_IDX["Operating Cash Flow"]] == 330.0
+    assert any(g.exc_name == MissingStandalonePeriod.__name__ and g.kind == 'data' for g in ledger.gaps)
 
 
 def test_flow_rows_are_still_ytd_subtracted_after_the_fix():

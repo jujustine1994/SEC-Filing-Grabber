@@ -65,7 +65,8 @@ def audit(ticker, output):
     quarterly=next(t for t in tables if t.sheet_name=='Data_Financials(Q)')
     result=dict(ticker=ticker,mode='cached-read-only',max_filings=80,max_annual_filings=20,
         anomalies=label_anomalies(quarterly.quarter_labels,quarterly.period_ends),
-        cf_fallbacks=fg.cf_fallbacks(),gaps=[asdict(g) for g in ledger.gaps],
+        cf_fallbacks=fg.cf_fallbacks(),cf_fallback_details=fg.cf_fallback_details(),
+        gaps=[asdict(g) for g in ledger.gaps],
         tables=[asdict(t) for t in tables])
     (output/(ticker+'.json')).write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
 

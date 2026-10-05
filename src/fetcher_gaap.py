@@ -39,7 +39,7 @@ from contextvars import ContextVar
 import filing_cache
 from period_identity import cover_focus, reported_label, build_period_map
 from database import DatabaseError
-from fetch_ledger import FetchLedger, MissingCurrentPeriod
+from fetch_ledger import FetchLedger, MissingCurrentPeriod, MissingStandalonePeriod
 from i18n import t
 from net_retry import NetworkDownError, is_network_error, with_retry
 from override_engine import load_overrides, run_diagnosis, check_key_rows
@@ -107,18 +107,23 @@ def _ledger() -> FetchLedger | None:
     return _ledger_var.get()
 
 
-# CF 的 YTD 拆算退而求其次用了累計值的紀錄（2026-09-21 診斷用）。
-# 只記錄、不改行為——先量清楚影響範圍再決定怎麼修。
+# CF 缺少拆季基準的紀錄；來源累計值保留在診斷，輸出流量留空。
 _cf_fallback_var: ContextVar[list] = ContextVar("cf_cumulative_fallback", default=[])
+_cf_fallback_details_var: ContextVar[list] = ContextVar('cf_fallback_details', default=[])
 
 
 def reset_cf_fallbacks() -> None:
     _cf_fallback_var.set([])
+    _cf_fallback_details_var.set([])
 
 
 def cf_fallbacks() -> list:
-    """上一趟抓取裡，有哪幾期的 CF 是「拆不出單季、直接用累計值」。"""
+    """哪些 CF 期間缺少拆季基準，已阻止累計流量冒充單季。"""
     return list(_cf_fallback_var.get())
+
+
+def cf_fallback_details() -> list:
+    return list(_cf_fallback_details_var.get())
 
 
 def _note_cf_cumulative_fallback(label: str) -> None:
@@ -2030,6 +2035,7 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
     # Raw overflow per filing; YTD subtraction applied after loop (mirrors template logic)
     # {q_label: {concept_key: (display_label, is_nongaap, raw_val)}}
     overflow_per_filing: dict[str, dict] = {}
+    period_sources: dict[str, dict] = {}
 
     for filing in filings:
         if len(collected) >= max_filings:
@@ -2169,6 +2175,8 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
         overflow_per_filing[label] = filing_ov
 
         collected[label] = (str(filing.filing_date), row_vals, is_ytd)
+        period_sources[label] = dict(accession=_cache_key(filing),
+            end=_col_to_period_end(data_col),column=str(data_col),label=label)
         ytd_raw[label] = row_vals  # Q1 standalone doubles as Q1 YTD base
 
     empty_ng = StatementTable(
@@ -2214,10 +2222,16 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
                 # 於是這裡沒有基準可減 → 94.68 億被標成「FY2025Q3 單季」。
                 # 使用者看到的是錯的數字，不是空白。
                 #
-                # 先記錄不改行為（2026-09-21 診斷）：要先量出全庫有多少格踩在
-                # 這條路上，才能決定「改成留空」的影響範圍。
+                # 缺少基準就留空流量；診斷保留 accession、原值及缺少的期間。
                 _note_cf_cumulative_fallback(label)
-                standalone[label] = row_vals  # no prior YTD — keep cumulative as best-effort
+                detail=dict(period_sources[label], missing_base=prev_label,
+                            raw_values=dict(row_vals))
+                _cf_fallback_details_var.get().append(detail)
+                _note_gap(label, MissingStandalonePeriod(label))
+                # Preserve original cumulative values in the source database;
+                # duration rows cannot enter quarterly calculations as YTD.
+                standalone[label] = {i: row_vals.get(i) if i in _CF_POINT_IN_TIME_IDX else None
+                                     for i in range(len(CF_TEMPLATE))}
 
     # ── Convert YTD overflow to standalone (mirrors template subtraction above) ──
     # Union of all concepts seen in any filing's overflow
