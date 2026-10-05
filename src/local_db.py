@@ -799,6 +799,8 @@ def update_local_db(tickers, identity: str, *,
             try:
                 ledger = fetch(ticker, identity, max_filings, max_annual_filings)
                 gaps = len(getattr(ledger, "gaps", ()) or ())
+                if getattr(ledger, "persistence_errors", None):
+                    raise RuntimeError("SEC database persistence failed")
                 status = "updated"
             except Exception as exc:                  # noqa: BLE001
                 status = "failed"

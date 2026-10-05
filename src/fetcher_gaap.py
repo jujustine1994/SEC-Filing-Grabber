@@ -37,6 +37,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 import filing_cache
+from database import DatabaseError
 from fetch_ledger import FetchLedger, MissingCurrentPeriod
 from i18n import t
 from net_retry import NetworkDownError, is_network_error, with_retry
@@ -586,6 +587,13 @@ def _save_to_disk_cache(ctx: dict, filing, obj) -> None:
         # 7 份重抓結果完全一樣）。擋掉會讓這些 filing 每次都重抓，永遠不收斂。
         filing_cache.save_filing(ctx["ticker"], acc, dataframes=dfs,
                                  has_financials=True, **meta)
+    except DatabaseError:
+        led = _ledger()
+        if led is not None:
+            led.persistence_errors.append(str(getattr(filing, 'accession_no', 'filing')))
+        else:
+            import warnings
+            warnings.warn('SEC database write failed; filing was not persisted', RuntimeWarning)
     except Exception:
         return   # 快取寫入的任何一步失敗都不該讓這次抓取跟著壞（跟網路失敗同一個處理）
 

@@ -100,67 +100,20 @@ def filing_path(ticker: str, accession: str) -> Path | None:
 # ── 原子寫入 ──────────────────────────────────────────────────────────────
 
 def atomic_write_json(path: Path, obj) -> bool:
-    """tmp + `os.replace()`。tmp 檔名帶 PID，避免兩個實例互相蓋到暫存檔。
-
-    寫不進去（磁碟滿、權限）只回 False，不拋——快取只是加速層，
-    寫入失敗不該影響這次抓取的結果。
-    """
-    tmp = Path(str(path) + f".{os.getpid()}.tmp")
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(obj, f, ensure_ascii=False)
-        os.replace(tmp, path)
-        return True
-    except Exception:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-        return False
+    from database import database_root
+    from database_io import write_metadata
+    write_metadata(database_root(), path, obj)
+    return True
 
 
-# ── 殘留 .tmp 的清理 ──────────────────────────────────────────────────────
-
-# 正在寫的 tmp 不會存在超過幾秒（一份 filing 的 `json.dump` 是毫秒等級）。
-# 一小時是「絕對不可能還在寫」的保守值。
 _TMP_STALE_SECONDS = 3600
 
 
 def clear_stale_tmp(ticker: str, older_than_seconds: int = _TMP_STALE_SECONDS) -> int:
-    """清掉這家公司目錄下殘留的 `.tmp`，回傳清掉幾個。
+    from database import database_root
+    from database_io import clean_staging
+    return clean_staging(database_root(), older_than_seconds=older_than_seconds)
 
-    `atomic_write_json()` 失敗時會自己 `unlink()`，所以正常路徑不留 .tmp。
-    殘留只發生在 **process 被強制中止**時（kill、記憶體不足——`run_localdb_batch.sh`
-    記過實測：一個 process 連跑 67 家會在第 16 家被系統砍掉），那時 `except`
-    根本跑不到。不影響正確性（`ACCESSION_RE` 與 `glob("*.json")` 兩道防線都
-    擋著），只是佔空間。
-
-    ⚠ **不可以無條件清掉所有 .tmp。** 檔名帶 PID 就是為了讓兩個實例並行時
-    不互踩，清掉別人正在寫的那份會讓它的 `os.replace()` 失敗——那比殘留一個
-    檔案嚴重得多。所以只清「夠舊」的。
-
-    任何情況都不拋例外：這是順手做的清理，不可以讓它中斷抓取。
-    """
-    directory = ticker_dir(ticker)
-    cutoff = datetime.now().timestamp() - max(0, int(older_than_seconds or 0))
-    removed = 0
-    try:
-        paths = list(directory.glob("*.tmp"))
-    except OSError:
-        return 0
-    for path in paths:
-        try:
-            if path.stat().st_mtime > cutoff:
-                continue          # 可能正有另一個實例在寫
-            path.unlink()
-            removed += 1
-        except OSError:
-            continue              # 被別人搶先刪掉、或沒權限——都不是問題
-    return removed
-
-
-# ── edgartools 版本 ───────────────────────────────────────────────────────
 
 def edgartools_version() -> str | None:
     """實測 `edgar.__version__` **不存在**（AttributeError），只能走
@@ -403,7 +356,10 @@ def save_filing(ticker: str, accession: str, *, form: str, filing_date: str,
         "has_financials": bool(has_financials),
         "dataframes": payloads,
     }
-    return atomic_write_json(path, entry)
+    from database import database_root
+    from database_io import commit_filing
+    commit_filing(database_root(), ticker, accession, entry)
+    return True
 
 
 # ── GUI：統計與清除 ───────────────────────────────────────────────────────
@@ -538,20 +494,13 @@ def total_size_bytes() -> int:
 
 
 def clear_ticker(ticker: str) -> bool:
-    """整個刪掉那家公司的資料夾。下次抓這家會當作全新開始。"""
-    directory = ticker_dir(ticker)
-    if not directory.exists():
-        return False
-    try:
-        shutil.rmtree(directory)
-        return True
-    except OSError:
-        return False
+    from database import DatabaseError
+    raise DatabaseError('Permanent SEC filings cannot be deleted by this program')
 
 
 def clear_all() -> int:
-    """刪掉所有公司的快取，回傳刪掉幾家。"""
-    return sum(1 for row in list_cached_tickers() if clear_ticker(row["ticker"]))
+    from database import DatabaseError
+    raise DatabaseError('Permanent SEC filings cannot be deleted by this program')
 
 
 # ── 6-K 的 R 檔判定快取（TODO D9 A 路線）─────────────────────────────────

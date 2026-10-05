@@ -116,7 +116,7 @@ def test_cache_is_off_when_nothing_is_bound(cache_dir):
         _bind_disk_cache("NVDA", None)
         _filing_obj(filing)
     assert filing.obj.call_count == 1
-    assert not filing_cache.cache_root().exists()
+    assert filing_cache.list_cached_tickers() == []
 
 
 # ── 負向快取 vs 網路失敗 ──────────────────────────────────────────────────

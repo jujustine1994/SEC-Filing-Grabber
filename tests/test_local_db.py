@@ -219,11 +219,13 @@ def test_a_folder_with_only_meta_is_not_listed_as_a_cached_company(cache_dir):
     assert [r["ticker"] for r in filing_cache.list_cached_tickers()] == []
 
 
-def test_clearing_a_ticker_takes_its_meta_with_it(cache_dir):
+def test_clear_refusal_keeps_company_metadata(cache_dir):
     _write_filing("AAPL", _acc(1), form="10-Q", filing_date="2025-08-01")
     local_db.write_meta("AAPL", local_db.rebuild_meta("AAPL"))
-    assert filing_cache.clear_ticker("AAPL") is True
-    assert not local_db.meta_path("AAPL").exists()
+    from database import DatabaseError
+    with pytest.raises(DatabaseError):
+        filing_cache.clear_ticker("AAPL")
+    assert local_db.meta_path("AAPL").exists()
 
 
 # ── J1：更新名單 ──────────────────────────────────────────────────────────
@@ -1122,7 +1124,7 @@ def test_update_clears_stale_tmp_files_left_by_a_killed_process(cache_dir):
     import time
     import filing_cache
 
-    directory = filing_cache.ticker_dir("META")
+    directory = cache_dir.parent / "staging"
     directory.mkdir(parents=True, exist_ok=True)
     stale = directory / f"{_acc(9)}.9999.tmp"
     stale.write_text("{half-writ", encoding="utf-8")
@@ -1141,7 +1143,7 @@ def test_update_leaves_a_tmp_that_another_instance_is_still_writing(cache_dir):
     正在寫的 tmp 會讓它的 `os.replace()` 失敗——比殘留一個檔案嚴重得多。"""
     import filing_cache
 
-    directory = filing_cache.ticker_dir("META")
+    directory = cache_dir.parent / "staging"
     directory.mkdir(parents=True, exist_ok=True)
     fresh = directory / f"{_acc(9)}.1234.tmp"
     fresh.write_text("{being-written", encoding="utf-8")

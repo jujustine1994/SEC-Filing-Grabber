@@ -68,6 +68,7 @@ class FetchLedger:
     probe: Callable[[], bool] = sec_reachable
     brake_after: int = 3
     gaps: list[Gap] = field(default_factory=list)
+    persistence_errors: list[str] = field(default_factory=list)
 
     _consecutive_network: int = 0
     _probe_result: bool | None = None      # None = 這趟還沒戳過

@@ -251,13 +251,13 @@ def test_filing_path_rejects_anything_that_is_not_an_accession_number(cache_dir)
 
 
 def test_atomic_write_leaves_no_tmp_file_behind(cache_dir):
-    path = cache_dir / "NVDA" / "x.json"
+    path = cache_dir / "NVDA" / "_meta.json"
     assert filing_cache.atomic_write_json(path, {"a": 1}) is True
     assert json.loads(path.read_text(encoding="utf-8")) == {"a": 1}
     assert list(path.parent.glob("*.tmp")) == []
 
 
-def test_atomic_write_uses_a_pid_suffixed_tmp_then_replaces(cache_dir, monkeypatch):
+def test_metadata_write_uses_unique_staging_tmp_then_replaces(cache_dir, monkeypatch):
     """兩個實例（批次抓取＋跨公司比較）有機會同時寫同一個檔名。
     tmp 檔名不帶 PID 的話兩邊會蓋到對方的暫存檔。"""
     seen = {}
@@ -269,21 +269,20 @@ def test_atomic_write_uses_a_pid_suffixed_tmp_then_replaces(cache_dir, monkeypat
         return real_replace(src, dst)
 
     monkeypatch.setattr(filing_cache.os, "replace", _spy)
-    path = cache_dir / "NVDA" / "y.json"
+    path = cache_dir / "NVDA" / "_meta.json"
     filing_cache.atomic_write_json(path, {"a": 1})
-    assert str(os.getpid()) in seen["src"]
+    assert "staging" in seen["src"]
     assert seen["src"].endswith(".tmp")
 
 
-def test_atomic_write_returns_false_instead_of_raising_when_disk_write_fails(
-        cache_dir, monkeypatch):
-    """磁碟滿／權限問題時只記 log 繼續跑，不能拖垮整趟抓取。"""
-    def _boom(*a, **kw):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(filing_cache, "open", _boom, raising=False)
-    assert filing_cache.atomic_write_json(cache_dir / "NVDA" / "z.json", {"a": 1}) is False
-
+def test_metadata_write_raises_when_disk_full(cache_dir, monkeypatch):
+    import database_io
+    from database import DatabaseError
+    def boom(*a, **kw):
+        raise OSError('disk full')
+    monkeypatch.setattr(database_io, '_replace', boom)
+    with pytest.raises(DatabaseError):
+        filing_cache.atomic_write_json(cache_dir / 'NVDA' / '_meta.json', {'a': 1})
 
 def test_edgartools_version_is_read_from_package_metadata():
     """edgartools 是硬相依（requirements.txt），在本環境裡一定裝著。要驗證
@@ -516,7 +515,7 @@ def _touch_tmp(directory, name, age_seconds):
 
 
 def test_stale_tmp_files_are_cleared(cache_dir):
-    stale = _touch_tmp(filing_cache.ticker_dir("NVDA"),
+    stale = _touch_tmp(cache_dir.parent / "staging",
                        f"{ACC}.9999.tmp", age_seconds=7200)
 
     assert filing_cache.clear_stale_tmp("NVDA") == 1
@@ -526,7 +525,7 @@ def test_stale_tmp_files_are_cleared(cache_dir):
 def test_a_tmp_file_another_process_is_still_writing_is_left_alone(cache_dir):
     """檔名帶 PID 就是為了讓兩個實例並行不互踩。清掉別人正在寫的那份，
     它的 `os.replace()` 會失敗——那比殘留一個檔案嚴重得多。"""
-    fresh = _touch_tmp(filing_cache.ticker_dir("NVDA"),
+    fresh = _touch_tmp(cache_dir.parent / "staging",
                        f"{ACC}.1234.tmp", age_seconds=5)
 
     assert filing_cache.clear_stale_tmp("NVDA") == 0
@@ -537,7 +536,7 @@ def test_clearing_tmp_never_touches_a_real_filing(cache_dir):
     """`.json` 是真資料，抓一次要 11 小時。這條是最重要的一條。"""
     _save_sample()
     real = filing_cache.filing_path("NVDA", ACC)
-    _touch_tmp(filing_cache.ticker_dir("NVDA"), f"{ACC}.9999.tmp", age_seconds=7200)
+    _touch_tmp(cache_dir.parent / "staging", f"{ACC}.9999.tmp", age_seconds=7200)
 
     filing_cache.clear_stale_tmp("NVDA")
 
@@ -599,24 +598,25 @@ def test_total_size_is_the_sum_of_every_ticker(cache_dir):
     assert filing_cache.total_size_bytes() == sum(r["size_bytes"] for r in rows)
 
 
-def test_clear_ticker_removes_the_whole_folder(cache_dir):
-    _save_sample(ticker="NVDA")
-    _save_sample(ticker="AMD")
-    assert filing_cache.clear_ticker("NVDA") is True
-    assert not filing_cache.ticker_dir("NVDA").exists()
-    assert [r["ticker"] for r in filing_cache.list_cached_tickers()] == ["AMD"]
+def test_legacy_clear_ticker_refuses_and_keeps_filings(cache_dir):
+    from database import DatabaseError
+    _save_sample(ticker='NVDA')
+    with pytest.raises(DatabaseError):
+        filing_cache.clear_ticker('NVDA')
+    assert filing_cache.filing_path('NVDA', ACC).exists()
 
+def test_legacy_clear_even_missing_ticker_refuses(cache_dir):
+    from database import DatabaseError
+    with pytest.raises(DatabaseError):
+        filing_cache.clear_ticker('ZZZZ')
 
-def test_clear_ticker_on_something_that_is_not_cached_is_harmless(cache_dir):
-    assert filing_cache.clear_ticker("ZZZZ") is False
-
-
-def test_clear_all_removes_every_ticker(cache_dir):
-    _save_sample(ticker="NVDA")
-    _save_sample(ticker="AMD")
-    assert filing_cache.clear_all() == 2
-    assert filing_cache.list_cached_tickers() == []
-
+def test_legacy_clear_all_keeps_every_ticker(cache_dir):
+    from database import DatabaseError
+    _save_sample(ticker='NVDA')
+    _save_sample(ticker='AMD')
+    with pytest.raises(DatabaseError):
+        filing_cache.clear_all()
+    assert {r['ticker'] for r in filing_cache.list_cached_tickers()} == {'NVDA', 'AMD'}
 
 def test_listing_tolerates_one_ticker_vanishing_mid_scan(cache_dir, monkeypatch):
     """一個 ticker 目錄在掃描中被刪掉（concurrent clear 或另一實例 rmtree），
