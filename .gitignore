@@ -13,3 +13,4 @@ company_cache.json
 *.zip
 
 .superpowers/
+.worktrees/
