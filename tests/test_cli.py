@@ -60,6 +60,17 @@ def test_gaap_writes_xlsx(tmp_path, monkeypatch):
     assert out.exists() and out.stat().st_size > 0
 
 
+def test_gaap_warns_when_only_database_save_failed(tmp_path, monkeypatch, capsys):
+    import fetcher_gaap
+    def fetch(**kwargs):
+        fetcher_gaap._ledger_var.get().persistence_errors.append('accession')
+        return [_fake_table()]
+    monkeypatch.setattr(cli, '_gaap_tables', fetch)
+    cli.main(['gaap', 'AAPL', '--xlsx', str(tmp_path/'AAPL.xlsx'), '--identity', 'T t@e.com'])
+    from fetch_ledger import FetchLedger
+    assert FetchLedger(persistence_errors=['accession']).summary() in capsys.readouterr().err
+
+
 def test_gaap_passes_year_range_through(tmp_path, monkeypatch):
     seen = {}
 

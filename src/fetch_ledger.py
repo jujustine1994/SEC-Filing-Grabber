@@ -120,6 +120,10 @@ class FetchLedger:
         return bool(self.gaps)
 
     @property
+    def has_warnings(self) -> bool:
+        return bool(self.gaps or self.persistence_errors)
+
+    @property
     def network_blamed(self) -> bool:
         """有任何一期是網路造成的。這種缺漏重抓有救，要跟使用者講。"""
         return any(g.kind == "network" for g in self.gaps)
@@ -141,6 +145,7 @@ class FetchLedger:
         資料本身的性質，重試不會真的去補，留著才誠實。
         """
         retry_wheres = {g.where for g in retry.gaps}
+        self.persistence_errors = list(dict.fromkeys(self.persistence_errors + retry.persistence_errors))
         self.gaps = [g for g in self.gaps
                      if not (g.kind == "network" and g.where not in retry_wheres)]
 

@@ -190,7 +190,7 @@ def cmd_gaap(args: argparse.Namespace) -> int:
         print(f"[{args.ticker}] 沒有抓到任何資料，未寫出檔案", file=sys.stderr)
         return 1
     # 缺漏走 stderr：stdout 可能是 --json 的資料流，混進去會壞掉 pipeline。
-    if gaps.has_gaps:
+    if gaps.has_warnings:
         print(f"[{args.ticker}] {gaps.summary()}", file=sys.stderr)
     # TODO J9：靠本地清單撐過去的一定要講出來，否則使用者會以為看到的是最新的
     _warn_if_offline(offline_report())

@@ -3435,7 +3435,7 @@ class SECFetcherApp:
                     _write_log(_cache_line)
                 tables.extend(gaap_tables)
                 self._log(t("gui.log.gaap_got", ticker=ticker, n=len(gaap_tables)))
-                if gaps.has_gaps:
+                if gaps.has_warnings:
                     # 橘字警告 + 落檔。使用者不必自己去比對少了哪幾期。
                     self._log(gaps.summary(), "WARN", to_file=True)
                 self._log_offline_fallback()
@@ -3542,7 +3542,7 @@ class SECFetcherApp:
                         start_year=start_year, end_year=end_year,
                         fetch_quarterly=fetch_q, fetch_annual=fetch_k,
                     )
-                if gaps.has_gaps:
+                if gaps.has_warnings:
                     self._log(f"[{ticker}] {gaps.summary()}", "WARN", to_file=True)
                 self._log_offline_fallback()
 
