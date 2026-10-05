@@ -3804,6 +3804,13 @@ def _pick_language_on_first_run(root: tk.Tk) -> None:
     就記住不要再跳」，關掉還一直跳才是煩人。選錯了在「進階設定」隨時能改。
     """
     _migrate_config_if_needed()
+    from database import connection_config, DatabaseError
+    try:
+        connection_config(CONFIG_PATH)
+    except DatabaseError:
+        # Keep malformed connection bytes intact and let the main window offer
+        # explicit recovery. A language preference must not reset the database.
+        return
     cfg = load_config(CONFIG_PATH)
     if i18n.is_supported(cfg.get("language", "")):
         return                      # 選過了，直接進主畫面

@@ -64,9 +64,11 @@ def load_config(path: Path | None = None) -> dict:
     cfg = copy.deepcopy(DEFAULT_CONFIG)
     if Path(path).exists():
         try:
-            with open(path, encoding="utf-8") as f:
+            with open(path, encoding="utf-8-sig") as f:
                 data = json.load(f)
-        except (json.JSONDecodeError, OSError):
+            if not isinstance(data, dict):
+                return cfg
+        except (ValueError, OSError):
             # Malformed or unreadable config — proceed with defaults
             return cfg
         for key, default_val in DEFAULT_CONFIG.items():
@@ -82,5 +84,12 @@ def save_config(cfg: dict, path: Path | None = None) -> None:
     """Save config dict to config.json as UTF-8 JSON."""
     if path is None:
         path = Path(os.environ.get("SEC_CONFIG_PATH") or CONFIG_PATH)
-    from database import atomic_json
-    atomic_json(Path(path), cfg)
+    from database import atomic_json, connection_config, config_lock
+    # Only explicit connect_database may change the connection. A GUI may hold
+    # settings from before another process connected a different database.
+    with config_lock(Path(path)):
+        current = connection_config(Path(path))
+        updated = dict(cfg)
+        for key in ('database_path', 'database_id'):
+            updated[key] = current.get(key, '')
+        atomic_json(Path(path), updated)

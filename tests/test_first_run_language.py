@@ -23,6 +23,17 @@ def _saved(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def test_corrupt_config_skips_picker_and_keeps_recovery_available(cfg_path, monkeypatch):
+    raw = b'{broken database connection'
+    cfg_path.write_bytes(raw)
+    monkeypatch.setattr(main, 'CONFIG_PATH', cfg_path)
+    monkeypatch.setattr(main, '_migrate_config_if_needed', lambda: None)
+    # A widget cannot be constructed from this sentinel root. The corrupt
+    # connection must reach the normal main window without a preference write.
+    main._pick_language_on_first_run(object())
+    assert cfg_path.read_bytes() == raw
+
+
 # ── 「還沒選過」的判斷 ────────────────────────────────────────────────────
 
 def test_fresh_config_has_no_language_chosen():

@@ -8,6 +8,7 @@ import os
 import stat
 import tempfile
 import uuid
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
@@ -131,7 +132,19 @@ def connection_config(config_path: Path | None = None) -> dict:
     return read_json(path) if path.exists() else {}
 
 
+@contextmanager
+def config_lock(path: Path):
+    from database_io import database_lock
+    with database_lock(checked_path(path).parent, validate=False):
+        yield
+
+
 def connect_database(root: Path, *, config_path: Path | None = None) -> dict:
+    with config_lock(_config_path(config_path)):
+        return _connect_database(root, config_path=config_path)
+
+
+def _connect_database(root: Path, *, config_path: Path | None = None) -> dict:
     root = checked_path(root)
     marker = read_marker(root)
     path = checked_path(_config_path(config_path))

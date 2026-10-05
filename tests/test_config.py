@@ -39,6 +39,34 @@ def test_save_writes_file(tmp_path):
     assert loaded["identity"] == "X x@x.com"
 
 
+def test_settings_save_preserves_newer_database_connection(tmp_path):
+    path = tmp_path / 'config.json'
+    path.write_text(json.dumps(dict(database_path='new', database_id='new-id')), encoding='utf-8')
+    save_config(dict(database_path='old', database_id='old-id', language='en'), path)
+    saved = json.loads(path.read_text(encoding='utf-8'))
+    assert saved['database_path'] == 'new'
+    assert saved['database_id'] == 'new-id'
+    assert saved['language'] == 'en'
+
+
+def test_settings_save_refuses_corrupt_existing_config(tmp_path):
+    from database import DatabaseError
+    path = tmp_path / 'config.json'
+    raw = b'{broken connection'
+    path.write_bytes(raw)
+    with pytest.raises(DatabaseError):
+        save_config(load_config(path), path)
+    assert path.read_bytes() == raw
+
+
+def test_bom_config_keeps_language_and_connection(tmp_path):
+    path = tmp_path / 'config.json'
+    path.write_text(json.dumps(dict(language='en', database_path='registered', database_id='id')), encoding='utf-8-sig')
+    loaded = load_config(path)
+    assert loaded['language'] == 'en'
+    assert loaded['database_path'] == 'registered'
+
+
 def test_load_merges_missing_keys(tmp_path):
     # partial config missing the ai block
     data = {"identity": "User user@example.com", "output_dir": "output", "watchlist": []}
