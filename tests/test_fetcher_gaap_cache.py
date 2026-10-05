@@ -26,8 +26,8 @@ ACC_OLD = "0001045810-19-000001"
 
 @pytest.fixture
 def cache_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
-    return tmp_path / "filing_cache"
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "database"))
+    return tmp_path / "database" / "filings"
 
 
 def _df():

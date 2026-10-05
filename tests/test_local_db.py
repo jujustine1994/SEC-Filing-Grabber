@@ -24,8 +24,8 @@ import local_db
 @pytest.fixture
 def cache_dir(tmp_path, monkeypatch):
     """把快取根目錄導到 tmp_path（跟 test_filing_cache.py 同一招）。"""
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
-    return tmp_path / "filing_cache"
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "database"))
+    return tmp_path / "database" / "filings"
 
 
 def _acc(n: int) -> str:

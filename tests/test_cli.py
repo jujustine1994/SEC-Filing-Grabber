@@ -546,7 +546,7 @@ def test_fy_end_month_from_mmdd(mmdd, expected):
 @pytest.fixture
 def db_cfg(tmp_path, monkeypatch):
     """把 config.json 與快取根目錄都導到 tmp_path。"""
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "database"))
     import config
     path = tmp_path / "config.json"
     monkeypatch.setattr(config, "CONFIG_PATH", path)
@@ -638,7 +638,7 @@ def test_update_db_returns_nonzero_when_a_company_failed(db_cfg, monkeypatch):
 @pytest.fixture
 def db_status_cache(tmp_path, monkeypatch):
     """把快取根目錄導到 tmp_path，並塞兩家公司進去。"""
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "database"))
     import filing_cache
     import local_db
     for ticker, count in (("AAPL", 2), ("NVDA", 1)):

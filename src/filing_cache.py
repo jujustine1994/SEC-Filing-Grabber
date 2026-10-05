@@ -79,10 +79,8 @@ def _project_root() -> Path:
 
 
 def cache_root() -> Path:
-    override = os.environ.get("SEC_LOCAL_DB_ROOT")
-    if override:
-        return Path(override) / "filing_cache"
-    return _project_root() / "local_db" / "filing_cache"
+    from database import database_root
+    return database_root() / "filings"
 
 
 def ticker_dir(ticker: str) -> Path:

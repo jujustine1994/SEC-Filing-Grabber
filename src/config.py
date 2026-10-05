@@ -12,6 +12,8 @@ SCRIPT_DIR = Path(__file__).parent
 
 
 def _default_config_path() -> Path:
+    if os.environ.get("SEC_CONFIG_PATH"):
+        return Path(os.environ["SEC_CONFIG_PATH"])
     appdata = os.environ.get("APPDATA")
     if appdata:
         return Path(appdata) / "SEC Financial Tools" / "config.json"
@@ -20,6 +22,8 @@ def _default_config_path() -> Path:
 CONFIG_PATH = _default_config_path()
 
 DEFAULT_CONFIG: dict = {
+    "database_path": "",
+    "database_id": "",
     # 介面與 Excel 顯示語言。代號清單見 i18n.LANGUAGES。
     #
     # 預設是**空字串而不是 "zh_tw"**：空字串代表「使用者還沒選過」，

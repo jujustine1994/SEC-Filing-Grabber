@@ -27,8 +27,8 @@ ACC_WITHOUT = "0001045810-25-000124"
 
 @pytest.fixture
 def cache_dir(tmp_path, monkeypatch):
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
-    return tmp_path / "filing_cache"
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "database"))
+    return tmp_path / "database" / "filings"
 
 
 def _attachment(document: str, document_type: str = "HTML"):

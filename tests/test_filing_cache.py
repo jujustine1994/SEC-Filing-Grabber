@@ -225,13 +225,15 @@ def test_memo_does_not_leak_between_statements():
 def cache_dir(tmp_path, monkeypatch):
     """把快取根目錄導到 tmp_path。`cache_root()` 每次呼叫重讀環境變數，
     所以 monkeypatch 就夠了，不用改模組層常數。"""
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path))
-    return tmp_path / "filing_cache"
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "database"))
+    return tmp_path / "database" / "filings"
 
 
-def test_cache_root_defaults_to_the_project_local_db_folder(monkeypatch):
-    monkeypatch.delenv("SEC_LOCAL_DB_ROOT", raising=False)
-    assert filing_cache.cache_root() == filing_cache._project_root() / "local_db" / "filing_cache"
+def test_cache_root_discovers_valid_independent_default(monkeypatch, isolated_database):
+    import database
+    monkeypatch.delenv("SEC_LOCAL_DB_ROOT")
+    monkeypatch.setattr(database, "default_database_path", lambda: isolated_database)
+    assert filing_cache.cache_root() == isolated_database / "filings"
 
 
 def test_cache_root_honors_the_override_env_var(cache_dir):

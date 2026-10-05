@@ -7,6 +7,17 @@ _ROOT = Path(__file__).parent
 sys.path.insert(0, str(_ROOT / "src"))
 
 
+@pytest.fixture(autouse=True)
+def isolated_database(tmp_path, monkeypatch):
+    """No offline test may fall through to the user's permanent database."""
+    from database import create_database
+    root = tmp_path / "database"
+    create_database(root, test_mode=True)
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(root))
+    monkeypatch.setenv("SEC_CONFIG_PATH", str(tmp_path / "config.json"))
+    yield root
+
+
 def pytest_configure(config):
     config.addinivalue_line(
         "markers",
