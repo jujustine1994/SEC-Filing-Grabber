@@ -114,7 +114,11 @@ def build_period_map(records):
                        for a,b in zip(ends,ends[1:])): continue
             year=periods[(end,True)][2:]
             proposed={(d,False):f'FY{year}Q{q}' for q,d in enumerate(quarters,1)}
-            # Any contradictory direct cover focus invalidates inferred ranks.
-            if any(k in periods and periods[k]!=v for k,v in proposed.items()): continue
-            for key,label in proposed.items(): put(key,label)
+            # A complete sequence bracketed by consistent annual anchors is
+            # stronger than a single quarter's stale DEI focus. The selected
+            # dates establish quarter ranks; annual anchors establish names.
+            # Missing dates or inconsistent annual years never reach this path.
+            for key,label in proposed.items():
+                periods[key]=label
+                conflict.discard(key)
     return {k:v for k,v in periods.items() if k not in conflict}

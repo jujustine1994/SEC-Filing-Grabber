@@ -47,6 +47,14 @@ def test_missing_quarter_is_not_renumbered_as_q1():
     assert ('2009-08-15',False) not in build_period_map(records)
 
 
+def test_complete_anchored_sequence_rejects_stale_quarter_dei():
+    records=[('2020-12-31','10-K',('2020-12-31',2020,'FY')),
+             ('2021-12-31','10-K',('2021-12-31',2021,'FY')),
+             ('2021-03-31','10-Q',('2021-03-31',2020,'Q3')),
+             ('2021-06-30','10-Q',None),('2021-09-30','10-Q',None)]
+    assert build_period_map(records)[('2021-03-31',False)]=='FY2021Q1'
+
+
 def test_verified_source_correction_is_accession_and_value_guarded():
     from period_identity import corrected_focus
     focus=('2024-02-03',2024,'FY')
