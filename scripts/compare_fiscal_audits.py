@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 def cells(result):
-    values, labels = {}, {}
+    values, labels, sources = {}, {}, {}
     source_ends={}
     for table in result['tables']:
         if table['sheet_name'] not in ('Data_Financials(Q)','Data_Financials(Y)'): continue
@@ -18,35 +18,45 @@ def cells(result):
             if end: source_ends[label]=end
     for table in result['tables']:
         sheet=table['sheet_name']
+        periods=[]
+        for col,label in enumerate(table['quarter_labels']):
+            ends=table.get('period_ends',[]);dates=table.get('filing_dates',[])
+            end=(ends[col] if col<len(ends) and ends[col] else '') or source_ends.get(label,'')
+            filed=dates[col] if col<len(dates) else ''
+            period=('end',end) if end else ('filed',filed) if filed else ('label',label)
+            periods.append(period)
+            labels.setdefault((sheet,*period),[]).append(label)
+            sources.setdefault((sheet,*period),[]).append(dict(label=label,filing_date=filed))
         occurrences=Counter()
         for row,concept in enumerate(table['concepts']):
             occurrence=occurrences[concept];occurrences[concept]+=1
             for col,label in enumerate(table['quarter_labels']):
-                ends=table.get('period_ends',[])
-                dates=table.get('filing_dates',[])
-                end=ends[col] if col<len(ends) and ends[col] else ''
-                end=end or source_ends.get(label,'')
-                period=('end',end) if end else ('filed',dates[col]) if col<len(dates) and dates[col] else ('label',label)
-                key=(sheet,concept,occurrence,*period)
-                if key in values:
-                    raise ValueError('Ambiguous duplicate period key; comparison cannot silently collapse cells')
-                values[key]=table['values'][row][col]
-                labels[(sheet,*period)]=label
-    return values, labels
+                key=(sheet,concept,occurrence,*periods[col])
+                values.setdefault(key,[]).append(table['values'][row][col])
+    return values, labels, sources
 
 
 def compare(before, after):
-    old,old_labels=cells(before);new,new_labels=cells(after)
+    old,old_labels,old_sources=cells(before);new,new_labels,new_sources=cells(after)
     changes=[];headers=[];metadata=[]
     for key in sorted(old.keys()|new.keys()):
-        a=old.get(key);b=new.get(key)
+        old_slots=old.get(key,[]);new_slots=new.get(key,[])
+        # For duplicate dates compare every nonempty value as an unordered bag.
+        # Never choose which filing is correct or pair renamed duplicate slots.
+        a=sorted((v for v in old_slots if v is not None),key=lambda v:json.dumps(v,sort_keys=True))
+        b=sorted((v for v in new_slots if v is not None),key=lambda v:json.dumps(v,sort_keys=True))
         if a==b:continue
+        grouped=max(len(old_slots),len(new_slots))>1
+        if not grouped:a=a[0] if a else None;b=b[0] if b else None
         detail=dict(sheet=key[0],concept=key[1],occurrence=key[2],period_kind=key[3],period=key[4],before=a,after=b)
+        if grouped:detail['comparison']='all nonempty values at duplicate date; no source pairing'
         target=metadata if key[0]=='Data_Meta' else headers if key[1] in ('Fiscal Quarter','Calendar Quarter','Period End') else changes
         target.append(detail)
     label_changes=[dict(sheet=k[0],period_kind=k[1],period=k[2],before=old_labels.get(k),after=new_labels.get(k))
                    for k in sorted(old_labels.keys()|new_labels.keys()) if old_labels.get(k)!=new_labels.get(k)]
-    return dict(value_changes=changes,label_changes=label_changes,header_changes=headers,metadata_changes=metadata)
+    duplicates=[dict(sheet=k[0],period_kind=k[1],period=k[2],before=old_sources.get(k,[]),after=new_sources.get(k,[]))
+                for k in sorted(old_sources.keys()|new_sources.keys()) if max(len(old_sources.get(k,[])),len(new_sources.get(k,[])))>1]
+    return dict(value_changes=changes,label_changes=label_changes,header_changes=headers,metadata_changes=metadata,duplicate_periods=duplicates)
 
 
 def main():

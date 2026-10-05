@@ -33,6 +33,19 @@ def test_duplicate_concept_rows_are_never_overwritten():
     assert len(compare(before,after)['value_changes']) == 1
 
 
+def test_duplicate_dates_keep_all_values_without_arbitrary_pairing():
+    before=result(['2017-12-31Q4','FY2017Q4'],[100,None],['2017-12-31']*2)
+    before['tables'][0]['filing_dates']=['2018-01-29']*2
+    after=result(['FY2017Q4'],[100],['2017-12-31'])
+    change=compare(before,after)
+    assert not change['value_changes']
+    assert change['duplicate_periods']
+    before['tables'][0]['values']=[[100,200]]
+    change=compare(before,after)
+    assert change['value_changes'][0]['before']==[100,200]
+    assert change['value_changes'][0]['after']==[100]
+
+
 def test_added_nonempty_period_is_reported():
     before=result(['FY2020Q4'],[100]);after=result(['FY2020Q4','FY2021Q1'],[100,120],['2021-01-03','2021-04-04'])
     after['tables'][0]['filing_dates'].append('2021-05-01')
