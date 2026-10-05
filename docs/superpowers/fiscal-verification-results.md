@@ -84,6 +84,8 @@ Ruling: 正式 SEC 清單可用時才啟用新期間身份映射；季度或年�
 
 有限診斷同步使用這個保守政策：沒有完整官方 metadata 的 audit 會走產品的離線退路，明列 `metadata_complete=False`／`offline-cover-limited`，不再以缺 cover 的部分錨點冒充線上輸入。`check_fy_labels --verify` 遇到缺官方證據或零個可觀察期間，只能報 INCONCLUSIVE；沒有異常不是通過來源校驗。
 
+Ruling: 跨年度日期鏈仍須驗證最終身份唯一。LHX 2019-09-27 與 2020-04-03 都落到 FY2020Q1，現有 builder 用 FY 標籤去重會吞掉前者。完整鏈的季度修復先執行，再檢查同一年度／季度名稱是否有兩個期末日；若仍碰撞，整家公司保留原命名，不能只移除一個鍵再與 fallback 混合。這是保守拒用新映射，尚未支援 transition duration 的完整表示。兩個 RED→GREEN 測試，期間／CF／稽核相關 396 項通過。會盤點全部公司映射變化，重跑受影響公司；未變的映射不需要重新算一份金融 pipeline。
+
 使用外部 venv，先以 `scripts/fetch_fiscal_audit_metadata.py --all --output output/<新證據資料夾>` 下載官方清單；清單不覆寫，財報資料庫不寫入。之後 `scripts/audit_fiscal_pipeline.py --all --require-official-metadata --output output/<新證據資料夾>/candidate`。若要同介面跑歷史版本，設定 `SEC_AUDIT_PIPELINE_ROOT` 為基線 worktree 絕對路徑，輸出到同一證據資料夾的 `baseline`，完成後清掉此環境變數。
 
 `scripts/compare_fiscal_audits.py <baseline> <candidate> --output <新比對目錄>` 會把失敗、缺公司、空資料列為非零 exit。`scripts/verify_fiscal_source_examples.py <candidate>` 額外核對原始 SEC facts 範例。

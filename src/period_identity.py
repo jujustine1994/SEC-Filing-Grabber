@@ -145,4 +145,16 @@ def build_period_map(records):
             # Do not rename/rank a partial year. Reject impossible focus and
             # let the caller retain its existing fallback, visibly uncertain.
             periods.pop(key,None)
-    return {k:v for k,v in periods.items() if k not in conflict}
+    result={k:v for k,v in periods.items() if k not in conflict}
+    identities={}
+    for (end,annual),label in result.items():
+        identity=(annual,label)
+        if identity in identities and identities[identity]!=end:
+            # Separate calendar chains can reuse a fiscal name during a
+            # transition (LHX has two FY2020Q1 dates). The current FY keys
+            # cannot represent both. Do not mix partial authority and fallback
+            # names: retain the company's previous policy until period keys
+            # can represent transition durations explicitly.
+            return {}
+        identities[identity]=end
+    return result
