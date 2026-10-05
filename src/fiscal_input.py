@@ -414,6 +414,10 @@ def _write_input_block(ws, start_month: int, row: int = 4) -> None:
 
 def _is_annual(ws) -> bool:
     """年報 sheet 的期間標籤沒有季別（`FY2025` 而不是 `FY2025Q1`）。"""
+    if ws.title == 'Data_Financials(Q)':
+        return False
+    if ws.title == 'Data_Financials(A)':
+        return True
     for col in range(_DATA_START_COL, ws.max_column + 1):
         value = str(ws.cell(ROW_PERIOD_LABEL, col).value or "")
         if value:

@@ -122,6 +122,14 @@ def test_apply_writes_formulas_into_the_header_rows():
         assert str(ws[f"{col}4"].value).startswith("=")
 
 
+def test_quarterly_sheet_with_initial_unknown_label_remains_quarterly():
+    wb, ws = _workbook_with_headers(['2010-05-22', 'FY2010Q2'],
+                                    ['2010-05-22', '2010-08-14'])
+    fi.apply_fiscal_year_input(wb, fy_end_month=1)
+    assert str(ws['E3'].value).startswith('=')
+    assert '"Q"' in ws['E1'].value
+
+
 def test_period_end_row_stays_a_plain_value():
     """第 5 列是 XBRL 的真實期末日，是整套公式的錨，不可以變成公式。"""
     wb, ws = _workbook_with_headers(["FY2026Q1"], ["2026-03-29"])
