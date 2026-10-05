@@ -17,6 +17,24 @@
 
 全庫結果、完整回歸與最終審查尚在執行，完成後追加數字及結論。
 
+## 審查修正與範圍裁決
+
+Fresh-context reviewer 審查 `cc22a43..674b5a9`，指出 COHR／CRM 年度映射碰撞及 ARM 6-K 跨年相減的 P1，audit 未套 CIK／核心表閘口及 comparer 忽略失敗／空輸入的 P2。這些已在 `d608c19`／`2c17a76` 修正；全部先重現 RED 再驗證 GREEN。實際 COHR／CRM 重跑後財務／標籤均 0 差異；ARM 標籤 0 差異，僅缺基準的舊 CF 改空白。早期兩個候選均停止驗收用途，另以固定 `2c17a76` checkout 全庫重新量測。
+
+Ruling：年度 DEI 鏈衝突就撤銷該鏈的直接身份，而不是留下衝突鍵；6-K 與 10-Q 同等保護，缺完整鏈不猜季度排序，只拒絕與可信已結束年度衝突的 focus。人工查證更正僅限兩筆 KR，不追加未查原文的 COHR／CRM 特例。
+
+Ruling：既有 CF 單季 Q2 冒充 YTD 的漏洞也納入安全防護。沒有直接可靠累計欄時不自行重建累計；流量留空、餘額保留、記缺口。399 個 period／fetcher／ledger 測試通過。重試 ContextVar 外漏及跨公司診斷殘留另在 `e3d9e62` 修正，390 個 fetcher／ledger 測試通過；這個 scope 修正不改無網路重試的 cached 數值流程。
+
+Ruling：NOC 同申報同日期的分裂欄及 DELL 同日期不同申報不能以字典覆写，也不能跳过整家公司。比較器保留來源分組，對同概念同日期的全部非空值做保留重複次數的無序比較；不指定哪個來源為真。這是數值保留比較，不是替原表洗掉期間錯誤。`d6d1abe` 的 9 個比較器測試通過。
+
+Ruling：沒有真正新手上下文就不冒稱已做 P2 黑箱；GUI 預覽仍是月份模型，未由這輪白箱核對證明一致。G13(a)、最新資料完整性、companyfacts 股數與 AI 診斷不在此輪 cached 驗收範圍。缺 authority 的 KR 最新部分年度仍走舊退路，不能宣稱 G13(b) 全解。
+
+## 實際 Excel 驗證
+
+在專屬新檔路徑建立 AAPL／CDNS／JNJ／KR 基準及候選活頁簿，使用自己建立的隱藏 Excel instance 重算並關閉，只修改測試檔。候選核對 **75,588 格資料矩陣及 row 1 預設標籤**，0 value／label mismatch；逐本修改 B4 月份的表頭結果也一致。基準 CDNS／JNJ／KR 的預設標籤與 pipeline 分別有 10／16／64 個差異。此驗證先按元→百萬等既有單位換算再比較；沒有把 raw 元與 Excel 百萬直接相比。
+
+這個計數跳過 Fiscal Quarter／Calendar Quarter 兩列，也未包含另產生的 Data_Ratios；它證明上述輸出格與 pipeline／月份規格一致，**不證明所有來源期間和全部公式都正確**。後續更完整驗證若執行，另列結果。
+
 ## 中間驗證
 
 - CF checkpoint `2ca3409`：385 個 fetcher／ledger 測試通過。
