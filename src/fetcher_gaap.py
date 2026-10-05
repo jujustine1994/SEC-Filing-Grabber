@@ -1040,6 +1040,12 @@ _CF_FCF_IDX             = _CF_IDX["Free Cash Flow"]
 # 期初現金沒有獨立列（`Net Change in Cash` 是流量、是對的），所以目前只有這一列。
 # 日後在 CF_TEMPLATE 加時點值列時**要記得加進來**。
 _CF_POINT_IN_TIME_IDX = frozenset({_CF_IDX["Ending Cash"]})
+# Parser output can repeat a cash balance row outside the matched template.
+# Exact standard instant concepts retain their balances in overflow too.
+_CF_INSTANT_OVERFLOW_CONCEPTS = frozenset({
+    'us-gaap_CashAndCashEquivalentsAtCarryingValue',
+    'us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents',
+})
 
 _CF_INV_PURCHASES_IDX  = _CF_IDX["Investment Purchases"]
 _CF_INV_PROCEEDS_IDX   = _CF_IDX["Investment Proceeds"]
@@ -2252,7 +2258,7 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
             _, _, lbl_is_ytd = collected[q_lbl]
             filing_ov = overflow_per_filing.get(q_lbl, {})
             raw_val = filing_ov[ov_key][2] if ov_key in filing_ov else None
-            if not lbl_is_ytd:
+            if not lbl_is_ytd or ov_key in _CF_INSTANT_OVERFLOW_CONCEPTS:
                 if raw_val is not None:
                     out[ov_key]["periods"][q_lbl] = raw_val
             else:

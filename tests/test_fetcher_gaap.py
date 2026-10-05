@@ -3895,3 +3895,21 @@ def test_current_q_col_ignores_columns_without_a_parseable_date():
     """期末日解不出來的欄不能拿去比大小——排序會把它跟真正的日期混在一起。"""
     df = _df_with_cols("(Q1)", "2026-03-29 (Q1)")
     assert _current_q_col(df) == "2026-03-29 (Q1)"
+@pytest.mark.parametrize('with_base',[False,True])
+def test_cf_duplicate_cash_balance_overflow_is_not_a_duration(with_base):
+    cash=('us-gaap_CashAndCashEquivalentsAtCarryingValue','Cash and Cash Equivalents at End of Period',200.0)
+    def make(is_col,cf_col,value,filed):
+        filing=_make_cf_filing_with_overflow(is_col,cf_col,230,330,value,filed)
+        statement=filing.obj().financials.cashflow_statement()
+        frame=statement.to_dataframe()
+        frame.loc[2,'concept']=cash[0]
+        frame.loc[2,'label']=cash[1]
+        statement.to_dataframe.return_value=pd.concat([frame,frame.iloc[[2]]],ignore_index=True)
+        return filing
+    q2=make('2025-06-30 (Q2)','2025-06-30 (YTD)',200,'2025-07-30')
+    filings=[q2]
+    if with_base:
+        filings.append(make('2025-03-31 (Q1)','2025-03-31 (Q1)',100,'2025-04-30'))
+    table,_=_build_cf_table(filings,2)
+    row=table.labels.index(cash[0])
+    assert table.values[row][table.quarter_labels.index('FY2025Q2')]==200.0
