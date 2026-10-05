@@ -57,7 +57,7 @@ def audit(ticker, output, *, require_official_metadata=False):
         entry=fc.load_filing(ticker,path.stem,cik)
         if entry is None:
             raise RuntimeError('Cached input rejected by production cache gates')
-        if require_official_metadata and entry['filing_date'][:10]>='2009-06-15':
+        if require_official_metadata and date.fromisoformat(entry['filing_date'][:10])>=fg._XBRL_CUTOFF:
             if path.stem not in official:
                 raise RuntimeError('Accession missing from official SEC filing metadata')
             if entry['form']!='6-K':
@@ -77,7 +77,7 @@ def audit(ticker, output, *, require_official_metadata=False):
          patch.object(fg,'_list_filings',side_effect=lambda company,form:[f for f in filings if f.form==form]), \
          patch.object(fg,'run_diagnosis',return_value={}), \
          patch.object(fg,'_fetch_shares_outstanding',return_value={}), \
-         fg.collect_gaps() as ledger:
+         fg.collect_gaps(fg.FetchLedger(probe=lambda:True)) as ledger:
         tables=fg.fetch_gaap_statements(ticker,'Cached audit audit@example.com')
     quarterly=next(t for t in tables if t.sheet_name=='Data_Financials(Q)')
     result=dict(ticker=ticker,mode='cached-read-only',metadata_mode='official-required' if require_official_metadata else 'official-or-cover',max_filings=80,max_annual_filings=20,

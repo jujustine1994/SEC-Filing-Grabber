@@ -67,3 +67,5 @@ Ruling: 修正實際樣本揭露的餘額語義漏洞，保留所有來源列與
 Ruling: 全庫驗收改用 `--require-official-metadata`，改版前後使用完全相同的官方 accession/reportDate 清單；缺清單、缺 accession、無效非 6-K reportDate 一律失敗。cover 替代模式只保留為有限的離線診斷，不作正式全庫驗收。成本是必須重新跑兩側，不能沿用先前 215 家結論。
 
 新增防護先觀察失敗，再通過 5 項稽核輸入測試；全套前一版為 1,706 passed、65 deselected。驗收仍進行中。
+
+增量 reviewer 又重現兩個稽核問題：硬編碼 2009-06-15 與正式 `_XBRL_CUTOFF`（2008-01-01）不同；解析 `ValueError` 的例外分類可能觸發 SEC HEAD 探測。已改為使用所選 pipeline 的 cutoff，並注入 `FetchLedger(probe=lambda: True)`，本地解析失敗歸資料問題，禁止這個網路側路。新增三個 RED→GREEN 案例，37 項相關測試通過。這兩項改動沒有改變金融計算；驗收要檢查全部已用輸入的官方 metadata 覆蓋，以及例外路徑。
