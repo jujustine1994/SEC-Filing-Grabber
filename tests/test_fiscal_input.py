@@ -130,6 +130,11 @@ def test_quarterly_sheet_with_initial_unknown_label_remains_quarterly():
     assert '"Q"' in ws['E1'].value
 
 
+def test_known_annual_sheet_kind_is_not_inferred_from_an_unexpected_label():
+    _, ws = _workbook_with_headers(['FY2010Q4'], ['2011-01-29'], sheet='Data_Financials(Y)')
+    assert fi._is_annual(ws)
+
+
 def test_period_end_row_stays_a_plain_value():
     """第 5 列是 XBRL 的真實期末日，是整套公式的錨，不可以變成公式。"""
     wb, ws = _workbook_with_headers(["FY2026Q1"], ["2026-03-29"])
