@@ -2499,6 +2499,39 @@ def test_flow_rows_are_still_ytd_subtracted_after_the_fix():
     assert gaap_tbl.values[ocf_idx][q2_pos] == pytest.approx(180.0)   # 330 − 150
 
 
+@pytest.mark.parametrize("annual_capex", [90.0, -90.0, None])
+def test_synthesize_q4_recomputes_fcf_from_q4_inputs(annual_capex):
+    from fetcher_gaap import CF_TEMPLATE, _CF_IDX
+
+    concepts = [r[0] for r in CF_TEMPLATE]
+    quarters = {
+        "Operating Cash Flow": [100.0, 100.0, 100.0],
+        "Capex": [-20.0, -20.0, -20.0],
+        "Free Cash Flow": [80.0, 80.0, 80.0],
+    }
+    annual = {
+        "Operating Cash Flow": [500.0],
+        "Capex": [annual_capex],
+        "Free Cash Flow": [None if annual_capex is None else 410.0],
+    }
+    q = StatementTable(
+        sheet_name="Data_CF", quarter_labels=[f"FY2025Q{i}" for i in (1, 2, 3)],
+        filing_dates=[""] * 3, concepts=concepts,
+        values=[quarters.get(c, [None] * 3) for c in concepts],
+    )
+    ann = StatementTable(
+        sheet_name="Data_CF", quarter_labels=["FY2025"], filing_dates=[""],
+        concepts=concepts, values=[annual.get(c, [None]) for c in concepts],
+    )
+    out = _synthesize_q4(q, ann, len(CF_TEMPLATE), is_balance=False)
+    i = out.quarter_labels.index("FY2025Q4")
+    actual = out.values[_CF_IDX["Free Cash Flow"]][i]
+    if annual_capex is None:
+        assert actual is None
+    else:
+        assert actual == pytest.approx(200.0 - abs(annual_capex + 60.0))
+
+
 def test_synthesize_q4_takes_balance_rows_from_annual_not_subtraction():
     """同一個 bug 的第二個實例：合成 Q4 也不可以對餘額做「年報 − Q1 − Q2 − Q3」。
 

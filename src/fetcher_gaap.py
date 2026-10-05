@@ -2665,6 +2665,17 @@ def _synthesize_q4(q_tbl: StatementTable, ann_tbl: StatementTable,
                 else:
                     col_vals.append(fy_val - v1 - v2 - v3)
 
+        # FCF is nonlinear because Capex signs vary between filings. Derive
+        # its Q4 inputs first, rather than subtracting already-computed FCF.
+        if not is_balance and q_tbl.sheet_name == "Data_CF":
+            if _CF_FCF_IDX < len(col_vals):
+                op_cf = col_vals[_CF_OP_CASH_IDX]
+                capex = col_vals[_CF_CAPEX_IDX]
+                col_vals[_CF_FCF_IDX] = (
+                    op_cf - abs(capex)
+                    if op_cf is not None and capex is not None else None
+                )
+
         if all(v is None for v in col_vals):
             continue
 
