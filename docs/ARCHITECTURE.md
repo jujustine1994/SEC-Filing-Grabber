@@ -500,9 +500,13 @@ Q2/Q3 overflow 使用與模板行相同的跨 filing 減法：
 
 > **2026-10-06：模板與 overflow 均只接受累計欄或 Q1 作拆季基準。** 明確單季 Q2 不能冒充半年累計。缺基準時流量留空、Ending Cash 等餘額保留，並記錄 `MissingStandalonePeriod` 資料缺口；原始累計仍保留在永久資料庫。`cf_fallback_details()` 可查 accession、期末日、欄名、缺少的基準及原值；診斷限於當次抓取。
 
+CF overflow 可能含 parser 重複列：兩種明確標準時點概念 `us-gaap_CashAndCashEquivalentsAtCarryingValue`、`us-gaap_CashCashEquivalentsRestrictedCashAndRestrictedCashEquivalents` 直接保留期末餘額，不作累計拆季或因缺基準清空。自訂現金概念不猜測，Q4 overflow 仍維持既有空白政策。
+
 **財季身份（2026-10-06）：** `period_identity.py` 從當期 cover DEI 及年報／季報日期建立公司內映射。完整、連續且命名一致的年度鏈才能推導季度，包含已筛選的 6-K；6-K 使用文件期末日，不能把發布日當財期。季度 DEI 與可信年度區間矛盾時拒絕；年度年份彼此矛盾則撤銷整鏈映射，避免相同 FY 鍵吞掉另一年度。兩筆人工查證 KR 更正精確匹配 accession、日期與原 DEI，不修改來源。缺權威的部分年度保留舊退路，**不代表已解決全部週制財年問題**。Excel 預設月份保留 pipeline 身份，使用者明確改月份時仍按原公式連動。審查、來源及限制见 [驗證紀錄](superpowers/fiscal-verification-results.md)。
 
 **期間欄怎麼挑、標籤怎麼來（2026-09-21 重寫這一段）：**
+
+新財季身份映射需要正式 listing 日期。季度或年度任一清單退回離線時，整次抓取停用新映射，保留一致的既有命名與 OFFLINE FALLBACK 提示；不能以缺封面日期的部分錨點與旧命名混合，否則可能誤去重年度。永久來源不補寫猜測 metadata。
 
 | 情況 | 資料欄 | 標籤來源 |
 |---|---|---|
