@@ -44,7 +44,12 @@ def verify(ticker, identity=None):
     from audit_fiscal_pipeline import audit
     output = ROOT / 'output' / 'fy-label-check'
     output.mkdir(parents=True, exist_ok=True)
-    return audit(ticker, output)['anomalies']
+    result=audit(ticker,output)
+    issues=dict(result['anomalies'])
+    issues['metadata_complete']=result['metadata_complete']
+    quarterly=next(t for t in result['tables'] if t['sheet_name']=='Data_Financials(Q)')
+    issues['observed_periods']=sum(bool(end) for end in quarterly['period_ends'])
+    return issues
 
 
 def main(argv):
@@ -61,7 +66,8 @@ def main(argv):
             bad = any(issues[k] for k in ('unclassified', 'duplicate_ends', 'collisions', 'misordered_years'))
             incomplete = issues['incomplete_years']
             failures += bool(bad)
-            status = 'ANOMALIES' if bad else 'INCONCLUSIVE' if incomplete else 'CONSISTENT'
+            uncertain=incomplete or issues.get('metadata_complete') is False or issues.get('observed_periods')==0
+            status = 'ANOMALIES' if bad else 'INCONCLUSIVE' if uncertain else 'CONSISTENT'
             print(ticker, status, issues, flush=True)
         except Exception as exc:
             failures += 1

@@ -52,18 +52,23 @@ def audit(ticker, output, *, require_official_metadata=False):
     if require_official_metadata and not evidence.exists():
         raise RuntimeError('Official SEC filing metadata required')
     official={r['accession_number']:r['reportDate'] for r in json.loads(evidence.read_text(encoding='utf-8'))} if evidence.exists() else {}
+    metadata_complete=evidence.exists()
     for path in fc.ticker_dir(ticker).glob('*.json'):
         if not fc.ACCESSION_RE.fullmatch(path.stem): continue
         entry=fc.load_filing(ticker,path.stem,cik)
         if entry is None:
             raise RuntimeError('Cached input rejected by production cache gates')
-        if require_official_metadata and date.fromisoformat(entry['filing_date'][:10])>=fg._XBRL_CUTOFF:
+        if date.fromisoformat(entry['filing_date'][:10])>=fg._XBRL_CUTOFF:
             if path.stem not in official:
-                raise RuntimeError('Accession missing from official SEC filing metadata')
-            if entry['form']!='6-K':
+                metadata_complete=False
+                if require_official_metadata:
+                    raise RuntimeError('Accession missing from official SEC filing metadata')
+            elif entry['form']!='6-K':
                 try: date.fromisoformat(official[path.stem])
                 except (ValueError,TypeError):
-                    raise RuntimeError('Invalid official SEC report date')
+                    metadata_complete=False
+                    if require_official_metadata:
+                        raise RuntimeError('Invalid official SEC report date')
         obj=fc.cached_filing(entry)
         filings.append(SimpleNamespace(accession_no=path.stem,form=entry['form'],
             filing_date=date.fromisoformat(entry['filing_date'][:10]),
@@ -72,15 +77,22 @@ def audit(ticker, output, *, require_official_metadata=False):
     filings.sort(key=lambda f:f.filing_date, reverse=True)
     company=SimpleNamespace(cik=cik,name=ticker)
     fg.reset_cf_fallbacks()
+    def cached_listing(form):return [f for f in filings if f.form==form]
+    def listing(company,form):
+        if not metadata_complete:
+            raise fg.NetworkDownError('Official SEC metadata unavailable in cached audit')
+        return cached_listing(form)
     with patch.object(fg,'Company',return_value=company), \
          patch.object(fg,'_bind_disk_cache'), \
-         patch.object(fg,'_list_filings',side_effect=lambda company,form:[f for f in filings if f.form==form]), \
+         patch.object(fg,'_list_filings',side_effect=listing), \
+         patch.object(fg,'_offline_listing',side_effect=lambda ticker,form:cached_listing(form)), \
          patch.object(fg,'run_diagnosis',return_value={}), \
          patch.object(fg,'_fetch_shares_outstanding',return_value={}), \
          fg.collect_gaps(fg.FetchLedger(probe=lambda:True)) as ledger:
         tables=fg.fetch_gaap_statements(ticker,'Cached audit audit@example.com')
     quarterly=next(t for t in tables if t.sheet_name=='Data_Financials(Q)')
-    result=dict(ticker=ticker,mode='cached-read-only',metadata_mode='official-required' if require_official_metadata else 'official-or-cover',max_filings=80,max_annual_filings=20,
+    metadata_mode='official-required' if require_official_metadata else 'official-complete' if metadata_complete else 'offline-cover-limited'
+    result=dict(ticker=ticker,mode='cached-read-only',metadata_mode=metadata_mode,metadata_complete=metadata_complete,max_filings=80,max_annual_filings=20,
         anomalies=label_anomalies(quarterly.quarter_labels,quarterly.period_ends),
         cf_fallbacks=fg.cf_fallbacks(),cf_fallback_details=getattr(fg,'cf_fallback_details',lambda:[])(),
         gaps=[asdict(g) for g in ledger.gaps],

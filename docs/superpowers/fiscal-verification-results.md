@@ -82,6 +82,8 @@ Ruling: 正式 SEC 清單可用時才啟用新期間身份映射；季度或年�
 
 離線實際樣本：同一 adapter 模擬 listing 網路失敗，兩側重跑 EXC／HD 的全部保存輸入；兩家標籤與 header 差異都是 0。119 個數值差異中，55 格為有記錄缺基期的 CF 流量留空，64 格為標準期末現金 overflow 恢復餘額，未分類差異 0。最新完整測試為 **1,716 passed、65 deselected、4 warnings**；排除的是標記 slow 的網路測試。
 
+有限診斷同步使用這個保守政策：沒有完整官方 metadata 的 audit 會走產品的離線退路，明列 `metadata_complete=False`／`offline-cover-limited`，不再以缺 cover 的部分錨點冒充線上輸入。`check_fy_labels --verify` 遇到缺官方證據或零個可觀察期間，只能報 INCONCLUSIVE；沒有異常不是通過來源校驗。
+
 使用外部 venv，先以 `scripts/fetch_fiscal_audit_metadata.py --all --output output/<新證據資料夾>` 下載官方清單；清單不覆寫，財報資料庫不寫入。之後 `scripts/audit_fiscal_pipeline.py --all --require-official-metadata --output output/<新證據資料夾>/candidate`。若要同介面跑歷史版本，設定 `SEC_AUDIT_PIPELINE_ROOT` 為基線 worktree 絕對路徑，輸出到同一證據資料夾的 `baseline`，完成後清掉此環境變數。
 
 `scripts/compare_fiscal_audits.py <baseline> <candidate> --output <新比對目錄>` 會把失敗、缺公司、空資料列為非零 exit。`scripts/verify_fiscal_source_examples.py <candidate>` 額外核對原始 SEC facts 範例。

@@ -23,3 +23,21 @@ def test_failed_verification_never_exits_successfully(monkeypatch):
         raise ValueError('invalid cached input')
     monkeypatch.setattr(checker, 'verify', failed)
     assert checker.main(['--verify', 'KR']) != 0
+
+
+def test_missing_official_metadata_is_inconclusive_even_with_consistent_labels(monkeypatch,capsys):
+    monkeypatch.setattr(checker,'scan',lambda ticker:{})
+    result=label_anomalies(['FY2025Q1','FY2025Q2','FY2025Q3','FY2025Q4'],['2025-03-31','2025-06-30','2025-09-30','2025-12-31'])
+    result['metadata_complete']=False
+    monkeypatch.setattr(checker,'verify',lambda ticker:result)
+    assert checker.main(['--verify','TEST'])==0
+    assert 'INCONCLUSIVE' in capsys.readouterr().out
+
+
+def test_no_observed_periods_never_counts_as_consistent(monkeypatch,capsys):
+    monkeypatch.setattr(checker,'scan',lambda ticker:{})
+    result=label_anomalies([],[])
+    result.update(metadata_complete=True,observed_periods=0)
+    monkeypatch.setattr(checker,'verify',lambda ticker:result)
+    assert checker.main(['--verify','TEST'])==0
+    assert 'INCONCLUSIVE' in capsys.readouterr().out

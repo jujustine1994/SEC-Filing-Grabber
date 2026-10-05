@@ -8,6 +8,24 @@ import audit_fiscal_pipeline as audit
 import local_db
 
 
+def test_cover_only_audit_uses_offline_listing_and_marks_evidence_incomplete(tmp_path,monkeypatch):
+    accession='0000000001-25-000001'
+    (tmp_path/(accession+'.json')).write_text('{}',encoding='utf-8')
+    monkeypatch.setattr(local_db,'read_meta',lambda ticker:dict(cik=1))
+    monkeypatch.setattr(audit.fc,'ticker_dir',lambda ticker:tmp_path)
+    monkeypatch.setattr(audit.fc,'load_filing',lambda *args:dict(form='10-Q',filing_date='2025-04-30',dataframes={}))
+    monkeypatch.setattr(audit.fc,'cached_filing',lambda *args:object())
+    table=audit.fg.StatementTable(sheet_name='Data_Financials(Q)',quarter_labels=[],filing_dates=[],concepts=[],values=[])
+    def pipeline(*args,**kwargs):
+        from net_retry import NetworkDownError
+        with pytest.raises(NetworkDownError):audit.fg._list_filings(None,'10-Q')
+        assert len(audit.fg._offline_listing('TEST','10-Q'))==1
+        return [table]
+    monkeypatch.setattr(audit.fg,'fetch_gaap_statements',pipeline)
+    result=audit.audit('TEST',tmp_path)
+    assert result['metadata_complete'] is False
+
+
 def test_cached_audit_parse_error_does_not_probe_the_network(tmp_path,monkeypatch):
     calls=[]
     monkeypatch.setattr('urllib.request.urlopen',lambda *a,**kw:calls.append('network') or None)
