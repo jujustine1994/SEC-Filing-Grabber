@@ -45,3 +45,13 @@ def test_missing_quarter_is_not_renumbered_as_q1():
              ('2010-01-30','10-K',('2010-01-30',2009,'FY')),
              ('2009-08-15','10-Q',None),('2009-11-07','10-Q',None)]
     assert ('2009-08-15',False) not in build_period_map(records)
+
+
+def test_verified_source_correction_is_accession_and_value_guarded():
+    from period_identity import corrected_focus
+    focus=('2024-02-03',2024,'FY')
+    assert corrected_focus('0001558370-24-004603', focus)==('2024-02-03',2023,'FY')
+    assert corrected_focus('unrelated-accession', focus)==focus
+    assert corrected_focus('0001558370-24-004603',('2024-02-03',2023,'FY'))==('2024-02-03',2023,'FY')
+    assert corrected_focus('0001558370-24-004603',('2024-02-04',2024,'FY'))==('2024-02-04',2024,'FY')
+    assert corrected_focus('0001558370-25-004267',('2025-02-01',2025,'FY'))==('2025-02-01',2024,'FY')

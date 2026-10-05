@@ -37,7 +37,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 import filing_cache
-from period_identity import cover_focus, reported_label, build_period_map
+from period_identity import cover_focus, reported_label, build_period_map, corrected_focus
 from database import DatabaseError
 from fetch_ledger import FetchLedger, MissingCurrentPeriod, MissingStandalonePeriod
 from i18n import t
@@ -2683,8 +2683,8 @@ def _synthesize_q4(q_tbl: StatementTable, ann_tbl: StatementTable,
     added = False
 
     for fy_i, fy_label in enumerate(ann_tbl.quarter_labels):
-        if "Q" in fy_label:
-            continue   # not a pure FY label (shouldn't normally happen for an annual table)
+        if not re.fullmatch(r'FY\d{4}', str(fy_label)):
+            continue   # No quarter arithmetic on unclassified annual dates.
         q4_label = f"{fy_label}Q4"
         if q4_label in q_idx:
             continue
@@ -3271,6 +3271,7 @@ def _fetch_gaap_impl(ticker: str, identity: str,
             if isinstance(filed,_date) and filed<_XBRL_CUTOFF:
                 continue
             focus=cover_focus(_financials_of(_filing_obj(filing)))
+            focus=corrected_focus(_cache_key(filing), focus)
             end=str(getattr(filing, 'report_date', '') or '')[:10]
             if not end and focus: end=focus[0]
             records.append((end,str(getattr(filing,'form','')),focus))

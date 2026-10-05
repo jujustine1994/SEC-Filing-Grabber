@@ -8,6 +8,20 @@ import re
 import pandas as pd
 
 
+# Exact, manually verified source errors. Never mutate source cache entries.
+# The registrant explicitly defines its fiscal years in Item 1; DEI contradicts
+# that definition. An accession AND original triple must match for correction.
+_VERIFIED_FOCUS_CORRECTIONS = {
+    '0001558370-24-004603': (('2024-02-03', 2024, 'FY'), ('2024-02-03', 2023, 'FY')),
+    '0001558370-25-004267': (('2025-02-01', 2025, 'FY'), ('2025-02-01', 2024, 'FY')),
+}
+
+
+def corrected_focus(accession, focus):
+    correction = _VERIFIED_FOCUS_CORRECTIONS.get(accession)
+    return correction[1] if correction and focus == correction[0] else focus
+
+
 def cover_focus(financials):
     try:
         statement=financials.cover()

@@ -578,6 +578,14 @@ def test_synthesize_q4_balance_uses_annual_value_directly():
     assert result.values[0][idx] == 5000.0
 
 
+def test_synthesize_q4_never_appends_quarter_to_unclassified_annual_date():
+    q = StatementTable(sheet_name='Data_BS', quarter_labels=['FY2010Q1'],
+                       filing_dates=['2010-06-01'], concepts=['Assets'], values=[[10]])
+    annual = StatementTable(sheet_name='Data_BS', quarter_labels=['2011-01-29'],
+                            filing_dates=['2011-03-01'], concepts=['Assets'], values=[[20]])
+    assert _synthesize_q4(q, annual, 1, is_balance=True).quarter_labels == ['FY2010Q1']
+
+
 def test_synthesize_q4_skipped_when_quarters_incomplete():
     """Missing Q3 (or any of Q1-Q3) means Q4 can't be derived for flow statements."""
     q_tbl = StatementTable(
