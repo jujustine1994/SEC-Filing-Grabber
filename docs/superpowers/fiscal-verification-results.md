@@ -78,6 +78,8 @@ SEC 原始 instance 的 3 個年度／9 個月配對已保存於 [來源證據](
 
 ## 可重跑方式
 
+Ruling: 正式 SEC 清單可用時才啟用新期間身份映射；季度或年度任一清單退回離線時，整次抓取保留原有期間命名。實際 `_OfflineFiling` 沒有 reportDate，會重現先前稽核的 EXC／HD 混用鍵風險；因此不能只修稽核卻放過產品離線路徑。代價是離線輸出不保證取得新的財年命名修正；現有 OFFLINE FALLBACK 提示繼續保留，資料庫不補寫猜測日期。兩種混合線上／離線情境皆有回歸測試，相關 412 項測試通過。完整 215 家官方清單比對不走此退回路徑，數值結果不受這個分支變更影響。
+
 使用外部 venv，先以 `scripts/fetch_fiscal_audit_metadata.py --all --output output/<新證據資料夾>` 下載官方清單；清單不覆寫，財報資料庫不寫入。之後 `scripts/audit_fiscal_pipeline.py --all --require-official-metadata --output output/<新證據資料夾>/candidate`。若要同介面跑歷史版本，設定 `SEC_AUDIT_PIPELINE_ROOT` 為基線 worktree 絕對路徑，輸出到同一證據資料夾的 `baseline`，完成後清掉此環境變數。
 
 `scripts/compare_fiscal_audits.py <baseline> <candidate> --output <新比對目錄>` 會把失敗、缺公司、空資料列為非零 exit。`scripts/verify_fiscal_source_examples.py <candidate>` 額外核對原始 SEC facts 範例。

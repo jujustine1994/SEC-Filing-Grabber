@@ -3292,7 +3292,11 @@ def _fetch_gaap_impl(ticker: str, identity: str,
             # Existing builders own gap reporting; missing identity does not
             # turn a parse failure into an invented fiscal period.
             continue
-    _reported_periods_var.set(build_period_map(records))
+    # Offline listing stubs lack official report dates. Mixing a partial cover
+    # map with legacy labels can deduplicate away older years (EXC/HD). Keep
+    # one naming policy for this whole fetch; the existing offline warning
+    # communicates the weaker source. Resume authority mapping online.
+    _reported_periods_var.set({} if offline else build_period_map(records))
 
     # 進度條分母：每份 filing 要建 IS/BS/CF 三張表，各跑一輪 = 3 個 tick。
     # `min(len, max_filings)` 只是上限估計——`_build_*_table` 內部可能因為

@@ -3913,3 +3913,37 @@ def test_cf_duplicate_cash_balance_overflow_is_not_a_duration(with_base):
     table,_=_build_cf_table(filings,2)
     row=table.labels.index(cash[0])
     assert table.values[row][table.quarter_labels.index('FY2025Q2')]==200.0
+@pytest.mark.parametrize('offline_form',['10-Q','10-K'])
+def test_offline_listing_does_not_mix_partial_cover_identity_with_legacy_labels(monkeypatch,offline_form):
+    import fetcher_gaap as fg
+    from net_retry import NetworkDownError
+    from types import SimpleNamespace
+    from datetime import date
+    from contextvars import ContextVar
+    monkeypatch.setattr(fg,'_offline_var',ContextVar('test_offline',default={}))
+    column='2025-06-30 (Q2)'
+    cover=pd.DataFrame({'concept':['dei_DocumentPeriodEndDate','dei_DocumentFiscalYearFocus','dei_DocumentFiscalPeriodFocus'],column:['2025-06-30',2025,'Q1']})
+    fin=SimpleNamespace(cover=lambda:SimpleNamespace(to_dataframe=lambda:cover))
+    filing=SimpleNamespace(form='10-Q',filing_date=date(2025,7,30),accession_no='0000000001-25-000001',obj=lambda:SimpleNamespace(financials=fin))
+    annual_cover=pd.DataFrame({'concept':cover['concept'],'2024-12-31 (FY)':['2024-12-31',2024,'FY']})
+    annual_fin=SimpleNamespace(cover=lambda:SimpleNamespace(to_dataframe=lambda:annual_cover))
+    annual=SimpleNamespace(form='10-K',filing_date=date(2025,2,20),accession_no='0000000001-25-000002',obj=lambda:SimpleNamespace(financials=annual_fin))
+    monkeypatch.setattr(fg,'Company',lambda ticker:SimpleNamespace(cik=1))
+    monkeypatch.setattr(fg,'set_identity',lambda identity:None)
+    monkeypatch.setattr(fg,'_bind_disk_cache',lambda *args:None)
+    def listing(company,form):
+        if form==offline_form:raise NetworkDownError('SEC listing unavailable')
+        return [filing] if form=='10-Q' else [annual] if form=='10-K' else []
+    monkeypatch.setattr(fg,'_list_filings',listing)
+    monkeypatch.setattr(fg,'_offline_listing',lambda ticker,form:[filing] if form=='10-Q' else [annual])
+    monkeypatch.setattr(fg,'_probe_fy_end_month',lambda *args:12)
+    monkeypatch.setattr(fg,'_fy_end_month_from_annuals',lambda *args:12)
+    monkeypatch.setattr(fg,'load_overrides',lambda ticker:{})
+    class Captured(Exception):pass
+    captured=[]
+    def builder(*args,**kwargs):
+        captured.append(fg._reported_label(fin,column))
+        raise Captured()
+    monkeypatch.setattr(fg,'_build_is_table',builder)
+    with pytest.raises(Captured):fg.fetch_gaap_statements('TEST','Test test@example.com')
+    assert captured==[None]
