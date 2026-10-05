@@ -69,3 +69,15 @@ Ruling: 全庫驗收改用 `--require-official-metadata`，改版前後使用完
 新增防護先觀察失敗，再通過 5 項稽核輸入測試；全套前一版為 1,706 passed、65 deselected。驗收仍進行中。
 
 增量 reviewer 又重現兩個稽核問題：硬編碼 2009-06-15 與正式 `_XBRL_CUTOFF`（2008-01-01）不同；解析 `ValueError` 的例外分類可能觸發 SEC HEAD 探測。已改為使用所選 pipeline 的 cutoff，並注入 `FetchLedger(probe=lambda: True)`，本地解析失敗歸資料問題，禁止這個網路側路。新增三個 RED→GREEN 案例，37 項相關測試通過。這兩項改動沒有改變金融計算；驗收要檢查全部已用輸入的官方 metadata 覆蓋，以及例外路徑。
+
+官方 metadata 覆蓋已獨立檢查全部 215 家、14,417 個 canonical 快取：以正式起始門檻及正式 cache gates 核對，0 個缺失／無效日期／不相容輸入。最新金融程式 `7f12a68` 正與基線 `edb6e5d` 用同一 adapter 重跑；輸出金融計算相同於目前 HEAD。若有本地解析例外，須以已禁止探測的新 adapter 重跑該公司；沒有例外的資料沒有進入探測路徑。
+
+SEC 原始 instance 的 3 個年度／9 個月配對已保存於 [來源證據](evidence/fiscal-source-examples.json)。用相同年度起日的無維度 USD facts，核對 Q4 Revenue、OCF、Capex 支出金額、FCF、Ending Cash 共 15 格，早期候選全部符合。Capex 比支出金額絕對值；不能把 XBRL 正支出與 parser 呈現負號當成數字錯誤。最終全庫輸出仍需再次執行 `scripts/verify_fiscal_source_examples.py`。
+
+擴充的自有 Excel 測試檔先用前一版保存輸入驗證 checker：95,156 格，含 16,048 格比率輸出及 3,279 格預設／覆寫標頭，0 discrepancy。這是輸出一致性，不是所有比率經濟定義的獨立來源驗證。最終候選四份 workbook 待完整輸入產出後重建、重算、再驗。
+
+## 可重跑方式
+
+使用外部 venv，先以 `scripts/fetch_fiscal_audit_metadata.py --all --output output/<新證據資料夾>` 下載官方清單；清單不覆寫，財報資料庫不寫入。之後 `scripts/audit_fiscal_pipeline.py --all --require-official-metadata --output output/<新證據資料夾>/candidate`。若要同介面跑歷史版本，設定 `SEC_AUDIT_PIPELINE_ROOT` 為基線 worktree 絕對路徑，輸出到同一證據資料夾的 `baseline`，完成後清掉此環境變數。
+
+`scripts/compare_fiscal_audits.py <baseline> <candidate> --output <新比對目錄>` 會把失敗、缺公司、空資料列為非零 exit。`scripts/verify_fiscal_source_examples.py <candidate>` 額外核對原始 SEC facts 範例。
