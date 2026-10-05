@@ -37,6 +37,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 import filing_cache
+from period_identity import cover_focus, reported_label, build_period_map
 from database import DatabaseError
 from fetch_ledger import FetchLedger, MissingCurrentPeriod
 from i18n import t
@@ -480,6 +481,22 @@ def _fy_end_month_from_annuals(annuals) -> int | None:
 # 錯的資料夾。ContextVar 讓每個執行緒起手都是空的，天然互不干擾。
 _disk_cache_var: ContextVar[dict | None] = ContextVar("_disk_cache", default=None)
 _last_cache_stats_var: ContextVar[tuple[int, int]] = ContextVar("_last_cache_stats", default=(0, 0))
+_reported_periods_var: ContextVar[dict | None] = ContextVar('reported_periods', default=None)
+
+
+def _reported_label(fin, column, *, annual=False):
+    annual = annual or str(column).endswith('(FY)')
+    mapping = _reported_periods_var.get()
+    if mapping is not None:
+        return mapping.get((str(column)[:10], annual))
+    return reported_label(cover_focus(fin), column, annual=annual)
+
+
+@contextmanager
+def _reported_period_scope():
+    token=_reported_periods_var.set({})
+    try: yield
+    finally: _reported_periods_var.reset(token)
 
 
 @contextmanager
@@ -1519,7 +1536,7 @@ def _build_template_table(filings, template: list[_T], sheet_name: str,
         if q_col is None:
             continue
 
-        label = _col_to_quarter_label(q_col, fy_end_month)
+        label = _reported_label(fin, q_col) or _col_to_quarter_label(q_col, fy_end_month)
         if label in periods:
             continue
 
@@ -1618,7 +1635,7 @@ def _build_is_table(
         if q_col is None:
             continue
 
-        label = _col_to_quarter_label(q_col, fy_end_month)
+        label = _reported_label(fin, q_col) or _col_to_quarter_label(q_col, fy_end_month)
         if label in periods:
             continue
         # 真正的期末結算日（52/53 週制不是月底）。從財季標籤反推只能得到月份，
@@ -1860,6 +1877,8 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
 
         label = _bs_quarter_label(is_q_col, bs_col, fy_end_month,
                                   form=str(getattr(filing, "form", "") or ""))
+        label = _reported_label(fin, bs_col,
+            annual=str(getattr(filing, 'form', '')).upper() in ANNUAL_FORMS) or label
         if label in periods:
             # ⚠ **撞欄不等於重複資料，不可以直接丟。** 推算的季會錯——
             # `fiscal_quarter_of()` 用月份切季，對 52/53 週財年制（KR 的 Q1 是
@@ -2084,6 +2103,11 @@ def _build_cf_table(filings, max_filings: int, cf_overrides: dict | None = None,
                                       fy_start_month(fy_end_month))
         else:
             label = _col_to_quarter_label(data_col, fy_end_month)
+        authority = _reported_label(fin, data_col)
+        if authority:
+            label = authority
+            if label.endswith('Q1'):
+                is_ytd = False  # The first fiscal quarter's YTD equals standalone.
         if not label:
             continue
         if label in collected:
@@ -2742,7 +2766,7 @@ def _build_dynamic_table(filings, stmt_method: str, sheet_name: str,
         if q_col is None:
             continue
 
-        label = _col_to_quarter_label(q_col, fy_end_month)
+        label = _reported_label(fin, q_col) or _col_to_quarter_label(q_col, fy_end_month)
         if label in periods:
             continue
 
@@ -2823,7 +2847,7 @@ def _build_segment_tables(filings, max_filings: int, fy_end_month: int = 12) -> 
         if q_col is None:
             continue
 
-        period_label = _col_to_quarter_label(q_col, fy_end_month)
+        period_label = _reported_label(fin, q_col) or _col_to_quarter_label(q_col, fy_end_month)
         filing_date = str(filing.filing_date)
 
         dim_col = df.get("dimension_member_label")
@@ -3133,7 +3157,7 @@ def fetch_gaap_statements(ticker: str, identity: str,
     # （上面的遞迴自己開的，或是 `main.py`／`cli.py` 先開好才呼叫進來的）——
     # 兩條路都會走到這裡，重試才不會只在其中一條路生效。
     led = _ledger()
-    with _disk_cache_scope(), _parse_cache_scope():
+    with _disk_cache_scope(), _parse_cache_scope(), _reported_period_scope():
         tables = _fetch_gaap_impl(
             ticker, identity, max_filings, max_annual_filings, ai_config,
             start_year, end_year, fetch_quarterly, fetch_annual, excluded_sheets,
@@ -3226,6 +3250,21 @@ def _fetch_gaap_impl(ticker: str, identity: str,
     # Apply year range filter
     filings_q = _filter_filings_by_year(filings_q, start_year, end_year)
     filings_k = _filter_filings_by_year(filings_k, start_year, end_year)
+    records=[]
+    for filing in [*filings_k[:max_annual_filings], *filings_q[:max_filings]]:
+        try:
+            filed=getattr(filing,'filing_date',None)
+            if isinstance(filed,_date) and filed<_XBRL_CUTOFF:
+                continue
+            focus=cover_focus(_financials_of(_filing_obj(filing)))
+            end=str(getattr(filing, 'report_date', '') or '')[:10]
+            if not end and focus: end=focus[0]
+            records.append((end,str(getattr(filing,'form','')),focus))
+        except Exception:
+            # Existing builders own gap reporting; missing identity does not
+            # turn a parse failure into an invented fiscal period.
+            continue
+    _reported_periods_var.set(build_period_map(records))
 
     # 進度條分母：每份 filing 要建 IS/BS/CF 三張表，各跑一輪 = 3 個 tick。
     # `min(len, max_filings)` 只是上限估計——`_build_*_table` 內部可能因為

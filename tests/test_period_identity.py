@@ -1,0 +1,47 @@
+import pandas as pd
+from types import SimpleNamespace
+from period_identity import cover_focus, reported_label, build_period_map
+
+
+def financials(end='2021-01-03',year=2020,quarter='FY'):
+    df=pd.DataFrame({'concept':['dei_DocumentPeriodEndDate','dei_DocumentFiscalYearFocus','dei_DocumentFiscalPeriodFocus'],
+                     end+' (FY)':[end,year,quarter]})
+    return SimpleNamespace(cover=lambda:SimpleNamespace(to_dataframe=lambda:df))
+
+
+def test_reported_annual_year_is_not_calendar_end_year():
+    assert reported_label(cover_focus(financials()),'2021-01-03 (FY)',annual=True)=='FY2020'
+
+
+def test_sixteen_week_q1_uses_reported_quarter():
+    assert reported_label(cover_focus(financials('2010-05-22',2010,'Q1')),'2010-05-22 (YTD)')=='FY2010Q1'
+
+
+def test_comparative_column_never_borrows_document_focus():
+    assert reported_label(cover_focus(financials()),'2020-01-05 (FY)',annual=True) is None
+
+
+def test_conflicting_cover_focus_is_rejected():
+    fin=financials()
+    df=fin.cover().to_dataframe()
+    df['other']=df.iloc[:,1]
+    # Non-period columns cannot supply focus values.
+    df.iloc[:,1]=None
+    fin.cover=lambda:SimpleNamespace(to_dataframe=lambda:df)
+    assert cover_focus(fin) is None
+
+
+def test_complete_reported_year_recovers_missing_sixteen_week_quarter_focus():
+    records=[('2009-01-31','10-K',('2009-01-31',2008,'FY')),
+             ('2010-01-30','10-K',('2010-01-30',2009,'FY')),
+             ('2009-05-23','10-Q',None),('2009-08-15','10-Q',None),('2009-11-07','10-Q',None)]
+    result=build_period_map(records)
+    assert result[('2009-05-23',False)]=='FY2009Q1'
+    assert result[('2010-01-30',False)]=='FY2009Q4'
+
+
+def test_missing_quarter_is_not_renumbered_as_q1():
+    records=[('2009-01-31','10-K',('2009-01-31',2008,'FY')),
+             ('2010-01-30','10-K',('2010-01-30',2009,'FY')),
+             ('2009-08-15','10-Q',None),('2009-11-07','10-Q',None)]
+    assert ('2009-08-15',False) not in build_period_map(records)

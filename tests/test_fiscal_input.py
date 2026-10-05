@@ -196,6 +196,15 @@ def test_missing_sheets_are_tolerated():
     fi.apply_fiscal_year_input(wb, fy_end_month=12)     # 不該爆
 
 
+def test_reported_week_based_label_survives_excel_default_recalculation():
+    wb, ws = _workbook_with_headers(['FY2010Q1'], ['2010-05-22'])
+    fi.apply_fiscal_year_input(wb, fy_end_month=1)
+    formula = ws.cell(fi.ROW_PERIOD_LABEL, 4).value
+    assert '"FY2010Q1"' in formula
+    assert f'{fi.FY_START_DEFINED_NAME}=2' in formula
+    assert '"FY2010FQ1"' in ws.cell(fi.ROW_FISCAL_QUARTER, 4).value
+
+
 # ── 字型與字級（2026-08-08 CTH 指定，TODO D0b）────────────────────────────
 #
 # 輸入格這一塊寫在 Index 上，字型／字級必須跟 excel_formatter 建的表格一致，

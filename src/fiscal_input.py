@@ -421,7 +421,7 @@ def _is_annual(ws) -> bool:
     return False
 
 
-def _apply_to_sheet(ws) -> None:
+def _apply_to_sheet(ws, start_month: int) -> None:
     annual = _is_annual(ws)
     for col_idx in range(_DATA_START_COL, ws.max_column + 1):
         period_end = str(ws.cell(ROW_PERIOD_END, col_idx).value or "")
@@ -429,10 +429,22 @@ def _apply_to_sheet(ws) -> None:
             # 舊申報沒帶期末日，公式沒有錨可用——保留原本寫死的標籤。
             continue
         col = get_column_letter(col_idx)
-        ws.cell(ROW_PERIOD_LABEL, col_idx).value = period_label_formula(col, annual)
+        source_label = str(ws.cell(ROW_PERIOD_LABEL, col_idx).value or '')
+        inferred = fiscal_quarter_of(period_end, start_month)
+        if annual:
+            inferred = inferred.split('Q')[0]
+        label_formula = period_label_formula(col, annual)
+        quarter_formula = fiscal_quarter_formula(col)
+        if source_label and source_label != inferred and not source_label.startswith('='):
+            # Preserve pipeline period identity at the original setting. An
+            # explicit user month override retains the existing display formula.
+            label_formula = f'=IF({FY_START_DEFINED_NAME}={start_month},{_xl_str(source_label)},{label_formula[1:]})'
+            fq = re.sub(r'Q([1-4])$', r'FQ\1', source_label)
+            quarter_formula = f'=IF({FY_START_DEFINED_NAME}={start_month},{_xl_str(fq)},{quarter_formula[1:]})'
+        ws.cell(ROW_PERIOD_LABEL, col_idx).value = label_formula
         ws.cell(ROW_CALENDAR_QUARTER, col_idx).value = calendar_quarter_formula(col)
         if not annual:
-            ws.cell(ROW_FISCAL_QUARTER, col_idx).value = fiscal_quarter_formula(col)
+            ws.cell(ROW_FISCAL_QUARTER, col_idx).value = quarter_formula
 
 
 def apply_fiscal_year_input(wb, fy_end_month: int) -> None:
@@ -454,7 +466,7 @@ def apply_fiscal_year_input(wb, fy_end_month: int) -> None:
 
     for name in ("Data_Financials(Q)", "Data_Financials(Y)"):
         if name in wb.sheetnames:
-            _apply_to_sheet(wb[name])
+            _apply_to_sheet(wb[name], start_month)
 
     # openpyxl 不算公式，寫出去的儲存格沒有快取值。不強制重算的話，Excel 有機會
     # 直接顯示空白（看起來像整排標籤不見了）。

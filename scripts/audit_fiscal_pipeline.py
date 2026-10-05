@@ -40,6 +40,8 @@ def document_period(entry):
 
 def audit(ticker, output):
     filings=[]
+    evidence=output.parent/(ticker+'-sec-listing.json')
+    official={r['accession_number']:r['reportDate'] for r in json.loads(evidence.read_text(encoding='utf-8'))} if evidence.exists() else {}
     for path in fc.ticker_dir(ticker).glob('*.json'):
         if not fc.ACCESSION_RE.fullmatch(path.stem): continue
         entry=json.loads(path.read_text(encoding='utf-8'))
@@ -48,7 +50,8 @@ def audit(ticker, output):
         obj=fc.cached_filing(entry)
         filings.append(SimpleNamespace(accession_no=path.stem,form=entry['form'],
             filing_date=date.fromisoformat(entry['filing_date'][:10]),
-            period_of_report=document_period(entry),obj=lambda obj=obj:obj))
+            period_of_report=official.get(path.stem) or document_period(entry),
+            report_date=official.get(path.stem) or document_period(entry),obj=lambda obj=obj:obj))
     filings.sort(key=lambda f:f.filing_date, reverse=True)
     company=SimpleNamespace(cik=None,name=ticker)
     fg.reset_cf_fallbacks()
