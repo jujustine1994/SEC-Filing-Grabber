@@ -499,30 +499,59 @@ UPDATE_LIST_KEY = "local_db_tickers"
 
 
 def get_update_list(cfg: dict) -> list[str]:
-    return normalize_tickers((cfg or {}).get(UPDATE_LIST_KEY) or [])
+    from database import database_root
+    return read_update_list(database_root())
+
+
+def read_update_list(root: Path) -> list[str]:
+    from database import read_json, read_marker, DatabaseError
+    data = read_json(root / "metadata" / "update_list.json")
+    if (data.get("format_version") != 1
+            or data.get("database_id") != read_marker(root)["database_id"]
+            or not isinstance(data.get("tickers"), list)
+            or not all(isinstance(t, str) for t in data["tickers"])):
+        raise DatabaseError("Invalid database update list; restore its verified metadata")
+    return normalize_tickers(data["tickers"])
+
+
+def write_update_list(root: Path, tickers) -> list[str]:
+    from database import read_marker
+    from database_io import write_metadata
+    normalized = normalize_tickers(tickers)
+    write_metadata(root, root / "metadata" / "update_list.json", {
+        "format_version": 1, "database_id": read_marker(root)["database_id"],
+        "tickers": normalized})
+    return normalized
 
 
 def set_update_list(cfg: dict, tickers) -> list[str]:
-    cfg[UPDATE_LIST_KEY] = normalize_tickers(tickers)
+    from database import database_root
+    cfg[UPDATE_LIST_KEY] = write_update_list(database_root(), tickers)
     return cfg[UPDATE_LIST_KEY]
 
 
 def add_tickers(cfg: dict, tickers) -> list[str]:
     """加進更新名單，回傳**真正新加的**那幾個（給 GUI 報「新增了 N 家」用）。"""
-    current = get_update_list(cfg)
-    existing = set(current)
-    added = [t for t in normalize_tickers(tickers) if t not in existing]
-    cfg[UPDATE_LIST_KEY] = current + added
-    return added
+    from database import database_root
+    from database_io import database_lock
+    with database_lock(database_root()):
+        current = get_update_list(cfg)
+        existing = set(current)
+        added = [t for t in normalize_tickers(tickers) if t not in existing]
+        set_update_list(cfg, current + added)
+        return added
 
 
 def remove_ticker(cfg: dict, ticker: str) -> bool:
-    target = str(ticker or "").strip().upper()
-    current = get_update_list(cfg)
-    if target not in current:
-        return False
-    cfg[UPDATE_LIST_KEY] = [t for t in current if t != target]
-    return True
+    from database import database_root
+    from database_io import database_lock
+    with database_lock(database_root()):
+        target = str(ticker or "").strip().upper()
+        current = get_update_list(cfg)
+        if target not in current:
+            return False
+        set_update_list(cfg, [t for t in current if t != target])
+        return True
 
 
 def import_from_watchlist(cfg: dict) -> list[str]:

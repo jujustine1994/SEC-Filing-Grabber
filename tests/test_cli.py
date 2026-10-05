@@ -557,6 +557,9 @@ def db_cfg(tmp_path, monkeypatch):
 def _write_cfg(path, data):
     import config
     config.save_config({**config.DEFAULT_CONFIG, **data}, path)
+    if "local_db_tickers" in data:
+        import local_db
+        local_db.set_update_list({}, data["local_db_tickers"])
 
 
 def test_update_db_list_prints_the_update_list(db_cfg, capsys):
@@ -578,8 +581,7 @@ def test_update_db_import_watchlist_writes_config_and_does_not_fetch(db_cfg, cap
     finally:
         local_db.update_local_db = _orig
     assert called == []
-    assert json.loads(db_cfg.read_text(encoding="utf-8"))["local_db_tickers"] \
-        == ["AAPL", "NVDA"]
+    assert local_db.get_update_list({}) == ["AAPL", "NVDA"]
 
 
 def test_update_db_errors_when_the_list_is_empty(db_cfg, capsys):
@@ -677,7 +679,7 @@ def test_db_status_json_carries_the_root_path_and_per_company_rows(
     payload = json.loads(capsys.readouterr().out)
     assert payload["companies"] == 2
     assert payload["filings"] == 3
-    assert "filing_cache" in payload["root"]
+    assert "filings" in payload["root"]
     rows = {r["ticker"]: r for r in payload["companies_detail"]}
     assert rows["AAPL"]["filings"] == 2
     # 收件日與財報期間**兩組都給**，欄名分開，呼叫端不會混用
@@ -688,7 +690,6 @@ def test_db_status_json_carries_the_root_path_and_per_company_rows(
 
 def test_db_status_on_an_empty_database_says_so_instead_of_crashing(
         tmp_path, monkeypatch, capsys):
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "nope"))
     assert cli.main(["db-status"]) == 0
     assert "空的" in capsys.readouterr().out
 

@@ -243,12 +243,14 @@ def test_update_list_normalises_case_whitespace_and_duplicates():
 
 def test_add_tickers_returns_only_the_ones_that_were_actually_new():
     cfg = {local_db.UPDATE_LIST_KEY: ["AAPL"]}
+    local_db.set_update_list(cfg, cfg[local_db.UPDATE_LIST_KEY])
     assert local_db.add_tickers(cfg, ["aapl", "NVDA"]) == ["NVDA"]
     assert cfg[local_db.UPDATE_LIST_KEY] == ["AAPL", "NVDA"]
 
 
 def test_remove_ticker():
     cfg = {local_db.UPDATE_LIST_KEY: ["AAPL", "NVDA"]}
+    local_db.set_update_list(cfg, cfg[local_db.UPDATE_LIST_KEY])
     local_db.remove_ticker(cfg, "nvda")
     assert cfg[local_db.UPDATE_LIST_KEY] == ["AAPL"]
 
@@ -256,6 +258,7 @@ def test_remove_ticker():
 def test_import_from_watchlist_reads_the_ticker_field():
     cfg = {"watchlist": [{"ticker": "AAPL", "name": "Apple"}, {"ticker": "NVDA"}],
            local_db.UPDATE_LIST_KEY: ["AAPL"]}
+    local_db.set_update_list(cfg, cfg[local_db.UPDATE_LIST_KEY])
     assert local_db.import_from_watchlist(cfg) == ["NVDA"]
     assert cfg[local_db.UPDATE_LIST_KEY] == ["AAPL", "NVDA"]
 
@@ -660,7 +663,8 @@ def test_overview_rows_are_alphabetical_and_mark_the_update_list(cache_dir):
     for ticker in ("NVDA", "AAPL", "MSFT"):
         _write_filing(ticker, _acc(1), form="10-Q", filing_date="2020-05-01")
 
-    rows = local_db.overview_rows({"local_db_tickers": ["AAPL"]})
+    local_db.set_update_list({}, ["AAPL"])
+    rows = local_db.overview_rows({})
     assert [r["ticker"] for r in rows] == ["AAPL", "MSFT", "NVDA"]
     assert [r["in_list"] for r in rows] == [True, False, False]
 

@@ -466,7 +466,7 @@ def cmd_update_db(args: argparse.Namespace) -> int:
     import local_db
     from config import CONFIG_PATH, load_config, save_config
 
-    cfg = load_config()
+    cfg = load_config(Path(args.config_path) if args.config_path else None)
     touched = False
     if args.import_watchlist:
         added = local_db.import_from_watchlist(cfg)
@@ -484,8 +484,7 @@ def cmd_update_db(args: argparse.Namespace) -> int:
         removed = [t for t in args.remove if local_db.remove_ticker(cfg, t)]
         print(f"移除 {len(removed)} 家：{', '.join(removed) or '（無異動）'}")
         touched = True
-    if touched:
-        save_config(cfg, args.config_path or CONFIG_PATH)
+    # Update lists are persisted by local_db inside the database, not AppData.
 
     targets = local_db.normalize_tickers(args.tickers) or local_db.get_update_list(cfg)
     if args.list or touched:
