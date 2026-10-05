@@ -72,6 +72,7 @@ Copy-Item (Join-Path $Root "src") $Pkg -Recurse
 # docs/ 只帶 README 有連到的那一份，其餘內部開發紀錄不外流
 New-Item -ItemType Directory -Force (Join-Path $Pkg "docs") | Out-Null
 Copy-Item (Join-Path $Root "docs\8k-period-off-by-one.md") (Join-Path $Pkg "docs")
+Copy-Item (Join-Path $Root "docs\DATABASE.md") (Join-Path $Pkg "docs")
 
 # 快取不要跟著出去。管線進來的路徑一律用 -LiteralPath，
 # 直接 `| Remove-Item -Recurse -Force` 會被 Claude Code 的沙箱防護擋掉。
@@ -167,7 +168,7 @@ Check "output/ 是空的" (($outFiles -join ',') -eq '.gitkeep') "有：$($outFi
 
 # 12 內部文件沒外流
 $docs = Get-ChildItem (Join-Path $V "docs") -Name
-Check "docs/ 只有 8k-period-off-by-one.md" (($docs -join ',') -eq '8k-period-off-by-one.md') "有：$($docs -join ', ')"
+Check "docs/ 只有 8k-period-off-by-one.md" ((($docs | Sort-Object) -join ',') -eq '8k-period-off-by-one.md,DATABASE.md') "有：$($docs -join ', ')"
 
 # 收尾
 Remove-Item -Recurse -Force -LiteralPath $Stage

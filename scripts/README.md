@@ -52,3 +52,8 @@
 | **判斷標準** | 最新季 7 個 key rows（Revenue/Gross Profit/Operating Income/Net Income/OCF/Capex/FCF）全非 None | key rows 近 4 季有 ≥1 非 None + B1 overflow 結構完整 + CF YTD 減法正確 |
 | **耗時** | 較長（完整抓取） | 約 12 分鐘（8 季/ticker） |
 | **適合場景** | 開發後手動驗收、懷疑某公司資料有問題時 | 改動 fetcher 後確認沒有迴歸 |
+# 資料庫改版（2026-10-05）
+
+正式財報已與 repo 分離，scripts 透過 filing_cache.cache_root() 連接有 marker 的獨立庫，不使用 repo/local_db 路徑。CLI 管理操作見 [DATABASE.md](../docs/DATABASE.md)。過夜腳本使用 USERPROFILE/venvs/SEC Financial Tools 的 Python，先驗證連接，再從資料庫讀更新名單；失敗即停止。
+
+GUI probes 在 OS 暫存區建立明確 test marker，不碰使用者正式庫或 AppData 設定。測試清理直接作用於已驗證的隔離 fixture；正式 clear_ticker/clear_all 永遠拒絕。

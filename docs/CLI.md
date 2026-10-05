@@ -154,3 +154,18 @@ JSON 整個 `json.load()` 進來，實測 **2.75 秒/家、244 家約 11 分鐘*
 - **中斷不會白費**：逐份即時落檔，重跑會自動跳過已完成的
 - 離開碼：0 全部成功／1 有公司失敗／2 參數或設定有問題
 - 這條是給 **Windows 工作排程器**掛半夜跑用的——GUI 開著過夜不可靠（更新、休眠）
+# 永久資料庫管理（2026-10-05）
+
+程式與資料分離，先連接有效資料庫才更新。PowerShell 的 Python 位置為 `$env:USERPROFILE/venvs/SEC Financial Tools/Scripts/python.exe`；本文舊 `./venv/` 路徑是歷史示例。完整操作與保存規則見 [DATABASE.md](DATABASE.md)。
+
+| 指令 | 行為 |
+|---|---|
+| `db-create PATH` | 在程式外的新空目錄建立資料庫並連接 |
+| `db-connect PATH` | 驗證 marker/UUID 後登記既有資料庫 |
+| `db-migrate --source PATH --destination PATH` | 原樣複製、逐檔 SHA-256 校驗，成功後連接，保留來源 |
+| `db-snapshot [--destination PATH]` | 建立一致的完整目錄式快照；預設寫入 snapshots |
+| `db-verify-snapshot PATH` | 驗證快照內容、檔案清單與身分 |
+| `db-restore SNAPSHOT --destination PATH` | 還原到新空目錄；不自動連接 |
+| `db-status --json -` | 顯示 database_root、database_id、連接狀態與公司資訊 |
+
+上述管理命令與 db-status 支援 `--config-path PATH`。失聯回非零碼並提示 db-connect；不把失聯當空庫。update-db 的名單維護寫入資料庫 metadata，不再存回 config；`--remove` 不刪財報。重新解析保留歷史，版本檢查仍嚴格；保存失敗回報 failed。

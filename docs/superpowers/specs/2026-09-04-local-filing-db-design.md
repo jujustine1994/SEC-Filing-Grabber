@@ -1,3 +1,5 @@
+> Historical design: database location, update-list ownership and deletion APIs were superseded on 2026-10-05. See [current database guide](../../DATABASE.md) and [approved independent database design](../specs/2026-10-05-independent-sec-database-design.md).
+
 # 設計：本地財報資料庫（filing 快取升級）
 
 > 2026-09-04。CTH 指定方向：**本地資料庫「抓過不用重抓」是本專案的核心能力**。

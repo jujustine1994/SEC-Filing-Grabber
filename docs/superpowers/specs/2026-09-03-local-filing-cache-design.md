@@ -1,3 +1,5 @@
+> Historical design: database location, update-list ownership and deletion APIs were superseded on 2026-10-05. See [current database guide](../../DATABASE.md) and [approved independent database design](../specs/2026-10-05-independent-sec-database-design.md).
+
 # 本地 filing 快取 設計
 
 > 2026-09-03 · 對應 `docs/TODO.md`（待補條目）

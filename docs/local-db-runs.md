@@ -1,5 +1,17 @@
 # 本地財報資料庫：分批抓取記錄（TODO J5）
 
+## 2026-10-05：獨立資料庫搬遷
+
+- 來源：`C:/Users/CTH/Documents/Code/SEC Financial Tools/local_db/filing_cache`。
+- 正式庫：`C:/Users/CTH/Documents/SEC財報資料庫`。程式仍負責更新，庫內保存名單與版本歷史。
+- 215 個公司目錄、14,633 個檔案，其中 14,417 份財報；共 1,597,476,437 bytes。
+- 17:29:34（台北時間）完成來源／目的地逐檔 size 與 SHA256 核對，連接設定才切換。原始檔案完整保留；詳細報告在新庫 `metadata/migration.json`。
+- AAPL、NVDA 各取最新四份 10-Q，六張原始 DataFrame 以及 segments builder 輸出搬前搬後一致（分別 5 與 7 張拆分表），全程離線。
+- GUI 概覽與更新流程 probes 通過，非 slow 測試 1,658 項通過。
+- 本機完整快照 `snapshots/20261005_173403_9332e679` 的 14,636 個檔案通過校驗，還原至 OS 暫存區的新目錄後全檔核對通過；還原庫未連接。正式庫 UUID：`42e7c8f0-9713-43b9-b1dc-c0295d47790d`。
+- 審查修正：設定損毀不被語言設定覆寫、GUI 保存偏好不撤銷 CLI 連接、重試保存失敗不遺失、GUI/CLI 顯示保存警告、還原校驗完成才發布 marker、過夜／打包腳本去除多餘 BOM、體檢改讀已連接資料庫。全部有隔離回歸驗證。
+- 本機快照與保留舊庫都在同一磁碟；本次未配置獨立外部備份。操作見 [DATABASE.md](DATABASE.md)；下方舊庫路徑是歷史紀錄。
+
 > universe＝`output/_hintsweep_201/tickers_joined.txt`（**201 家**）。
 > 分批的挑選規則是「照字母序取還沒抓過的前 N 家」
 > （`scripts/audit_local_db.py --plan-next N`），**可重現，批次之間不漏也不重複**。

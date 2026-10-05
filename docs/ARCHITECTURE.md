@@ -1,5 +1,15 @@
 # SEC Financial Fetcher — Architecture
 
+## 永久資料庫架構（2026-10-05）
+
+目前正式資料庫在程式專案外的 Windows Documents/SEC財報資料庫。`database.py` 集中解析 Known Folder、驗證 UUID 與連接；`database_io.py` 用跨程序可重入鎖提交財報／metadata，財報替換前保存 SHA-256 歷史；`database_transfer.py` 只複製並核對搬遷、快照與還原。`filing_cache.py` 保留讀取與 DataFrame 相容介面，但不再管理可丟棄快取；clear_ticker/clear_all 全部拒絕。
+
+AppData config 僅保存 database_path/database_id 與個人設定。更新名單以資料庫 metadata/update_list.json 為準；原 config 名單只在搬遷時匯入一次，空名單不回填。失聯不建立空庫，不轉回舊路徑；GUI 保留修復連接的入口。持久化失敗列在 FetchLedger.persistence_errors、GUI／報表摘要與 update-db failed 結果。
+
+新路徑不改現有 JSON schema/parser version，舊版 parser 資料仍受相容性檢查。自動清理只處理 staging，正式財報、history、snapshots 不清理。原專案 local_db/filing_cache 是保留副本，Git 不包含正式資料。以下 2026-09 的快取位置、清除操作與 config 名單描述屬於歷史架構，現行規則以本節及 [DATABASE.md](DATABASE.md) 為準。
+
+完整設計與驗證流程見 [規格](superpowers/specs/2026-10-05-independent-sec-database-design.md) 與 [實作計畫](superpowers/plans/2026-10-05-independent-sec-database.md)。
+
 ## File Map
 
 > 2026-08-12 目錄結構整理：17 個 `.py` 全部搬進 `src/`（下表路徑已更新），

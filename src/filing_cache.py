@@ -1,29 +1,9 @@
-"""
-filing_cache.py — 本地 filing 解析快取（`<專案根目錄>/local_db/filing_cache/`）。
+"""Permanent SEC filing access and DataFrame compatibility layer.
 
-快取卡在**解析層與比對層之間**：存的是 edgartools 解出來的三張 DataFrame
-（income statement / balance sheet / cashflow statement），比對層
-（`IS/BS/CF_TEMPLATE` 那套科目對照）永遠在快取之上即時重跑。所以以後改
-hint regex、加比率、調 Q4 合成邏輯都不會讓快取失效——但 **edgartools 升版
-會**，那是另一條軸線，靠 `edgartools_version` 欄位擋（見 `load_filing`）。
-
-⚠ **加欄位前先問：能不能從舊檔既有資訊推導出來？能，就不要動
-`SCHEMA_VERSION`。** 升版是核彈級動作——全庫作廢、重抓 11 小時。
-`fetched_keys`（2026-09-20）是第一個照這條規矩做的案例：既有 14,417 份都
-沒有這個欄位，但它們全是 `schema_version=2`，而 v2 的定義就是「六張表全抓」，
-所以 `load_filing()` 讀到缺欄位時直接推導補上，檔案一個位元組都不用改。
-
-事實來源是 `<accession>.json` 檔案本身，也是唯一的落地狀態——「哪些公司有
-快取」直接掃 `filing_cache/` 底下有哪些子資料夾回答（見 `list_cached_tickers()`），
-不維護額外的索引檔。
-
-**2026-09-18 從 `%APPDATA%` 搬到專案資料夾固定路徑**：這份資料是花真金白銀
-（SEC 網路請求時間）抓下來的，語意上是「永久資料庫」，不是「可隨時重建的
-快取」——但它原本躺在 `%APPDATA%`，那個位置在 Windows 語意上就是「系統可以
-清掉的東西」（重灌、系統清理工具、防毒軟體都可能動它）。201 家、13,921 份
-的資料就是這樣憑空消失的（起因是 GUI 的「全部清除」按鈕被按過，但放在
-`%APPDATA%` 這件事本身也是風險）。搬進專案資料夾底下的 `local_db/` 後，跟
-其他你會留意、會備份的專案檔案放在一起，`.gitignore` 排除掉不進版控。
+The connected independent database owns filings, history and metadata.
+Writes preserve previous bytes before replacement; legacy delete APIs always
+refuse. Only staging can be cleaned. Parser/schema checks remain strict.
+See docs/DATABASE.md and the 2026-10-05 independent database design.
 """
 from __future__ import annotations
 
@@ -69,10 +49,9 @@ def _now_iso() -> str:
 
 # ── 路徑 ──────────────────────────────────────────────────────────────────
 #
-# 固定放在專案資料夾底下的 `local_db/filing_cache/`——刻意不跟 `config.py`
-# 一樣走 `%APPDATA%`：這份資料是永久資料庫，不是可隨時重建的快取，不該放在
-# 語意上「系統可以清掉」的地方。`SEC_LOCAL_DB_ROOT` 環境變數可覆寫（只給
-# 測試用，導去 tmp_path），每次呼叫重讀環境變數。
+# 財報屬於獨立永久資料庫，AppData 設定只保存連接路徑與 UUID。
+# cache_root 是舊呼叫介面的相容名稱；實際指向已連接資料庫的 filings。
+# 環境覆寫仍須有有效 marker，失聯不建立空庫。參閱 docs/DATABASE.md。
 
 def _project_root() -> Path:
     return Path(__file__).resolve().parent.parent

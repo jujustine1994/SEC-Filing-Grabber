@@ -63,11 +63,11 @@
 | `logs/` | 本機執行紀錄 |
 | `20260814 sec tool.zip` | 舊的打包產物 |
 | `dist/` | 本次與過去的打包產物 |
-| `local_db/` | **本地財報資料庫，抓滿約 1 GB**（2026-09-18 從 `%APPDATA%` 搬進專案資料夾）。收件人的程式會自己建、自己抓；包進去會讓 zip 從 200 KB 變成 1 GB。白名單複製本來就不會碰到它，列在這裡是提醒**不要哪天手滑把它加進白名單** |
+| `local_db/`、`database.json`、`filings/`、`history/`、`snapshots/` | 不分送財報與私人追蹤資料。2026-10-05 正式庫移到專案外；local_db 僅是保留的舊庫副本，仍不得加入白名單。收件人須明確新建或連接自己的資料庫 |
 | `.pytest_cache/`、`__pycache__/`（所有層級）、`*.pyc` | 快取 |
 | `.claude/`、`.superpowers/` | 開發環境設定 |
 | `tests/`、`conftest.py`、`scripts/` | 對純使用者無用；`scripts/` 另含開發用工具 |
-| `docs/`（除了 `8k-period-off-by-one.md`） | **內部開發紀錄**：`CHANGELOG.md` 一個就 84 KB，還有 `ARCHITECTURE` / `PITFALLS` / `TODO` / `superpowers/plans/` 的設計討論。收件人一個字都用不到，而且是內部資料。排掉之後包從 340 KB 降到約 200 KB（CTH 2026-08-17 決定） |
+| `docs/`（除了 `8k-period-off-by-one.md`、`DATABASE.md`） | 其他內容屬內部開發紀錄；DATABASE.md 是新建／連接／快照還原的收件人操作說明，必須帶入 |
 
 ### 機敏資訊：天生不在專案內（已查證，不必額外處理）
 
@@ -76,11 +76,7 @@
 個人輸出路徑全部在專案資料夾外**，壓 zip 碰不到。專案內只有
 `config.example.json`，內容是假的範例值。
 
-⚠ **2026-09-18 起有一個例外**：本地財報資料庫（`local_db/`）搬進**專案資料夾內**
-了（`filing_cache.cache_root()`）。內容是 SEC 公開財報，不是機敏資料，但有
-**1 GB**，而且看得出 CTH 在追蹤哪些公司。走白名單複製本來就不會包到，上面的
-排除表也明列了——但「機敏資訊天生不在專案內」這句話從此**不再是全稱**，
-新增白名單項目時要記得這件事。
+2026-10-05 正式財報移到專案外的 Documents/SEC財報資料庫；連接位置與 UUID 留在 AppData config，config.example.json 只能有空連接欄位。原 local_db 副本仍是本機資料，不包進 zip。src 的新資料庫模組要一併分送，DATABASE.md 也要帶入；啟動後不能偷偷建立空庫。
 
 §5 的驗證步驟仍要實際 grep 一次，不要因為「理論上不會有」就跳過。
 

@@ -4,7 +4,7 @@
 
 ## 三層資料
 
-1. `local_db/filing_cache/<TICKER>/<accession>.json`：既有解析財報。income_statement 含合併營收、OP 和部分分類 rows；保留 concept、dimension_axis、dimension_member、所有期間欄位。資料不是每個維度的完整披露，通常沒有 CFO commentary 的細節。單位常是美元而不是百萬美元，需要核對。cached_at 不是財報期間或更新日期。schema/parser version 是抽取版本，不證明內容完整。
+1. 獨立資料庫 `filings/<TICKER>/<accession>.json`：既有解析財報。透過 repo/src 的集中連接介面找資料庫，不拼接 repo/local_db。income_statement 含合併營收、OP 和部分分類 rows；保留 concept、dimension_axis、dimension_member、所有期間欄位。資料不是每個維度的完整披露，通常沒有 CFO commentary 的細節。單位常是美元而不是百萬美元，需要核對。cached_at 不是財報期間或更新日期。schema/parser version 是抽取版本，不證明內容完整。
 2. `output/<TICKER>_sec_sources/manifest.json` 與 raw：完整 SEC 原文與附件，是新增分類和矛盾核對的證據。local_context 會驗證完整狀態、CIK、路徑及 SHA-256。
 3. 使用者資料、公司 IR、AI 額外搜尋結果：用 `--supplement` 明確登記檔案，保留來源 URL/日期。AI 自己知道的數字不能作為已驗證數據；找到原始來源後才納入。supplement 是未驗證輔助資料，不自動覆蓋前兩層。
 
@@ -16,7 +16,7 @@
 python <skill目錄>/scripts/local_context.py --repo "C:/Users/CTH/Documents/Code/SEC Financial Tools" --ticker NVDA --start 2024-11-01 --end 2026-10-05 --source-pack "output/NVDA_sec_sources" --supplement "output/nvda_revenue_pilot/dataset.json" --out "output/NVDA_local_context.json"
 ```
 
-相對路徑以 shell 工作目錄為準；不在 repo 時使用絕對路徑。不具備 source pack 時先省略該參數匯出本地資料，再補來源。沒有本地 cache 時結果清單為空，改走官方來源流程，不表示公司未披露。
+相對路徑以 shell 工作目錄為準；不在 repo 時使用絕對路徑。--repo 指程式位置，資料庫位置由連接設定決定；失聯會報錯，先用 cli.py db-connect 修復，不能當成公司未披露。不具備 source pack 時先省略該參數匯出本地資料，再補來源。連接有效但尚無該公司財報時清單才為空。重新解析歷史在庫內 history，單一 accession 的 current 與歷史不得當成兩個獨立披露佐證。操作與備份見專案 docs/DATABASE.md。
 
 讀取 context 後先選目標季度的當期欄位，再保留比較期/年度/YTD 供推導及重編核對；不能對多份 filings 的所有欄位盲目 concat。以 CIK、accession、period、concept、dimension、presentation 定位資料，重分類的比較數另存版本。每筆使用的 local row 引用 source_id 加 concept/axis/member/期間欄位；原文驗證另掛 SEC source_id，不能把同源資料算成兩個獨立證據。
 
