@@ -67,7 +67,7 @@ import fetcher_gaap as fg          # noqa: E402
 import filing_cache                # noqa: E402
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CACHE = ROOT / "local_db" / "filing_cache"
+CACHE = filing_cache.cache_root()
 OUT = ROOT / "output" / "_holes"
 
 DATE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:\s+\((\w+)\))?")

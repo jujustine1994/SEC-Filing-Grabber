@@ -22,6 +22,13 @@ import sys, threading, time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+import os, tempfile
+from database import create_database
+_probe_root = Path(tempfile.mkdtemp(prefix='sec_probe_'))
+create_database(_probe_root, test_mode=True)
+os.environ['SEC_LOCAL_DB_ROOT'] = str(_probe_root)
+os.environ['SEC_CONFIG_PATH'] = str(_probe_root / 'probe-config.json')
+
 
 import tkinter as tk
 from tkinter import messagebox
@@ -106,8 +113,8 @@ local_db.update_local_db = fake_update
 app._start_local_db_update()
 root.update()
 check("開跑後 is_running=True", app.is_running is True)
-check("開跑後清除鈕被鎖", str(app._cache_clear_all_btn.cget("state")) == "disabled",
-      app._cache_clear_all_btn.cget("state"))
+check("開跑後清除鈕被鎖", str(app._localdb_run_btn.cget("state")) == "disabled",
+      app._localdb_run_btn.cget("state"))
 check("開跑後「更新本地庫」自己也被鎖", str(app._localdb_run_btn.cget("state")) == "disabled",
       app._localdb_run_btn.cget("state"))
 check("開跑後 Tab1 抓取鈕被鎖", str(app.btn_run_single.cget("state")) == "disabled",
@@ -116,8 +123,8 @@ release.set()
 
 done = pump(root, seconds=8.0, until=lambda: not app.is_running)
 check("跑完 is_running 回 False（db_done 有被消化）", done and not app.is_running)
-check("跑完清除鈕解鎖", str(app._cache_clear_all_btn.cget("state")) == "normal",
-      app._cache_clear_all_btn.cget("state"))
+check("跑完清除鈕解鎖", str(app._localdb_run_btn.cget("state")) == "normal",
+      app._localdb_run_btn.cget("state"))
 check("跑完 Tab1 抓取鈕解鎖", str(app.btn_run_single.cget("state")) == "normal",
       app.btn_run_single.cget("state"))
 check("ticker 有正確傳進去", calls.get("tickers") == ["AAPL", "NVDA"], calls)

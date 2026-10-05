@@ -150,11 +150,12 @@ class FetchLedger:
         GUI 與 Excel 的 Index 頁共用同一句——兩邊講的是同一件事，
         分開寫遲早會不一致。
         """
+        persistence = t("fetch.persistence_failed", n=len(self.persistence_errors)) if self.persistence_errors else ""
         if not self.gaps:
-            return ""
+            return persistence
         names = [g.where for g in self.gaps]
         shown = t("xls.meta.sep").join(names[:_MAX_LISTED])
         if len(names) > _MAX_LISTED:
             shown += t("fetch.gaps_ellipsis")
         key = "fetch.gaps_network" if self.network_blamed else "fetch.gaps_data"
-        return t(key, n=len(names), periods=shown)
+        return (persistence + " " if persistence else "") + t(key, n=len(names), periods=shown)

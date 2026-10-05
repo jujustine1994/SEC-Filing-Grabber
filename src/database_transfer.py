@@ -105,6 +105,11 @@ def migrate_database(source: Path, destination: Path, tickers: list[str], *,
                       created_at=migration['created_at'], test_mode=False)
         if (destination/'database.json').exists() and read_marker(destination) != marker:
             raise DatabaseError('Existing destination identity differs from migration')
+        if (destination/'database.json').exists() and (destination/'metadata/migration.json').exists():
+            completed = read_json(destination/'metadata/migration.json')
+            if completed.get('verified') is True and completed.get('files') == before:
+                connect_database(destination, config_path=config_path)
+                return completed
         atomic_json(destination/'metadata/update_list.json',
                     dict(format_version=1, database_id=marker['database_id'], tickers=migration['tickers']))
         report = dict(migration, verified=True,

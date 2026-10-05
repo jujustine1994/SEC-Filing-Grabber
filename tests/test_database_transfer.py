@@ -82,3 +82,43 @@ def test_migration_overlap_rejected(tmp_path):
     source = legacy(tmp_path)
     with pytest.raises(DatabaseError):
         migrate_database(source, source/'child', [], config_path=tmp_path/'cfg')
+
+
+def test_repeated_completed_migration_keeps_new_update_list(tmp_path):
+    source = legacy(tmp_path)
+    dest = tmp_path/'dest'
+    cfg = tmp_path/'cfg'
+    migrate_database(source, dest, ['NVDA'], config_path=cfg)
+    from local_db import write_update_list
+    write_update_list(dest, ['NEW'])
+    migrate_database(source, dest, ['NVDA'], config_path=cfg)
+    from local_db import read_update_list
+    assert read_update_list(dest) == ['NEW']
+
+
+def test_partial_copy_can_resume_without_overwrite(tmp_path, monkeypatch):
+    import database_transfer
+    source = legacy(tmp_path)
+    dest = tmp_path/'dest'
+    cfg = tmp_path/'cfg'
+    real = database_transfer._copy_verified
+    calls = []
+    def stop(*args):
+        if calls:
+            raise OSError('disk full')
+        calls.append(1)
+        return real(*args)
+    monkeypatch.setattr(database_transfer, '_copy_verified', stop)
+    with pytest.raises(OSError):
+        migrate_database(source, dest, [], config_path=cfg)
+    assert not cfg.exists()
+    monkeypatch.setattr(database_transfer, '_copy_verified', real)
+    assert migrate_database(source, dest, [], config_path=cfg)['verified']
+
+
+def test_corrupt_snapshot_bytes_cannot_restore(isolated_database, tmp_path):
+    snapshot = create_snapshot(isolated_database)
+    (snapshot/'metadata/update_list.json').write_bytes(b'broken')
+    with pytest.raises(DatabaseError):
+        restore_snapshot(snapshot, tmp_path/'restore')
+    assert not (tmp_path/'restore').exists()

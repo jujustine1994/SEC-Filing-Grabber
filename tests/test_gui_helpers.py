@@ -154,10 +154,13 @@ def test_pack_wrapped_chips_clears_previous_chips(tk_root):
 # 「打字→清單出現在輸入框正下方；清空→收起來」整段釘住。
 
 @pytest.fixture
-def compare_window(tk_root):
+def compare_window(tk_root, monkeypatch):
     """真的把「選擇比較內容」視窗建起來。tkinter 版面沒有辦法用假物件驗——
     這兩個 bug 都是版面問題，不開視窗就測不到。"""
     import main as main_mod
+
+    monkeypatch.setattr(main_mod.SECFetcherApp, '_load_company_cache',
+                        lambda self: {'INTC': 'INTEL CORP', 'NVDA': 'NVIDIA CORP'})
 
     app = main_mod.SECFetcherApp(tk_root)
     app.compare_selected_tickers = [("NVDA", "NVIDIA CORP")]

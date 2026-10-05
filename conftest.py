@@ -11,10 +11,13 @@ sys.path.insert(0, str(_ROOT / "src"))
 def isolated_database(tmp_path, monkeypatch):
     """No offline test may fall through to the user's permanent database."""
     from database import create_database
-    root = tmp_path / "database"
+    root = tmp_path.parent / (tmp_path.name + "-database")
     create_database(root, test_mode=True)
     monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(root))
-    monkeypatch.setenv("SEC_CONFIG_PATH", str(tmp_path / "config.json"))
+    monkeypatch.setenv("SEC_CONFIG_PATH", str(tmp_path.parent / (tmp_path.name + "-config.json")))
+    if "main" in sys.modules:
+        monkeypatch.setattr(sys.modules["main"], "CONFIG_PATH",
+                            tmp_path.parent / (tmp_path.name + "-config.json"))
     yield root
 
 

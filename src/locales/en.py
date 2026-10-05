@@ -12,6 +12,8 @@ column for English users.
 
 from __future__ import annotations
 
+
+
 STRINGS: dict[str, str] = {
     # ── Income statement ────────────────────────────────────────────────
     "acct.Income Statement": 'Income statement',
@@ -358,7 +360,6 @@ STRINGS: dict[str, str] = {
     'gui.frame.add_company': ' Add company ',
     'gui.frame.ai_settings': ' AI settings (needed for Non-GAAP; GAAP works without it) ',
     'gui.frame.fetch_settings': ' Fetch settings ',
-    'gui.frame.filing_cache': 'Local data cache',
     'gui.frame.optional_sheets': ' Optional sheets (shown after a scan) ',
     'gui.frame.progress': ' Progress ',
     'gui.frame.watchlist_current': ' Current watchlist ',
@@ -627,3 +628,7 @@ STRINGS: dict[str, str] = {
     'gui.db.log_gaps': 'WARNING: fetch gaps found, re-run these separately later: {tickers}',
     'gui.db.log_failed': 'Local DB update failed, elapsed {elapsed}',
 }
+
+STRINGS.update({"gui.db.connect":"Connect database","gui.db.create":"Create database","gui.db.migrate":"Migrate database","gui.db.snapshot":"Create snapshot","gui.db.disconnected":"Database disconnected. Connect, create, or migrate it in advanced settings.","gui.db.completed":"Database operation completed: ","gui.frame.filing_cache":"SEC financial database"})
+
+STRINGS["fetch.persistence_failed"] = "Could not persist {n} filings to the database. Reports may exist; fix the storage issue and update again."

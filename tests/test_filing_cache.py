@@ -222,11 +222,11 @@ def test_memo_does_not_leak_between_statements():
 # ── 路徑與原子寫入 ────────────────────────────────────────────────────────
 
 @pytest.fixture
-def cache_dir(tmp_path, monkeypatch):
+def cache_dir(tmp_path, monkeypatch, isolated_database):
     """把快取根目錄導到 tmp_path。`cache_root()` 每次呼叫重讀環境變數，
     所以 monkeypatch 就夠了，不用改模組層常數。"""
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "database"))
-    return tmp_path / "database" / "filings"
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(isolated_database))
+    return isolated_database / "filings"
 
 
 def test_cache_root_discovers_valid_independent_default(monkeypatch, isolated_database):

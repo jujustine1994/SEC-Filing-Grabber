@@ -1,4 +1,4 @@
-﻿# overnight_update_db.ps1 — 整夜更新本地財報資料庫（TODO J8 的重抓）
+﻿﻿# overnight_update_db.ps1 — 整夜更新本地財報資料庫（TODO J8 的重抓）
 #
 # 雙擊 `過夜更新資料庫.bat` 執行，**全程不需要 AI**（跟 watchdog_h0_baseline.sh
 # 同一個設計原則：成果不依賴 AI 還活著，也不吃額度）。
@@ -26,7 +26,7 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
 
-$Py = Join-Path $Root "venv\Scripts\python.exe"
+$Py = Join-Path $env:USERPROFILE "venvs\SEC Financial Tools\Scripts\python.exe"
 $Stamp = Get-Date -Format "yyyyMMdd_HHmmss"
 $OutDir = Join-Path $Root "output\_localdb"
 $LogFile = Join-Path $OutDir "overnight_$Stamp.log"
@@ -83,6 +83,12 @@ if (-not (Test-Path $Py)) {
     Read-Host "按 Enter 關閉"; exit 1
 }
 
+& $Py src/cli.py db-status --json (Join-Path $OutDir "database_connection_$Stamp.json")
+if ($LASTEXITCODE -ne 0) {
+    Log "Database disconnected. Run cli.py db-connect PATH before updating."
+    exit 1
+}
+
 $identity = & $Py -c @"
 import sys; sys.path.insert(0, 'src')
 from config import load_config
@@ -93,12 +99,14 @@ if (-not $identity) {
     Read-Host "按 Enter 關閉"; exit 1
 }
 
-$tickers = (& $Py -c @"
+$tickerOutput = & $Py -c @"
 import sys; sys.path.insert(0, 'src')
 from config import load_config
 import local_db
 print(' '.join(local_db.get_update_list(load_config())))
-"@).Trim() -split '\s+' | Where-Object { $_ }
+"@
+if ($LASTEXITCODE -ne 0) { Log "Cannot read database update list"; exit 1 }
+$tickers = ($tickerOutput -join " ").Trim() -split '\s+' | Where-Object { $_ }
 
 if ($tickers.Count -eq 0) {
     Log "更新名單是空的——先在「進階設定」→「更新名單」建一份"

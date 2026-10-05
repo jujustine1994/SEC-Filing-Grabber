@@ -13,8 +13,11 @@ def export(repo, ticker, start, end, out, source_pack=None, supplements=()):
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9.-]{0,19}", ticker):
         raise ValueError("Invalid ticker")
     out = Path(out).resolve()
+    import sys
+    sys.path.insert(0, str(repo / "src"))
+    import filing_cache
     entries, warnings = [], []
-    for path in sorted((repo / "local_db/filing_cache" / ticker).glob("*.json")):
+    for path in sorted(filing_cache.ticker_dir(ticker).glob("*.json")):
         if not re.fullmatch(r"\d{10}-\d{2}-\d{6}", path.stem):
             continue
         data = path.read_bytes()

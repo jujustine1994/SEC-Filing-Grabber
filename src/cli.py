@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -29,6 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from config import load_config
+from database import DatabaseError
 import i18n
 from errsafe import _exc_status
 from excel_writer import check_output_writable, write_statements
@@ -762,7 +764,11 @@ def cmd_db_status(args: argparse.Namespace) -> int:
     summary = local_db.overview_summary(rows)
 
     if args.json:
-        _emit_json({"root": str(cache_root()), **summary, "companies_detail": rows},
+        from database import database_root, read_marker
+        marker = read_marker(database_root())
+        _emit_json({"root": str(cache_root()), "database_root": str(database_root()),
+                    "database_id": marker["database_id"], "connected": True,
+                    **summary, "companies_detail": rows},
                    args.json)
         return 0
 
@@ -907,7 +913,50 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("--json", nargs="?", const="-", metavar="PATH",
                    help="輸出 JSON；不給路徑或給 - 就印到 stdout")
     c.set_defaults(func=cmd_compare)
+    for name in ('db-create', 'db-connect', 'db-migrate', 'db-snapshot',
+                 'db-verify-snapshot', 'db-restore'):
+        manager = sub.add_parser(name, help='Manage the permanent SEC database')
+        manager.add_argument('--config-path', help='Connection configuration path')
+        if name in ('db-create', 'db-connect', 'db-verify-snapshot', 'db-restore'):
+            manager.add_argument('path')
+        if name == 'db-migrate':
+            manager.add_argument('--source', required=True)
+        if name in ('db-migrate', 'db-restore'):
+            manager.add_argument('--destination', required=True)
+        elif name == 'db-snapshot':
+            manager.add_argument('--destination')
+        manager.set_defaults(func=cmd_database_manage)
+    d.add_argument('--config-path', help='Connection configuration path')
     return parser
+
+
+def cmd_database_manage(args: argparse.Namespace) -> int:
+    from database import (create_database, connect_database, database_root,
+                          read_marker, connection_config, default_database_path)
+    from database_transfer import (migrate_database, create_snapshot,
+                                   verify_snapshot, restore_snapshot)
+    cfg_path = Path(args.config_path) if args.config_path else None
+    if args.command == "db-create":
+        root = Path(args.path)
+        create_database(root)
+        result = connect_database(root, config_path=cfg_path)
+    elif args.command == "db-connect":
+        result = connect_database(Path(args.path), config_path=cfg_path)
+    elif args.command == "db-migrate":
+        cfg = connection_config(cfg_path)
+        result = migrate_database(Path(args.source), Path(args.destination),
+                                  cfg.get("local_db_tickers") or [], config_path=cfg_path)
+        result = {k: v for k, v in result.items() if k != "files"}
+    elif args.command == "db-snapshot":
+        result = {"snapshot": str(create_snapshot(database_root(config_path=cfg_path),
+                    Path(args.destination) if args.destination else None))}
+    elif args.command == "db-verify-snapshot":
+        result = verify_snapshot(Path(args.path))
+        result = {k: v for k, v in result.items() if k != "files"}
+    else:
+        result = restore_snapshot(Path(args.path), Path(args.destination))
+    _emit_json(result, "-")
+    return 0
 
 
 def _force_utf8_io() -> None:
@@ -948,7 +997,21 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("gaap 至少要給 --xlsx 或 --json，否則抓完沒有任何產出")
 
     try:
-        return args.func(args)
+        old_config = os.environ.get("SEC_CONFIG_PATH")
+        selected = getattr(args, "config_path", None)
+        if selected:
+            os.environ["SEC_CONFIG_PATH"] = str(Path(selected).resolve())
+        try:
+            return args.func(args)
+        finally:
+            if selected:
+                if old_config is None:
+                    os.environ.pop("SEC_CONFIG_PATH", None)
+                else:
+                    os.environ["SEC_CONFIG_PATH"] = old_config
+    except DatabaseError as exc:
+        print(f"Database error: {exc}. Use db-connect PATH to reconnect.", file=sys.stderr)
+        return 2
     except CliError as exc:
         print(f"錯誤：{exc}", file=sys.stderr)
         return 2

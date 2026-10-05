@@ -71,7 +71,8 @@ for _stream in (sys.stdout, sys.stderr):
 
 from fiscal_input import fiscal_quarter_of, fy_start_month   # noqa: E402
 
-CACHE = pathlib.Path(__file__).resolve().parent.parent / "local_db" / "filing_cache"
+import filing_cache
+CACHE = filing_cache.cache_root()
 FY_COL = re.compile(r"^(\d{4})-(\d{2})-(\d{2})\s+\(FY\)")
 Q_COL = re.compile(r"^(\d{4}-\d{2}-\d{2})\s+\(Q\d\)")
 LABEL = re.compile(r"^FY(\d{4})Q([1-4])$")

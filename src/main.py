@@ -23,6 +23,7 @@ from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 
 import filing_cache
+from database import DatabaseError, database_root, read_marker, connect_database, create_database
 import i18n
 import local_db
 from i18n import t
@@ -721,6 +722,7 @@ class SECFetcherApp:
         self._tab2_adv_toggle_btn = None
 
         self._build_ui()
+        self._sync_run_buttons()
         self._poll_queue()
 
     # =========================================================
@@ -1829,7 +1831,7 @@ class SECFetcherApp:
         self._db_rows: list[dict] = []
 
         footer = ttk.Frame(tab)
-        footer.grid(row=2, column=0, sticky="ew", pady=(6, 0))
+        footer.grid(row=3, column=0, sticky="ew", pady=(6, 0))
         # 「更新選中的」是這頁唯一會發動抓取的按鈕。放左邊、跟匯出隔開。
         # ⚠ 這頁仍然**沒有清除鈕**——更新是可回復的（再抓一次就好），
         # 清除不是，兩者不該放在同一排讓人按錯。
@@ -1851,7 +1853,13 @@ class SECFetcherApp:
         if not hasattr(self, "_db_tree"):
             return
         if reload_from_disk or not self._db_rows:
-            self._db_rows = local_db.overview_rows(self.cfg)
+            try:
+                self._db_rows = local_db.overview_rows(self.cfg)
+            except DatabaseError:
+                self._db_rows = []
+                self._db_tree.delete(*self._db_tree.get_children())
+                self._db_summary_label.config(text=t('gui.db.disconnected'))
+                return
 
         rows = local_db.filter_overview_rows(self._db_rows,
                                              self._db_search_var.get())
@@ -1869,7 +1877,7 @@ class SECFetcherApp:
                  size=format_size(total["size_bytes"]))
         if len(rows) != len(self._db_rows):
             text += "　" + t("gui.lbl.db_filtered", n=shown["companies"])
-        self._db_summary_label.config(text=text)
+        self._db_summary_label.config(text=text + " | " + str(database_root()))
 
         stale = sum(1 for r in self._db_rows if not r["meta_ok"])
         self._db_hint_label.config(
@@ -2179,6 +2187,8 @@ class SECFetcherApp:
         return [row[0] for row in source]
 
     def _run_comparison(self):
+        if not self._ensure_database():
+            return
         if not self.compare_selected_tickers:
             messagebox.showwarning(t("gui.compare.select_title"), t("gui.compare.no_company_warn"))
             return
@@ -2519,15 +2529,17 @@ class SECFetcherApp:
         header.grid(row=0, column=0, sticky="ew")
         self._cache_total_label = ttk.Label(header, text="")
         self._cache_total_label.pack(side="left")
+        self._database_location_label = ttk.Label(frame, text="", wraplength=540)
+        self._database_location_label.grid(row=1, column=0, sticky="ew")
         ttk.Button(header, text=t("gui.btn.cache_open_folder"),
                    command=self._open_cache_folder).pack(side="right")
 
         list_host = ttk.Frame(frame)
-        list_host.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        list_host.grid(row=2, column=0, sticky="ew", pady=(4, 0))
         _, self._cache_list_inner = _build_fixed_height_scrollable(list_host, height=110)
 
         footer = ttk.Frame(frame)
-        footer.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        footer.grid(row=3, column=0, sticky="ew", pady=(4, 0))
         # 「更新本地庫」放左邊、跟「全部清除」隔開——一個是暖快取、一個是
         # 唯一不可逆的破壞性操作，擺在一起遲早有人按錯。
         self._localdb_run_btn = ttk.Button(
@@ -2537,9 +2549,14 @@ class SECFetcherApp:
             footer, text=t("gui.btn.db_manage_list"),
             command=self._open_local_db_popup)
         self._localdb_list_btn.pack(side="left", padx=(4, 0))
-        self._cache_clear_all_btn = ttk.Button(
-            footer, text=t("gui.btn.cache_clear_all"), command=self._clear_all_cache)
-        self._cache_clear_all_btn.pack(side="right")
+        connections = ttk.Frame(frame)
+        connections.grid(row=4, column=0, sticky="ew")
+        self._database_controls = []
+        for action in ('connect', 'create', 'migrate', 'snapshot'):
+            button = ttk.Button(connections, text=t('gui.db.' + action),
+                                command=lambda a=action: self._database_operation(a))
+            button.pack(side='left', padx=2)
+            self._database_controls.append(button)
 
         self._cache_clear_btns = []
         self._refresh_cache_panel()
@@ -2553,9 +2570,17 @@ class SECFetcherApp:
             child.destroy()
         self._cache_clear_btns = []
 
-        rows = filing_cache.list_cached_tickers()
-        total = sum(r["size_bytes"] for r in rows)
-        in_list = set(local_db.get_update_list(self.cfg))
+        try:
+            rows = filing_cache.list_cached_tickers()
+            in_list = set(local_db.get_update_list(self.cfg))
+            location = str(database_root()) + " | " + read_marker(database_root())["database_id"]
+            self._database_location_label.config(text=location)
+        except DatabaseError:
+            self._cache_total_label.config(text=t('gui.db.disconnected'))
+            self._database_location_label.config(text='')
+            self._sync_cache_buttons()
+            return
+        total = sum(r['size_bytes'] for r in rows)
         self._cache_total_label.config(
             text=t("gui.lbl.cache_total", size=format_size(total))
                  + "　" + t("gui.lbl.db_list_count", n=len(in_list)))
@@ -2577,10 +2602,6 @@ class SECFetcherApp:
             ttk.Label(line, text=bottom, width=9).pack(side="left")
             ttk.Label(line, text=format_size(row["size_bytes"]),
                       width=10).pack(side="left")
-            btn = ttk.Button(line, text=t("gui.btn.cache_clear"), width=6,
-                             command=lambda tk_=row["ticker"]: self._clear_cache_ticker(tk_))
-            btn.pack(side="right")
-            self._cache_clear_btns.append(btn)
         self._sync_cache_buttons()
 
     def _log_offline_fallback(self):
@@ -2597,21 +2618,65 @@ class SECFetcherApp:
     def _fetch_running(self) -> bool:
         """這個視窗裡有沒有任何一趟抓取正在跑（Tab1／批次／跨公司比較）。"""
         return any_fetch_running(getattr(self, "is_running", False),
-                                 getattr(self, "_compare_running", False))
+                                 getattr(self, "_compare_running", False) or getattr(self, "_database_busy", False))
+
+    def _database_connected(self):
+        try:
+            local_db.read_update_list(database_root())
+            return True
+        except DatabaseError:
+            return False
+
+    def _ensure_database(self):
+        if getattr(self, '_database_busy', False):
+            return False
+        if not self._database_connected():
+            messagebox.showerror(t('gui.dlg.error_title'), t('gui.db.disconnected'))
+            return False
+        return True
+
+    def _database_operation(self, action):
+        if self._fetch_running():
+            return
+        from tkinter import filedialog
+        from database_transfer import migrate_database, create_snapshot
+        target = None
+        if action != 'snapshot':
+            target = filedialog.askdirectory(title=t('gui.db.' + action), mustexist=action == 'connect')
+            if not target:
+                return
+        self._database_busy = True
+        self._sync_run_buttons()
+
+        def worker():
+            try:
+                if action == 'connect':
+                    connect_database(Path(target))
+                    result = target
+                elif action == 'create':
+                    create_database(Path(target))
+                    connect_database(Path(target))
+                    result = target
+                elif action == 'migrate':
+                    migrate_database(PROJECT_ROOT / 'local_db' / 'filing_cache', Path(target),
+                                     self.cfg.get('local_db_tickers') or [])
+                    result = target
+                else:
+                    result = str(create_snapshot(database_root()))
+                self.msg_queue.put(('database_operation_done', result))
+            except Exception as exc:
+                detail = str(exc) if isinstance(exc, DatabaseError) else type(exc).__name__
+                self.msg_queue.put(('database_operation_error', detail))
+        threading.Thread(target=worker, daemon=True).start()
 
     def _sync_cache_buttons(self):
-        """抓取進行中鎖住兩顆清除鈕——不然會邊寫邊刪同一個 ticker 的資料夾。
-
-        跨公司比較用自己的 `_compare_running`、不是 `is_running`（見 `__init__`
-        的說明），所以這裡兩個旗標都要看，任一個在跑就鎖。"""
-        state = cache_buttons_state(self._fetch_running())
-        for btn in getattr(self, "_cache_clear_btns", []):
-            btn.config(state=state)
-        for name in ("_cache_clear_all_btn", "_localdb_run_btn",
-                     "_localdb_list_btn", "_db_update_sel_btn"):
-            btn = getattr(self, name, None)
-            if btn is not None:
-                btn.config(state=state)
+        busy = self._fetch_running()
+        for button in getattr(self, '_database_controls', []):
+            button.config(state='disabled' if busy else 'normal')
+        for name in ('_localdb_run_btn', '_localdb_list_btn', '_db_update_sel_btn'):
+            button = getattr(self, name, None)
+            if button is not None:
+                button.config(state='disabled' if busy or not self._database_connected() else 'normal')
 
     def _sync_run_buttons(self):
         """四顆會發動抓取的按鈕一起鎖／一起放（TODO I3，2026-09-03）。
@@ -2628,7 +2693,7 @@ class SECFetcherApp:
         改成兩個旗標各自維護、由這個函式統一換算成按鈕狀態。
         """
         running = self._fetch_running()
-        state = cache_buttons_state(running)
+        state = cache_buttons_state(running or not self._database_connected())
         for name in ("btn_run_single", "btn_run_batch", "compare_run_btn"):
             btn = getattr(self, name, None)
             if btn is not None:
@@ -2643,23 +2708,9 @@ class SECFetcherApp:
         """讓使用者自己用檔案總管進一步查看／處理，不用我們另外做細部管理 UI。"""
         root = filing_cache.cache_root()
         try:
-            root.mkdir(parents=True, exist_ok=True)
-            os.startfile(str(root))
+            os.startfile(str(database_root()))
         except OSError as exc:
             _write_log(f"cannot open cache folder: {type(exc).__name__}", "ERROR")
-
-    def _clear_cache_ticker(self, ticker: str):
-        """整個刪掉那家公司的資料夾。下次抓這家會當作全新開始。
-        單一公司不做二次確認——重抓一家的代價有限，跳確認反而礙事。"""
-        filing_cache.clear_ticker(ticker)
-        _write_log(f"cache cleared for {ticker}")
-        self._refresh_cache_panel()
-
-    # ── 本地財報資料庫（TODO J1／J3）────────────────────────────────────
-    #
-    # ⚠ 這裡的「更新名單」跟 watchlist 彈窗裡的「公司名稱快取」是**兩件完全
-    # 不同的事**：那個是 ticker→公司全名的對照表，這個是「要保持新鮮的財報
-    # 資料」。用字上刻意不共用「快取」兩個字。
 
     def _open_local_db_popup(self):
         """更新名單的管理視窗。編輯直接寫進 `self.cfg` 並存檔——這份名單只有
@@ -2756,6 +2807,8 @@ class SECFetcherApp:
                             t("gui.msg.db_imported", n=len(added)))
 
     def _start_local_db_update(self, tickers: list[str] | None = None):
+        if not self._ensure_database():
+            return
         """「更新本地庫」——一律拓到底、只暖快取不產 Excel。
 
         `tickers=None` 走整份更新名單；給了就只跑那幾家（TODO J7 後續：
@@ -2815,21 +2868,6 @@ class SECFetcherApp:
             self._log(t("gui.db.log_gaps", tickers=", ".join(report.gap_tickers)))
         _write_log(f"Local DB update OK, {report.summary()}, elapsed {elapsed}", "OK")
         self.msg_queue.put(("db_done", not report.failed))
-
-    def _clear_all_cache(self):
-        """唯一不可逆的破壞性操作，要二次確認——雖然只是快取，
-        重抓 20 年份是好幾分鐘的代價，值得防手滑。"""
-        rows = filing_cache.list_cached_tickers()
-        if not rows:
-            return
-        total = format_size(sum(r["size_bytes"] for r in rows))
-        if not messagebox.askyesno(
-                t("gui.dlg.cache_clear_all_title"),
-                t("gui.msg.cache_clear_all_body", n=len(rows), size=total)):
-            return
-        removed = filing_cache.clear_all()
-        _write_log(f"cache cleared for all {removed} companies")
-        self._refresh_cache_panel()
 
     def _on_template_mode_change(self):
         is_custom = getattr(self, "settings_template_mode_var", None) and \
@@ -3078,6 +3116,8 @@ class SECFetcherApp:
         )
 
     def _run_single(self):
+        if not self._ensure_database():
+            return
         """Validate inputs then launch the single-ticker fetch+write worker in a background thread."""
         ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
         if not ticker:
@@ -3127,6 +3167,8 @@ class SECFetcherApp:
         ))
 
     def _run_batch(self):
+        if not self._ensure_database():
+            return
         selected = [t for t, v in self.tab2_check_vars.items() if v.get()]
         if not selected:
             messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.pick_a_company"))
@@ -3195,6 +3237,8 @@ class SECFetcherApp:
         ttk.Button(win, text=t("gui.btn.close"), command=win.destroy).pack(pady=(12, 16))
 
     def _run_preview_scan(self):
+        if not self._ensure_database():
+            return
         """Start background preview scan for the current ticker."""
         ticker = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
         if not ticker:
@@ -3596,7 +3640,18 @@ class SECFetcherApp:
             while True:
                 msg_type, data = self.msg_queue.get_nowait()
 
-                if msg_type == "log":
+                if msg_type == 'database_operation_done':
+                    self._database_busy = False
+                    self.cfg = load_config(CONFIG_PATH)
+                    self._sync_run_buttons()
+                    self._refresh_cache_panel()
+                    self._refresh_db_overview()
+                    messagebox.showinfo(t('gui.dlg.info_title'), t('gui.db.completed') + str(data))
+                elif msg_type == 'database_operation_error':
+                    self._database_busy = False
+                    self._sync_run_buttons()
+                    messagebox.showerror(t('gui.dlg.error_title'), str(data))
+                elif msg_type == "log":
                     self.log_text.config(state="normal")
                     self.log_text.insert("end", data + "\n")
                     self.log_text.see("end")
@@ -3801,7 +3856,10 @@ def _warn_if_edgartools_changed(root: tk.Tk) -> None:
     （「按下去去睡覺」是 GUI 的「更新本地庫」，掛排程器是 CLI 的 `update-db`）。
     """
     try:
-        summary = local_db.stale_cache_summary()
+        try:
+            summary = local_db.stale_cache_summary()
+        except DatabaseError:
+            return
     except Exception:                                  # noqa: BLE001
         return                                          # 偵測失敗不該擋住啟動
     if not summary["companies"]:

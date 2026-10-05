@@ -60,7 +60,7 @@ DEFAULT_CONFIG: dict = {
 def load_config(path: Path | None = None) -> dict:
     """Load config.json, merging with defaults for any missing keys."""
     if path is None:
-        path = CONFIG_PATH
+        path = Path(os.environ.get("SEC_CONFIG_PATH") or CONFIG_PATH)
     cfg = copy.deepcopy(DEFAULT_CONFIG)
     if Path(path).exists():
         try:
@@ -81,7 +81,6 @@ def load_config(path: Path | None = None) -> dict:
 def save_config(cfg: dict, path: Path | None = None) -> None:
     """Save config dict to config.json as UTF-8 JSON."""
     if path is None:
-        path = CONFIG_PATH
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+        path = Path(os.environ.get("SEC_CONFIG_PATH") or CONFIG_PATH)
+    from database import atomic_json
+    atomic_json(Path(path), cfg)

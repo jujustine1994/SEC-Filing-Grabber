@@ -66,10 +66,10 @@ def test_selection_includes_amendments_and_earnings_only():
     assert [f["accessionNumber"] for f in pack.inventory(Client(), 1, "2026-01-01", "2026-02-01")["filings"]] == ["a", "b"]
 
 
-def test_local_context_keeps_dimensions_and_rejects_other_company(tmp_path, monkeypatch):
+def test_local_context_keeps_dimensions_and_rejects_other_company(tmp_path, monkeypatch, isolated_database):
     monkeypatch.syspath_prepend(str(Path(__file__).parents[1] / "skills/sec-revenue-breakdown/scripts"))
     import local_context
-    cache = tmp_path / "local_db/filing_cache/EX"
+    cache = isolated_database / "filings/EX"
     cache.mkdir(parents=True)
     entry = dict(cik=1, accession_no="0000000001-26-000001", form="10-Q", filing_date="2026-01-01",
                  dataframes={"income_statement": {"data": {

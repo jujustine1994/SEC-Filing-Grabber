@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+import hashlib
 import json
 import os
 import stat
@@ -133,7 +134,26 @@ def connection_config(config_path: Path | None = None) -> dict:
 def connect_database(root: Path, *, config_path: Path | None = None) -> dict:
     root = checked_path(root)
     marker = read_marker(root)
-    cfg = connection_config(config_path)
+    path = checked_path(_config_path(config_path))
+    if path.exists():
+        raw = path.read_bytes()
+        try:
+            cfg = json.loads(raw.decode('utf-8-sig'))
+            if not isinstance(cfg, dict):
+                raise ValueError('Invalid settings object')
+        except (ValueError, UnicodeError):
+            backup = path.with_name(path.name + '.corrupt-' + hashlib.sha256(raw).hexdigest() + '.bak')
+            if backup.exists():
+                if backup.read_bytes() != raw:
+                    raise DatabaseError('Cannot verify preserved corrupt configuration')
+            else:
+                with backup.open('xb') as handle:
+                    handle.write(raw)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            cfg = {}
+    else:
+        cfg = {}
     cfg.update(database_path=str(root), database_id=marker['database_id'])
     atomic_json(_config_path(config_path), cfg)
     return marker

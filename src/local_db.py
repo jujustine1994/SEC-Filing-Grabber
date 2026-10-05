@@ -864,7 +864,11 @@ def update_local_db(tickers, identity: str, *,
                 meta["forms"][form]["reached_bottom"] = derive_reached_bottom(
                     listings.get(form) or [], new_cached)
                 meta["forms"][form]["reached_bottom_stale"] = False
-            write_meta(ticker, meta)
+            try:
+                write_meta(ticker, meta)
+            except Exception as exc:
+                status = "failed"
+                error = f"{type(exc).__name__}: database metadata was not persisted"
 
         report.results.append(TickerResult(
             ticker, status, new_filings=plan["new_count"], error=error, gaps=gaps,

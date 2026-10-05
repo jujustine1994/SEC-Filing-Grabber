@@ -544,9 +544,9 @@ def test_fy_end_month_from_mmdd(mmdd, expected):
 # 整個 `update_local_db` 換掉，只驗 CLI 的參數解析、名單維護與輸出格式。
 
 @pytest.fixture
-def db_cfg(tmp_path, monkeypatch):
+def db_cfg(tmp_path, monkeypatch, isolated_database):
     """把 config.json 與快取根目錄都導到 tmp_path。"""
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "database"))
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(isolated_database))
     import config
     path = tmp_path / "config.json"
     monkeypatch.setattr(config, "CONFIG_PATH", path)
@@ -638,9 +638,9 @@ def test_update_db_returns_nonzero_when_a_company_failed(db_cfg, monkeypatch):
 # 完全不連網——這支只掃本地資料夾。這裡連 `_FakeEdgar` 都不需要。
 
 @pytest.fixture
-def db_status_cache(tmp_path, monkeypatch):
+def db_status_cache(tmp_path, monkeypatch, isolated_database):
     """把快取根目錄導到 tmp_path，並塞兩家公司進去。"""
-    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(tmp_path / "database"))
+    monkeypatch.setenv("SEC_LOCAL_DB_ROOT", str(isolated_database))
     import filing_cache
     import local_db
     for ticker, count in (("AAPL", 2), ("NVDA", 1)):

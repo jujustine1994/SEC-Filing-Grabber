@@ -29,6 +29,10 @@ _TMP = Path(tempfile.mkdtemp(prefix="probe_db_overview_"))
 os.environ["SEC_LOCAL_DB_ROOT"] = str(_TMP)
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+from database import create_database, is_test_database
+create_database(_TMP, test_mode=True)
+os.environ['SEC_CONFIG_PATH'] = str(_TMP / 'probe-config.json')
+
 
 import tkinter as tk          # noqa: E402
 
@@ -244,7 +248,9 @@ check("期間的月份是 03（季末）不是 05（收件月）",
 # ── 7. 空資料庫不炸 ─────────────────────────────────────────────────────
 print("\n[7] 空資料庫")
 for ticker in ("AAPL", "BLK", "NVDA"):
-    filing_cache.clear_ticker(ticker)
+    import shutil
+    assert is_test_database(_TMP)
+    shutil.rmtree(filing_cache.ticker_dir(ticker))
 app._db_search_var.set("")
 app._refresh_db_overview()
 root.update()

@@ -70,3 +70,13 @@ def test_empty_valid_database_is_connected(tmp_path, monkeypatch):
     assert database_root() == root.resolve()
     assert read_marker(root)['database_id'] == marker['database_id']
     assert json.loads((root / 'metadata/update_list.json').read_text())['tickers'] == []
+
+
+def test_explicit_reconnect_preserves_corrupt_settings(tmp_path):
+    root = tmp_path/'formal'
+    create_database(root)
+    cfg = tmp_path/'config.json'
+    cfg.write_bytes(b'{broken')
+    connect_database(root, config_path=cfg)
+    assert database_root(config_path=cfg) == root.resolve()
+    assert next(tmp_path.glob('config.json.corrupt-*.bak')).read_bytes() == b'{broken'

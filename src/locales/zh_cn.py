@@ -9,6 +9,8 @@ key 命名空间见 locales/__init__.py。改这里的译文不影响任何逻�
 
 from __future__ import annotations
 
+
+
 STRINGS: dict[str, str] = {
     'acct.Income Statement': '损益表',
     'acct.Revenue': '营业收入',
@@ -302,7 +304,6 @@ STRINGS: dict[str, str] = {
     'gui.frame.add_company': ' 新增公司 ',
     'gui.frame.ai_settings': ' AI 设定（Non-GAAP 功能需要，未设定不影响 GAAP）',
     'gui.frame.fetch_settings': ' 抓取设定 ',
-    'gui.frame.filing_cache': '本地数据缓存',
     'gui.frame.optional_sheets': ' 可选 Sheet（扫描后显示）',
     'gui.frame.progress': ' 处理进度 ',
     'gui.frame.watchlist_current': ' 目前 Watchlist ',
@@ -592,3 +593,7 @@ STRINGS: dict[str, str] = {
     'gui.db.log_gaps': '⚠ 有抓取缺漏，建议之后单独重跑：{tickers}',
     'gui.db.log_failed': '更新本地库失败，耗时 {elapsed}',
 }
+
+STRINGS.update({"gui.db.connect":"\u8fde\u63a5\u6570\u636e\u5e93","gui.db.create":"\u65b0\u5efa\u6570\u636e\u5e93","gui.db.migrate":"\u8fc1\u79fb\u65e7\u6570\u636e\u5e93","gui.db.snapshot":"\u521b\u5efa\u5feb\u7167","gui.db.disconnected":"\u6570\u636e\u5e93\u672a\u8fde\u63a5\u3002\u8bf7\u5230\u9ad8\u7ea7\u8bbe\u7f6e\u8fde\u63a5\u3001\u65b0\u5efa\u6216\u8fc1\u79fb\u6570\u636e\u5e93\u3002","gui.db.completed":"\u6570\u636e\u5e93\u64cd\u4f5c\u5b8c\u6210\uff1a","gui.frame.filing_cache":"SEC \u8d22\u62a5\u6570\u636e\u5e93"})
+
+STRINGS["fetch.persistence_failed"] = "\u6709 {n} \u4efd\u8d22\u62a5\u672a\u80fd\u4fdd\u5b58\u5230\u6570\u636e\u5e93\uff1b\u672c\u6b21\u62a5\u8868\u53ef\u80fd\u5df2\u751f\u6210\uff0c\u8bf7\u4fee\u590d\u4fdd\u5b58\u95ee\u9898\u540e\u91cd\u65b0\u66f4\u65b0\u3002"

@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+
+
 STRINGS: dict[str, str] = {
     # ── 損益計算書 ──────────────────────────────────────────────────────
     "acct.Income Statement": '損益計算書',
@@ -362,7 +364,6 @@ STRINGS: dict[str, str] = {
     "gui.frame.add_company": ' 銘柄を追加 ',
     "gui.frame.ai_settings": ' AI 設定（Non-GAAP に必要。未設定でも GAAP には影響なし）',
     "gui.frame.fetch_settings": ' 取得設定 ',
-    "gui.frame.filing_cache": 'ローカルデータキャッシュ',
     "gui.frame.optional_sheets": ' 任意シート（スキャン後に表示）',
     "gui.frame.progress": ' 進捗 ',
     "gui.frame.watchlist_current": ' 現在のウォッチリスト ',
@@ -643,3 +644,7 @@ STRINGS: dict[str, str] = {
     "gui.db.log_gaps": '⚠ 取得漏れがあります。後で個別に再実行してください：{tickers}',
     "gui.db.log_failed": 'ローカル DB 更新失敗、所要時間 {elapsed}',
 }
+
+STRINGS.update({"gui.db.connect":"\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u63a5\u7d9a","gui.db.create":"\u65b0\u898f\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9","gui.db.migrate":"\u65e7\u30c7\u30fc\u30bf\u79fb\u884c","gui.db.snapshot":"\u30b9\u30ca\u30c3\u30d7\u30b7\u30e7\u30c3\u30c8","gui.db.disconnected":"\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u672a\u63a5\u7d9a\u3002\u8a73\u7d30\u8a2d\u5b9a\u3067\u63a5\u7d9a\u30fb\u4f5c\u6210\u30fb\u79fb\u884c\u3057\u3066\u304f\u3060\u3055\u3044\u3002","gui.db.completed":"\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u64cd\u4f5c\u5b8c\u4e86\uff1a","gui.frame.filing_cache":"SEC \u8ca1\u52d9\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9"})
+
+STRINGS["fetch.persistence_failed"] = "{n} \u4ef6\u306e\u8ca1\u5831\u3092\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u306b\u4fdd\u5b58\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002\u4fdd\u5b58\u306e\u554f\u984c\u3092\u4fee\u5fa9\u3057\u3066\u518d\u66f4\u65b0\u3057\u3066\u304f\u3060\u3055\u3044\u3002"

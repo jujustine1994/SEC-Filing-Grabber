@@ -74,6 +74,7 @@ def test_placeholders_match_across_languages():
 #
 # 豁免清單。每一條都要有理由——沒理由的豁免等於把這條測試關掉。
 ALLOWLIST = {
+    "database.py",  # Stable permanent directory name, never a translated UI string.
     # 語言選單顯示名（「繁體中文」「日本語」）本來就該用各語言自稱，
     # 而且它們住在 i18n.py 自己身上，沒有更上層可以查。
     "i18n.py",

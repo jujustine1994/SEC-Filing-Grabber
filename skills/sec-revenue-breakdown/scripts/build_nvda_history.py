@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 ROOT = Path(__file__).resolve().parents[1]
 PACK = ROOT / "output/NVDA_history_sources"
 OUT = ROOT / "output/NVDA_segment_history"
-LOCAL = Path.home() / "Documents/Code/SEC Financial Tools/local_db/filing_cache/NVDA"
+LOCAL = None
 PILOT = Path.home() / "Documents/Code/SEC Financial Tools/output/nvda_revenue_pilot/dataset.json"
 VERSION = "nvda-history-1.0"
 DATE = re.compile(r"(?:January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+\d{1,2},?\s+\d{4}", re.I)
@@ -462,6 +462,11 @@ if __name__ == "__main__":
     ROOT = args.repo.resolve()
     PACK = ROOT / "output/NVDA_history_sources"
     OUT = ROOT / "output/NVDA_segment_history"
+    if args.cache_repo is None:
+        args.cache_repo = Path(__file__).resolve().parents[3]
     if args.cache_repo:
-        LOCAL = args.cache_repo.resolve() / "local_db/filing_cache/NVDA"
+        import sys
+        sys.path.insert(0, str(args.cache_repo.resolve() / "src"))
+        import filing_cache
+        LOCAL = filing_cache.ticker_dir("NVDA")
     main()
