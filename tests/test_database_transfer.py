@@ -67,6 +67,23 @@ def test_snapshot_restores_to_new_folder(isolated_database, tmp_path):
         restore_snapshot(snapshot, root)
 
 
+def test_failed_destination_verification_never_publishes_identity(isolated_database, tmp_path, monkeypatch):
+    import database_transfer
+    (isolated_database/'filings/keep.json').write_bytes(b'{"keep":1}')
+    snapshot = create_snapshot(isolated_database)
+    destination = tmp_path/'restored'
+    real = database_transfer._copy_verified
+    def corrupt_earlier_copy(source, target, expected):
+        real(source, target, expected)
+        if target.parent.name == 'metadata':
+            (destination/'filings/keep.json').write_bytes(b'corrupted')
+    monkeypatch.setattr(database_transfer, '_copy_verified', corrupt_earlier_copy)
+    with pytest.raises(DatabaseError, match='differs'):
+        restore_snapshot(snapshot, destination)
+    assert not (destination/'database.json').exists()
+    assert verify_snapshot(snapshot)['verified']
+
+
 def test_snapshot_corruption_and_escape_rejected(isolated_database, tmp_path):
     snapshot = create_snapshot(isolated_database)
     manifest = snapshot/'snapshot.json'

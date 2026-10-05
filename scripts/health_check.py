@@ -51,9 +51,9 @@ for _stream in (sys.stdout, sys.stderr):
 import config                      # noqa: E402
 import data_quality                # noqa: E402
 import fetcher_gaap as fg          # noqa: E402
+from filing_cache import cache_root
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-CACHE = ROOT / "local_db" / "filing_cache"
 OUT = ROOT / "output" / "_health"
 
 # 表頭列不是模板科目，不列入覆蓋率統計。
@@ -330,7 +330,7 @@ def main(argv) -> int:
         return build_report()
     OUT.mkdir(parents=True, exist_ok=True)
     targets = [a for a in argv if not a.startswith("-")] or \
-        sorted(d.name for d in CACHE.iterdir() if d.is_dir())
+        sorted(d.name for d in cache_root().iterdir() if d.is_dir())
     identity = config.load_config()["identity"]
     for i, ticker in enumerate(targets, 1):
         path = OUT / f"{ticker}.json"

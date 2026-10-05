@@ -126,8 +126,8 @@ def migrate_database(source: Path, destination: Path, tickers: list[str], *,
         return report
 
 
-def _database_inventory(root: Path) -> dict:
-    out = {'database.json': _hash(root/'database.json')}
+def _database_inventory(root: Path, *, include_marker: bool = True) -> dict:
+    out = {'database.json': _hash(root/'database.json')} if include_marker else {}
     for name in ('filings','history','metadata'):
         for relative, value in inventory(root/name).items():
             out[name+'/'+relative] = value
@@ -195,7 +195,10 @@ def restore_snapshot(snapshot: Path, destination: Path) -> dict:
         _copy_verified(snapshot/relative, destination/relative, expected)
     if verify_snapshot(snapshot) != data:
         raise DatabaseError('Snapshot changed during restore')
-    _copy_verified(snapshot/'database.json', destination/'database.json', data['files']['database.json'])
-    if _database_inventory(destination) != data['files']:
+    expected = {name: value for name, value in data['files'].items() if name != 'database.json'}
+    if _database_inventory(destination, include_marker=False) != expected:
         raise DatabaseError('Restored database differs from snapshot')
+    # A failed restore must remain unconnectable. Publish identity only after
+    # every destination file has passed the complete inventory check.
+    _copy_verified(snapshot/'database.json', destination/'database.json', data['files']['database.json'])
     return dict(verified=True, root=str(destination), database_id=data['database_id'])

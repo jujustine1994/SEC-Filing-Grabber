@@ -1,4 +1,4 @@
-﻿﻿# overnight_update_db.ps1 — 整夜更新本地財報資料庫（TODO J8 的重抓）
+﻿# overnight_update_db.ps1 — 整夜更新本地財報資料庫（TODO J8 的重抓）
 #
 # 雙擊 `過夜更新資料庫.bat` 執行，**全程不需要 AI**（跟 watchdog_h0_baseline.sh
 # 同一個設計原則：成果不依賴 AI 還活著，也不吃額度）。
