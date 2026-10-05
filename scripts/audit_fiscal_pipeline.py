@@ -10,6 +10,7 @@ from dataclasses import asdict
 from datetime import date
 import gc
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -17,7 +18,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 ROOT=Path(__file__).resolve().parents[1]
-sys.path.insert(0,str(ROOT/'src'))
+# Keep the input adapter identical on both sides; select only pipeline code.
+PIPELINE_ROOT=Path(os.environ.get('SEC_AUDIT_PIPELINE_ROOT',str(ROOT))).resolve()
+sys.path.insert(0,str(PIPELINE_ROOT/'src'))
 import filing_cache as fc
 import fetcher_gaap as fg
 import local_db
@@ -79,7 +82,7 @@ def audit(ticker, output, *, require_official_metadata=False):
     quarterly=next(t for t in tables if t.sheet_name=='Data_Financials(Q)')
     result=dict(ticker=ticker,mode='cached-read-only',metadata_mode='official-required' if require_official_metadata else 'official-or-cover',max_filings=80,max_annual_filings=20,
         anomalies=label_anomalies(quarterly.quarter_labels,quarterly.period_ends),
-        cf_fallbacks=fg.cf_fallbacks(),cf_fallback_details=fg.cf_fallback_details(),
+        cf_fallbacks=fg.cf_fallbacks(),cf_fallback_details=getattr(fg,'cf_fallback_details',lambda:[])(),
         gaps=[asdict(g) for g in ledger.gaps],
         tables=[asdict(t) for t in tables])
     (output/(ticker+'.json')).write_text(json.dumps(result,ensure_ascii=False),encoding='utf-8')
