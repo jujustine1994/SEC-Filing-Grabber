@@ -3174,6 +3174,7 @@ def fetch_gaap_statements(ticker: str, identity: str,
     # （上面的遞迴自己開的，或是 `main.py`／`cli.py` 先開好才呼叫進來的）——
     # 兩條路都會走到這裡，重試才不會只在其中一條路生效。
     led = _ledger()
+    reset_cf_fallbacks()
     with _disk_cache_scope(), _parse_cache_scope(), _reported_period_scope():
         tables = _fetch_gaap_impl(
             ticker, identity, max_filings, max_annual_filings, ai_config,
@@ -3181,7 +3182,8 @@ def fetch_gaap_statements(ticker: str, identity: str,
         )
 
     def _retry_once() -> tuple[list[StatementTable], FetchLedger]:
-        with collect_gaps() as retry_led, _disk_cache_scope(), _parse_cache_scope():
+        reset_cf_fallbacks()
+        with collect_gaps() as retry_led, _disk_cache_scope(), _parse_cache_scope(), _reported_period_scope():
             retry_tables = _fetch_gaap_impl(
                 ticker, identity, max_filings, max_annual_filings, ai_config,
                 start_year, end_year, fetch_quarterly, fetch_annual, excluded_sheets,

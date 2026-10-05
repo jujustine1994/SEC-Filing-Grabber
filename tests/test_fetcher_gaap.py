@@ -1072,6 +1072,36 @@ def test_standalone_q2_is_not_a_cumulative_base_for_q3():
     assert row[table.quarter_labels.index('FY2025Q3')] is None
 
 
+def test_retry_does_not_leak_reported_period_map_outside_fetch(monkeypatch):
+    import fetcher_gaap as fg
+    token=fg._reported_periods_var.set(None)
+    def impl(*args):
+        fg._reported_periods_var.set({('2025-03-31',False):'FY2025Q1'})
+        return []
+    monkeypatch.setattr(fg,'_fetch_gaap_impl',impl)
+    monkeypatch.setattr(fg,'_fetch_with_retry',lambda tables,ledger,retry:retry()[0])
+    try:
+        with fg.collect_gaps():
+            fg.fetch_gaap_statements('TEST','Test audit@example.com')
+        assert fg._reported_periods_var.get() is None
+    finally:
+        fg._reported_periods_var.reset(token)
+
+
+def test_cf_diagnostics_describe_only_the_current_fetch(monkeypatch):
+    import fetcher_gaap as fg
+    def impl(ticker,*args):
+        if ticker=='FIRST':fg._note_cf_cumulative_fallback('FY2025Q2')
+        return []
+    monkeypatch.setattr(fg,'_fetch_gaap_impl',impl)
+    fg.reset_cf_fallbacks()
+    with fg.collect_gaps():
+        fg.fetch_gaap_statements('FIRST','Test audit@example.com')
+        assert fg.cf_fallbacks()==['FY2025Q2']
+        fg.fetch_gaap_statements('SECOND','Test audit@example.com')
+        assert not fg.cf_fallbacks()
+
+
 # ── Override integration tests ────────────────────────────────────────────────
 
 def _make_filing_odd_concepts(period_col="2025-12-27 (Q1)", val=100.0, filing_date="2026-01-30"):
