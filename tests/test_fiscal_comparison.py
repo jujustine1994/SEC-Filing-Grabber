@@ -34,3 +34,11 @@ def test_added_nonempty_period_is_reported():
     before=result(['FY2020Q4'],[100]);after=result(['FY2020Q4','FY2021Q1'],[100,120],['2021-01-03','2021-04-04'])
     after['tables'][0]['filing_dates'].append('2021-05-01')
     assert compare(before,after)['value_changes'][0]['after'] == 120
+
+
+def test_same_filing_date_for_multiple_periods_uses_financial_end_provenance():
+    source=result(['FY2018Q4','FY2019Q4'],[100,120],['2018-06-30','2019-06-30'])
+    source['tables'][0]['filing_dates']=['2019-08-09']*2
+    source['tables'].append(dict(sheet_name='Data_Meta',quarter_labels=['FY2018Q4','FY2019Q4'],
+                                filing_dates=['2019-08-09']*2,period_ends=[],concepts=['Source'],values=[['a','b']]))
+    assert not compare(source,source)['metadata_changes']

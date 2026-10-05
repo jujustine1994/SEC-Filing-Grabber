@@ -11,6 +11,11 @@ from pathlib import Path
 
 def cells(result):
     values, labels = {}, {}
+    source_ends={}
+    for table in result['tables']:
+        if table['sheet_name'] not in ('Data_Financials(Q)','Data_Financials(Y)'): continue
+        for label,end in zip(table['quarter_labels'],table.get('period_ends',[])):
+            if end: source_ends[label]=end
     for table in result['tables']:
         sheet=table['sheet_name']
         occurrences=Counter()
@@ -20,6 +25,7 @@ def cells(result):
                 ends=table.get('period_ends',[])
                 dates=table.get('filing_dates',[])
                 end=ends[col] if col<len(ends) and ends[col] else ''
+                end=end or source_ends.get(label,'')
                 period=('end',end) if end else ('filed',dates[col]) if col<len(dates) and dates[col] else ('label',label)
                 key=(sheet,concept,occurrence,*period)
                 if key in values:
