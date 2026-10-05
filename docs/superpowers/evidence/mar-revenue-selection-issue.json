@@ -1,0 +1,44 @@
+{
+  "ticker": "MAR",
+  "accession": "0001193125-10-030603",
+  "form": "10-K",
+  "url": "https://www.sec.gov/Archives/edgar/data/1048286/000119312510030603/mar-20100101.xml",
+  "facts": [
+    {
+      "concept": "CashAndCashEquivalentsAtCarryingValue",
+      "start": null,
+      "end": "2010-01-01",
+      "value": "115000000",
+      "unit": "iso4217_USD",
+      "context": "eol_PE48224---1010-K0006_STD_0_20100101_0"
+    },
+    {
+      "concept": "NetCashProvidedByUsedInOperatingActivities",
+      "start": "2009-01-03",
+      "end": "2010-01-01",
+      "value": "868000000",
+      "unit": "iso4217_USD",
+      "context": "eol_PE48224---1010-K0006_STD_364_20100101_0"
+    },
+    {
+      "concept": "PaymentsToAcquirePropertyPlantAndEquipment",
+      "start": "2009-01-03",
+      "end": "2010-01-01",
+      "value": "147000000",
+      "unit": "iso4217_USD",
+      "context": "eol_PE48224---1010-K0006_STD_364_20100101_0"
+    },
+    {
+      "concept": "Revenues",
+      "start": "2009-01-03",
+      "end": "2010-01-01",
+      "value": "10908000000",
+      "unit": "iso4217_USD",
+      "context": "eol_PE48224---1010-K0006_STD_364_20100101_0"
+    }
+  ],
+  "status": "known unresolved existing template selection error",
+  "pipeline_revenue": 530000000,
+  "selected_source_concept": "ManagementFeesBaseRevenue",
+  "selected_source_start": "2009-01-03"
+}

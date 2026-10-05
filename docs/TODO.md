@@ -222,7 +222,8 @@ G8. **用「比較欄」當 fallback 補洞** ← **CTH 已決策，放最後做
 
 G13. **期間欄挑錯／財季算錯——BS 那半已修，IS 那半還開著**
 
-   **2026-10-06 進度**：已校正有可信年報錨點的財季及 Excel 預設標籤；G14 的累計冒充單季與不可靠拆季基準已加防護，紀錄移至 CHANGELOG。**本項仍未完成**：G13(a) 原 accession facts 恢復、缺年度錨點／缺 DEI 的最新週制季度，以及 GUI 月份預覽與完整 pipeline 一致性。KR 第一季快取缺當期欄位，不能只改標籤補值；詳見 [本輪驗證紀錄](superpowers/fiscal-verification-results.md)。
+   **2026-10-06 進度**：已校正有可信年報錨點的財季及 Excel 預設標籤；G14 的累計冒充單季與不可靠拆季基準已加防護，紀錄移至 CHANGELOG。**本項仍未完成**：G13(a) 原 accession facts 恢復、缺年度錨點／缺 DEI 的最新週制季度、LHX 等 transition duration 身份表示，以及 GUI 月份預覽與完整 pipeline 一致性。KR 第一季快取缺當期欄位，不能只改標籤補值；詳見 [本輪驗證紀錄](superpowers/fiscal-verification-results.md)。
+   - 新來源核對待辦：MAR accession `0001193125-10-030603`、2010-01-01 年度，模板 Revenue 選管理費 530M，原 SEC Revenues 為 10.908B；需修標準化總計／構成列選值並驗全庫受影響來源。KHC 2015 predecessor/successor 併購年度需獨立 context 核對。恢復年表不等於這些數字已認證。
    （2026-09-04 查明成因，2026-09-20 修掉 BS 借標籤那條，見
    `docs/CHANGELOG.md` 2026-09-20）
 

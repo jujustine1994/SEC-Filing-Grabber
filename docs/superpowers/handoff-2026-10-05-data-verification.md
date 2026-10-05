@@ -3,7 +3,7 @@
 > **這份是給下一個對話的起手包。** 專案已經大到沒人能一次讀完，所以這裡只寫
 > 「現在在幹什麼、踩過哪些坑、下一步有哪些選項」，細節一律指向既有文件。
 
-> **2026-10-06 更新：** 本文件的 9 月量測數字是歷史基準。後續期間模型、CF 安全防護、審查回歸與最新驗收請先看 [fiscal-verification-results.md](fiscal-verification-results.md)。G14 已停止累計冒充單季；G13(a)、無可信錨點的部分年度仍未完成。KR 的 CF 缺基準不全是財季標籤造成，解析器也漏掉第一季當期欄位。`check_fy_labels.py --verify` 現在檢查全部指定公司、只讀快取；全庫用 `audit_fiscal_pipeline.py --all`。
+> **2026-10-06 更新：** 本文件的 9 月量測數字是歷史基準。本輪五步已完成，215 家正式清單比對、1,721 個非 slow 測試及 95,156 格 Excel 核對結果見 [fiscal-verification-results.md](fiscal-verification-results.md)。G14 已停止累計冒充單季；G13(a)、無可信錨點的部分年度、transition 財年仍未完成。下一步優先處理原 accession/context 選值：KR 缺第一季當期欄、MAR 管理費誤當 Revenue，以及 KHC predecessor/successor 口徑。`check_fy_labels.py --verify` 只讀；正式全庫必須用 `audit_fiscal_pipeline.py --all --require-official-metadata`，缺 metadata 的有限診斷只能 INCONCLUSIVE。
 
 ---
 
