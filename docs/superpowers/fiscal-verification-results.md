@@ -1,6 +1,6 @@
 # 三表期間與現金流驗證紀錄（2026-10-06）
 
-# 最終驗收與裁決（2026-10-06）
+## 最終驗收與裁決（2026-10-06）
 
 本輪五個步驟已完成；下方的中間結果是歷史紀錄，不能替代此節。完成的是期間／CF 安全修正及其驗收，**不是全庫來源數字正確性認證，也不是 G13 全解**。每個完成步驟均有 Git checkpoint。
 
@@ -10,7 +10,7 @@
 - 期間診斷：未分類欄 30→7、重複期末日組 9→7、同標籤不同日期碰撞 0→0、可觀察年份不完整 442→423、完整年份季度錯序 7→0。CF fallback 記錄 197→230；更多缺口被正確揭露，不是健康率下降。缺失／不完整年度本身不等於 parser 錯誤，診斷也不判定來源真偽。
 - 原始 SEC instance 的 CDNS FY2014／FY2020、JNJ FY2020 年度與九個月配對：15 格 Revenue／OCF／Capex／FCF／Ending Cash 與最终輸出符合，詳見 [來源證據](evidence/fiscal-source-examples.json)。KR 兩筆財年更正另有下方原 10-K 正文證據。
 - 最終四份自有 Excel 活頁簿經獨立隱藏 Excel instance 真正重算：95,156 格，含 16,048 格比率輸出一致性、3,279 格預設及月份覆寫標頭；0 discrepancy。這不認證所有比率的經濟定義。未操作使用者的活頁簿／Excel instance。
-- 最終非 slow 測試 **1,721 passed、65 deselected、4 warnings**。獨立 reviewer 審查整個改版及最後三個增量保護，沒有未解 Critical／Important；最初的重要問題均先重現、修正並回歸。
+- 最終非 slow 測試 **1,721 passed、65 deselected、4 warnings**；fast-forward 合併至 master 後再跑同一套為 **1,721 passed、65 deselected、5 warnings**，0 失敗。獨立 reviewer 審查整個改版及最後三個增量保護，沒有未解 Critical／Important；最初的重要問題均先重現、修正並回歸。
 - 正式資料庫全部非 `.git` 的 **29,277 檔、3,204,105,955 bytes** 前後 SHA-256 完全相同：新增／刪除／變動皆 0。這包括 canonical、history 及現有其他保存檔；與 14,417 canonical filings 的計數口徑不同。
 
 ## 明確保留的來源問題與下一步
