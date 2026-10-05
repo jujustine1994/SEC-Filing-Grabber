@@ -8,6 +8,27 @@ import audit_fiscal_pipeline as audit
 import local_db
 
 
+def test_full_audit_can_require_official_listing_instead_of_cover_substitution(tmp_path,monkeypatch):
+    monkeypatch.setattr(local_db,'read_meta',lambda ticker:dict(cik=1))
+    with pytest.raises(RuntimeError,match='Official SEC filing metadata required'):
+        audit.audit('TEST',tmp_path,require_official_metadata=True)
+
+
+@pytest.mark.parametrize('listing,message',[
+    ([], 'Accession missing'),
+    ([dict(accession_number='0000000001-25-000001',reportDate='')], 'Invalid official'),
+])
+def test_required_official_metadata_never_falls_back_to_cover(tmp_path,monkeypatch,listing,message):
+    accession='0000000001-25-000001'
+    (tmp_path/(accession+'.json')).write_text('{}',encoding='utf-8')
+    (tmp_path.parent/'TEST-sec-listing.json').write_text(json.dumps(listing),encoding='utf-8')
+    monkeypatch.setattr(local_db,'read_meta',lambda ticker:dict(cik=1))
+    monkeypatch.setattr(audit.fc,'ticker_dir',lambda ticker:tmp_path)
+    monkeypatch.setattr(audit.fc,'load_filing',lambda *a:dict(form='10-Q',filing_date='2025-04-30'))
+    with pytest.raises(RuntimeError,match=message):
+        audit.audit('TEST',tmp_path,require_official_metadata=True)
+
+
 @pytest.mark.parametrize('cik,keys',[(2,list(audit.fc.STATEMENT_KEYS)),(1,['income_statement'])])
 def test_audit_rejects_inputs_the_real_cache_gate_rejects(tmp_path,monkeypatch,cik,keys):
     accession='0000000001-25-000001'

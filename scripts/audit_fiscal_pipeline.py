@@ -39,19 +39,28 @@ def document_period(entry):
     return next(iter(dates)) if len(dates)==1 else ''
 
 
-def audit(ticker, output):
+def audit(ticker, output, *, require_official_metadata=False):
     filings=[]
     meta=local_db.read_meta(ticker) or {}
     cik=meta.get('cik')
     if not isinstance(cik,int) or isinstance(cik,bool) or cik<=0:
         raise RuntimeError('Company CIK unavailable; audit cannot verify cache identity')
     evidence=output.parent/(ticker+'-sec-listing.json')
+    if require_official_metadata and not evidence.exists():
+        raise RuntimeError('Official SEC filing metadata required')
     official={r['accession_number']:r['reportDate'] for r in json.loads(evidence.read_text(encoding='utf-8'))} if evidence.exists() else {}
     for path in fc.ticker_dir(ticker).glob('*.json'):
         if not fc.ACCESSION_RE.fullmatch(path.stem): continue
         entry=fc.load_filing(ticker,path.stem,cik)
         if entry is None:
             raise RuntimeError('Cached input rejected by production cache gates')
+        if require_official_metadata and entry['filing_date'][:10]>='2009-06-15':
+            if path.stem not in official:
+                raise RuntimeError('Accession missing from official SEC filing metadata')
+            if entry['form']!='6-K':
+                try: date.fromisoformat(official[path.stem])
+                except (ValueError,TypeError):
+                    raise RuntimeError('Invalid official SEC report date')
         obj=fc.cached_filing(entry)
         filings.append(SimpleNamespace(accession_no=path.stem,form=entry['form'],
             filing_date=date.fromisoformat(entry['filing_date'][:10]),
@@ -68,7 +77,7 @@ def audit(ticker, output):
          fg.collect_gaps() as ledger:
         tables=fg.fetch_gaap_statements(ticker,'Cached audit audit@example.com')
     quarterly=next(t for t in tables if t.sheet_name=='Data_Financials(Q)')
-    result=dict(ticker=ticker,mode='cached-read-only',max_filings=80,max_annual_filings=20,
+    result=dict(ticker=ticker,mode='cached-read-only',metadata_mode='official-required' if require_official_metadata else 'official-or-cover',max_filings=80,max_annual_filings=20,
         anomalies=label_anomalies(quarterly.quarter_labels,quarterly.period_ends),
         cf_fallbacks=fg.cf_fallbacks(),cf_fallback_details=fg.cf_fallback_details(),
         gaps=[asdict(g) for g in ledger.gaps],
@@ -81,19 +90,21 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('tickers',nargs='*')
     parser.add_argument('--all',action='store_true')
+    parser.add_argument('--require-official-metadata',action='store_true',help='Reject incomplete SEC listing metadata instead of substituting cover dates')
     parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     targets=args.tickers or sorted(p.name for p in fc.cache_root().iterdir() if p.is_dir())
     if args.all:
         failed=0
         for start in range(0,len(targets),10):
-            result=subprocess.run([sys.executable,__file__,'--output',str(args.output),*targets[start:start+10]])
+            flags=['--require-official-metadata'] if args.require_official_metadata else []
+            result=subprocess.run([sys.executable,__file__,'--output',str(args.output),*flags,*targets[start:start+10]])
             failed+=result.returncode!=0
         return int(bool(failed))
     failed=0
     for ticker in targets:
         try:
-            audit(ticker,args.output)
+            audit(ticker,args.output,require_official_metadata=args.require_official_metadata)
             print(ticker+' OK',flush=True)
         except Exception as exc:
             failed+=1
