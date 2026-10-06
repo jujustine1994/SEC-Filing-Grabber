@@ -95,7 +95,7 @@ def test_unknown_additional_refiner_revenue_blocks_closed_formula(concept):
     additional.index = [1000]
     additional['concept'] = concept
     df = pd.concat([df, additional])
-    assert fg._revenue_components(df, case['column']) == ([], False)
+    assert fg._revenue_components(df, case['column']) == ([], True)
 
 
 def test_dimensions_cannot_complete_a_bank_formula():
@@ -103,3 +103,23 @@ def test_dimensions_cannot_complete_a_bank_formula():
     df = dataframe(case)
     df.loc[df['concept']=='us-gaap_NoninterestIncome', 'dimension_member_label'] = 'Segment A'
     assert fg._revenue_components(df, case['column']) == ([], False)
+
+
+@pytest.mark.parametrize('ticker', ['CVX', 'GE'])
+def test_closed_operating_formula_does_not_fall_back_when_one_component_is_missing(ticker):
+    case = next(c for c in CASES if c['ticker']==ticker)
+    df = dataframe(case)
+    df.loc[df['concept']==case['facts'][-1]['concept'], case['column']] = None
+    assert fg._match_revenue_row(df, case['column']) == (None, False)
+    assert fg._revenue_components(df, case['column']) == ([], False)
+
+
+def test_equal_duplicate_operating_component_is_not_added_twice():
+    case = next(c for c in CASES if c['ticker']=='GE')
+    df = dataframe(case)
+    duplicate = df[df['concept']==case['facts'][0]['concept']].copy()
+    duplicate.index = [1000]
+    df = pd.concat([df, duplicate])
+    components, ambiguous = fg._revenue_components(df, case['column'])
+    assert not ambiguous
+    assert sum(df.loc[i, case['column']] for i in components)==case['expected_value']

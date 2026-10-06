@@ -1406,13 +1406,96 @@ def _revenue_concept_words(concept) -> str:
                   ' ', str(concept)).replace('_', ' ').replace(':', ' ')
 
 
+def _revenue_competitors(df, period_col=None):
+    consolidated = df[_consolidated_mask(df)]
+    labels = consolidated['label'].map(_revenue_label)
+    # Tokenize CamelCase and separators before detecting a revenue word. A
+    # substring crosses Sale + Securities and invents an OCI revenue candidate.
+    concept_words = consolidated['concept'].map(_revenue_concept_words)
+    # A differently named revenue component is still a competing candidate.
+    competitors = consolidated[
+        concept_words.str.contains(r'\brevenues?\b|\bsales\b', case=False, na=False)
+        | consolidated['label'].astype(str).str.contains(r'\brevenues?\b|\bsales\b', case=False, na=False)
+        | consolidated.get('standard_concept', pd.Series('', index=consolidated.index)).eq('Revenue')
+    ]
+    if period_col is not None:
+        competitors = competitors[competitors[period_col].map(lambda value: _to_python_val(value) is not None)]
+    # Exact cost labels describe expenses, not competing revenue scopes.
+    competitors = competitors[~labels.loc[competitors.index].str.fullmatch(
+        r'costs? of (?:revenues?|sales)')]
+    expense_concepts = {
+        'CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold',
+        'CostOfServices', 'CostOfServicesExcludingDepreciationDepletionAndAmortization',
+        'LossesGainsOnSalesOfAssetsAndAssetImpairmentCharges',
+        'GainLossOnSalesOfAssetsAndAssetImpairmentCharges', 'GainLossOnDispositionOfAssets',
+        'MineralExtractionProcessingAndMarketingCosts', 'SellingAndMarketingExpense',
+    }
+    expense_pattern = r'(?:us-gaap[_:])?(?:' + '|'.join(sorted(expense_concepts)) + r')'
+    competitors = competitors[~competitors['concept'].astype(str).str.fullmatch(expense_pattern)]
+    # Percentage rows are ratios, not USD sales, even if normalized as Revenue.
+    competitors = competitors[~competitors['concept'].astype(str).str.endswith('PercentToSales')]
+    return competitors
+
+
+def _operating_revenue_group(df):
+    """Closed, positively weighted operating children of an Other Income total."""
+    rows = df[_consolidated_mask(df)]
+    aggregate = rows[rows['label'].map(_revenue_label).str.fullmatch(
+        r'(?:total )?revenues? and other income')]
+    if aggregate.empty or 'parent_concept' not in rows:
+        return rows.iloc[:0], False
+    children = _revenue_competitors(rows)
+    children = children[children['parent_concept'].astype(str).isin(aggregate['concept'].astype(str))]
+    if children.empty:
+        return children, False
+    supported = {'SalesRevenueNet', 'SalesRevenueGoodsNet', 'SalesRevenueServicesNet',
+                 'FinancialServicesRevenue', 'OilAndGasRevenue',
+                 'RefiningAndMarketingRevenue', 'RevenueFromRelatedParties'}
+    pattern = r'(?:us-gaap[_:])?(?:' + '|'.join(sorted(supported)) + ')'
+    closed = (children['concept'].astype(str).str.fullmatch(pattern).all()
+              and children['parent_concept'].astype(str).nunique() == 1
+              and ((children['concept'].astype(str).nunique() == 1 and 'weight' not in children)
+                   or ('weight' in children and children['weight'].map(lambda v: _to_python_val(v) == 1).all())))
+    return children, bool(closed)
+
+
+def _uncovered_revenue_component(df, selected, period_col):
+    """A goods/services subtotal needs coverage, not merely a recognized QName."""
+    rows = df[_consolidated_mask(df)]
+    owned = set(rows.loc[selected, 'concept'].astype(str))
+    competitors = _revenue_competitors(df, period_col)
+    parents = {}
+    if 'parent_concept' in rows:
+        for _, row in rows.iterrows():
+            parents.setdefault(str(row['concept']), set()).add(str(row['parent_concept']))
+    for index, row in competitors.iterrows():
+        if index in selected:
+            continue
+        pending = [str(row['concept'])]
+        visited = set()
+        covered = False
+        while pending:
+            concept = pending.pop()
+            if concept in owned:
+                covered = True
+                break
+            if concept not in visited:
+                visited.add(concept)
+                pending.extend(parents.get(concept, ()))
+        if not covered:
+            return True
+    return False
+
+
 def _revenue_total_rows(df):
     """Recognized non-dimensional raw totals at the broadest available tier."""
     consolidated = df[_consolidated_mask(df)]
     labels = consolidated['label'].map(_revenue_label)
     # Revenue is operating sales, not a sales-plus-other-income aggregate. Bank
     # net interest remains operating revenue; it is not excluded by this rule.
-    consolidated = consolidated[~labels.str.fullmatch(r'(?:total )?revenues? and other income')]
+    operating, closed = _operating_revenue_group(df)
+    consolidated = consolidated.drop(index=operating.index)
+    consolidated = consolidated[~labels.loc[consolidated.index].str.fullmatch(r'(?:total )?revenues? and other income')]
     concepts = consolidated['concept'].astype(str)
     labels = labels.loc[consolidated.index]
     for suffix in (
@@ -1462,21 +1545,8 @@ def _revenue_total_rows(df):
                     r'(?:us-gaap[_:])?SalesRevenueNet').all()):
                 rows = explicit
             return rows
-    # Historical refiners may report a single operating-sales row rather than
-    # separately reporting sales to related parties. Do not treat a PRESENT
-    # related-party row with a missing value as zero or omit another child.
-    all_rows = df[_consolidated_mask(df)]
-    related = all_rows['concept'].astype(str).str.fullmatch(r'(?:us-gaap[_:])?RevenueFromRelatedParties')
-    refining = all_rows[all_rows['concept'].astype(str).str.fullmatch(r'(?:us-gaap[_:])?RefiningAndMarketingRevenue')]
-    aggregate = all_rows[all_rows['label'].map(_revenue_label).str.fullmatch(r'(?:total )?revenues? and other income')]
-    if not related.any() and not refining.empty and 'parent_concept' in all_rows:
-        parents = set(refining['parent_concept'].astype(str))
-        if len(parents) == 1 and parents <= set(aggregate['concept'].astype(str)):
-            children = all_rows[all_rows['parent_concept'].astype(str).isin(parents)]
-            revenue_children = children[children['concept'].map(_revenue_concept_words).str.contains(
-                r'\brevenues?\b|\bsales\b', case=False, na=False)]
-            if set(revenue_children.index) <= set(refining.index):
-                return refining
+    if closed and operating['concept'].astype(str).nunique() == 1:
+        return operating
     return consolidated.iloc[:0]
 
 
@@ -1518,28 +1588,21 @@ def _revenue_components(df, period_col: str) -> tuple[list[int], bool]:
         if len(indices) == 2:
             return indices, False
 
-    # Refiners reporting operating sales to third parties and related parties
-    # beneath an explicit Other Income aggregate. Both components are required;
-    # unknown additional revenue children prevent this closed formula.
-    aggregate = rows[rows['label'].map(_revenue_label).str.fullmatch(
-        r'(?:total )?revenues? and other income')]
-    if not aggregate.empty and 'parent_concept' in rows:
-        indices, ambiguous = [], False
-        for local in ('RefiningAndMarketingRevenue', 'RevenueFromRelatedParties'):
-            index, conflict = unique(local)
-            ambiguous |= conflict
-            if index is not None:
-                indices.append(index)
-        if ambiguous:
+    operating, closed = _operating_revenue_group(df)
+    if not operating.empty:
+        if not closed:
             return [], True
-        if len(indices) == 2:
-            parents = {str(rows.loc[i, 'parent_concept']) for i in indices}
-            if len(parents) == 1 and parents <= set(aggregate['concept'].astype(str)):
-                children = rows[rows['parent_concept'].astype(str).isin(parents)]
-                extra_revenue = children[children['concept'].map(_revenue_concept_words).str.contains(
-                    r'\brevenues?\b|\bsales\b', case=False, na=False)]
-                if set(extra_revenue.index) <= set(indices):
-                    return indices, False
+        indices = []
+        for concept in sorted(set(operating['concept'].astype(str))):
+            found = operating[operating['concept'].astype(str) == concept]
+            present = found[found[period_col].map(lambda v: _to_python_val(v) is not None)]
+            if present.empty:
+                return [], False
+            values = [_to_python_val(v) for v in present[period_col]]
+            if any(v != values[0] for v in values[1:]):
+                return [], True
+            indices.append(present.index[0])
+        return indices, False
     return [], False
 
 
@@ -1555,6 +1618,12 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
     """
     rows = _revenue_total_rows(df)
     if not rows.empty:
+        partial = rows['concept'].astype(str).str.fullmatch(
+            r'(?:us-gaap[_:])?(?:SalesRevenueGoodsNet|SalesRevenueServicesNet)')
+        if partial.all() and not rows['label'].map(_revenue_label).str.startswith('total ').any():
+            if (rows['concept'].astype(str).nunique() > 1
+                    or _uncovered_revenue_component(df, list(rows.index), period_col)):
+                return None, True
         present = rows[rows[period_col].map(lambda value: _to_python_val(value) is not None)]
         if not present.empty:
             rows = present
@@ -1568,6 +1637,9 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
     components, component_conflict = _revenue_components(df, period_col)
     if components or component_conflict:
         return None, component_conflict
+    operating, _ = _operating_revenue_group(df)
+    if not operating.empty:
+        return None, False  # A required known component lacks a current value.
     labels = consolidated['label'].map(_revenue_label)
     accepted = {'revenue', 'revenues', 'total revenue', 'total revenues',
                 'total net revenue', 'total net revenues', 'net revenue', 'net revenues',
@@ -1579,27 +1651,7 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
     candidates = candidates[candidates[period_col].map(lambda value: _to_python_val(value) is not None)]
     if candidates.empty:
         return None, False
-    # Tokenize CamelCase and separators before detecting a revenue word. A
-    # substring crosses Sale + Securities and invents an OCI revenue candidate.
-    concept_words = consolidated['concept'].map(_revenue_concept_words)
-    # A differently named revenue component is still a competing candidate.
-    competitors = consolidated[
-        concept_words.str.contains(r'\brevenues?\b|\bsales\b', case=False, na=False)
-        | consolidated['label'].astype(str).str.contains(r'\brevenues?\b|\bsales\b', case=False, na=False)
-    ]
-    competitors = competitors[competitors[period_col].map(lambda value: _to_python_val(value) is not None)]
-    # Exact cost labels describe expenses, not competing revenue scopes.
-    competitors = competitors[~labels.loc[competitors.index].str.fullmatch(
-        r'costs? of (?:revenues?|sales)')]
-    expense_concepts = {
-        'CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold',
-        'CostOfServices', 'CostOfServicesExcludingDepreciationDepletionAndAmortization',
-        'LossesGainsOnSalesOfAssetsAndAssetImpairmentCharges',
-        'GainLossOnSalesOfAssetsAndAssetImpairmentCharges', 'GainLossOnDispositionOfAssets',
-        'MineralExtractionProcessingAndMarketingCosts', 'SellingAndMarketingExpense',
-    }
-    expense_pattern = r'(?:us-gaap[_:])?(?:' + '|'.join(sorted(expense_concepts)) + r')'
-    competitors = competitors[~competitors['concept'].astype(str).str.fullmatch(expense_pattern)]
+    competitors = _revenue_competitors(df, period_col)
     has_explicit_total = labels.loc[candidates.index].str.startswith('total ').any()
     if not has_explicit_total and any(i not in candidates.index for i in competitors.index):
         return None, True
