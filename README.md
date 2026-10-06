@@ -122,6 +122,13 @@ SEC**，重產 Excel 就有（抓滿 218 家要 11 小時，所以這件事很�
 
 ## 給開發者 / skill 呼叫
 
+### 規則載入分工
+
+- **維護工具程式、GUI、啟動器與發布**：沿用本 README 的 `windows-tool.md`，再依任務讀工具 ARCHITECTURE、PITFALLS／TODO 等文件。
+- **取得公司財報、建立或更新離線 A／B／C**：另讀 `C:/Users/CTH/.claude/project-rules/finance-analysis.md`，由共用 `financial-assistant/financial_paths.json` 路由 OFFLINE_SOP；操作 A 先讀本工具 docs/CLI.md，資料庫問題讀 docs/DATABASE.md。B 使用既有 sec-revenue-breakdown skill，C 使用共用母版及 Excel 命名儲存格。
+- 呼叫 CLI 產資料不代表要修改工具程式；維護工具也不代表要初始化公司研究資料夾。公司文件與輸出位置依已確認的公司作業路徑，不在本工具根目錄建立公司 README／研究模型。
+- 資料庫位置與 UUID 由本工具現有連接設定及 `db-status --json -` 解析，不從金融規則另存的路徑或舊 local_db 猜測；連接失敗不自建空庫。
+
 - 架構、Excel 欄位規格、已知限制：`docs/ARCHITECTURE.md`
 - 指令列介面（給外部 skill 用，不經 GUI）：`docs/CLI.md`
 - 待辦事項：`docs/TODO.md`

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-06（金融作業規則入口）
+
+- README 補充任務載入分工：工具程式與 GUI 維護仍依 windows-tool；公司 A／B／C 資料產出另依 finance-analysis 及金融共用路徑表的 OFFLINE_SOP。
+- 公司資料建置不在本工具根目錄初始化研究文件；資料庫連接以現有 CLI 為準。本次只改文件，未改程式、來源或資料庫。
+
 ## 2026-10-06（Revenue 選值後續）
 
 - 修正管理費／產品營收構成項被當成總營收：優先保存的原始 GAAP 總計及 calculation parent 身份，不選最大值；override／rebuild 不得繞過總計。同層衝突留空並記 `AmbiguousRevenueTotal`，來源構成列仍保留。
