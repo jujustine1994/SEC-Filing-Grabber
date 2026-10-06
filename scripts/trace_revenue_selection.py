@@ -38,6 +38,7 @@ def trace(ticker, output):
 
     def matched(df, column):
         index, ambiguous = original_match(df, column)
+        components, component_conflict = fg._revenue_components(df, column) if index is None else ([], False)
         rows = []
         for i, row in df[fg._consolidated_mask(df)].iterrows():
             text = str(row.get('concept', '')) + ' ' + str(row.get('label', ''))
@@ -51,7 +52,11 @@ def trace(ticker, output):
         records.append(dict(ticker=ticker, accession=df.attrs['trace_accession'],
                             form=df.attrs['trace_form'], column=column,
                             selected_index=None if index is None else int(index),
-                            ambiguous=bool(ambiguous), rows=rows))
+                            ambiguous=bool(ambiguous or component_conflict),
+                            component_indices=[int(i) for i in components],
+                            selected_value=(fg._to_python_val(df.loc[index, column]) if index is not None
+                                            else sum(fg._to_python_val(df.loc[i, column]) for i in components)
+                                            if components else None), rows=rows))
         return index, ambiguous
 
     audit_directory = output.with_name(output.name + '-audits')

@@ -75,3 +75,31 @@ def test_explicit_reported_total_with_missing_value_blocks_bank_derivation():
     index, ambiguous = fg._match_revenue_row(df, case['column'])
     assert index is not None and not ambiguous
     assert pd.isna(df.loc[index, case['column']])
+
+
+def test_missing_custom_reported_total_also_blocks_bank_derivation():
+    case = next(c for c in CASES if c['ticker']=='BK' and c['accession']=='0001390777-25-000046')
+    df = dataframe(case)
+    df.loc[df['concept']==case['facts'][0]['concept'], case['column']] = None
+    index, ambiguous = fg._match_revenue_row(df, case['column'])
+    assert index is not None and not ambiguous
+    assert pd.isna(df.loc[index, case['column']])
+    assert fg._revenue_components(df, case['column']) == ([], False)
+
+
+@pytest.mark.parametrize('concept', ['company_AdditionalRevenue', 'company_AdditionalSales'])
+def test_unknown_additional_refiner_revenue_blocks_closed_formula(concept):
+    case = next(c for c in CASES if c['ticker']=='MPC')
+    df = dataframe(case)
+    additional = df[df['concept']=='us-gaap_RevenueFromRelatedParties'].copy()
+    additional.index = [1000]
+    additional['concept'] = concept
+    df = pd.concat([df, additional])
+    assert fg._revenue_components(df, case['column']) == ([], False)
+
+
+def test_dimensions_cannot_complete_a_bank_formula():
+    case = next(c for c in CASES if c['ticker']=='BK')
+    df = dataframe(case)
+    df.loc[df['concept']=='us-gaap_NoninterestIncome', 'dimension_member_label'] = 'Segment A'
+    assert fg._revenue_components(df, case['column']) == ([], False)

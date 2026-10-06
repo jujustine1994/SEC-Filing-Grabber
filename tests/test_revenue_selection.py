@@ -185,11 +185,11 @@ def test_calculation_child_is_not_an_independent_conflicting_total():
     assert fg._match_revenue_row(df,'2020-12-31 (FY)')==(1,False)
 
 
-def test_total_including_other_income_is_not_automatic_revenue_authority():
+def test_operating_sales_exclude_reported_other_income_aggregate():
     df=frame(['us-gaap_SalesRevenueNet','us-gaap_Revenues'],[29_106_000_000,32_584_000_000])
     df['parent_concept']=['us-gaap_Revenues','us-gaap_OperatingIncomeLoss']
     df['label']=['Sales and other operating revenues','Total Revenues and Other Income']
-    assert fg._match_revenue_row(df,'2020-12-31 (FY)')==(None,True)
+    assert fg._match_revenue_row(df,'2020-12-31 (FY)')==(0,False)
 
 
 def test_absent_value_is_not_a_conflicting_reported_amount():

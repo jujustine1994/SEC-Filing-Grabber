@@ -3906,5 +3906,178 @@
         "sha256": "05fb01908c5ab6e56e145db6eb1dcf39233b87d99aca298ebb0329374d6cca00"
       }
     ]
+  },
+  {
+    "ticker": "MPC",
+    "accession": "0001510295-17-000017",
+    "column": "2016-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029517000017/mpc-20161231.xml",
+    "instance_sha256": "6ef9a61971c777132d8d7d873faf02d0b86fcce54eeec9d2b3c053e1c6ffb678",
+    "facts": [
+      {
+        "concept": "us-gaap_RefiningAndMarketingRevenue",
+        "namespace": "http://fasb.org/us-gaap/2016-01-31",
+        "start": "2016-01-01",
+        "end": "2016-12-31",
+        "value": "63339000000"
+      }
+    ],
+    "expected_value": 63339000000,
+    "rows": [
+      {
+        "concept": "us-gaap_RefiningAndMarketingRevenue",
+        "label": "Sales and other operating revenues (including consumer excise taxes)",
+        "standard_concept": "Revenue",
+        "parent_concept": "mpc_RevenuesAndOtherIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 1,
+        "value": 63339000000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnDispositionOfAssets",
+        "label": "Net gain on disposal of assets",
+        "standard_concept": "GainLossOnAssetSalesCF",
+        "parent_concept": "mpc_RevenuesAndOtherIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 24,
+        "value": 32000000.0
+      },
+      {
+        "concept": "mpc_RevenuesAndOtherIncome",
+        "label": "Total revenues and other income",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 26,
+        "value": 63364000000.0
+      },
+      {
+        "concept": "us-gaap_RefiningAndMarketingCosts",
+        "label": "Cost of revenues (excludes items below)",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 28,
+        "value": 49170000000.0
+      },
+      {
+        "concept": "us-gaap_CostsAndExpensesRelatedParty",
+        "label": "Purchases from related parties",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 29,
+        "value": 509000000.0
+      },
+      {
+        "concept": "us-gaap_ExciseAndSalesTaxes",
+        "label": "Consumer excise taxes",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 33,
+        "value": 7506000000.0
+      },
+      {
+        "concept": "us-gaap_CostsAndExpenses",
+        "label": "Total costs and expenses",
+        "standard_concept": "CostsSubtotal",
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 42,
+        "value": 60986000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDebtExpense",
+        "label": "Net interest and other financial income (costs)",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 49,
+        "value": -556000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 50,
+        "value": 1822000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 51,
+        "value": 609000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToRedeemableNoncontrollingInterest",
+        "label": "Redeemable noncontrolling interest",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_MinorityInterestInNetIncomeLossOfConsolidatedEntitiesAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 54,
+        "value": 41000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNonredeemableNoncontrollingInterest",
+        "label": "Noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_MinorityInterestInNetIncomeLossOfConsolidatedEntitiesAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 55,
+        "value": -2000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029517000017/mpc-20161231.xml",
+        "path": "output\\MPC-0001510295-17-000017-mpc-20161231.xml",
+        "sha256": "6ef9a61971c777132d8d7d873faf02d0b86fcce54eeec9d2b3c053e1c6ffb678"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029517000017/mpc-20161231_cal.xml",
+        "path": "output\\MPC-0001510295-17-000017-mpc-20161231_cal.xml",
+        "sha256": "28024e40910a5c43d431be1b5461e0054e6a673f397059d219f9f7a3d7ed9c82"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029517000017/mpc-20161231_lab.xml",
+        "path": "output\\MPC-0001510295-17-000017-mpc-20161231_lab.xml",
+        "sha256": "792dd4a778b0caf9355bd14987d95ba737c75f0a47fece1a891445f2a22433b3"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029517000017/mpc-20161231_pre.xml",
+        "path": "output\\MPC-0001510295-17-000017-mpc-20161231_pre.xml",
+        "sha256": "891a3a58a16a9514f2b3a60645298c1093e0f171ab8fd96d528c860a6aaa5cd8"
+      }
+    ]
   }
 ]
