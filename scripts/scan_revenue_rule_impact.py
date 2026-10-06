@@ -81,7 +81,8 @@ def main():
     old_comp = ast.dump(old_functions['_revenue_competitors'])
     stripped = ast.parse(ast.unparse(new_functions['_revenue_competitors']).replace(
         ".str.casefold().str.endswith('percenttosales')", ".str.endswith('PercentToSales')")).body[0]
-    assert old_comp == ast.dump(stripped), 'Unbounded competitor change'
+    assert old_comp in (ast.dump(new_functions['_revenue_competitors']),
+                        ast.dump(stripped)), 'Unbounded competitor change'
     started = time.monotonic()
     scanned = frames = relevant = periods = filings = 0
     tickers = set()

@@ -1469,7 +1469,14 @@ def _operating_revenue_group(df):
                  'FinancialServicesRevenue', 'OilAndGasRevenue',
                  'RefiningAndMarketingRevenue', 'RevenueFromRelatedParties'}
     pattern = r'(?:us-gaap[_:])?(?:' + '|'.join(sorted(supported)) + ')'
-    closed = (children['concept'].astype(str).str.fullmatch(pattern).all()
+    # Historical custom operating-sales concepts may be recognized only by
+    # this complete source label inside the positively weighted closed group.
+    # Retain the reported tax basis; do not substitute the Other Income total.
+    recognized = (children['concept'].astype(str).str.fullmatch(pattern)
+                  | children['label'].map(_revenue_label).isin({
+                      'sales and other operating revenue',
+                      'sales and other operating revenues'}))
+    closed = (recognized.all()
               and children['parent_concept'].astype(str).nunique() == 1
               and ((children['concept'].astype(str).nunique() == 1 and 'weight' not in children)
                    or ('weight' in children and children['weight'].map(lambda v: _to_python_val(v) == 1).all())))
