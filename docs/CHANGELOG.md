@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-07（Revenue 衝突修復完成）
+
+- 修復完整名稱版遺漏的 Net sales、產業淨額、銀行淨營收與 Other Income 營業子項；修正 CMG 跨單字 sales、JNJ 小寫比例 suffix，以及 XOM 歷史自訂完整營業銷售名稱。銀行採信用損失提列前；一般公司排除 Other Income 合計、保留申報稅口徑。全由固定規則，Revenue 不呼叫 LLM，不寫回來源庫。
+- 兩輪 215 家固定版本重建、全部 14,417 申報輸入影響掃描及受影響公司重建後，最終營收衝突 0；之前 880 筆營收留空全部恢復。489 張固定列、25 個新增原 XML 案例（72 條計算關係）、舊七例及 15 格 fiscal／CF 全通過，1,825 個非 slow 測試通過。
+- 12 份新 Excel 實際重算及核對 401,234 格（含比率 47,849／表頭 13,822），錯誤 0；NEM 一個缺日來源列 INCONCLUSIVE。正式庫 29,277 檔 SHA 完全不變。其他固定指標僅連動 Gross Profit；MPC 多出兩張保留稅額排除營收的 NG overflow 頁，既有分頁分類問題仍列待辦。
+- 已完成 Revenue 項目移出 TODO；G13 原 accession／年度錨點／transition／KHC／GUI 仍未完成。精確版本、全庫比較及驗收界線見 [完成驗證](superpowers/revenue-resolved-verification-2026-10-07.md)。
+
 ## 2026-10-07（Revenue 完整名稱全庫驗證）
 
 - 全 215 家離線重建後，確認新競爭候選規則誤把成本、成本註腳及資產處分當營收；以完整成本名稱及精確 GAAP expense／處分 concept 排除，新增正反例測試，每步 commit。

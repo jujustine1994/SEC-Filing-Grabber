@@ -1,0 +1,349 @@
+{
+  "numeric_code_commit": "0ea4ec8",
+  "baseline_previous_exact_rule": "bdc930d",
+  "baseline_accepted": "67e0a46 fix: preserve source slot identity when merging financial templates",
+  "companies": 215,
+  "coverage": {
+    "full_rebuilds": [
+      {
+        "code": "e8239bd",
+        "companies": 215,
+        "elapsed_seconds": 1382.2427004999772,
+        "batch_exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "database_files": 29277,
+        "database_bytes": 3204105955,
+        "database_unchanged": true,
+        "added": [],
+        "removed": [],
+        "changed": []
+      },
+      {
+        "code": "68a8653",
+        "companies": 215,
+        "elapsed_seconds": 1101.7356587999966,
+        "batch_exit_codes": [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        "database_files": 29277,
+        "database_bytes": 3204105955,
+        "database_unchanged": true,
+        "added": [],
+        "removed": [],
+        "changed": []
+      }
+    ],
+    "post_full_rebuild": "All saved income frames and date columns compared by pure selector AST; rebuild only proven affected companies. Seven rebuilt at 944d733, XOM rebuilt again at 0ea4ec8."
+  },
+  "impact_scans": [
+    {
+      "before_sha256_normalized_text": "2f3c56f99010159f6f6df34a03362bf5625cdbc7fa6fd2f4bc4e892282ee46ef",
+      "after_sha256_normalized_text": "9e0fce37e14e661a154203b7e45aabe110691c9528027d41e13252a028b5f690",
+      "filings": 14417,
+      "income_filings": 13155,
+      "companies": 215,
+      "frames": 13155,
+      "relevant_frames": 452,
+      "periods_compared": 1554,
+      "affected_companies": [
+        "COP",
+        "CVX",
+        "JNJ",
+        "MPC",
+        "OXY",
+        "PSX",
+        "XOM"
+      ],
+      "elapsed_seconds": 93.47144510000362
+    },
+    {
+      "before_sha256_normalized_text": "9e0fce37e14e661a154203b7e45aabe110691c9528027d41e13252a028b5f690",
+      "after_sha256_normalized_text": "79fda5f35aaa8e557132da4bbad0f6a83082540ec697127d7de3ec017c2c414a",
+      "filings": 14417,
+      "income_filings": 13155,
+      "companies": 215,
+      "frames": 13155,
+      "relevant_frames": 452,
+      "periods_compared": 1554,
+      "affected_companies": [
+        "XOM"
+      ],
+      "elapsed_seconds": 106.09453380000195
+    }
+  ],
+  "comparisons": {
+    "previous_exact_rule": {
+      "companies": 215,
+      "changed_companies": 33,
+      "fixed_changes": [
+        {
+          "sheet": "Data_Financials(Q)",
+          "concept": "Gross Profit",
+          "count": 326
+        },
+        {
+          "sheet": "Data_Financials(Q)",
+          "concept": "Revenue",
+          "count": 1048
+        },
+        {
+          "sheet": "Data_Financials(Y)",
+          "concept": "Gross Profit",
+          "count": 83
+        },
+        {
+          "sheet": "Data_Financials(Y)",
+          "concept": "Revenue",
+          "count": 266
+        }
+      ],
+      "label_changes": {
+        "Data_Financials_NG(Q)": 61,
+        "Data_Financials_NG(Y)": 15
+      },
+      "header_changes": {
+        "Data_Financials_NG(Q)": 183,
+        "Data_Financials_NG(Y)": 45
+      },
+      "gaps": {
+        "MissingStandalonePeriod": 230,
+        "MissingCurrentPeriod": 86
+      },
+      "ambiguous_revenue_by_company": {}
+    },
+    "accepted_before_exact_rule": {
+      "companies": 215,
+      "changed_companies": 22,
+      "fixed_changes": [
+        {
+          "sheet": "Data_Financials(Q)",
+          "concept": "Gross Profit",
+          "count": 212
+        },
+        {
+          "sheet": "Data_Financials(Q)",
+          "concept": "Revenue",
+          "count": 759
+        },
+        {
+          "sheet": "Data_Financials(Y)",
+          "concept": "Gross Profit",
+          "count": 52
+        },
+        {
+          "sheet": "Data_Financials(Y)",
+          "concept": "Revenue",
+          "count": 190
+        }
+      ],
+      "label_changes": {
+        "Data_Financials_NG(Q)": 61,
+        "Data_Financials_NG(Y)": 15
+      },
+      "header_changes": {
+        "Data_Financials_NG(Q)": 183,
+        "Data_Financials_NG(Y)": 45
+      },
+      "gaps": {
+        "MissingStandalonePeriod": 230,
+        "MissingCurrentPeriod": 86
+      },
+      "ambiguous_revenue_by_company": {}
+    }
+  },
+  "restoration": {
+    "previously_blanked_records": 880,
+    "restored_records": 880,
+    "remaining_blanked_by_company": {},
+    "remaining_records": []
+  },
+  "database": {
+    "files": 29277,
+    "bytes": 3204105955,
+    "unchanged": true,
+    "added": [],
+    "removed": [],
+    "changed": []
+  },
+  "tests": {
+    "passed": 1825,
+    "deselected_slow": 65,
+    "warnings": 5,
+    "seconds": 51.34
+  },
+  "source_evidence": {
+    "new_cases": 25,
+    "original_cases_retained": 7,
+    "role_qualified_calculation_arcs": 72,
+    "fiscal_cf_cells": 15,
+    "failures": 0,
+    "scope": "sampled original SEC XML verification; not every cell"
+  },
+  "fixed_layout": {
+    "financial_tables": 489,
+    "failures": 0
+  },
+  "workbooks": {
+    "companies": [
+      "BK",
+      "CMG",
+      "COP",
+      "HCA",
+      "MS",
+      "NEM",
+      "TGT",
+      "MPC",
+      "CVX",
+      "GE",
+      "JNJ",
+      "XOM"
+    ],
+    "totals": {
+      "cells_checked": 401234,
+      "ratio_cells": 47849,
+      "header_cells": 13822
+    },
+    "results": {
+      "BK": {
+        "cells_checked": 39042,
+        "ratio_cells": 4071,
+        "header_cells": 1424,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "CMG": {
+        "cells_checked": 21035,
+        "ratio_cells": 3835,
+        "header_cells": 667,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "COP": {
+        "cells_checked": 43174,
+        "ratio_cells": 4071,
+        "header_cells": 1427,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "HCA": {
+        "cells_checked": 23839,
+        "ratio_cells": 3658,
+        "header_cells": 1066,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "MS": {
+        "cells_checked": 42194,
+        "ratio_cells": 4071,
+        "header_cells": 1440,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "NEM": {
+        "cells_checked": 43724,
+        "ratio_cells": 4130,
+        "header_cells": 1465,
+        "errors": [],
+        "inconclusive_override_headers": [
+          {
+            "sheet": "Data_Financials(Q)",
+            "label": "FY2010Q2",
+            "column": 9,
+            "fiscal": "FY2010FQ2",
+            "calendar": "2010Q2",
+            "end": "2010-06"
+          }
+        ]
+      },
+      "TGT": {
+        "cells_checked": 25255,
+        "ratio_cells": 4071,
+        "header_cells": 892,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "MPC": {
+        "cells_checked": 25511,
+        "ratio_cells": 3599,
+        "header_cells": 947,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "CVX": {
+        "cells_checked": 25766,
+        "ratio_cells": 4130,
+        "header_cells": 905,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "GE": {
+        "cells_checked": 55416,
+        "ratio_cells": 4071,
+        "header_cells": 1780,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "JNJ": {
+        "cells_checked": 27904,
+        "ratio_cells": 4071,
+        "header_cells": 793,
+        "errors": [],
+        "inconclusive_override_headers": []
+      },
+      "XOM": {
+        "cells_checked": 28374,
+        "ratio_cells": 4071,
+        "header_cells": 1016,
+        "errors": [],
+        "inconclusive_override_headers": []
+      }
+    },
+    "real_excel_recalculated": true
+  },
+  "runtime_revenue_llm_calls": 0,
+  "output_scope": "215 JSON template outputs; 12 newly generated verification Excel workbooks; formal filing JSON unchanged",
+  "known_remaining": "MissingStandalonePeriod230; MissingCurrentPeriod86; G13 accession/context, KR, anchors, transition, KHC, GUI; GAAP assessed-tax exclusion overflow classification."
+}

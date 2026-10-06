@@ -599,3 +599,15 @@ MAR 兩個 segment 名称各 31 字，只差大小寫，openpyxl 自動加號後
 完整匹配 Revenue 後，以 concept／label 包含 Revenue 或 Sales 搜尋競爭候選，仍會把 `Cost of Revenue`、PFE `Cost of sales(a)`、IQV 帶折舊說明的成本、CMG `LossesGainsOnSalesOfAssetsAndAssetImpairmentCharges` 算進去，使正常的唯一營收被誤報衝突。分項誤選與成本誤排除必須分開量測；新增留空不能一概宣稱保守正確。
 
 修正方向：完整成本 label 與精確 GAAP 成本／處分 concept 排除，保留真正不同營收候選。模板規則修正後不能直接沿用舊驗收；先凍結版本完成全庫，再以原始 JSON 的期間比較找出受影響公司並重建。期末相同或數字恢復舊值不等於獨立 SEC 來源認證。
+
+## 陷阱二十：拒絕選值與大樣本測試都不等於修復完成
+
+完整名稱版通過 1,770 個測試，卻新增 880 筆營收空值、仍有 85 筆衝突。CMG `AvailableforsaleSecurities` 跨字包含 sales；JNJ 小寫 `percenttosales` 漏過大小寫敏感排除；產業淨額與歷史 Net sales 尚未識別。這些空值是規則缺陷，不能全部稱為保守正確。
+
+正確做法：追蹤 builder 真正使用的 accession／日期／原列，另讀同一申報原 XML 的 entity、QName、無維度 duration、USD unit 與計算 role；不能用後年比較數字替代原來源。逐一核對新增空值、修復閉環與全庫 coverage，而不是只看測試通過或衝突筆數下降。
+
+## 陷阱二十一：已知營收 concept 仍可能只是子項，群組也會版本漂移
+
+GE 商品＋服務還缺金融服務，單選 goods/services 會少算；CVX 油氣之外還有關係人營收。只認歷史 refiner 類型又會漏掉新 COP／CVX 的 Revenues 或 customer-contract 子項。含／不含 assessed tax 兩列有時只有一列當期有值，不能把缺值當零或把兩種稅口徑相加。XOM 的原始自訂營業銷售含銷售稅，Other Income 合計另含權益法及其他收益。
+
+正確做法：一般總計與群組共用有限 concept registry，驗證同父項、正計算權重、未知獨立營收、必要值及重複 concept；稅口徑採互斥選值。全空且無權重的 presentation placeholder 不等於真實缺當期組成。後續規則凍結後掃全部保存表的所有日期欄，再重建受影響公司，不能把混合版本的結果冒稱最後 commit 的全庫新執行。MPC 新增 NG overflow 是原构成列被保留後顯露既有分類問題，不等於主表財季回歸。

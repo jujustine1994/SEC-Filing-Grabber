@@ -32,7 +32,11 @@ edgartools 的 `standard_concept=Revenue` 同時包含總計與管理費、產�
 
 **模板口徑**：一般公司的 Revenue 是營業銷售，明確的 `Total revenues and other income` 不取代營業收入；其他收益及原總額留在來源 overflow。銀行的 Revenue 包含淨利息收入，採扣除利息費用、信用損失提列前口徑，不一律排除利息。醫療公司使用扣除報告呆帳 provision 後的原始淨營收 concept。
 
-**有限衍生公式**：沒有已識別報告總額時，銀行損益表（有精確 `NoninterestExpense`）可用 `NoninterestIncome + InterestIncomeExpenseNet`；煉油公司明確 Other Income aggregate 下的 `RefiningAndMarketingRevenue + RevenueFromRelatedParties` 可合計營業銷售。煉油只有一列營業收入、且沒有其他收入子項時直接取該原列。衍生必須所有組成同當期有值、非維度、每個 concept 的有效值一致；缺值不能當零，不使用 gross interest 或提列信用損失後的金額。已有總額即使缺值也阻止衍生回退。衍生不插入／修改來源 DataFrame，組成列留在 overflow；單列 label 可標記 Derived，逐期選值來源可用 `trace_revenue_selection.py` 記錄。
+**有限衍生公式**：沒有已識別報告總額時，銀行損益表（有精確 `NoninterestExpense`）可用 `NoninterestIncome + InterestIncomeExpenseNet`。明確 Other Income aggregate 下，營收子項必須屬於同一父項、計算權重為 +1，且全部由有限原始 GAAP 集合或完整營業銷售名稱辨識，才能取單一原列或加總。一般營收與群組共用 `_REVENUE_CONCEPT_TIERS`，另支援油氣、煉油、關係人與金融服務收入；可處理 CVX 油氣加關係人、GE 商品加服務加金融服務。XOM 歷史自訂概念僅在此群組內以完整 `Sales and other operating revenue(s)` 辨識，維持申報含銷售稅口徑，不任意減稅。未知營收子項阻止合計。
+
+衍生必須所有組成同當期有值、非維度、每個 concept 的有效值一致；重複相同 concept 不重複加總，缺值不能當零。customer-contract 含／不含 assessed tax 是互斥選值，不相加；兩者同當期不同值仍報衝突。所有日期皆無值且無計算權重的 presentation placeholder 可忽略；當期缺值但別期有值或有計算關係者仍保留為必要組成。裸 goods/services concept 另檢查獨立營收分項是否未被覆蓋，不能把已識別子項當完整總額。已有總額即使缺值也阻止衍生回退。衍生不插入／修改來源 DataFrame，組成列留在 overflow；單列 label 可標記 Derived，逐期選值來源可用 `trace_revenue_selection.py` 記錄。
+
+競爭候選以完整單字辨識，避免 `AvailableforsaleSecurities` 跨字誤命中 sales；`PercentToSales` 的精確後綴不分大小寫排除，比例不能與金額競爭。名稱／概念排除採有限規則，不呼叫 AI。
 
 同層剩餘總計數值衝突時留空並記錄 `AmbiguousRevenueTotal` 資料缺口；不探測 SEC 網路、不任選最大值。已辨識總計缺值時不回退到構成項。既有或當趟 diagnosis 的 Revenue override 不得繞過規則；未入模板的来源列保留在 `Other (as reported)`。原始 XML、合併實體、期間、USD 與計算 role 的獨立驗證案例見 `tests/fixtures/revenue-resolution-cases.json` 和 `scripts/verify_revenue_resolution_sources.py`；這是抽樣來源認證，不能宣稱全庫每格均已對照原始 XML。
 

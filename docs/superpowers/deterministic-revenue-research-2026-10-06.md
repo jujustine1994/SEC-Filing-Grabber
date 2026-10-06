@@ -1,5 +1,7 @@
 # 三表營收選值機械化研究（2026-10-06）
 
+> **2026-10-07 最終更新：** 下方實作階段所列 COP／OXY／TGT 衝突已處理；補齊金融與產業總計、完整 Net sales 及 Other Income 下的有限營業群組。Runtime Revenue 完全使用固定規則、零 LLM；最新全庫、來源與 Excel 驗收见 [完成驗證](revenue-resolved-verification-2026-10-07.md)。
+
 初始研究於 2026-10-06；後續已實作完整名稱規則與成本候選排除，最新全庫驗收見 [完整名稱驗證](revenue-exact-label-verification-2026-10-07.md)。原始 SEC 資料與獨立財報資料庫不修改。
 
 ## 後續實作：完整 label 匹配

@@ -1,5 +1,7 @@
 # Revenue 完整名稱規則全庫驗證
 
+> **已被後續修復取代。** 本頁保留 `bdc930d` 的歷史量測；85 筆衝突及 880 筆新增空值已修復，最新數值與證據範圍見 [完成驗證](revenue-resolved-verification-2026-10-07.md)。
+
 **最終數值版本：`bdc930d`。** 215 家結果完整；本次只重建 JSON 形式的模板成果，沒有批次產生全部公司的 Excel，也沒有修改來源資料庫。精簡機器證據見 [verification summary](evidence/revenue-exact-label-verification-summary.json)。第一輪與各中間版本數字只作調查歷史，最新統計以下方「最終驗收」為準。
 
 ## 第一輪固定版本
