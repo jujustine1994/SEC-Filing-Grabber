@@ -159,7 +159,17 @@
         "path": "output\\CMG-0001058090-17-000009-cmg-20161231_pre.xml",
         "sha256": "85d27d7d0b5b65c01cc376010efa59426c39a18db3d42f57e04e62dd6dab1df8"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1058090/000105809017000009/cmg-20161231_cal.xml",
+        "role": "http://www.chipotle.com/role/StatementCondensedConsolidatedStatementOfIncomeAndComprehensiveIncome",
+        "parent": "us-gaap_OperatingIncomeLoss",
+        "child": "us-gaap_FoodAndBeverageRevenue",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "HCA",
@@ -310,7 +320,31 @@
         "path": "output\\HCA-0001193125-18-056057-hca-20171231_pre.xml",
         "sha256": "8460df851b604d669961218714a3271a51effd23a7435b5bb9c81b69f9684cc0"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312518056057/hca-20171231_cal.xml",
+        "role": "http://www.hcahealthcare.com/taxonomy/role/StatementOfIncome",
+        "parent": "us-gaap_HealthCareOrganizationPatientServiceRevenueLessProvisionForBadDebts",
+        "child": "us-gaap_HealthCareOrganizationPatientServiceRevenue",
+        "weight": "1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312518056057/hca-20171231_cal.xml",
+        "role": "http://www.hcahealthcare.com/taxonomy/role/StatementOfIncome",
+        "parent": "us-gaap_HealthCareOrganizationPatientServiceRevenueLessProvisionForBadDebts",
+        "child": "us-gaap_HealthCareOrganizationPatientServiceRevenueProvisionforBadDebts",
+        "weight": "-1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312518056057/hca-20171231_cal.xml",
+        "role": "http://www.hcahealthcare.com/taxonomy/role/StatementOfIncome",
+        "parent": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "child": "us-gaap_HealthCareOrganizationPatientServiceRevenueLessProvisionForBadDebts",
+        "weight": "1.00"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "HCA",
@@ -450,7 +484,31 @@
         "path": "output\\HCA-0001193125-15-065975-hca-20141231_pre.xml",
         "sha256": "a4a03c445f08fac1606dafa7559353652470281404cb7838f1d8fd71bb9e9c67"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312515065975/hca-20141231_cal.xml",
+        "role": "http://www.hcahealthcare.com/taxonomy/role/StatementOfIncome",
+        "parent": "hca_IncomeBeforeIncomeTaxesAfterEquityInEarningsOfAffiliates",
+        "child": "us-gaap_SalesRevenueServicesNet",
+        "weight": "1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312515065975/hca-20141231_cal.xml",
+        "role": "http://www.hcahealthcare.com/taxonomy/role/StatementOfIncome",
+        "parent": "us-gaap_SalesRevenueServicesNet",
+        "child": "us-gaap_SalesRevenueServicesGross",
+        "weight": "1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312515065975/hca-20141231_cal.xml",
+        "role": "http://www.hcahealthcare.com/taxonomy/role/StatementOfIncome",
+        "parent": "us-gaap_SalesRevenueServicesNet",
+        "child": "us-gaap_ProvisionForDoubtfulAccounts",
+        "weight": "-1.00"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "NEM",
@@ -782,7 +840,31 @@
         "path": "output\\NEM-0000950123-09-024448-R9.xml",
         "sha256": "d1d109fda4fd5d54504bbc1f5ea754e8ed1843f6d3a5cb0ece9644c76af4d97f"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/nem-20090630_cal.xml",
+        "role": "http://newmont.com/20090630/role/StatementsOfIncome",
+        "parent": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "child": "us-gaap_RevenueMineralSales",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/nem-20090630_cal.xml",
+        "role": "http://newmont.com/20090630/role/StatementsOfIncome",
+        "parent": "us-gaap_RevenueMineralSales",
+        "child": "nem_SalesCopperNet",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/nem-20090630_cal.xml",
+        "role": "http://newmont.com/20090630/role/StatementsOfIncome",
+        "parent": "us-gaap_RevenueMineralSales",
+        "child": "us-gaap_GoldProductsAndServicesRevenue",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "BK",
@@ -1339,7 +1421,52 @@
         "path": "output\\BK-0001193125-10-042948-R9.xml",
         "sha256": "20e0d9e3665daafd619727200b890a6dbde1cb02aeeef53f7daa473d956516ee"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231_cal.xml",
+        "role": "http://www.bnymellon.com/taxonomy/role/StatementOfIncomeInterestBasedRevenue",
+        "parent": "bk_IncomeLossFromContinuingOperationsBeforeIncomeTaxes",
+        "child": "us-gaap_NoninterestIncome",
+        "weight": "1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231_cal.xml",
+        "role": "http://www.bnymellon.com/taxonomy/role/StatementOfIncomeInterestBasedRevenue",
+        "parent": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLoss",
+        "child": "us-gaap_InterestIncomeExpenseNet",
+        "weight": "1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231_cal.xml",
+        "role": "http://www.bnymellon.com/taxonomy/role/StatementOfIncomeInterestBasedRevenue",
+        "parent": "us-gaap_InterestIncomeExpenseNet",
+        "child": "us-gaap_InterestAndDividendIncomeOperating",
+        "weight": "1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231_cal.xml",
+        "role": "http://www.bnymellon.com/taxonomy/role/StatementOfIncomeInterestBasedRevenue",
+        "parent": "us-gaap_InterestIncomeExpenseNet",
+        "child": "us-gaap_InterestExpense",
+        "weight": "-1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231_cal.xml",
+        "role": "http://www.bnymellon.com/taxonomy/role/StatementOfIncomeInterestBasedRevenue",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "bk_TotalFeeRevenue",
+        "weight": "1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231_cal.xml",
+        "role": "http://www.bnymellon.com/taxonomy/role/StatementOfIncomeInterestBasedRevenue",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "bk_NetSecuritiesGainLoss",
+        "weight": "1.00"
+      }
+    ],
+    "method": "derived sum"
   },
   {
     "ticker": "MS",
@@ -1567,7 +1694,31 @@
         "path": "output\\MS-0001193125-18-060831-ms-20171231_pre.xml",
         "sha256": "68bcb2f1bda6fc8cbbfa2b890d8276d63ea7b7a865f394632e9c9ad885cdaa1b"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/895421/000119312518060831/ms-20171231_cal.xml",
+        "role": "http://www.morganstanley.com/role/ConsolidatedIncomeStatements",
+        "parent": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "child": "us-gaap_RevenuesNetOfInterestExpense",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/895421/000119312518060831/ms-20171231_cal.xml",
+        "role": "http://www.morganstanley.com/role/ConsolidatedIncomeStatements",
+        "parent": "us-gaap_RevenuesNetOfInterestExpense",
+        "child": "us-gaap_NoninterestIncome",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/895421/000119312518060831/ms-20171231_cal.xml",
+        "role": "http://www.morganstanley.com/role/ConsolidatedIncomeStatements",
+        "parent": "us-gaap_RevenuesNetOfInterestExpense",
+        "child": "us-gaap_InterestIncomeExpenseNet",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "COP",
@@ -1707,7 +1858,17 @@
         "path": "output\\COP-0001193125-18-049729-cop-20171231_pre.xml",
         "sha256": "944c9c468b84caa74b1ade6f67776ba9ca5df2c6ad1c13b35385c44b31ee7a27"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000119312518049729/cop-20171231_cal.xml",
+        "role": "http://conocophillips.com/role/StatementConsolidatedIncomeStatement",
+        "parent": "us-gaap_Revenues",
+        "child": "us-gaap_SalesRevenueNet",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "OXY",
@@ -1847,7 +2008,17 @@
         "path": "output\\OXY-0000797468-16-000039-oxy-20160930_pre.xml",
         "sha256": "eb5ff622c3a133490ed0f346622ed2900a7539bbea9a0625b0eb36cbdfbb6617"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/797468/000079746816000039/oxy-20160930_cal.xml",
+        "role": "http://www.oxy.com/role/StatementConsolidatedCondensedStatementsOfOperations",
+        "parent": "us-gaap_Revenues",
+        "child": "us-gaap_SalesRevenueNet",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "TGT",
@@ -2188,7 +2359,31 @@
         "path": "output\\TGT-0001047469-10-002121-tgt-20100130_pre.xml",
         "sha256": "74c02a67ccb79e364e4dae81857a1267f37263db2949208f08b8d8984e56545c"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/tgt-20100130_cal.xml",
+        "role": "http://www.target.com/role/StatementOfIncome",
+        "parent": "tgt_EarningsBeforeInterestExpenseIncomeTaxes",
+        "child": "us-gaap_Revenues",
+        "weight": "1.0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/tgt-20100130_cal.xml",
+        "role": "http://www.target.com/role/StatementOfIncome",
+        "parent": "us-gaap_Revenues",
+        "child": "us-gaap_SalesRevenueNet",
+        "weight": "1.0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/tgt-20100130_cal.xml",
+        "role": "http://www.target.com/role/StatementOfIncome",
+        "parent": "us-gaap_Revenues",
+        "child": "us-gaap_InterestAndFeeIncomeLoansConsumerInstallmentCreditCard",
+        "weight": "1.0"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "WFC",
@@ -2555,7 +2750,115 @@
         "path": "output\\WFC-0000072971-18-000272-wfc-20171231_pre.xml",
         "sha256": "4e9f9634164cd0b0be178df5604557ecaa0be1833d93a8481ac27e0c2ece706e"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLoss",
+        "child": "us-gaap_InterestIncomeExpenseNet",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_InterestIncomeExpenseNet",
+        "child": "us-gaap_InterestAndDividendIncomeOperating",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_InterestIncomeExpenseNet",
+        "child": "us-gaap_InterestExpense",
+        "weight": "-1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "child": "us-gaap_NoninterestIncome",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "wfc_FeesAndCommissionsDepositorsAccounts",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "us-gaap_FeesAndCommissionsFiduciaryAndTrustActivities",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "us-gaap_FeesAndCommissionsCreditAndDebitCards",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "us-gaap_FeesAndCommissionsOther",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "wfc_FeesAndCommissionMortgageBanking",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "us-gaap_InsuranceServicesRevenue",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "us-gaap_TradingGainsLosses",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "us-gaap_GainLossOnSaleOfDebtInvestments",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "wfc_NetGainsLossesFromEquityInvestments",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "us-gaap_OperatingLeasesIncomeStatementLeaseRevenue",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "role": "http://www.wellsfargo.com/role/ConsolidatedStatementOfIncome",
+        "parent": "us-gaap_NoninterestIncome",
+        "child": "wfc_NoninterestIncomeOtherLoss",
+        "weight": "1"
+      }
+    ],
+    "method": "derived sum"
   },
   {
     "ticker": "MPC",
@@ -2746,7 +3049,24 @@
         "path": "output\\MPC-0001510295-18-000024-mpc-20171231_pre.xml",
         "sha256": "ce6d99857fd169e71602335ee47d632fb114b28b2d4d47730e3e8cfad18f8f7c"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029518000024/mpc-20171231_cal.xml",
+        "role": "http://www.marathonpetroleum.com/role/ConsolidatedStatementsOfIncome",
+        "parent": "mpc_RevenuesAndOtherIncome",
+        "child": "us-gaap_RefiningAndMarketingRevenue",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029518000024/mpc-20171231_cal.xml",
+        "role": "http://www.marathonpetroleum.com/role/ConsolidatedStatementsOfIncome",
+        "parent": "mpc_RevenuesAndOtherIncome",
+        "child": "us-gaap_RevenueFromRelatedParties",
+        "weight": "1"
+      }
+    ],
+    "method": "derived sum"
   },
   {
     "ticker": "AXP",
@@ -3040,7 +3360,31 @@
         "path": "output\\AXP-0001193125-17-047588-axp-20161231_pre.xml",
         "sha256": "93f27d7123d1c2999bc224f1504c6a36f482c867b58608292e52351a1cec6fcd"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/4962/000119312517047588/axp-20161231_cal.xml",
+        "role": "http://americanexpress.com/role/StatementConsolidatedStatementsOfIncome",
+        "parent": "axp_TotalRevenuesNetOfInterestExpenseAfterProvisionsForLosses",
+        "child": "axp_TotalRevenuesNetOfInterestExpense",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/4962/000119312517047588/axp-20161231_cal.xml",
+        "role": "http://americanexpress.com/role/StatementConsolidatedStatementsOfIncome",
+        "parent": "axp_TotalRevenuesNetOfInterestExpense",
+        "child": "us-gaap_InterestIncomeExpenseNet",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/4962/000119312517047588/axp-20161231_cal.xml",
+        "role": "http://americanexpress.com/role/StatementConsolidatedStatementsOfIncome",
+        "parent": "axp_TotalRevenuesNetOfInterestExpense",
+        "child": "us-gaap_NoninterestIncome",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "GS",
@@ -3213,7 +3557,31 @@
         "path": "output\\GS-0001193125-13-085474-gs-20121231_pre.xml",
         "sha256": "5d6e03e3e7543efe9e18988e7a9a48506a21d991f1b87efad1c0f5dfc88065bb"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/886982/000119312513085474/gs-20121231_cal.xml",
+        "role": "http://goldmansachs.com/role/StatementsOfEarningsAndComprehensiveIncome",
+        "parent": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "child": "gs_NetRevenuesIncludingNetInterestIncome",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/886982/000119312513085474/gs-20121231_cal.xml",
+        "role": "http://goldmansachs.com/role/StatementsOfEarningsAndComprehensiveIncome",
+        "parent": "gs_NetRevenuesIncludingNetInterestIncome",
+        "child": "gs_NonInterestRevenues",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/886982/000119312513085474/gs-20121231_cal.xml",
+        "role": "http://goldmansachs.com/role/StatementsOfEarningsAndComprehensiveIncome",
+        "parent": "gs_NetRevenuesIncludingNetInterestIncome",
+        "child": "gs_NetInterestIncomeExpense",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "BK",
@@ -3452,7 +3820,31 @@
         "path": "output\\BK-0001390777-25-000046-bk-20241231_pre.xml",
         "sha256": "25f49df97cbf43db79bba6a8c3d87bd8f5075a951eccebd559edf779a121d42d"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000139077725000046/bk-20241231_cal.xml",
+        "role": "http://www.bnymellon.com/role/ConsolidatedIncomeStatement",
+        "parent": "bk_IncomeLossFromContinuingOperationsBeforeIncomeTaxes",
+        "child": "bk_TotalRevenuesIncludingRevenueGeneratedByVariableInterestEntities",
+        "weight": "1.0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000139077725000046/bk-20241231_cal.xml",
+        "role": "http://www.bnymellon.com/role/ConsolidatedIncomeStatement",
+        "parent": "bk_TotalRevenuesIncludingRevenueGeneratedByVariableInterestEntities",
+        "child": "us-gaap_NoninterestIncome",
+        "weight": "1.0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000139077725000046/bk-20241231_cal.xml",
+        "role": "http://www.bnymellon.com/role/ConsolidatedIncomeStatement",
+        "parent": "bk_TotalRevenuesIncludingRevenueGeneratedByVariableInterestEntities",
+        "child": "us-gaap_InterestIncomeExpenseNet",
+        "weight": "1.0"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "DUK",
@@ -3647,7 +4039,38 @@
         "path": "output\\DUK-0001326160-26-000014-duk-20251231_pre.xml",
         "sha256": "f32d5a4d1a68ca478a21e6bc84ad32fbf5024d8809322add26d573a455d54221"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231_cal.xml",
+        "role": "http://www.duke-energy.com/role/CondensedConsolidatedStatementsofOperations",
+        "parent": "us-gaap_RegulatedAndUnregulatedOperatingRevenue",
+        "child": "us-gaap_RegulatedOperatingRevenueGas",
+        "weight": "1.0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231_cal.xml",
+        "role": "http://www.duke-energy.com/role/CondensedConsolidatedStatementsofOperations",
+        "parent": "us-gaap_RegulatedAndUnregulatedOperatingRevenue",
+        "child": "us-gaap_UnregulatedOperatingRevenue",
+        "weight": "1.0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231_cal.xml",
+        "role": "http://www.duke-energy.com/role/CondensedConsolidatedStatementsofOperations",
+        "parent": "us-gaap_RegulatedAndUnregulatedOperatingRevenue",
+        "child": "us-gaap_RegulatedOperatingRevenueElectricNonNuclear",
+        "weight": "1.0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231_cal.xml",
+        "role": "http://www.duke-energy.com/role/CondensedConsolidatedStatementsofOperations",
+        "parent": "us-gaap_OperatingIncomeLoss",
+        "child": "us-gaap_RegulatedAndUnregulatedOperatingRevenue",
+        "weight": "1.0"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "APH",
@@ -3765,7 +4188,17 @@
         "path": "output\\APH-0001558370-18-000871-aph-20171231_pre.xml",
         "sha256": "5eb1d8cc1165bad0788321fd4f87324eafba7e2ce416250a98a9cd47d37d8b4b"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/820313/000155837018000871/aph-20171231_cal.xml",
+        "role": "http://www.amphenol.com/role/StatementConsolidatedStatementsOfIncome",
+        "parent": "us-gaap_GrossProfit",
+        "child": "us-gaap_SalesRevenueGoodsNet",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "FIS",
@@ -3905,7 +4338,17 @@
         "path": "output\\FIS-0001136893-18-000011-fis-20171231_pre.xml",
         "sha256": "05fb01908c5ab6e56e145db6eb1dcf39233b87d99aca298ebb0329374d6cca00"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1136893/000113689318000011/fis-20171231_cal.xml",
+        "role": "http://www.fisglobal.com/role/ConsolidatedStatementsOfEarnings",
+        "parent": "us-gaap_GrossProfit",
+        "child": "us-gaap_SalesRevenueServicesNet",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   },
   {
     "ticker": "MPC",
@@ -4078,6 +4521,16 @@
         "path": "output\\MPC-0001510295-17-000017-mpc-20161231_pre.xml",
         "sha256": "891a3a58a16a9514f2b3a60645298c1093e0f171ab8fd96d528c860a6aaa5cd8"
       }
-    ]
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029517000017/mpc-20161231_cal.xml",
+        "role": "http://www.marathonpetroleum.com/role/ConsolidatedStatementsOfIncome",
+        "parent": "mpc_RevenuesAndOtherIncome",
+        "child": "us-gaap_RefiningAndMarketingRevenue",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   }
 ]

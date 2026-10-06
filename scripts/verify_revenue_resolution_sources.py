@@ -47,6 +47,24 @@ def verify(case, folder):
         assert values == {Decimal(expected['value'])}, (case['ticker'], local, values)
         total += Decimal(expected['value'])
     assert total == Decimal(case['expected_value']), case['ticker']
+    link = 'http://www.xbrl.org/2003/linkbase'
+    xl = 'http://www.w3.org/1999/xlink'
+    calculations = set()
+    for source in case['sources']:
+        if not source['url'].endswith('_cal.xml'):
+            continue
+        cal_path = folder / f"{case['ticker']}-{case['accession']}-{source['url'].rsplit('/', 1)[-1]}"
+        assert hashlib.sha256(cal_path.read_bytes()).hexdigest() == source['sha256'], cal_path
+        for group in ET.parse(cal_path).findall(f'.//{{{link}}}calculationLink'):
+            locators = {node.get(f'{{{xl}}}label'): node.get(f'{{{xl}}}href').split('#')[-1]
+                        for node in group.findall(f'{{{link}}}loc')}
+            for arc in group.findall(f'{{{link}}}calculationArc'):
+                calculations.add((source['url'], group.get(f'{{{xl}}}role'),
+                                  locators[arc.get(f'{{{xl}}}from')], locators[arc.get(f'{{{xl}}}to')],
+                                  Decimal(arc.get('weight'))))
+    for check in case['calculation_checks']:
+        assert (check['url'], check['role'], check['parent'], check['child'],
+                Decimal(check['weight'])) in calculations, check
     return total
 
 

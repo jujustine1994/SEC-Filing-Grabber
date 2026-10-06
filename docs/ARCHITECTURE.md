@@ -12,11 +12,11 @@ AppData config 僅保存 database_path/database_id 與個人設定。更新名�
 
 ## 來源、解析保存與模板的改動界線（2026-10-06）
 
-Revenue 選值先完整匹配原始 GAAP concept，保留計算父子與衝突判定。沒有已知 concept 時，僅接受原始 label 完整匹配 `Revenue`、`Revenues`、`Total Revenue(s)`、`Total Net Revenue(s)`（NFKC、大小寫、空白及標點正規化）。裸 Revenue 名稱遇其他有值營收候選時報衝突；多個匹配金額不同也報衝突。分項的標準化 `Revenue` 或包含 Revenue 的名稱不能單獨授權選值。Revenue 不套用舊 override，也不透過 E1 模糊診斷或 E2 LLM 自動修補；缺口由固定規則回報，不寫回永久資料庫。
+Revenue 選值先完整匹配原始 GAAP concept，保留計算父子與衝突判定。已識別總額包括一般營收、金融業扣除利息費用的淨營收、customer-contract 營收，以及歷史 goods/services、醫療淨額、礦業與公用事業總額。自訂名稱使用有限的原始完整 label 集合，包括 `Revenue(s)`、`Net Revenue(s)`、`Sales`／`Net Sales`、各種完整 total／operating revenue 名稱及金融業明確淨營收名稱；不做模糊匹配。名稱統一 NFKC、大小寫、空白及標點，只移除末尾單字母／Note 數字的註腳，不移除其他口徑限定詞。裸名稱遇其他獨立有值營收候選時報衝突。分項的標準化 `Revenue` 不能單獨授權選值。Revenue 不套用舊 override，也不透過 E1 模糊診斷或 E2 LLM 自動修補；缺口由固定規則回報，不寫回永久資料庫。
 
 CTH 指定：來源申報作為核對依據，不為配合模板改寫來源數字。模板修正改變的是選值、期間處理、衍生計算及輸出；不得把修正後的模板數字回寫成來源資料。
 
-Revenue 裸名稱的競爭候選檢查另排除完整成本名稱及已知精確 GAAP 成本／資產處分 concept，避免 `Cost of Revenue`、成本註腳或 `SalesOfAssets` 誤報衝突；真正的營收分項仍保留競爭關係。這些規則全部由固定程式執行，非 LLM 分類。
+Revenue 競爭候選先拆開 CamelCase 與分隔字元，再找完整 revenue／revenues／sales 單字，避免 `AvailableForSaleSecurities` 跨字命中 sales；另排除完整成本名稱與已知精確 GAAP 成本／資產處分 concept。真正的營收分項仍保留競爭關係。這些規則全部由固定程式執行，非 LLM 分類。
 
 資料流為 `SEC 原始申報 → edgartools 解析 → 永久庫內 DataFrame JSON → 模板選值／拆季／衍生計算 → StatementTable → Excel／比較／比率`。永久库 JSON 保存的是解析結果（含原始 concept、數值及 parser 標準化資訊），不是完整原始 HTML／XBRL facts 的逐位元組副本；解析結果可能缺欄或映射錯誤，不能因為已保存就視為原始申報已完整正確解析。
 
@@ -26,11 +26,15 @@ Revenue 裸名稱的競爭候選檢查另排除完整成本名稱及已知精確
 
 現行程式界線：`_filing_obj()` 命中保存資料便直接讀；未命中才經 `_save_to_disk_cache()`、`save_filing()`、`commit_filing()` 寫入。`_match_is_row()` 及表格 builder 不將 StatementTable 回存到 filing JSON。模板驗收使用禁止綁定寫入的 cached audit，並核對資料庫前後 SHA-256；單靠跑一般抓取，不能證明資料庫完全沒有更新。
 
-## Revenue 總計選值（2026-10-06）
+## Revenue 總計選值與口徑（2026-10-07）
 
-edgartools 的 `standard_concept=Revenue` 同時包含總計與管理費、產品收入等構成項，不能以第一列或最大金額認定營收。模板先檢查無維度實體列保存的原始概念：第一層 `Revenues`／`SalesRevenueNet`，其次 customer-contract 含／不含稅總計。有 calculation parent 指向另一候選時排除子項；若 parent 明示包含 Other Income，仍須釐清口徑，不直接視為可替換的營收總計。
+edgartools 的 `standard_concept=Revenue` 同時包含總計與管理費、產品收入等構成項，不能以第一列或最大金額認定營收。模板先檢查無維度實體列保存的原始概念：第一層 `Revenues`／`SalesRevenueNet`／`RevenuesNetOfInterestExpense` 及完整金融淨營收名稱，其次 customer-contract 含／不含稅總計，再檢查產業／歷史淨額及完整 total 名稱。有 calculation parent 指向另一候選時排除子項。GAAP `Revenues` 同時具有完整 `Total Revenue(s)` label 時，可優先於 `SalesRevenueNet`，不依金額大小選值；TGT 原始計算檔已證明信用卡收入也在其營業總額內。
 
-同層剩餘總計數值衝突時留空並記錄 `AmbiguousRevenueTotal` 資料缺口；不探測 SEC 網路、不任選最大值。已辨識總計缺值時不回退到構成項。既有或當趟 diagnosis 的 Revenue override 不得繞過已辨識總計；沒有已辨識總計的自訂來源保留舊規則，並不代表已認證。未入模板的來源列保留在 `Other (as reported)`。
+**模板口徑**：一般公司的 Revenue 是營業銷售，明確的 `Total revenues and other income` 不取代營業收入；其他收益及原總額留在來源 overflow。銀行的 Revenue 包含淨利息收入，採扣除利息費用、信用損失提列前口徑，不一律排除利息。醫療公司使用扣除報告呆帳 provision 後的原始淨營收 concept。
+
+**有限衍生公式**：沒有已識別報告總額時，銀行損益表（有精確 `NoninterestExpense`）可用 `NoninterestIncome + InterestIncomeExpenseNet`；煉油公司明確 Other Income aggregate 下的 `RefiningAndMarketingRevenue + RevenueFromRelatedParties` 可合計營業銷售。煉油只有一列營業收入、且沒有其他收入子項時直接取該原列。衍生必須所有組成同當期有值、非維度、每個 concept 的有效值一致；缺值不能當零，不使用 gross interest 或提列信用損失後的金額。已有總額即使缺值也阻止衍生回退。衍生不插入／修改來源 DataFrame，組成列留在 overflow；單列 label 可標記 Derived，逐期選值來源可用 `trace_revenue_selection.py` 記錄。
+
+同層剩餘總計數值衝突時留空並記錄 `AmbiguousRevenueTotal` 資料缺口；不探測 SEC 網路、不任選最大值。已辨識總計缺值時不回退到構成項。既有或當趟 diagnosis 的 Revenue override 不得繞過規則；未入模板的来源列保留在 `Other (as reported)`。原始 XML、合併實體、期間、USD 與計算 role 的獨立驗證案例見 `tests/fixtures/revenue-resolution-cases.json` 和 `scripts/verify_revenue_resolution_sources.py`；這是抽樣來源認證，不能宣稱全庫每格均已對照原始 XML。
 
 Excel writer 在輸出時分配不超過 31 字且不分大小寫唯一的分頁名，為碰撞後綴預留長度。只複製 `StatementTable` 的輸出名稱，索引使用同一份名稱；不改來源表或資料庫。
 
