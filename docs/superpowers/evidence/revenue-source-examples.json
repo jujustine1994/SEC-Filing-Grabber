@@ -12,7 +12,9 @@
       "eol_PE48224---1010-K0006_STD_364_20100101_0"
     ],
     "unit": "USD",
-    "dimension_policy": "No explicitMember or typedMember"
+    "dimension_policy": "No explicitMember or typedMember",
+    "instance_sha256": "2efb45018e2aedffdc0cab484c8c56b8effe83cc35fc238cc69f89332d4dfec1",
+    "instance_bytes": 1274032
   },
   {
     "ticker": "HLT",
@@ -27,7 +29,9 @@
       "FD2017Q1YTD"
     ],
     "unit": "USD",
-    "dimension_policy": "No explicitMember or typedMember"
+    "dimension_policy": "No explicitMember or typedMember",
+    "instance_sha256": "0930da2478496f52f14727dc69a1e07c70a777f1830bb3b9a37f536f899676a2",
+    "instance_bytes": 4504826
   },
   {
     "ticker": "AMZN",
@@ -42,7 +46,9 @@
       "FD2013Q4YTD"
     ],
     "unit": "USD",
-    "dimension_policy": "No explicitMember or typedMember"
+    "dimension_policy": "No explicitMember or typedMember",
+    "instance_sha256": "70a418d3688a9c318c7431707e7a715d7c10c442811e4eb9e3596c1dc856db83",
+    "instance_bytes": 2512081
   },
   {
     "ticker": "MSFT",
@@ -57,7 +63,9 @@
       "eol_PE8528----1610-K0009_STD_366_20160630_0"
     ],
     "unit": "USD",
-    "dimension_policy": "No explicitMember or typedMember"
+    "dimension_policy": "No explicitMember or typedMember",
+    "instance_sha256": "b6983e47bd5661cade6cea37337a3dd7918a178cb53f0fbf3ab1c970c7901970",
+    "instance_bytes": 3760451
   },
   {
     "ticker": "AFL",
@@ -73,7 +81,9 @@
       "c-4"
     ],
     "unit": "USD",
-    "dimension_policy": "No explicitMember or typedMember"
+    "dimension_policy": "No explicitMember or typedMember",
+    "instance_sha256": "e5daf9f040dede2e905014bb2fdd95c734d6e7a6ffffd91708eb9a18586bc1b8",
+    "instance_bytes": 10083948
   },
   {
     "ticker": "C",
@@ -89,7 +99,9 @@
       "c-3"
     ],
     "unit": "USD",
-    "dimension_policy": "No explicitMember or typedMember"
+    "dimension_policy": "No explicitMember or typedMember",
+    "instance_sha256": "4aeb065edb8fda69904cf982cf5e821e3f3e2b1d891b4225753378cba4e45117",
+    "instance_bytes": 17958178
   },
   {
     "ticker": "COST",
@@ -104,6 +116,8 @@
       "FD2018Q3QTD"
     ],
     "unit": "USD",
-    "dimension_policy": "No explicitMember or typedMember"
+    "dimension_policy": "No explicitMember or typedMember",
+    "instance_sha256": "8afc4b0176bcec6bf149aa116f79f9b30f58a2c8a94f0d8200de9951894e102d",
+    "instance_bytes": 1010851
   }
 ]
