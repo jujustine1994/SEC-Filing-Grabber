@@ -90,6 +90,19 @@ def test_cost_of_revenue_is_not_a_competing_revenue_candidate():
     assert fg._match_revenue_row(df, '2020-12-31 (FY)') == (0, False)
 
 
+@pytest.mark.parametrize('concept,label', [
+    ('us-gaap_CostOfGoodsSold', 'Cost of sales(a)'),
+    ('us-gaap_CostOfServicesExcludingDepreciationDepletionAndAmortization',
+     'Costs of revenue, exclusive of depreciation and amortization'),
+    ('us-gaap_LossesGainsOnSalesOfAssetsAndAssetImpairmentCharges', 'Loss on disposal of assets'),
+    ('us-gaap_MineralExtractionProcessingAndMarketingCosts', 'Costs applicable to sales'),
+])
+def test_exact_expense_concept_cannot_compete_with_bare_revenue(concept, label):
+    df = frame(['company_CustomRevenue', concept], [100, 60])
+    df['label'] = ['Revenue', label]
+    assert fg._match_revenue_row(df, '2020-12-31 (FY)') == (0, False)
+
+
 def test_exact_custom_totals_with_different_values_are_ambiguous():
     df = frame(['company_A', 'company_B'], [100, 90])
     df['label'] = ['Total Revenue', 'Total revenues']

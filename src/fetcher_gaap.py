@@ -1462,6 +1462,14 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
     # Exact cost labels describe expenses, not competing revenue scopes.
     competitors = competitors[~labels.loc[competitors.index].str.fullmatch(
         r'costs? of (?:revenues?|sales)')]
+    expense_concepts = {
+        'CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold',
+        'CostOfServices', 'CostOfServicesExcludingDepreciationDepletionAndAmortization',
+        'LossesGainsOnSalesOfAssetsAndAssetImpairmentCharges',
+        'MineralExtractionProcessingAndMarketingCosts', 'SellingAndMarketingExpense',
+    }
+    expense_pattern = r'(?:us-gaap[_:])?(?:' + '|'.join(sorted(expense_concepts)) + r')'
+    competitors = competitors[~competitors['concept'].astype(str).str.fullmatch(expense_pattern)]
     has_explicit_total = labels.loc[candidates.index].str.startswith('total ').any()
     if not has_explicit_total and any(i not in candidates.index for i in competitors.index):
         return None, True
