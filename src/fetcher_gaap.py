@@ -1466,6 +1466,7 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
         'CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold',
         'CostOfServices', 'CostOfServicesExcludingDepreciationDepletionAndAmortization',
         'LossesGainsOnSalesOfAssetsAndAssetImpairmentCharges',
+        'GainLossOnSalesOfAssetsAndAssetImpairmentCharges', 'GainLossOnDispositionOfAssets',
         'MineralExtractionProcessingAndMarketingCosts', 'SellingAndMarketingExpense',
     }
     expense_pattern = r'(?:us-gaap[_:])?(?:' + '|'.join(sorted(expense_concepts)) + r')'

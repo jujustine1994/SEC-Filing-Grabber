@@ -95,6 +95,8 @@ def test_cost_of_revenue_is_not_a_competing_revenue_candidate():
     ('us-gaap_CostOfServicesExcludingDepreciationDepletionAndAmortization',
      'Costs of revenue, exclusive of depreciation and amortization'),
     ('us-gaap_LossesGainsOnSalesOfAssetsAndAssetImpairmentCharges', 'Loss on disposal of assets'),
+    ('us-gaap_GainLossOnSalesOfAssetsAndAssetImpairmentCharges', 'Impairment, closure costs, and asset disposals'),
+    ('us-gaap_GainLossOnDispositionOfAssets', 'Gains on sales of facilities'),
     ('us-gaap_MineralExtractionProcessingAndMarketingCosts', 'Costs applicable to sales'),
 ])
 def test_exact_expense_concept_cannot_compete_with_bare_revenue(concept, label):
