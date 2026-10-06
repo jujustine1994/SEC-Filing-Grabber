@@ -1459,6 +1459,9 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
         | consolidated['label'].astype(str).str.contains(r'\brevenues?\b|\bsales\b', case=False, na=False)
     ]
     competitors = competitors[competitors[period_col].map(lambda value: _to_python_val(value) is not None)]
+    # Exact cost labels describe expenses, not competing revenue scopes.
+    competitors = competitors[~labels.loc[competitors.index].str.fullmatch(
+        r'costs? of (?:revenues?|sales)')]
     has_explicit_total = labels.loc[candidates.index].str.startswith('total ').any()
     if not has_explicit_total and any(i not in candidates.index for i in competitors.index):
         return None, True
