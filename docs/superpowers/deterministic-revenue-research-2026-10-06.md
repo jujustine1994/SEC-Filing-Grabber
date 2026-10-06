@@ -2,6 +2,16 @@
 
 狀態：研究與實作提案，尚未改動正式選值邏輯。原始 SEC 資料與獨立財報資料庫不修改。
 
+## 後續實作：完整 label 匹配
+
+使用者確認後，已實作有限範圍的精確名稱辨識：已知 GAAP concept 完整匹配保持原順序；未知 concept 接受原始 `Revenue(s)`、`Total Revenue(s)`、`Total Net Revenue(s)` 完整 label，先統一 NFKC、大小寫、標點與空白。裸 Revenue 有其他營收候選時保留衝突；匹配列不同金額也保留衝突，僅用當期有值列。沒有精確名稱不再退回標準化 Revenue 或 concept 子字串匹配。
+
+Revenue 不再套用歷史 override，也不建立 E1/E2 自動修補。舊 override 檔案保留，沒有刪除；其他指標的 override 行為保持不變。COP/OXY/TGT 的已知 concept 衝突尚未在這一步解決。這次不新增來源下載或資料庫寫入，修改的是模板選值與診斷入口。
+
+新增測試涵蓋裸 Revenue、完整 total 名稱、名稱正規化、分項／Other Income 不誤中、競爭候選與舊 override 不可繞過規則，以及即使 E2 旗標開啟也不得對 Revenue 發出 LLM 呼叫。原測試的縮略合約 concept fixture 改成完整 GAAP concept；其他欄位與 Q4 測試目標保持不變。
+
+驗證：完整非 slow suite **1,763 passed / 65 deselected / 5 warnings**，48.39 秒；log 在忽略的 `output/revenue-exact-label-suite.log`。這一步尚未重跑 215 公司離線重建，先前大量樣本數值驗收不能當作新 label fallback 的驗收結果。
+
 ## 目前程式行為
 
 - `src/override_engine.py` 的 `E2_LLM_ENABLED = False`：GAAP 缺列診斷預設不呼叫 LLM，即使傳入 API key。`tests/test_override_engine.py` 已有不呼叫 `_llm_call` 的測試。

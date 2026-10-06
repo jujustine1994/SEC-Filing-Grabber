@@ -1429,7 +1429,7 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
 
     Broad revenue totals precede customer-contract subtotals. Conflicting totals
     at the same tier are inconclusive, not resolved by row order or magnitude.
-    Without a recognized total, preserve the existing custom-concept policy.
+    Without a recognized total, require an exact original revenue label.
     Returns (row index, ambiguous). Never alters the saved dataframe.
     """
     rows = _revenue_total_rows(df)
@@ -1441,9 +1441,31 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
         if any(value != values[0] for value in values[1:]):
             return None, True
         return rows.index[0], False
-    row = IS_TEMPLATE[_REVENUE_IDX]
-    return _match_is_row(df, row[1], row[2], label_fallback=row[6],
-                         match=row[4], label_hint=row[5]), False
+    # Custom concepts require an exact original label, never normalized Revenue
+    # or a substring (which can represent management fees or another component).
+    consolidated = df[_consolidated_mask(df)]
+    labels = consolidated['label'].astype(str).map(
+        lambda label: re.sub(r'[^\w\s]', ' ', unicodedata.normalize('NFKC', label)).casefold()
+    ).map(lambda label: ' '.join(label.split()))
+    accepted = {'revenue', 'revenues', 'total revenue', 'total revenues',
+                'total net revenue', 'total net revenues'}
+    candidates = consolidated[labels.isin(accepted)]
+    candidates = candidates[candidates[period_col].map(lambda value: _to_python_val(value) is not None)]
+    if candidates.empty:
+        return None, False
+    # A differently named revenue component is still a competing candidate.
+    competitors = consolidated[
+        consolidated['concept'].astype(str).str.contains(r'revenue|sales', case=False, na=False)
+        | consolidated['label'].astype(str).str.contains(r'\brevenues?\b|\bsales\b', case=False, na=False)
+    ]
+    competitors = competitors[competitors[period_col].map(lambda value: _to_python_val(value) is not None)]
+    has_explicit_total = labels.loc[candidates.index].str.startswith('total ').any()
+    if not has_explicit_total and any(i not in candidates.index for i in competitors.index):
+        return None, True
+    values = [_to_python_val(value) for value in candidates[period_col]]
+    if any(value != values[0] for value in values[1:]):
+        return None, True
+    return candidates.index[0], False
 
 
 def _apply_row_override(df: pd.DataFrame, col: str, override_entry: dict) -> Any:
@@ -1720,12 +1742,11 @@ def _build_is_table(
         # CF-sourced rows (source == "CF") consume cf_df indices — not tracked here.
         consumed: set[int] = set()
 
-        revenue_has_total = not _revenue_total_rows(df).empty
-
         row_vals: dict[int, Any] = {}
         for i, (row_name, std_concept, fallback, source, match, label_hint, lbl_fb) in enumerate(IS_TEMPLATE):
-            # Apply override if one exists for this row (concept_override or structural_absence)
-            if row_name in is_overrides and not (i == _REVENUE_IDX and revenue_has_total):
+            # Revenue always uses its deterministic resolver, including custom concepts.
+            # Other rows retain concept_override or structural_absence handling.
+            if row_name in is_overrides and i != _REVENUE_IDX:
                 ov = is_overrides[row_name]
                 if ov.get("fix_type") == "structural_absence":
                     row_vals[i] = None

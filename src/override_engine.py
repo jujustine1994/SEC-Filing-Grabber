@@ -145,6 +145,8 @@ def e1_fuzzy_match(df: pd.DataFrame, target_std_name: str) -> str | None:
     Checks both standard_concept and label columns (case-insensitive substring).
     Returns the matching standard_concept string, or None if not found.
     """
+    if target_std_name == 'Revenue':
+        return None  # Revenue is selected only by the deterministic template resolver.
     synonyms = SYNONYM_MAP.get(target_std_name, [])
     if not synonyms:
         return None
@@ -290,6 +292,8 @@ def run_diagnosis(
     new_fixes: dict[str, dict] = {}
 
     for row_name in missing_rows:
+        if row_name == 'Revenue':
+            continue  # Neither fuzzy overrides nor LLM may repair Revenue.
         # E1: rule-based fuzzy match
         sc = e1_fuzzy_match(df, row_name)
         if sc:

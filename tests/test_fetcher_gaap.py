@@ -43,7 +43,7 @@ META_COLS = {
 def _make_is_df(period_col="2025-12-27 (Q1)", val=100.0, prior_col="2024-12-28 (Q1)", prior_val=90.0):
     """Minimal IS DataFrame with Revenue, Gross Profit, Net Income rows."""
     return pd.DataFrame({
-        "concept":               ["us-gaap_RevenueFromContractWithCustomer", "us-gaap_GrossProfit", "us-gaap_NetIncomeLoss"],
+        "concept":               ["us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax", "us-gaap_GrossProfit", "us-gaap_NetIncomeLoss"],
         "label":                 ["Net sales", "Gross margin", "Net income"],
         "standard_concept":      ["Revenue", "GrossProfit", "NetIncome"],
         "abstract":              [False, False, False],
@@ -1131,12 +1131,12 @@ def _make_filing_odd_concepts(period_col="2025-12-27 (Q1)", val=100.0, filing_da
     return mock_filing
 
 
-def test_build_is_table_revenue_none_without_override():
-    """Revenue is None when std_concept doesn't match and no fallback."""
+def test_build_is_table_exact_total_label_without_override():
+    """An exact original total label resolves a custom concept without overrides."""
     filing = _make_filing_odd_concepts(val=100.0)
     gaap_tbl, _ = _build_is_table([filing], max_filings=1)
     revenue_idx = gaap_tbl.concepts.index("Revenue")
-    assert gaap_tbl.values[revenue_idx][0] is None
+    assert gaap_tbl.values[revenue_idx][0] == pytest.approx(1000.0)
 
 
 def test_build_is_table_concept_override_restores_revenue():
@@ -1148,13 +1148,13 @@ def test_build_is_table_concept_override_restores_revenue():
     assert gaap_tbl.values[revenue_idx][0] == pytest.approx(1000.0)  # val * 10
 
 
-def test_build_is_table_structural_absence_keeps_none():
-    """structural_absence override skips lookup and keeps None."""
+def test_build_is_table_structural_absence_cannot_hide_exact_revenue():
+    """Legacy structural absence cannot hide a reported exact revenue total."""
     filing = _make_filing_odd_concepts(val=100.0)
     overrides = {"Revenue": {"fix_type": "structural_absence", "confirmed_absent": True}}
     gaap_tbl, _ = _build_is_table([filing], max_filings=1, is_overrides=overrides)
     revenue_idx = gaap_tbl.concepts.index("Revenue")
-    assert gaap_tbl.values[revenue_idx][0] is None
+    assert gaap_tbl.values[revenue_idx][0] == pytest.approx(1000.0)
 
 
 def test_build_is_table_override_applies_to_all_filings():

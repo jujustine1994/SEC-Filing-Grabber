@@ -12,6 +12,8 @@ AppData config 僅保存 database_path/database_id 與個人設定。更新名�
 
 ## 來源、解析保存與模板的改動界線（2026-10-06）
 
+Revenue 選值先完整匹配原始 GAAP concept，保留計算父子與衝突判定。沒有已知 concept 時，僅接受原始 label 完整匹配 `Revenue`、`Revenues`、`Total Revenue(s)`、`Total Net Revenue(s)`（NFKC、大小寫、空白及標點正規化）。裸 Revenue 名稱遇其他有值營收候選時報衝突；多個匹配金額不同也報衝突。分項的標準化 `Revenue` 或包含 Revenue 的名稱不能單獨授權選值。Revenue 不套用舊 override，也不透過 E1 模糊診斷或 E2 LLM 自動修補；缺口由固定規則回報，不寫回永久資料庫。
+
 CTH 指定：來源申報作為核對依據，不為配合模板改寫來源數字。模板修正改變的是選值、期間處理、衍生計算及輸出；不得把修正後的模板數字回寫成來源資料。
 
 資料流為 `SEC 原始申報 → edgartools 解析 → 永久庫內 DataFrame JSON → 模板選值／拆季／衍生計算 → StatementTable → Excel／比較／比率`。永久库 JSON 保存的是解析結果（含原始 concept、數值及 parser 標準化資訊），不是完整原始 HTML／XBRL facts 的逐位元組副本；解析結果可能缺欄或映射錯誤，不能因為已保存就視為原始申報已完整正確解析。

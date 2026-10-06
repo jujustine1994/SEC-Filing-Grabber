@@ -170,21 +170,21 @@ def test_check_key_rows_cf_operating_cash_flow():
 
 # ── e1_fuzzy_match ────────────────────────────────────────────────────────
 
-def test_e1_fuzzy_match_finds_by_std_concept():
+def test_revenue_fuzzy_match_rejects_standardized_concept():
     df = _make_edgar_df(
         std_concepts=["Revenues", "OperatingIncomeLoss", "NetIncome"]
     )
     result = e1_fuzzy_match(df, "Revenue")
-    assert result == "Revenues"
+    assert result is None
 
 
-def test_e1_fuzzy_match_finds_by_label():
+def test_revenue_fuzzy_match_rejects_label_substring():
     df = _make_edgar_df(
         std_concepts=["CustomConcept", "OperatingIncomeLoss", "NetIncome"],
         labels=["Total revenues and other income", "Operating income", "Net income"],
     )
     result = e1_fuzzy_match(df, "Revenue")
-    assert result == "CustomConcept"
+    assert result is None
 
 
 def test_e1_fuzzy_match_returns_none_when_no_match():
@@ -320,15 +320,15 @@ def test_run_diagnosis_e1_path_writes_override(tmp_path):
     p = tmp_path / "overrides.json"
     result = run_diagnosis(
         ticker="NEWCO", statement="IS", df=df,
-        missing_rows=["Revenue"], ai_config={"api_key": ""},
+        missing_rows=["Operating Income"], ai_config={"api_key": ""},
         override_path=p,
     )
-    assert "Revenue" in result
-    assert result["Revenue"]["fix_type"] == "concept_override"
+    assert "Operating Income" in result
+    assert result["Operating Income"]["fix_type"] == "concept_override"
     # Override saved to file
     saved = json.loads(p.read_text(encoding="utf-8"))
     assert "NEWCO" in saved
-    assert "Revenue" in saved["NEWCO"]["IS"]
+    assert "Operating Income" in saved["NEWCO"]["IS"]
 
 
 def test_run_diagnosis_e2_path_when_e1_fails(tmp_path, monkeypatch):
@@ -342,11 +342,11 @@ def test_run_diagnosis_e2_path_when_e1_fails(tmp_path, monkeypatch):
     p = tmp_path / "overrides.json"
     result = run_diagnosis(
         ticker="NEWCO", statement="IS", df=df,
-        missing_rows=["Revenue"],
+        missing_rows=["Operating Income"],
         ai_config={"api_key": "test-key", "provider": "google", "model": "gemini"},
         override_path=p,
     )
-    assert result["Revenue"]["source"] == "E2"
+    assert result["Operating Income"]["source"] == "E2"
 
 
 def test_run_diagnosis_skips_e2_when_no_api_key(tmp_path):
@@ -377,6 +377,17 @@ def test_run_diagnosis_skips_e2_when_no_api_key(tmp_path):
 def test_e2_disabled_by_default():
     import override_engine
     assert override_engine.E2_LLM_ENABLED is False
+
+
+def test_revenue_diagnosis_never_uses_llm_or_writes_override(tmp_path, monkeypatch):
+    monkeypatch.setattr('override_engine.E2_LLM_ENABLED', True)
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Revenue must never use LLM')
+    monkeypatch.setattr('override_engine._llm_call', forbidden)
+    path = tmp_path / 'overrides.json'
+    assert run_diagnosis('TEST', 'IS', _make_edgar_df(), ['Revenue'],
+                         {'api_key': 'test'}, override_path=path) == {}
+    assert not path.exists()
 
 
 def test_e2_returns_none_when_disabled(monkeypatch):

@@ -56,9 +56,49 @@ def test_missing_total_value_does_not_fall_back_to_component():
     assert fg._match_revenue_row(df,'2020-12-31 (FY)') == (1,False)
 
 
-def test_no_identified_total_retains_existing_policy():
+def test_no_identified_total_accepts_unique_exact_revenue_label():
     df=frame(['company_CustomRevenue'],[100])
     assert fg._match_revenue_row(df,'2020-12-31 (FY)') == (0,False)
+
+
+@pytest.mark.parametrize('label', ['Revenue', 'REVENUES', ' Revenue: ', 'Total revenue',
+                                    'Total Revenues', 'Total net revenues'])
+def test_custom_revenue_requires_exact_original_label(label):
+    df = frame(['company_CustomRevenue'], [100])
+    df['label'] = [label]
+    assert fg._match_revenue_row(df, '2020-12-31 (FY)') == (0, False)
+
+
+@pytest.mark.parametrize('label', ['Management Fees Revenue', 'Total Revenues and Other Income',
+                                    'Sales Revenue Goods', 'Unrelated'])
+def test_normalized_revenue_does_not_authorize_a_component(label):
+    df = frame(['company_CustomRevenue'], [100])
+    df['label'] = [label]
+    assert fg._match_revenue_row(df, '2020-12-31 (FY)') == (None, False)
+
+
+def test_bare_revenue_with_competing_component_is_ambiguous():
+    df = frame(['company_CustomRevenue', 'company_ManagementFeesRevenue'], [100, 10])
+    df['label'] = ['Revenue', 'Management Fees Revenue']
+    assert fg._match_revenue_row(df, '2020-12-31 (FY)') == (None, True)
+
+
+def test_exact_custom_totals_with_different_values_are_ambiguous():
+    df = frame(['company_A', 'company_B'], [100, 90])
+    df['label'] = ['Total Revenue', 'Total revenues']
+    assert fg._match_revenue_row(df, '2020-12-31 (FY)') == (None, True)
+
+
+def test_custom_revenue_cannot_be_replaced_by_legacy_override():
+    df = frame(['company_CustomRevenue', 'company_Fees'], [100, 10])
+    df['label'] = ['Total Revenue', 'Management Fees Revenue']
+    df['standard_concept'] = ['Revenue', 'Fees']
+    filing = MagicMock()
+    filing.obj.return_value.financials.income_statement.return_value.to_dataframe.return_value = df
+    filing.obj.return_value.financials.cashflow_statement.return_value = None
+    table, _ = fg._build_is_table([filing], max_filings=1, is_overrides={
+        'Revenue': {'fix_type': 'concept_override', 'std_concept': 'Fees'}})
+    assert table.values[table.concepts.index('Revenue')] == [100]
 
 
 def test_builder_uses_total_and_preserves_component_overflow():
