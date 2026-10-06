@@ -1,0 +1,109 @@
+[
+  {
+    "ticker": "MAR",
+    "accession": "0001193125-10-030603",
+    "url": "https://www.sec.gov/Archives/edgar/data/1048286/000119312510030603/mar-20100101.xml",
+    "concept": "Revenues",
+    "start": "2009-01-03",
+    "end": "2010-01-01",
+    "sheet": "Data_Financials(Y)",
+    "value": 10908000000,
+    "contexts": [
+      "eol_PE48224---1010-K0006_STD_364_20100101_0"
+    ],
+    "unit": "USD",
+    "dimension_policy": "No explicitMember or typedMember"
+  },
+  {
+    "ticker": "HLT",
+    "accession": "0001585689-17-000131",
+    "url": "https://www.sec.gov/Archives/edgar/data/1585689/000158568917000131/hlt-20170331.xml",
+    "concept": "Revenues",
+    "start": "2017-01-01",
+    "end": "2017-03-31",
+    "sheet": "Data_Financials(Q)",
+    "value": 2161000000,
+    "contexts": [
+      "FD2017Q1YTD"
+    ],
+    "unit": "USD",
+    "dimension_policy": "No explicitMember or typedMember"
+  },
+  {
+    "ticker": "AMZN",
+    "accession": "0001018724-14-000006",
+    "url": "https://www.sec.gov/Archives/edgar/data/1018724/000101872414000006/amzn-20131231.xml",
+    "concept": "SalesRevenueNet",
+    "start": "2013-01-01",
+    "end": "2013-12-31",
+    "sheet": "Data_Financials(Y)",
+    "value": 74452000000,
+    "contexts": [
+      "FD2013Q4YTD"
+    ],
+    "unit": "USD",
+    "dimension_policy": "No explicitMember or typedMember"
+  },
+  {
+    "ticker": "MSFT",
+    "accession": "0001193125-16-662209",
+    "url": "https://www.sec.gov/Archives/edgar/data/789019/000119312516662209/msft-20160630.xml",
+    "concept": "SalesRevenueNet",
+    "start": "2015-07-01",
+    "end": "2016-06-30",
+    "sheet": "Data_Financials(Y)",
+    "value": 85320000000,
+    "contexts": [
+      "eol_PE8528----1610-K0009_STD_366_20160630_0"
+    ],
+    "unit": "USD",
+    "dimension_policy": "No explicitMember or typedMember"
+  },
+  {
+    "ticker": "AFL",
+    "accession": "0001628280-26-054618",
+    "url": "https://www.sec.gov/Archives/edgar/data/4977/000162828026054618/afl-20260630_htm.xml",
+    "concept": "Revenues",
+    "start": "2026-04-01",
+    "end": "2026-06-30",
+    "sheet": "Data_Financials(Q)",
+    "value": 4117000000,
+    "contexts": [
+      "c-4",
+      "c-4"
+    ],
+    "unit": "USD",
+    "dimension_policy": "No explicitMember or typedMember"
+  },
+  {
+    "ticker": "C",
+    "accession": "0000831001-26-000045",
+    "url": "https://www.sec.gov/Archives/edgar/data/831001/000083100126000045/c-20260630_htm.xml",
+    "concept": "Revenues",
+    "start": "2026-04-01",
+    "end": "2026-06-30",
+    "sheet": "Data_Financials(Q)",
+    "value": 24766000000,
+    "contexts": [
+      "c-3",
+      "c-3"
+    ],
+    "unit": "USD",
+    "dimension_policy": "No explicitMember or typedMember"
+  },
+  {
+    "ticker": "COST",
+    "accession": "0000909832-18-000008",
+    "url": "https://www.sec.gov/Archives/edgar/data/909832/000090983218000008/cost-20180513.xml",
+    "concept": "Revenues",
+    "start": "2018-02-19",
+    "end": "2018-05-13",
+    "sheet": "Data_Financials(Q)",
+    "value": 32361000000,
+    "contexts": [
+      "FD2018Q3QTD"
+    ],
+    "unit": "USD",
+    "dimension_policy": "No explicitMember or typedMember"
+  }
+]
