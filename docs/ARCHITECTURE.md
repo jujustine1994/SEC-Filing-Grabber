@@ -10,6 +10,18 @@ AppData config 僅保存 database_path/database_id 與個人設定。更新名�
 
 完整設計與驗證流程見 [規格](superpowers/specs/2026-10-05-independent-sec-database-design.md) 與 [實作計畫](superpowers/plans/2026-10-05-independent-sec-database.md)。
 
+## 來源、解析保存與模板的改動界線（2026-10-06）
+
+CTH 指定：來源申報作為核對依據，不為配合模板改寫來源數字。模板修正改變的是選值、期間處理、衍生計算及輸出；不得把修正後的模板數字回寫成來源資料。
+
+資料流為 `SEC 原始申報 → edgartools 解析 → 永久庫內 DataFrame JSON → 模板選值／拆季／衍生計算 → StatementTable → Excel／比較／比率`。永久库 JSON 保存的是解析結果（含原始 concept、數值及 parser 標準化資訊），不是完整原始 HTML／XBRL facts 的逐位元組副本；解析結果可能缺欄或映射錯誤，不能因為已保存就視為原始申報已完整正確解析。
+
+- **模板／選值修正**：只讀已有解析資料，在記憶體產出新結果，不修改既存 filing JSON、concept、label、standard_concept 或原數值。不因模板規則更動而升 parser version、失效快取或重建資料庫。MAR／HLT 營收總計選值屬這一層，原始概念仍保存。
+- **解析缺漏修正**：KR 等缺當期欄需另核原 accession/context。先在獨立輸出驗證新的解析結果；若需要保存，當作獨立資料更新作業，記錄來源、解析版本與差異，保留原保存檔於 history，不與模板修正混成一次庫內覆寫。
+- **正常資料更新**：新增申報／缺檔／parser 不相容仍可能觸發解析保存；現有 history-before-replace 保護適用。這不是「整個抓取命令永遠只讀」的承諾。
+
+現行程式界線：`_filing_obj()` 命中保存資料便直接讀；未命中才經 `_save_to_disk_cache()`、`save_filing()`、`commit_filing()` 寫入。`_match_is_row()` 及表格 builder 不將 StatementTable 回存到 filing JSON。模板驗收使用禁止綁定寫入的 cached audit，並核對資料庫前後 SHA-256；單靠跑一般抓取，不能證明資料庫完全沒有更新。
+
 ## File Map
 
 > 2026-08-12 目錄結構整理：17 個 `.py` 全部搬進 `src/`（下表路徑已更新），

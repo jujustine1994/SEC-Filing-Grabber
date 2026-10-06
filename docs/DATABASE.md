@@ -39,6 +39,8 @@ SEC財報資料庫/
 
 parser 版本相容檢查仍然嚴格。舊版本數據保留下來，但不能因此認為數字正確；不相容時需重新解析，舊內容留在 history。搬遷本身不改財報 schema、parser version 或內容，也不連 SEC。
 
+**模板修正不回寫來源**：庫內 filing JSON 是 edgartools 的保存解析結果，與 SEC 原始申報及模板輸出分層。改選值、拆季、比率不修改已有 filing JSON；解析缺漏的恢復則另作來源核對、獨立驗證及有歷史保留的資料更新。完整界線見 [ARCHITECTURE.md](ARCHITECTURE.md)「來源、解析保存與模板的改動界線」。
+
 ## 搬遷
 
 先關閉舊 GUI 與更新程序，再執行：
