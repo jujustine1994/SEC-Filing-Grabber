@@ -1437,6 +1437,16 @@ def _revenue_competitors(df, period_col=None):
     return competitors
 
 
+_REVENUE_CONCEPT_TIERS = (
+    ('Revenues', 'SalesRevenueNet', 'RevenuesNetOfInterestExpense'),
+    ('RevenueFromContractWithCustomerExcludingAssessedTax',
+     'RevenueFromContractWithCustomerIncludingAssessedTax'),
+    ('SalesRevenueGoodsNet', 'SalesRevenueServicesNet', 'RevenueMineralSales',
+     'RegulatedAndUnregulatedOperatingRevenue',
+     'HealthCareOrganizationPatientServiceRevenueLessProvisionForBadDebts'),
+)
+
+
 def _operating_revenue_group(df):
     """Closed, positively weighted operating children of an Other Income total."""
     rows = df[_consolidated_mask(df)]
@@ -1446,9 +1456,16 @@ def _operating_revenue_group(df):
         return rows.iloc[:0], False
     children = _revenue_competitors(rows)
     children = children[children['parent_concept'].astype(str).isin(aggregate['concept'].astype(str))]
+    # A fully empty, unlinked presentation placeholder is not a missing
+    # calculation component. Keep actual missing-current components if another
+    # period has a fact or their positive calculation weight establishes them.
+    periods = [c for c in rows.columns if re.match(r'^\d{4}-\d{2}-\d{2}', str(c))]
+    if periods and 'weight' in children:
+        has_fact = children[periods].map(lambda v: _to_python_val(v) is not None).any(axis=1)
+        children = children[has_fact | children['weight'].map(lambda v: _to_python_val(v) is not None)]
     if children.empty:
         return children, False
-    supported = {'SalesRevenueNet', 'SalesRevenueGoodsNet', 'SalesRevenueServicesNet',
+    supported = {name for tier in _REVENUE_CONCEPT_TIERS for name in tier} | {
                  'FinancialServicesRevenue', 'OilAndGasRevenue',
                  'RefiningAndMarketingRevenue', 'RevenueFromRelatedParties'}
     pattern = r'(?:us-gaap[_:])?(?:' + '|'.join(sorted(supported)) + ')'
@@ -1498,15 +1515,10 @@ def _revenue_total_rows(df):
     consolidated = consolidated[~labels.loc[consolidated.index].str.fullmatch(r'(?:total )?revenues? and other income')]
     concepts = consolidated['concept'].astype(str)
     labels = labels.loc[consolidated.index]
-    for suffix in (
-        r'(?:Revenues|SalesRevenueNet|RevenuesNetOfInterestExpense)',
-        r'RevenueFromContractWithCustomer(?:Excluding|Including)AssessedTax',
-        r'(?:SalesRevenueGoodsNet|SalesRevenueServicesNet|RevenueMineralSales|'
-        r'RegulatedAndUnregulatedOperatingRevenue|'
-        r'HealthCareOrganizationPatientServiceRevenueLessProvisionForBadDebts)',
-    ):
+    for tier, names in enumerate(_REVENUE_CONCEPT_TIERS):
+        suffix = '(?:' + '|'.join(names) + ')'
         rows = consolidated[concepts.str.fullmatch(r'(?:us-gaap[_:])?' + suffix)]
-        if suffix.startswith(r'(?:Revenues|'):
+        if tier == 0:
             # Exact financial grand-total labels support historical custom
             # concepts. "After provisions" is deliberately not accepted.
             financial_totals = consolidated[labels.isin({
@@ -1514,7 +1526,7 @@ def _revenue_total_rows(df):
                 'net revenues including net interest income',
             })]
             rows = pd.concat([rows, financial_totals]).loc[lambda r: ~r.index.duplicated()]
-        elif suffix.startswith(r'(?:SalesRevenueGoodsNet|'):
+        elif tier == 2:
             explicit_totals = consolidated[labels.isin({
                 'total revenue', 'total revenues', 'total net revenue', 'total net revenues',
                 'total revenue net', 'total revenues net', 'total operating revenue',
@@ -1545,8 +1557,10 @@ def _revenue_total_rows(df):
                     r'(?:us-gaap[_:])?SalesRevenueNet').all()):
                 rows = explicit
             return rows
-    if closed and operating['concept'].astype(str).nunique() == 1:
-        return operating
+    if closed:
+        locals_ = set(operating['concept'].astype(str).str.replace(r'^us-gaap[_:]', '', regex=True))
+        if len(locals_) == 1 or locals_ <= set(_REVENUE_CONCEPT_TIERS[1]):
+            return operating  # Tax alternatives are reported peers, never additive.
     return consolidated.iloc[:0]
 
 
@@ -1593,6 +1607,17 @@ def _revenue_components(df, period_col: str) -> tuple[list[int], bool]:
         if not closed:
             return [], True
         indices = []
+        alternatives = operating[operating['concept'].astype(str).str.fullmatch(
+            r'(?:us-gaap[_:])?(?:' + '|'.join(_REVENUE_CONCEPT_TIERS[1]) + ')')]
+        if not alternatives.empty:
+            present = alternatives[alternatives[period_col].map(lambda v: _to_python_val(v) is not None)]
+            if present.empty:
+                return [], False
+            values = [_to_python_val(v) for v in present[period_col]]
+            if any(v != values[0] for v in values[1:]):
+                return [], True
+            indices.append(present.index[0])
+            operating = operating.drop(index=alternatives.index)
         for concept in sorted(set(operating['concept'].astype(str))):
             found = operating[operating['concept'].astype(str) == concept]
             present = found[found[period_col].map(lambda v: _to_python_val(v) is not None)]

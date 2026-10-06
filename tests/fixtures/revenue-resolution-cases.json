@@ -5079,5 +5079,316 @@
       }
     ],
     "method": "derived sum"
+  },
+  {
+    "ticker": "COP",
+    "accession": "0001163165-26-000009",
+    "column": "2025-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1163165/000116316526000009/cop-20251231_htm.xml",
+    "instance_sha256": "fefda8d77e7f5cfda364bf3e77510a9d5c6e1e3534aa3d8a620dc3c44587d1a7",
+    "facts": [
+      {
+        "concept": "us-gaap_Revenues",
+        "namespace": "http://fasb.org/us-gaap/2025",
+        "start": "2025-01-01",
+        "end": "2025-12-31",
+        "value": "58944000000"
+      }
+    ],
+    "expected_value": 58944000000,
+    "rows": [
+      {
+        "concept": "us-gaap_Revenues",
+        "label": "Sales and other operating revenues",
+        "standard_concept": "Revenue",
+        "parent_concept": "cop_RevenuesAndOtherIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 1,
+        "value": 58944000000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnSaleOfPropertyPlantEquipment",
+        "label": "Gain (loss) on dispositions",
+        "standard_concept": "GainLossOnDispositions",
+        "parent_concept": "cop_RevenuesAndOtherIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 29,
+        "value": 731000000.0
+      },
+      {
+        "concept": "cop_RevenuesAndOtherIncome",
+        "label": "Total revenues and other income",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 31,
+        "value": 61548000000.0
+      },
+      {
+        "concept": "us-gaap_CostOfGoodsAndServicesSold",
+        "label": "Purchased commodities",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 37,
+        "value": 22325000000.0
+      },
+      {
+        "concept": "us-gaap_OperatingCostsAndExpenses",
+        "label": "Production and operating expenses",
+        "standard_concept": "TotalOperatingExpenses",
+        "parent_concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 38,
+        "value": 10331000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDebtExpense",
+        "label": "Interest and debt expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 63,
+        "value": 855000000.0
+      },
+      {
+        "concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "label": "Total costs and expenses",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 74,
+        "value": 48892000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income (loss) before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 75,
+        "value": 12656000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Income tax provision (benefit)",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 76,
+        "value": 4668000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000116316526000009/cop-20251231_cal.xml",
+        "path": "output\\COP-0001163165-26-000009-cop-20251231_cal.xml",
+        "sha256": "d9acca9aa107c0732493d0db26900a03472d384057225ffc7ff1c64c3dbc3e59"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000116316526000009/cop-20251231_htm.xml",
+        "path": "output\\COP-0001163165-26-000009-cop-20251231_htm.xml",
+        "sha256": "fefda8d77e7f5cfda364bf3e77510a9d5c6e1e3534aa3d8a620dc3c44587d1a7"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000116316526000009/cop-20251231_lab.xml",
+        "path": "output\\COP-0001163165-26-000009-cop-20251231_lab.xml",
+        "sha256": "915e5b429dca60a285d8396fd79d7e3aff8767ccf23c42c4ee428763186da271"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000116316526000009/cop-20251231_pre.xml",
+        "path": "output\\COP-0001163165-26-000009-cop-20251231_pre.xml",
+        "sha256": "13a57bc4af2d577dcaded66f57b128871cd92d0f23db164537e91a8477f03adb"
+      }
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000116316526000009/cop-20251231_cal.xml",
+        "role": "http://www.conocophillips.com/role/ConsolidatedIncomeStatement",
+        "parent": "cop_RevenuesAndOtherIncome",
+        "child": "us-gaap_Revenues",
+        "weight": "1.0"
+      }
+    ],
+    "method": "reported value"
+  },
+  {
+    "ticker": "COP",
+    "accession": "0001562762-22-000031",
+    "column": "2021-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1163165/000156276222000031/cop10k2021_htm.xml",
+    "instance_sha256": "f3c24d3aaeb11011bf3ffbac64f87c244415d7b1877c5a5d0055365f194f7f2f",
+    "facts": [
+      {
+        "concept": "us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax",
+        "namespace": "http://fasb.org/us-gaap/2021-01-31",
+        "start": "2021-01-01",
+        "end": "2021-12-31",
+        "value": "45828000000"
+      }
+    ],
+    "expected_value": 45828000000,
+    "rows": [
+      {
+        "concept": "us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax",
+        "label": "Sales and other operating revenues",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_Revenues",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 1,
+        "value": 45828000000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnSaleOfPropertyPlantEquipment",
+        "label": "Gain on dispositions",
+        "standard_concept": "GainLossOnDispositions",
+        "parent_concept": "us-gaap_Revenues",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 37,
+        "value": 486000000.0
+      },
+      {
+        "concept": "us-gaap_Revenues",
+        "label": "Total Revenues and Other Income",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 41,
+        "value": 48349000000.0
+      },
+      {
+        "concept": "us-gaap_CostOfGoodsAndServicesSold",
+        "label": "Purchased commodities",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 45,
+        "value": 18158000000.0
+      },
+      {
+        "concept": "us-gaap_OperatingCostsAndExpenses",
+        "label": "Production and operating expenses",
+        "standard_concept": "TotalOperatingExpenses",
+        "parent_concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 46,
+        "value": 5694000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDebtExpense",
+        "label": "Interest and debt expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 70,
+        "value": 884000000.0
+      },
+      {
+        "concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "label": "Total Costs and Expenses",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 74,
+        "value": 35637000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income (loss) before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 75,
+        "value": 12712000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Income tax provision (benefit)",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 77,
+        "value": 4633000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Less: net income attributable to noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 93,
+        "value": 0.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000156276222000031/cop-20211231_cal.xml",
+        "path": "output\\COP-0001562762-22-000031-cop-20211231_cal.xml",
+        "sha256": "f8079721fe075d6108241851e564161614117d35e8b7f88c9f2a9289b6527041"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000156276222000031/cop-20211231_lab.xml",
+        "path": "output\\COP-0001562762-22-000031-cop-20211231_lab.xml",
+        "sha256": "ce2e9bcb9b4f69b72b4feb5cde15a47adb1a84818ea9ef98f35708ba85303476"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000156276222000031/cop-20211231_pre.xml",
+        "path": "output\\COP-0001562762-22-000031-cop-20211231_pre.xml",
+        "sha256": "93ff52ae7237605377a4e698da71ebc6bba1a19d9185b3f7ebf1ce445dd65664"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000156276222000031/cop10k2021_htm.xml",
+        "path": "output\\COP-0001562762-22-000031-cop10k2021_htm.xml",
+        "sha256": "f3c24d3aaeb11011bf3ffbac64f87c244415d7b1877c5a5d0055365f194f7f2f"
+      }
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000156276222000031/cop-20211231_cal.xml",
+        "role": "http://www.conocophillips.com/role/StatementConsolidatedIncomeStatement",
+        "parent": "us-gaap_Revenues",
+        "child": "us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   }
 ]
