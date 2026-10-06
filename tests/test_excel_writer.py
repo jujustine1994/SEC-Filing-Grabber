@@ -429,3 +429,32 @@ def test_gap_column_survives_the_whole_excel_pipeline(tmp_path):
     rev_row = next(r for r in range(1, ws.max_row + 1)
                    if ws.cell(row=r, column=1).value == "Revenue")
     assert ws.cell(row=rev_row, column=gap_col).value is None
+
+@pytest.mark.parametrize('use_template', [False, True])
+def test_case_colliding_long_sheet_names_remain_excel_valid(tmp_path, use_template):
+    names = ['Data_Seg_RevenuesGrossOfCapital', 'Data_Seg_RevenuesGrossofCapital']
+    tables = [StatementTable(sheet_name=name, quarter_labels=['FY2023Q1'],
+        filing_dates=['2023-05-01'], concepts=['Revenue'], values=[[100.0 + i]],
+        ticker='MAR') for i, name in enumerate(names)]
+    template = tmp_path / 'template.xlsx'
+    if use_template:
+        book = openpyxl.Workbook()
+        book.active.title = names[0]
+        book.create_sheet('My_Notes')['A1'] = 'preserve'
+        book.save(template)
+        book.close()
+    out = tmp_path / 'MAR.xlsx'
+    write_statements(tables, out, template if use_template else None)
+    book = openpyxl.load_workbook(out)
+    data_names = [name for name in book.sheetnames if name.startswith('Data_')]
+    assert len(data_names) == 2
+    assert all(len(name) <= 31 for name in book.sheetnames)
+    assert len({name.casefold() for name in book.sheetnames}) == len(book.sheetnames)
+    assert [book[name]['D3'].value for name in data_names] == [100.0, 101.0]
+    assert [table.sheet_name for table in tables] == names
+    links = [cell.hyperlink.location or cell.hyperlink.target
+             for row in book['Index'] for cell in row if cell.hyperlink]
+    assert all(any(name in link for link in links) for name in data_names)
+    if use_template:
+        assert book['My_Notes']['A1'].value == 'preserve'
+    book.close()
