@@ -83,6 +83,13 @@ def test_bare_revenue_with_competing_component_is_ambiguous():
     assert fg._match_revenue_row(df, '2020-12-31 (FY)') == (None, True)
 
 
+def test_cost_of_revenue_is_not_a_competing_revenue_candidate():
+    df = frame(['us-gaap_SalesRevenueGoodsNet', 'us-gaap_CostOfGoodsSold'], [100, 60])
+    df['label'] = ['Revenue', 'Cost of Revenue']
+    df['standard_concept'] = ['Revenue', 'CostOfGoodsAndServicesSold']
+    assert fg._match_revenue_row(df, '2020-12-31 (FY)') == (0, False)
+
+
 def test_exact_custom_totals_with_different_values_are_ambiguous():
     df = frame(['company_A', 'company_B'], [100, 90])
     df['label'] = ['Total Revenue', 'Total revenues']
