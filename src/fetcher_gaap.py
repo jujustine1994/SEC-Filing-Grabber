@@ -1394,6 +1394,20 @@ def _match_is_row(df, std_concept: str | None, fallback_suffix: str,
     return None
 
 
+def _revenue_total_rows(df):
+    """Recognized non-dimensional raw totals at the broadest available tier."""
+    consolidated = df[_consolidated_mask(df)]
+    concepts = consolidated['concept'].astype(str)
+    for suffix in (
+        r'(?:Revenues|SalesRevenueNet)',
+        r'RevenueFromContractWithCustomer(?:Excluding|Including)AssessedTax',
+    ):
+        rows = consolidated[concepts.str.fullmatch(r'(?:us-gaap[_:])?' + suffix)]
+        if not rows.empty:
+            return rows
+    return consolidated.iloc[:0]
+
+
 def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
     """Select a recognized raw consolidated total before normalized components.
 
@@ -1402,15 +1416,8 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
     Without a recognized total, preserve the existing custom-concept policy.
     Returns (row index, ambiguous). Never alters the saved dataframe.
     """
-    consolidated = df[_consolidated_mask(df)]
-    concepts = consolidated['concept'].astype(str)
-    for suffix in (
-        r'(?:Revenues|SalesRevenueNet)',
-        r'RevenueFromContractWithCustomer(?:Excluding|Including)AssessedTax',
-    ):
-        rows = consolidated[concepts.str.fullmatch(r'(?:us-gaap[_:])?' + suffix)]
-        if rows.empty:
-            continue
+    rows = _revenue_total_rows(df)
+    if not rows.empty:
         values = [_to_python_val(df.loc[i, period_col]) for i in rows.index]
         if any(value != values[0] for value in values[1:]):
             return None, True
@@ -1694,10 +1701,12 @@ def _build_is_table(
         # CF-sourced rows (source == "CF") consume cf_df indices — not tracked here.
         consumed: set[int] = set()
 
+        revenue_has_total = not _revenue_total_rows(df).empty
+
         row_vals: dict[int, Any] = {}
         for i, (row_name, std_concept, fallback, source, match, label_hint, lbl_fb) in enumerate(IS_TEMPLATE):
             # Apply override if one exists for this row (concept_override or structural_absence)
-            if row_name in is_overrides:
+            if row_name in is_overrides and not (i == _REVENUE_IDX and revenue_has_total):
                 ov = is_overrides[row_name]
                 if ov.get("fix_type") == "structural_absence":
                     row_vals[i] = None

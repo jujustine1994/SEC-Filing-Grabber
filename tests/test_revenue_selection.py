@@ -84,3 +84,33 @@ def test_ambiguous_total_is_data_gap_without_network_probe():
     assert table.values[table.concepts.index('Revenue')]==[None]
     assert any(g.exc_name=='AmbiguousRevenueTotal' and g.kind=='data' for g in ledger.gaps)
     probe.assert_not_called()
+
+
+@pytest.mark.parametrize('override',[
+    {'fix_type':'concept_override','std_concept':'Revenue'},
+    {'fix_type':'structural_absence'},
+])
+def test_recognized_total_survives_existing_or_diagnosis_override(override):
+    df=frame(['us-gaap_ManagementFeesBaseRevenue','us-gaap_Revenues'],[5,100])
+    filing=MagicMock();filing.filing_date='2021-02-01'
+    fin=filing.obj.return_value.financials
+    fin.income_statement.return_value.to_dataframe.return_value=df
+    fin.cashflow_statement.return_value=None
+    table,_=fg._build_is_table([filing],max_filings=1,is_overrides={'Revenue':override})
+    assert table.values[table.concepts.index('Revenue')]==[100]
+    assert table.values[table.labels.index('us-gaap_ManagementFeesBaseRevenue')]==[5]
+
+
+def test_diagnosis_rebuild_cannot_fill_rejected_conflicting_totals():
+    df=frame(['us-gaap_Revenues','us-gaap_SalesRevenueNet'],[100,90])
+    filing=MagicMock();filing.filing_date='2021-02-01'
+    fin=filing.obj.return_value.financials
+    fin.income_statement.return_value.to_dataframe.return_value=df
+    fin.cashflow_statement.return_value=None
+    with fg.collect_gaps(FetchLedger(probe=lambda:True)) as ledger:
+        before,_=fg._build_is_table([filing],max_filings=1)
+        rebuilt,_=fg._build_is_table([filing],max_filings=1,is_overrides={
+            'Revenue':{'fix_type':'concept_override','std_concept':'Revenue'}})
+    assert before.values[before.concepts.index('Revenue')]==[None]
+    assert rebuilt.values[rebuilt.concepts.index('Revenue')]==[None]
+    assert len([g for g in ledger.gaps if g.exc_name=='AmbiguousRevenueTotal'])==2
