@@ -18,6 +18,7 @@ Layout per sheet:
 
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
@@ -89,6 +90,23 @@ def _meta_fy_end_month(tables: list[StatementTable]) -> int:
         return 12
 
 
+def _excel_sheet_names(tables: list[StatementTable], reserved: list[str]) -> list[StatementTable]:
+    """Allocate Excel-valid, case-insensitive names without changing source tables."""
+    used = {name.casefold() for name in reserved}
+    result = []
+    for table in tables:
+        base = table.sheet_name[:31]
+        name = base
+        number = 2
+        while name.casefold() in used:
+            suffix = f"_{number}"
+            name = base[:31 - len(suffix)] + suffix
+            number += 1
+        used.add(name.casefold())
+        result.append(replace(table, sheet_name=name))
+    return result
+
+
 def write_statements(tables: list[StatementTable], output_path: str | Path,
                      template_path: str | Path | None = None) -> None:
     """Write StatementTable list to an Excel file.
@@ -112,6 +130,7 @@ def write_statements(tables: list[StatementTable], output_path: str | Path,
 
     if use_template:
         wb = load_workbook(template_path)
+        tables = _excel_sheet_names(tables, [n for n in wb.sheetnames if not n.startswith("Data_")])
         # Remove Data_* sheets that are NOT in the template (stale sheets)
         tbl_names = {t.sheet_name for t in tables}
         for name in list(wb.sheetnames):
@@ -135,6 +154,7 @@ def write_statements(tables: list[StatementTable], output_path: str | Path,
             wb = Workbook()
             if "Sheet" in wb.sheetnames:
                 del wb["Sheet"]
+        tables = _excel_sheet_names(tables, [n for n in wb.sheetnames if not n.startswith("Data_")])
         for name in list(wb.sheetnames):
             if name.startswith("Data_"):
                 del wb[name]
