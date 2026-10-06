@@ -5,13 +5,14 @@ parser=argparse.ArgumentParser()
 parser.add_argument('--code',type=Path,required=True)
 parser.add_argument('--source',type=Path,required=True)
 parser.add_argument('--output',type=Path,required=True)
+parser.add_argument('--tickers',nargs='+',default=['MAR','HLT','AMZN','MSFT','AFL','C','COST'])
 args=parser.parse_args();sys.path.insert(0,str(args.code/'src'))
 from fetcher_gaap import StatementTable
 from excel_writer import write_statements
 from ratios import build_ratio_table
 args.output.mkdir(parents=True,exist_ok=True)
 bundle={}
-for ticker in ('MAR','HLT','AMZN','MSFT','AFL','C','COST'):
+for ticker in args.tickers:
     path=args.output/(ticker+'.xlsx')
     if path.exists():raise RuntimeError('Creates only new owned verification workbooks')
     data=json.loads((args.source/(ticker+'.json')).read_text(encoding='utf-8'))
