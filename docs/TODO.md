@@ -223,7 +223,9 @@ G8. **用「比較欄」當 fallback 補洞** ← **CTH 已決策，放最後做
 G13. **期間欄挑錯／財季算錯——BS 那半已修，IS 那半還開著**
 
    **2026-10-06 進度**：已校正有可信年報錨點的財季及 Excel 預設標籤；G14 的累計冒充單季與不可靠拆季基準已加防護，紀錄移至 CHANGELOG。**本項仍未完成**：G13(a) 原 accession facts 恢復、缺年度錨點／缺 DEI 的最新週制季度、LHX 等 transition duration 身份表示，以及 GUI 月份預覽與完整 pipeline 一致性。KR 第一季快取缺當期欄位，不能只改標籤補值；詳見 [本輪驗證紀錄](superpowers/fiscal-verification-results.md)。
-   - 新來源核對待辦：MAR accession `0001193125-10-030603`、2010-01-01 年度，模板 Revenue 選管理費 530M，原 SEC Revenues 為 10.908B；需修標準化總計／構成列選值並驗全庫受影響來源。KHC 2015 predecessor/successor 併購年度需獨立 context 核對。恢復年表不等於這些數字已認證。
+   - MAR／HLT 管理費誤當 Revenue 已修：優先保存的原始總計、保留構成列，禁止 Revenue override 繞過總計；七份原 SEC context／USD 來源驗證見 [Revenue 驗證紀錄](superpowers/revenue-selection-results.md)。同層總計衝突採留空及 `AmbiguousRevenueTotal`；含 Other Income 的口徑、自訂總計與金融／保險更多樣本仍需逐案驗證。KHC 2015 predecessor/successor 併購年度需獨立 context 核對，G13 未全解。
+   - Excel 月份覆寫新增限制：MSFT `2011-12`、AFL `2010-06` 舊期間只保存年月，無完整期末日；兩欄覆寫表頭列 INCONCLUSIVE。需獨立定義不完整日期處理／恢復來源，不得直接補寫保存日期。
+   - 原始 GAAP 構成列的 overflow 分頁分類：既有 `_is_nongaap_label` 以 `excluding` 等字串辨識 Non-GAAP，會把 UNP「Revenue ... excluding assessed tax」、MPC「... excluding consumer excise taxes」放到 NG 頁。營收改选總計後顯露此既有分類漏洞，值仍保留；應另以原概念／稅額排除語意修正，不把 NG 分頁位置當成來源口徑證據。
    （2026-09-04 查明成因，2026-09-20 修掉 BS 借標籤那條，見
    `docs/CHANGELOG.md` 2026-09-20）
 

@@ -7,6 +7,8 @@
 
 ---
 
+> **Revenue 後續更新（2026-10-06）：** MAR／HLT 管理費選值已修，原始總計優先、override 防護與衝突留空已實作。原 SEC 七例、完整 Excel 及全庫結果以 [revenue-selection-results.md](revenue-selection-results.md) 為準。原資料庫不改；KR 當期 facts 恢復、KHC 併購口徑、Other Income／自訂總計及 GUI 一致性仍待辦。原「下一步 MAR」是歷史狀態，勿重做已完成步驟。
+
 ## 零、動手之前一定要先讀的三件事
 
 1. **`docs/PITFALLS.md` 最後一節「驗證與量測的陷阱」**（原九條及後續新增實例）

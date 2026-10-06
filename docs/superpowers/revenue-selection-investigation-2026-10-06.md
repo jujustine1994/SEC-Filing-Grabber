@@ -2,6 +2,8 @@
 
 本次只有唯讀調查，沒有修改正式財報資料庫或產品模板。
 
+> **後續狀態：** 本文件保存改版前的調查，不是目前模板狀態。總計選值及 override 防護已在後續實作；完成範圍、驗收與剩餘問題見 [Revenue 驗證紀錄](revenue-selection-results.md)。下方「下次第一件事」也已完成，來源／解析保存／模板邊界已寫入 ARCHITECTURE.md。
+
 原因：edgartools 5.29.0 將營收構成項和總計都標準化為 Revenue；本專案 `_match_is_row()` 優先取第一個 standard_concept=Revenue 的無維度實體列，成功即不再查原始 Revenues 等總計概念。無維度不代表總計。
 
 MAR accession 0001193125-10-030603：模板選第 1 列 ManagementFeesBaseRevenue，530M；第 7 列 Revenues, Total 為 10.908B。原始概念名稱仍在資料庫。

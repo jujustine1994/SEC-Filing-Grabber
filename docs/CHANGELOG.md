@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-06（Revenue 選值後續）
+
+- 修正管理費／產品營收構成項被當成總營收：優先保存的原始 GAAP 總計及 calculation parent 身份，不選最大值；override／rebuild 不得繞過總計。同層衝突留空並記 `AmbiguousRevenueTotal`，來源構成列仍保留。
+- 修正同名 overflow 插入固定模板區、推移 BS／CF；依來源模板 slots 分類，NG 無模板 slots。修正 MAR 分頁大小寫碰撞超過 Excel 31 字限制，原輸入表不變。
+- 全 215 家重新唯讀驗證，487 張財務表固定列通過；新 section／source 身份比較器消除 541 筆 Net Income 假差異。其他固定指標及 Q／Y 期間表頭無新差異，Revenue／連動 Gross Profit 為本轮改動。
+- 1,749 非 slow 測試；原 SEC Revenue 七例及前輪 15 格來源核對通過。七本完整 Excel 真正重算後 211,776 格零差異，另六格只有年月的覆寫表頭列 INCONCLUSIVE。正式庫 29,277 檔前後 SHA-256 完全相同。
+- COP／OXY／TGT 尚有 29 筆營收總計衝突；KR、KHC、GUI 一致性及 excluding-tax 的 NG 分頁誤分類仍待辦。詳見 [Revenue 驗證紀錄](superpowers/revenue-selection-results.md)。
+
 ## 2026-10-06
 
 - 最終驗收：相同官方 metadata 及 adapter 比對 215 家，0 缺公司／失敗／解析例外；1,721 個非 slow 測試通過。四份自有 Excel 真正重算後核對 95,156 格，0 discrepancy；15 格原始 SEC facts 核對通過。正式庫 29,277 檔 SHA-256 前後完全相同。

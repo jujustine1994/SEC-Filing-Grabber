@@ -1,0 +1,88 @@
+{
+  "numeric_commit": "67e0a46",
+  "writer_commit": "f4afd8b",
+  "baseline": "77e7805 financial behavior, preserved fiscal-official-final-all",
+  "companies": 215,
+  "failed_companies": 0,
+  "official_metadata_complete": true,
+  "fixed_layout_verification": "215 companies; 487 financial tables; 0 fixed-layout failures",
+  "changed_companies": 104,
+  "comparison": {
+    "changed_by_sheet": {
+      "Data_Financials(Q)": 10418,
+      "Data_Financials(Y)": 3036,
+      "Data_Financials_NG(Q)": 10,
+      "Data_Financials_NG(Y)": 3
+    },
+    "template": {
+      "Gross Profit": 2052,
+      "Revenue": 4341
+    },
+    "unexpected": [],
+    "ambiguous": {
+      "COP": 24,
+      "OXY": 4,
+      "TGT": 1
+    },
+    "gaps": {
+      "MissingStandalonePeriod": 230,
+      "MissingCurrentPeriod": 86,
+      "AmbiguousRevenueTotal": 29
+    }
+  },
+  "revenue_change_direction": {
+    "changed_reported_value": 4224,
+    "filled": 77,
+    "left_blank": 40
+  },
+  "headers_changed": {
+    "Data_Financials_NG(Q)": 207,
+    "Data_Financials_NG(Y)": 51
+  },
+  "labels_changed": {
+    "Data_Financials_NG(Q)": 69,
+    "Data_Financials_NG(Y)": 17
+  },
+  "original_revenue_examples": 7,
+  "prior_fiscal_source_cells": 15,
+  "non_slow_tests": 1749,
+  "slow_deselected": 65,
+  "excel": {
+    "companies": 7,
+    "cells_checked": 211776,
+    "ratio_cells": 27199,
+    "header_cells": 7180,
+    "discrepancies": 0,
+    "inconclusive_override_columns": {
+      "MSFT": [
+        {
+          "sheet": "Data_Financials(Q)",
+          "label": "FY2012Q2",
+          "column": 13,
+          "fiscal": "FY2012FQ2",
+          "calendar": "2011Q4",
+          "end": "2011-12"
+        }
+      ],
+      "AFL": [
+        {
+          "sheet": "Data_Financials(Q)",
+          "label": "FY2010Q2",
+          "column": 8,
+          "fiscal": "FY2010FQ2",
+          "calendar": "2010Q2",
+          "end": "2010-06"
+        }
+      ]
+    }
+  },
+  "database": {
+    "files": 29277,
+    "bytes": 3204105955,
+    "added": [],
+    "removed": [],
+    "changed": [],
+    "manifest_sha256": "69e658b437fc2eb9a1a5d31db50c430c828a75c254212aec66566c8ea092e3fc"
+  },
+  "official_metadata_manifest_sha256": "b0e82e332d8acc8222a90e072d11d5e4d4f004552601de665484e20706e1ab44"
+}

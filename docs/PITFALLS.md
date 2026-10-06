@@ -590,4 +590,6 @@ LHX 財年轉換讓 2019-09-27 與 2020-04-03 都使用 FY2020Q1。只逐鏈檢�
 
 原始 USD fact 的 unitRef 也不能只認 `usd` 字串；要讀 instance 的 unit 定義，COST 的 USD unitRef 是 `iso4217_USD`。
 
+固定列修好後，以全表同名 occurrence 比對又產生 541 筆 Net Income 假回歸：IS 構成列原本插在 CF 前，移到底部後，舊「第二個 Net Income」變成 CF 固定列。CME 逐列核對兩側 CF 值相同，錯的是比較器的身份。必須按 section＋原模板 slot，或 overflow 原 source key 比對；同日期仍保留全部值及重複次數，不任意配對申報。新 `compare_revenue_audits.py` 比對全部 215 家後非預期固定模板差異為 0。不能只用移動後的列號／同名次序決定哪個指標改變。
+
 MAR 兩個 segment 名称各 31 字，只差大小寫，openpyxl 自動加號後長達 32 字；ZIP 與 openpyxl 可讀不等於 Excel 可開。必須測真正 Excel 開啟並重算。MSFT／AFL 各一個旧期間只有 YYYY-MM，月份覆寫公式仍會產生標籤，但缺完整期末日不能用 ISO 日期 oracle 宣稱來源期間認證；本輪列為 INCONCLUSIVE，未改保存日期。
