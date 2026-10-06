@@ -39,7 +39,7 @@ from contextvars import ContextVar
 import filing_cache
 from period_identity import cover_focus, reported_label, build_period_map, corrected_focus
 from database import DatabaseError
-from fetch_ledger import FetchLedger, MissingCurrentPeriod, MissingStandalonePeriod
+from fetch_ledger import FetchLedger, MissingCurrentPeriod, MissingStandalonePeriod, AmbiguousRevenueTotal
 from i18n import t
 from net_retry import NetworkDownError, is_network_error, with_retry
 from override_engine import load_overrides, run_diagnosis, check_key_rows
@@ -1394,6 +1394,32 @@ def _match_is_row(df, std_concept: str | None, fallback_suffix: str,
     return None
 
 
+def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
+    """Select a recognized raw consolidated total before normalized components.
+
+    Broad revenue totals precede customer-contract subtotals. Conflicting totals
+    at the same tier are inconclusive, not resolved by row order or magnitude.
+    Without a recognized total, preserve the existing custom-concept policy.
+    Returns (row index, ambiguous). Never alters the saved dataframe.
+    """
+    consolidated = df[_consolidated_mask(df)]
+    concepts = consolidated['concept'].astype(str)
+    for suffix in (
+        r'(?:Revenues|SalesRevenueNet)',
+        r'RevenueFromContractWithCustomer(?:Excluding|Including)AssessedTax',
+    ):
+        rows = consolidated[concepts.str.fullmatch(r'(?:us-gaap[_:])?' + suffix)]
+        if rows.empty:
+            continue
+        values = [_to_python_val(df.loc[i, period_col]) for i in rows.index]
+        if any(value != values[0] for value in values[1:]):
+            return None, True
+        return rows.index[0], False
+    row = IS_TEMPLATE[_REVENUE_IDX]
+    return _match_is_row(df, row[1], row[2], label_fallback=row[6],
+                         match=row[4], label_hint=row[5]), False
+
+
 def _apply_row_override(df: pd.DataFrame, col: str, override_entry: dict) -> Any:
     """Look up a value from df using a pre-diagnosed override entry.
 
@@ -1694,8 +1720,13 @@ def _build_is_table(
                 else:
                     val = None
             else:
-                idx = _match_is_row(df, std_concept, fallback, label_fallback=lbl_fb,
-                                    match=match, label_hint=label_hint)
+                if i == _REVENUE_IDX:
+                    idx, ambiguous = _match_revenue_row(df, q_col)
+                    if ambiguous:
+                        _note_gap(_filing_ref(filing), AmbiguousRevenueTotal(_col_to_period_end(q_col)))
+                else:
+                    idx = _match_is_row(df, std_concept, fallback, label_fallback=lbl_fb,
+                                        match=match, label_hint=label_hint)
                 if idx is not None:
                     consumed.add(idx)   # mark as consumed so overflow skips this row
                 val = _to_python_val(df.loc[idx, q_col]) if idx is not None else None

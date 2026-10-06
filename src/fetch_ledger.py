@@ -48,6 +48,10 @@ class MissingStandalonePeriod(MissingCurrentPeriod):
     """A cumulative cash flow cannot be converted to a verified standalone quarter."""
 
 
+class AmbiguousRevenueTotal(MissingCurrentPeriod):
+    """Recognized consolidated revenue totals disagree for the selected period."""
+
+
 @dataclass(frozen=True)
 class Gap:
     """一期沒拿到的紀錄。

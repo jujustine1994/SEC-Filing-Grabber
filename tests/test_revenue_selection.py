@@ -67,9 +67,9 @@ def test_builder_uses_total_and_preserves_component_overflow():
     fin=filing.obj.return_value.financials
     fin.income_statement.return_value.to_dataframe.return_value=df
     fin.cashflow_statement.return_value=None
-    table,_=fg._build_is_table([filing])
+    table,_=fg._build_is_table([filing],max_filings=1)
     assert table.values[table.concepts.index('Revenue')]==[100]
-    assert table.values[table.concepts.index('us-gaap_ManagementFeesBaseRevenue')]==[5]
+    assert table.values[table.labels.index('us-gaap_ManagementFeesBaseRevenue')]==[5]
 
 
 def test_ambiguous_total_is_data_gap_without_network_probe():
@@ -80,7 +80,7 @@ def test_ambiguous_total_is_data_gap_without_network_probe():
     fin.cashflow_statement.return_value=None
     probe=MagicMock(side_effect=AssertionError('No network probe'))
     with fg.collect_gaps(FetchLedger(probe=probe)) as ledger:
-        table,_=fg._build_is_table([filing])
+        table,_=fg._build_is_table([filing],max_filings=1)
     assert table.values[table.concepts.index('Revenue')]==[None]
     assert any(g.exc_name=='AmbiguousRevenueTotal' and g.kind=='data' for g in ledger.gaps)
     probe.assert_not_called()
