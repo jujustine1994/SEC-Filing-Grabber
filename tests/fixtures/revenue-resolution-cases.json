@@ -5650,5 +5650,329 @@
       }
     ],
     "method": "reported value"
+  },
+  {
+    "ticker": "XOM",
+    "accession": "0000034088-19-000010",
+    "column": "2018-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/34088/000003408819000010/xom-20181231.xml",
+    "instance_sha256": "35701d713f04140a27763af8dd069e16e0948e53d5b4fc9029268418ffd28b8a",
+    "facts": [
+      {
+        "concept": "xom_SalesAndOtherOperatingRevenueIncludingSalesBasedTaxes",
+        "namespace": "http://www.exxonmobil.com/20181231",
+        "start": "2018-01-01",
+        "end": "2018-12-31",
+        "value": "279332000000"
+      }
+    ],
+    "expected_value": 279332000000,
+    "rows": [
+      {
+        "concept": "xom_SalesAndOtherOperatingRevenueIncludingSalesBasedTaxes",
+        "label": "Sales and other operating revenue",
+        "standard_concept": null,
+        "parent_concept": "xom_TotalRevenuesAndOtherIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 1,
+        "value": 279332000000.0
+      },
+      {
+        "concept": "xom_TotalRevenuesAndOtherIncome",
+        "label": "Total revenues and other income",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 18,
+        "value": 290212000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 39,
+        "value": 766000000.0
+      },
+      {
+        "concept": "us-gaap_CostsAndExpenses",
+        "label": "Total costs and other deductions",
+        "standard_concept": "CostsSubtotal",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 49,
+        "value": 259259000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 50,
+        "value": 30953000000.0
+      },
+      {
+        "concept": "us-gaap_ProfitLoss",
+        "label": "Net income including noncontrolling interests",
+        "standard_concept": "ProfitLoss",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 61,
+        "value": 21421000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Net Income Attributable to Noncontrolling Interest",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 65,
+        "value": 581000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000003408819000010/xom-20181231.xml",
+        "path": "output\\XOM-0000034088-19-000010-xom-20181231.xml",
+        "sha256": "35701d713f04140a27763af8dd069e16e0948e53d5b4fc9029268418ffd28b8a"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000003408819000010/xom-20181231_cal.xml",
+        "path": "output\\XOM-0000034088-19-000010-xom-20181231_cal.xml",
+        "sha256": "9466a83fe7bb8b24af795010d471eaae942a07b10e4c312b444a57245762cf30"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000003408819000010/xom-20181231_lab.xml",
+        "path": "output\\XOM-0000034088-19-000010-xom-20181231_lab.xml",
+        "sha256": "b0cb11c323232fdaabd5bdbd3d61e8fc2dcc9ac42550a81194a1b135098297c2"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000003408819000010/xom-20181231_pre.xml",
+        "path": "output\\XOM-0000034088-19-000010-xom-20181231_pre.xml",
+        "sha256": "e2deaad507b2aa1f9909a60d74fb0292b6d18b2198410a58ebd154d8a535994d"
+      }
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000003408819000010/xom-20181231_cal.xml",
+        "role": "http://www.exxonmobil.com/role/StatementConsolidatedStatementOfIncome",
+        "parent": "xom_TotalRevenuesAndOtherIncome",
+        "child": "xom_SalesAndOtherOperatingRevenueIncludingSalesBasedTaxes",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000003408819000010/xom-20181231_cal.xml",
+        "role": "http://www.exxonmobil.com/role/StatementConsolidatedStatementOfIncome",
+        "parent": "xom_TotalRevenuesAndOtherIncome",
+        "child": "us-gaap_IncomeLossFromEquityMethodInvestments",
+        "weight": "1"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000003408819000010/xom-20181231_cal.xml",
+        "role": "http://www.exxonmobil.com/role/StatementConsolidatedStatementOfIncome",
+        "parent": "xom_TotalRevenuesAndOtherIncome",
+        "child": "us-gaap_OtherIncome",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
+  },
+  {
+    "ticker": "XOM",
+    "accession": "0001193125-09-165196",
+    "column": "2009-06-30 (Q2)",
+    "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/xom-20090630.xml",
+    "instance_sha256": "c09a6bdb2a64f9a57edc0cd3df1845a4f176c360791785f966a9bd4823505308",
+    "facts": [
+      {
+        "concept": "xom_SalesAndOtherOperatingRevenueIncludingSalesBasedTaxes",
+        "namespace": "http://www.exxonmobil.com/20090630",
+        "start": "2009-04-01",
+        "end": "2009-06-30",
+        "value": "72167000000"
+      }
+    ],
+    "expected_value": 72167000000,
+    "rows": [
+      {
+        "concept": "xom_SalesAndOtherOperatingRevenueIncludingSalesBasedTaxes",
+        "label": "Sales and other operating revenue",
+        "standard_concept": null,
+        "parent_concept": "xom_TotalRevenuesAndOtherIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 1,
+        "value": 72167000000.0
+      },
+      {
+        "concept": "xom_TotalRevenuesAndOtherIncome",
+        "label": "Total revenues and other income",
+        "standard_concept": null,
+        "parent_concept": "xom_IncomeIncludingEquityAffilateEarningsBeforeIncomeTaxes",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 4,
+        "value": 74457000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest Expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 11,
+        "value": 343000000.0
+      },
+      {
+        "concept": "us-gaap_ExciseAndSalesTaxes",
+        "label": "Cost of Revenue",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 12,
+        "value": 6216000000.0
+      },
+      {
+        "concept": "us-gaap_CostsAndExpenses",
+        "label": "Total costs and other deductions",
+        "standard_concept": "CostsSubtotal",
+        "parent_concept": "xom_IncomeIncludingEquityAffilateEarningsBeforeIncomeTaxes",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 4,
+        "index": 14,
+        "value": 66940000000.0
+      },
+      {
+        "concept": "xom_ProfitLoss",
+        "label": "Net income including noncontrolling interests",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": 1.0,
+        "level": 4,
+        "index": 17,
+        "value": 3946000000.0
+      },
+      {
+        "concept": "xom_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Net income/(loss) attributable to noncontrolling interests",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": -1.0,
+        "level": 4,
+        "index": 18,
+        "value": -4000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/defnref.xml",
+        "path": "output\\XOM-0001193125-09-165196-defnref.xml",
+        "sha256": "23fa4845fafc09cb18e41ee40ac70fbd2023cbf6139aa66a7ccf8ebd67764889"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/R1.xml",
+        "path": "output\\XOM-0001193125-09-165196-R1.xml",
+        "sha256": "74210b175342cfc85dc55c696bcbb1ac0a7fb9dbffbd8e9e946887648803e438"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/R2.xml",
+        "path": "output\\XOM-0001193125-09-165196-R2.xml",
+        "sha256": "9e8fad1d930757adc5931c0cc1df20be4a8c5c549b7c7d40003bc7c58cfae9d0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/R3.xml",
+        "path": "output\\XOM-0001193125-09-165196-R3.xml",
+        "sha256": "bc9c33ea434e2184f8bab2e218a484c3d76d06d8541d7000ed795bee9995696b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/R4.xml",
+        "path": "output\\XOM-0001193125-09-165196-R4.xml",
+        "sha256": "982c4151197f2d54a93fe70e26a9d8a290d7b7fe14971ba79201ff04343a1da8"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/R5.xml",
+        "path": "output\\XOM-0001193125-09-165196-R5.xml",
+        "sha256": "00f3fb15cbdec9ca294d1d0e85ed28a2d664497f52e55f259ed530a2aab3c3bb"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/R6.xml",
+        "path": "output\\XOM-0001193125-09-165196-R6.xml",
+        "sha256": "0919ac210e40f7743f9bb961bc5269af48bde3f72a6bbf7e719de6264e99e543"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/R7.xml",
+        "path": "output\\XOM-0001193125-09-165196-R7.xml",
+        "sha256": "f704605854468838997a10a67b99a95cb60ded44bf983c7d55660330b1a331d8"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/xom-20090630.xml",
+        "path": "output\\XOM-0001193125-09-165196-xom-20090630.xml",
+        "sha256": "c09a6bdb2a64f9a57edc0cd3df1845a4f176c360791785f966a9bd4823505308"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/xom-20090630_cal.xml",
+        "path": "output\\XOM-0001193125-09-165196-xom-20090630_cal.xml",
+        "sha256": "747f3d754a22eaf957ec666b9f3a803c4eaecd73d5bcedb019f5ca9d94b49dfe"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/xom-20090630_lab.xml",
+        "path": "output\\XOM-0001193125-09-165196-xom-20090630_lab.xml",
+        "sha256": "6e7f0487754770300ee990c82a853df582ef6b3eadb37174e3e240c572d9a390"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/xom-20090630_pre.xml",
+        "path": "output\\XOM-0001193125-09-165196-xom-20090630_pre.xml",
+        "sha256": "0023e44833403a44c71009d051ad4cbee55fba0b41949cb7ddc1dcbf50f20a57"
+      }
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/xom-20090630_cal.xml",
+        "role": "http://www.exxonmobil.com/taxonomy/role/StatementOfIncomeAlternative",
+        "parent": "xom_TotalRevenuesAndOtherIncome",
+        "child": "xom_SalesAndOtherOperatingRevenueIncludingSalesBasedTaxes",
+        "weight": "1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/xom-20090630_cal.xml",
+        "role": "http://www.exxonmobil.com/taxonomy/role/StatementOfIncomeAlternative",
+        "parent": "xom_TotalRevenuesAndOtherIncome",
+        "child": "us-gaap_IncomeLossFromEquityMethodInvestments",
+        "weight": "1.00"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/34088/000119312509165196/xom-20090630_cal.xml",
+        "role": "http://www.exxonmobil.com/taxonomy/role/StatementOfIncomeAlternative",
+        "parent": "xom_TotalRevenuesAndOtherIncome",
+        "child": "us-gaap_OtherIncome",
+        "weight": "1.00"
+      }
+    ],
+    "method": "reported value"
   }
 ]

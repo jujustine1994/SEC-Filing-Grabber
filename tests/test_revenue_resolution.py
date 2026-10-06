@@ -123,3 +123,20 @@ def test_equal_duplicate_operating_component_is_not_added_twice():
     components, ambiguous = fg._revenue_components(df, case['column'])
     assert not ambiguous
     assert sum(df.loc[i, case['column']] for i in components)==case['expected_value']
+
+
+@pytest.mark.parametrize('label', ['Sales and other operating revenue from management fees',
+                                  'Sales and other operating revenue subtotal'])
+def test_custom_operating_child_requires_complete_label(label):
+    case = next(c for c in CASES if c['ticker']=='XOM')
+    df = dataframe(case)
+    df.loc[df['concept']==case['facts'][0]['concept'], 'label'] = label
+    assert fg._match_revenue_row(df, case['column']) == (None, True)
+
+
+@pytest.mark.parametrize('weight', [None, -1, 0])
+def test_custom_operating_child_requires_positive_calculation_weight(weight):
+    case = next(c for c in CASES if c['ticker']=='XOM')
+    df = dataframe(case)
+    df.loc[df['concept']==case['facts'][0]['concept'], 'weight'] = weight
+    assert fg._match_revenue_row(df, case['column']) == (None, True)
