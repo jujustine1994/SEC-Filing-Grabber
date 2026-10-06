@@ -36,8 +36,8 @@ def cells(result):
     return values, labels, sources
 
 
-def compare(before, after):
-    old,old_labels,old_sources=cells(before);new,new_labels,new_sources=cells(after)
+def compare(before, after, *, cell_reader=cells):
+    old,old_labels,old_sources=cell_reader(before);new,new_labels,new_sources=cell_reader(after)
     changes=[];headers=[];metadata=[]
     for key in sorted(old.keys()|new.keys()):
         old_slots=old.get(key,[]);new_slots=new.get(key,[])
@@ -59,7 +59,7 @@ def compare(before, after):
     return dict(value_changes=changes,label_changes=label_changes,header_changes=headers,metadata_changes=metadata,duplicate_periods=duplicates)
 
 
-def main():
+def main(comparator=compare):
     parser=argparse.ArgumentParser();parser.add_argument('before',type=Path);parser.add_argument('after',type=Path);parser.add_argument('--output',type=Path,required=True)
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     errors_before=sorted(p.name for p in args.before.glob('*.error.json'))
@@ -72,7 +72,7 @@ def main():
         try:
             a=json.loads((args.before/(ticker+'.json')).read_text(encoding='utf-8'))
             b=json.loads((args.after/(ticker+'.json')).read_text(encoding='utf-8'))
-            change=compare(a,b)
+            change=comparator(a,b)
             (args.output/(ticker+'.json')).write_text(json.dumps(change,ensure_ascii=False),encoding='utf-8')
             summary['companies'][ticker]={k:len(v) for k,v in change.items()}
         except Exception as exc:
