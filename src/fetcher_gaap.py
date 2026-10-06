@@ -2608,14 +2608,17 @@ def _merge_financials(is_tbl: StatementTable,
     # 完全寫不出來。移到底部後模板列號跨公司固定。
     overflow: list[tuple[str, str, list[Any]]] = []
 
-    def _add_rows(tbl: StatementTable, template_names: set[str]) -> None:
+    def _add_rows(tbl: StatementTable, template_names: set[str], template_count: int) -> None:
         q_idx = {q: j for j, q in enumerate(tbl.quarter_labels)}
         for i, concept in enumerate(tbl.concepts):
             label = tbl.labels[i] if tbl.labels else ""
             row = [_to_python_val(tbl.values[i][q_idx[q]])
                    if q in q_idx else None
                    for q in all_qs]
-            if concept in template_names:
+            # The source builders put fixed template slots first. An overflow
+            # display name may equal a metric; it does not acquire template
+            # identity or permission to shift later fixed sections.
+            if i < template_count and concept in template_names:
                 concepts.append(concept)
                 labels_col.append(label)
                 values.append(row)
@@ -2639,15 +2642,16 @@ def _merge_financials(is_tbl: StatementTable,
     _add_blank()
 
     _add_header("Income Statement")
-    _add_rows(is_tbl, {r[0] for r in IS_TEMPLATE})
+    has_template = sheet_name in ("Data_Financials(Q)", "Data_Financials(Y)")
+    _add_rows(is_tbl, {r[0] for r in IS_TEMPLATE}, len(IS_TEMPLATE) if has_template else 0)
     for _ in range(SECTION_GAP):
         _add_blank()
     _add_header("Balance Sheet")
-    _add_rows(bs_tbl, {r[0] for r in BS_TEMPLATE})
+    _add_rows(bs_tbl, {r[0] for r in BS_TEMPLATE}, len(BS_TEMPLATE) if has_template else 0)
     for _ in range(SECTION_GAP):
         _add_blank()
     _add_header("Cash Flow")
-    _add_rows(cf_tbl, {r[0] for r in CF_TEMPLATE})
+    _add_rows(cf_tbl, {r[0] for r in CF_TEMPLATE}, len(CF_TEMPLATE) if has_template else 0)
 
     if overflow:
         for _ in range(SECTION_GAP):
