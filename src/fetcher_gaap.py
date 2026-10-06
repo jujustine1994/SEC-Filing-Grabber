@@ -1433,7 +1433,7 @@ def _revenue_competitors(df, period_col=None):
     expense_pattern = r'(?:us-gaap[_:])?(?:' + '|'.join(sorted(expense_concepts)) + r')'
     competitors = competitors[~competitors['concept'].astype(str).str.fullmatch(expense_pattern)]
     # Percentage rows are ratios, not USD sales, even if normalized as Revenue.
-    competitors = competitors[~competitors['concept'].astype(str).str.endswith('PercentToSales')]
+    competitors = competitors[~competitors['concept'].astype(str).str.casefold().str.endswith('percenttosales')]
     return competitors
 
 

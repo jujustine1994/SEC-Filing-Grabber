@@ -5390,5 +5390,265 @@
       }
     ],
     "method": "reported value"
+  },
+  {
+    "ticker": "JNJ",
+    "accession": "0000200406-18-000041",
+    "column": "2018-07-01 (Q3)",
+    "url": "https://www.sec.gov/Archives/edgar/data/200406/000020040618000041/jnj-20180701.xml",
+    "instance_sha256": "38142a6c49ff570eedf33eea8651ef495d4436a3854d56c64078102e7105ca8e",
+    "facts": [
+      {
+        "concept": "us-gaap_SalesRevenueGoodsNet",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2018-04-02",
+        "end": "2018-07-01",
+        "value": "20830000000"
+      }
+    ],
+    "expected_value": 20830000000,
+    "rows": [
+      {
+        "concept": "us-gaap_SalesRevenueGoodsNet",
+        "label": "Sales to customers (Note 9)",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_GrossProfit",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 0,
+        "value": 20830000000.0
+      },
+      {
+        "concept": "jnj_SalesRevenueGoodsNetPercentToSales",
+        "label": "Sales to customers percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_GrossProfitPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 171,
+        "value": 1.0
+      },
+      {
+        "concept": "us-gaap_CostOfGoodsSold",
+        "label": "Cost of products sold",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_GrossProfit",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 172,
+        "value": 6927000000.0
+      },
+      {
+        "concept": "jnj_CostOfGoodsSoldPercentToSales",
+        "label": "Cost of products sold percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_GrossProfitPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 174,
+        "value": 0.333
+      },
+      {
+        "concept": "jnj_GrossProfitPercentToSales",
+        "label": "Gross profit percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestmentsPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 176,
+        "value": 0.667
+      },
+      {
+        "concept": "jnj_SellingGeneralAndAdministrativeExpensePercentToSales",
+        "label": "Selling marketing and administrative expenses percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestmentsPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 179,
+        "value": 0.275
+      },
+      {
+        "concept": "us-gaap_ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCost",
+        "label": "Research and development expense",
+        "standard_concept": "ResearchAndDevelopmentExpenses",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 180,
+        "value": 2639000000.0
+      },
+      {
+        "concept": "jnj_ResearchAndDevelopmentExpenseExcludingAcquiredInProcessCostPercentToSales",
+        "label": "Research and development expense percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestmentsPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 182,
+        "value": 0.127
+      },
+      {
+        "concept": "us-gaap_InvestmentIncomeInterest",
+        "label": "Interest income",
+        "standard_concept": "InterestAndDividendIncome",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 183,
+        "value": -126000000.0
+      },
+      {
+        "concept": "jnj_InvestmentIncomeInterestPercentToSales",
+        "label": "Interest income percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestmentsPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 184,
+        "value": -0.006
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest expense, net of portion capitalized",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 185,
+        "value": 253000000.0
+      },
+      {
+        "concept": "jnj_InterestExpensePercentToSales",
+        "label": "Interest expense, net of portion capitalized percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestmentsPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 186,
+        "value": 0.012
+      },
+      {
+        "concept": "jnj_OtherNonOperatingIncomeExpensePercentToSales",
+        "label": "Other (income) expense, net percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestmentsPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 189,
+        "value": 0.017
+      },
+      {
+        "concept": "jnj_Restructuringchargepercenttosales",
+        "label": "Restructuring charge percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestmentsPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 201,
+        "value": 0.003
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "label": "Earnings before provision for taxes on income",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 202,
+        "value": 4973000000.0
+      },
+      {
+        "concept": "jnj_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestmentsPercentToSales",
+        "label": "Earnings before provision for taxes on income percent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_NetIncomeAttributableToParentPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 204,
+        "value": 0.239
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for taxes on income (Note 5)",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 205,
+        "value": 1019000000.0
+      },
+      {
+        "concept": "jnj_IncomeTaxExpenseBenefitPercentToSales",
+        "label": "Provision for taxes on income perent to sales",
+        "standard_concept": null,
+        "parent_concept": "jnj_NetIncomeAttributableToParentPercentToSales",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 206,
+        "value": 0.049
+      },
+      {
+        "concept": "jnj_NetIncomeAttributableToParentPercentToSales",
+        "label": "Net earnings percent to sales",
+        "standard_concept": null,
+        "parent_concept": null,
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 210,
+        "value": 0.19
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/200406/000020040618000041/jnj-20180701.xml",
+        "path": "output\\JNJ-0000200406-18-000041-jnj-20180701.xml",
+        "sha256": "38142a6c49ff570eedf33eea8651ef495d4436a3854d56c64078102e7105ca8e"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/200406/000020040618000041/jnj-20180701_cal.xml",
+        "path": "output\\JNJ-0000200406-18-000041-jnj-20180701_cal.xml",
+        "sha256": "2873868370d324ab6ab7fdc6b517126f94b5c406c0e9476ac522cbab2927cae6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/200406/000020040618000041/jnj-20180701_lab.xml",
+        "path": "output\\JNJ-0000200406-18-000041-jnj-20180701_lab.xml",
+        "sha256": "66252feda7be7b12571b3f4e6d5c4e8cc781a95529b5f74b0ed1e0f6f38c0471"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/200406/000020040618000041/jnj-20180701_pre.xml",
+        "path": "output\\JNJ-0000200406-18-000041-jnj-20180701_pre.xml",
+        "sha256": "84db3ce9b31ad433860dd968ac70974658b61b9ae9292db9aed8381d193f48c2"
+      }
+    ],
+    "calculation_checks": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/200406/000020040618000041/jnj-20180701_cal.xml",
+        "role": "http://www.jnj.com/role/ConsolidatedStatementsOfEarnings",
+        "parent": "us-gaap_GrossProfit",
+        "child": "us-gaap_SalesRevenueGoodsNet",
+        "weight": "1"
+      }
+    ],
+    "method": "reported value"
   }
 ]
