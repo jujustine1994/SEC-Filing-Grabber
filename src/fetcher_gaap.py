@@ -1453,9 +1453,15 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
     candidates = candidates[candidates[period_col].map(lambda value: _to_python_val(value) is not None)]
     if candidates.empty:
         return None, False
+    # Tokenize CamelCase and separators before detecting a revenue word. A
+    # substring crosses Sale + Securities and invents an OCI revenue candidate.
+    concept_words = consolidated['concept'].astype(str).map(
+        lambda concept: re.sub(r'(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])',
+                               ' ', concept).replace('_', ' ').replace(':', ' ')
+    )
     # A differently named revenue component is still a competing candidate.
     competitors = consolidated[
-        consolidated['concept'].astype(str).str.contains(r'revenue|sales', case=False, na=False)
+        concept_words.str.contains(r'\brevenues?\b|\bsales\b', case=False, na=False)
         | consolidated['label'].astype(str).str.contains(r'\brevenues?\b|\bsales\b', case=False, na=False)
     ]
     competitors = competitors[competitors[period_col].map(lambda value: _to_python_val(value) is not None)]
