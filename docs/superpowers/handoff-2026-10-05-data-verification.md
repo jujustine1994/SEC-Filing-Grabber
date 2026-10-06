@@ -11,6 +11,8 @@
 
 ## 零、動手之前一定要先讀的三件事
 
+> **2026-10-07 Revenue 完整名稱後續：** `Revenue(s)`／`Total Revenue(s)` 精確 label fallback 已實作，Revenue 不再接受模糊診斷或歷史 override。全庫離線驗證抓到成本／資產處分被當競爭營收的問題，已用完整成本名稱與精確 GAAP expense concept 排除。最新狀態與驗收範圍見 [完整名稱驗證](revenue-exact-label-verification-2026-10-07.md)；下一輪需補核對 `Net sales` 等精確名稱與 BK／MS／HCA 口徑。舊 29 筆衝突及舊全庫統計屬前版本，不能直接代表最新版。
+
 1. **`docs/PITFALLS.md` 最後一節「驗證與量測的陷阱」**（原九條及後續新增實例）
    那裡記的是**量測方法本身騙了我們**的實例，每一條都先產出過一個看起來很
    合理、實際上是錯的數字。**判準錯了，樣本再大也沒用。**

@@ -593,3 +593,9 @@ LHX 財年轉換讓 2019-09-27 與 2020-04-03 都使用 FY2020Q1。只逐鏈檢�
 固定列修好後，以全表同名 occurrence 比對又產生 541 筆 Net Income 假回歸：IS 構成列原本插在 CF 前，移到底部後，舊「第二個 Net Income」變成 CF 固定列。CME 逐列核對兩側 CF 值相同，錯的是比較器的身份。必須按 section＋原模板 slot，或 overflow 原 source key 比對；同日期仍保留全部值及重複次數，不任意配對申報。新 `compare_revenue_audits.py` 比對全部 215 家後非預期固定模板差異為 0。不能只用移動後的列號／同名次序決定哪個指標改變。
 
 MAR 兩個 segment 名称各 31 字，只差大小寫，openpyxl 自動加號後長達 32 字；ZIP 與 openpyxl 可讀不等於 Excel 可開。必須測真正 Excel 開啟並重算。MSFT／AFL 各一個旧期間只有 YYYY-MM，月份覆寫公式仍會產生標籤，但缺完整期末日不能用 ISO 日期 oracle 宣稱來源期間認證；本輪列為 INCONCLUSIVE，未改保存日期。
+
+## 陷阱十九：競爭營收候選也可能其實是成本或資產處分
+
+完整匹配 Revenue 後，以 concept／label 包含 Revenue 或 Sales 搜尋競爭候選，仍會把 `Cost of Revenue`、PFE `Cost of sales(a)`、IQV 帶折舊說明的成本、CMG `LossesGainsOnSalesOfAssetsAndAssetImpairmentCharges` 算進去，使正常的唯一營收被誤報衝突。分項誤選與成本誤排除必須分開量測；新增留空不能一概宣稱保守正確。
+
+修正方向：完整成本 label 與精確 GAAP 成本／處分 concept 排除，保留真正不同營收候選。模板規則修正後不能直接沿用舊驗收；先凍結版本完成全庫，再以原始 JSON 的期間比較找出受影響公司並重建。期末相同或數字恢復舊值不等於獨立 SEC 來源認證。

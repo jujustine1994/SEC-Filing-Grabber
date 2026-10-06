@@ -1,6 +1,6 @@
 # 三表營收選值機械化研究（2026-10-06）
 
-狀態：研究與實作提案，尚未改動正式選值邏輯。原始 SEC 資料與獨立財報資料庫不修改。
+初始研究於 2026-10-06；後續已實作完整名稱規則與成本候選排除，最新全庫驗收見 [完整名稱驗證](revenue-exact-label-verification-2026-10-07.md)。原始 SEC 資料與獨立財報資料庫不修改。
 
 ## 後續實作：完整 label 匹配
 
@@ -12,7 +12,7 @@ Revenue 不再套用歷史 override，也不建立 E1/E2 自動修補。舊 over
 
 驗證：完整非 slow suite **1,763 passed / 65 deselected / 5 warnings**，48.39 秒；log 在忽略的 `output/revenue-exact-label-suite.log`。這一步尚未重跑 215 公司離線重建，先前大量樣本數值驗收不能當作新 label fallback 的驗收結果。
 
-## 目前程式行為
+## 初始研究時的程式行為（後續實作以上方更新為準）
 
 - `src/override_engine.py` 的 `E2_LLM_ENABLED = False`：GAAP 缺列診斷預設不呼叫 LLM，即使傳入 API key。`tests/test_override_engine.py` 已有不呼叫 `_llm_call` 的測試。
 - E2 實作仍存在，修改旗標可啟用；模組開頭的 pipeline 說明也尚未明確反映預設停用。

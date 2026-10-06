@@ -16,6 +16,8 @@ Revenue 選值先完整匹配原始 GAAP concept，保留計算父子與衝突�
 
 CTH 指定：來源申報作為核對依據，不為配合模板改寫來源數字。模板修正改變的是選值、期間處理、衍生計算及輸出；不得把修正後的模板數字回寫成來源資料。
 
+Revenue 裸名稱的競爭候選檢查另排除完整成本名稱及已知精確 GAAP 成本／資產處分 concept，避免 `Cost of Revenue`、成本註腳或 `SalesOfAssets` 誤報衝突；真正的營收分項仍保留競爭關係。這些規則全部由固定程式執行，非 LLM 分類。
+
 資料流為 `SEC 原始申報 → edgartools 解析 → 永久庫內 DataFrame JSON → 模板選值／拆季／衍生計算 → StatementTable → Excel／比較／比率`。永久库 JSON 保存的是解析結果（含原始 concept、數值及 parser 標準化資訊），不是完整原始 HTML／XBRL facts 的逐位元組副本；解析結果可能缺欄或映射錯誤，不能因為已保存就視為原始申報已完整正確解析。
 
 - **模板／選值修正**：只讀已有解析資料，在記憶體產出新結果，不修改既存 filing JSON、concept、label、standard_concept 或原數值。不因模板規則更動而升 parser version、失效快取或重建資料庫。MAR／HLT 營收總計選值屬這一層，原始概念仍保存。

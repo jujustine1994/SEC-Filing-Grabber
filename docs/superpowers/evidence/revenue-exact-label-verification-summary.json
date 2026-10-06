@@ -1,0 +1,115 @@
+{
+  "numeric_commit": "bdc930d",
+  "initial_numeric_commit": "2c81630",
+  "companies": 215,
+  "failed_companies": 0,
+  "official_metadata_complete": true,
+  "method": "Initial 215-company rebuild; all 14417 original filing JSONs scanned for expense exclusions; 9 affected companies rebuilt; incremental 2-alias scan and CMG/HCA rebuild. Unaffected output retained only after matcher comparison.",
+  "first_rebuild_with_database_hash_seconds": 1462.510407099995,
+  "expense_impact_scan": {
+    "companies": 215,
+    "filings": 14417,
+    "checked_periods": 22005,
+    "affected_companies": [
+      "AMD",
+      "CMG",
+      "DXCM",
+      "EXC",
+      "FIS",
+      "GIS",
+      "IQV",
+      "ODFL",
+      "PFE"
+    ]
+  },
+  "alias_impact_scan": {
+    "companies": 215,
+    "filings": 14417,
+    "checked_periods": 722,
+    "affected_companies": [
+      "CMG",
+      "HCA"
+    ]
+  },
+  "changed_companies": 26,
+  "fixed_changes": [
+    {
+      "sheet": "Data_Financials(Q)",
+      "concept": "Gross Profit",
+      "count": 179
+    },
+    {
+      "sheet": "Data_Financials(Q)",
+      "concept": "Revenue",
+      "count": 845
+    },
+    {
+      "sheet": "Data_Financials(Y)",
+      "concept": "Gross Profit",
+      "count": 48
+    },
+    {
+      "sheet": "Data_Financials(Y)",
+      "concept": "Revenue",
+      "count": 215
+    }
+  ],
+  "revenue_change_directions": {
+    "blanked": 880,
+    "changed_value": 176,
+    "filled": 4
+  },
+  "non_revenue_or_gross_profit_fixed_changes": 0,
+  "label_changes": {},
+  "header_changes": {},
+  "gaps": {
+    "MissingStandalonePeriod": 230,
+    "MissingCurrentPeriod": 86,
+    "AmbiguousRevenueTotal": 85
+  },
+  "ambiguous_revenue_by_company": {
+    "BK": 9,
+    "CMG": 7,
+    "COP": 24,
+    "HCA": 26,
+    "MS": 12,
+    "NEM": 2,
+    "OXY": 4,
+    "TGT": 1
+  },
+  "database": {
+    "files": 29277,
+    "bytes": 3204105955,
+    "unchanged": true,
+    "added": [],
+    "removed": [],
+    "changed": []
+  },
+  "fixed_layout": {
+    "tables": 487,
+    "failures": 0
+  },
+  "source_checks": {
+    "original_revenue_xml_samples": 7,
+    "exported_revenue_samples": 7,
+    "source_derived_fiscal_cf_cells": 15,
+    "failures": 0
+  },
+  "tests": {
+    "passed": 1770,
+    "deselected": 65,
+    "warnings": 5,
+    "seconds": 77.86
+  },
+  "prior_7_excel_input_tables_unchanged": {
+    "AFL": true,
+    "AMZN": true,
+    "C": true,
+    "COST": true,
+    "HLT": true,
+    "MAR": true,
+    "MSFT": true
+  },
+  "excel": "No new all-company workbook generation or recalculation in this task.",
+  "ai_runtime": "No model calls: audit diagnosis disabled; matcher and comparison deterministic."
+}

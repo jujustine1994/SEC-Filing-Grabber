@@ -222,6 +222,8 @@ G8. **用「比較欄」當 fallback 補洞** ← **CTH 已決策，放最後做
 
 G13. **期間欄挑錯／財季算錯——BS 那半已修，IS 那半還開著**
 
+   - Revenue 完整名稱後續：補核對 `Net sales` 等尚未納入的精確名稱與產業 concept；BK／MS 金融業分項、HCA 扣除呆帳前後口徑，以及 COP／OXY／TGT 原有衝突仍需原申報證據。這次移除模糊退路會增加未辨識名稱的空值，不能把回歸測試通過當成全公司營收已認證。最新全庫進度見 [完整名稱驗證](superpowers/revenue-exact-label-verification-2026-10-07.md)。
+
    **2026-10-06 進度**：已校正有可信年報錨點的財季及 Excel 預設標籤；G14 的累計冒充單季與不可靠拆季基準已加防護，紀錄移至 CHANGELOG。**本項仍未完成**：G13(a) 原 accession facts 恢復、缺年度錨點／缺 DEI 的最新週制季度、LHX 等 transition duration 身份表示，以及 GUI 月份預覽與完整 pipeline 一致性。KR 第一季快取缺當期欄位，不能只改標籤補值；詳見 [本輪驗證紀錄](superpowers/fiscal-verification-results.md)。
    - MAR／HLT 管理費誤當 Revenue 已修：優先保存的原始總計、保留構成列，禁止 Revenue override 繞過總計；七份原 SEC context／USD 來源驗證見 [Revenue 驗證紀錄](superpowers/revenue-selection-results.md)。同層總計衝突採留空及 `AmbiguousRevenueTotal`；含 Other Income 的口徑、自訂總計與金融／保險更多樣本仍需逐案驗證。KHC 2015 predecessor/successor 併購年度需獨立 context 核對，G13 未全解。
    - Excel 月份覆寫新增限制：MSFT `2011-12`、AFL `2010-06` 舊期間只保存年月，無完整期末日；兩欄覆寫表頭列 INCONCLUSIVE。需獨立定義不完整日期處理／恢復來源，不得直接補寫保存日期。

@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-07（Revenue 完整名稱全庫驗證）
+
+- 全 215 家離線重建後，確認新競爭候選規則誤把成本、成本註腳及資產處分當營收；以完整成本名稱及精確 GAAP expense／處分 concept 排除，新增正反例測試，每步 commit。
+- 全庫 14,417 份 JSON 的影響掃描後，分別重建受影響 9 家及後續 alias 影響 2 家；最終 487 張固定列、7 個原 SEC 營收样本、15 格拆季／CF 樣本通過。1,770 個非 slow 測試通過；正式庫 29,277 檔 SHA-256 完全不變。
+- 其他固定指標與期間表頭無新差異；Revenue 仍有 85 筆衝突，且歷史 Net sales 等名稱尚未覆蓋。新增留空不能全當成改善；完整統計與下一步見 [驗證紀錄](superpowers/revenue-exact-label-verification-2026-10-07.md)。未批次產生全庫 Excel。
+
 ## 2026-10-06（金融作業規則入口）
 
 - README 補充任務載入分工：工具程式與 GUI 維護仍依 windows-tool；公司 A／B／C 資料產出另依 finance-analysis 及金融共用路徑表的 OFFLINE_SOP。
