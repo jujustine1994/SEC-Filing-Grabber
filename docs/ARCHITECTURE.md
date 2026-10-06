@@ -22,6 +22,14 @@ CTH 指定：來源申報作為核對依據，不為配合模板改寫來源數�
 
 現行程式界線：`_filing_obj()` 命中保存資料便直接讀；未命中才經 `_save_to_disk_cache()`、`save_filing()`、`commit_filing()` 寫入。`_match_is_row()` 及表格 builder 不將 StatementTable 回存到 filing JSON。模板驗收使用禁止綁定寫入的 cached audit，並核對資料庫前後 SHA-256；單靠跑一般抓取，不能證明資料庫完全沒有更新。
 
+## Revenue 總計選值（2026-10-06）
+
+edgartools 的 `standard_concept=Revenue` 同時包含總計與管理費、產品收入等構成項，不能以第一列或最大金額認定營收。模板先檢查無維度實體列保存的原始概念：第一層 `Revenues`／`SalesRevenueNet`，其次 customer-contract 含／不含稅總計。有 calculation parent 指向另一候選時排除子項；若 parent 明示包含 Other Income，仍須釐清口徑，不直接視為可替換的營收總計。
+
+同層剩餘總計數值衝突時留空並記錄 `AmbiguousRevenueTotal` 資料缺口；不探測 SEC 網路、不任選最大值。已辨識總計缺值時不回退到構成項。既有或當趟 diagnosis 的 Revenue override 不得繞過已辨識總計；沒有已辨識總計的自訂來源保留舊規則，並不代表已認證。未入模板的來源列保留在 `Other (as reported)`。
+
+Excel writer 在輸出時分配不超過 31 字且不分大小寫唯一的分頁名，為碰撞後綴預留長度。只複製 `StatementTable` 的輸出名稱，索引使用同一份名稱；不改來源表或資料庫。
+
 ## File Map
 
 > 2026-08-12 目錄結構整理：17 個 `.py` 全部搬進 `src/`（下表路徑已更新），

@@ -583,3 +583,9 @@ MAR 2010-01-01 年度恢復後，模板 Revenue 為 530M；獨立讀原 SEC inst
 ## 陷阱十七：每段日期鏈正常，仍可能跨鏈重用身份
 
 LHX 財年轉換讓 2019-09-27 與 2020-04-03 都使用 FY2020Q1。只逐鏈檢查連續日期，不能保證 builder 使用的全公司 FY 鍵唯一；後面的資料會吞掉前面。必須在所有映射產生後驗身份唯一，碰撞時全公司退回同一政策。另移除裸日期年度生成的 `2021-01-01Q4` 會使季度 BS 留空，這是拒絕錯誤期間，原年度 BS 仍保留；不能誤判為原始來源資料被刪除。
+
+## 陷阱十八：overflow 邊界與 Excel 限制也會騙過驗收
+
+營收修正後，以 `us-gaap_` 前綴猜 overflow，會把自訂概念或重複顯示名稱誤算成非營收模板回歸。必須用 `Other (as reported)` 的實際位置與概念 occurrence 分類。原始 USD fact 的 unitRef 也不能只認 `usd` 字串；要讀 instance 的 unit 定義，COST 的 USD unitRef 是 `iso4217_USD`。
+
+MAR 兩個 segment 名称各 31 字，只差大小寫，openpyxl 自動加號後長達 32 字；ZIP 與 openpyxl 可讀不等於 Excel 可開。必須測真正 Excel 開啟並重算。MSFT／AFL 各一個旧期間只有 YYYY-MM，月份覆寫公式仍會產生標籤，但缺完整期末日不能用 ISO 日期 oracle 宣稱來源期間認證；本輪列為 INCONCLUSIVE，未改保存日期。
