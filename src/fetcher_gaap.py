@@ -1404,6 +1404,22 @@ def _revenue_total_rows(df):
     ):
         rows = consolidated[concepts.str.fullmatch(r'(?:us-gaap[_:])?' + suffix)]
         if not rows.empty:
+            # A reported calculation child is a subtotal, not a competing
+            # consolidated total. Do not extend this to aggregates explicitly
+            # including other income: their revenue scope needs review.
+            parents = rows.get('parent_concept')
+            if parents is not None:
+                subtotal = []
+                for i in rows.index:
+                    parent = str(parents.loc[i])
+                    parent_rows = rows[rows['concept'].astype(str) == parent]
+                    if parent != str(rows.loc[i, 'concept']) and not parent_rows.empty:
+                        labels = parent_rows['label'].astype(str)
+                        if not labels.str.contains(r'\bother\s+income\b', case=False, regex=True).any():
+                            subtotal.append(i)
+                remaining = rows.drop(index=subtotal)
+                if not remaining.empty:
+                    rows = remaining
             return rows
     return consolidated.iloc[:0]
 
@@ -1418,6 +1434,9 @@ def _match_revenue_row(df, period_col: str) -> tuple[int | None, bool]:
     """
     rows = _revenue_total_rows(df)
     if not rows.empty:
+        present = rows[rows[period_col].map(lambda value: _to_python_val(value) is not None)]
+        if not present.empty:
+            rows = present
         values = [_to_python_val(df.loc[i, period_col]) for i in rows.index]
         if any(value != values[0] for value in values[1:]):
             return None, True

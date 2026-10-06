@@ -114,3 +114,28 @@ def test_diagnosis_rebuild_cannot_fill_rejected_conflicting_totals():
     assert before.values[before.concepts.index('Revenue')]==[None]
     assert rebuilt.values[rebuilt.concepts.index('Revenue')]==[None]
     assert len([g for g in ledger.gaps if g.exc_name=='AmbiguousRevenueTotal'])==2
+
+
+def test_calculation_child_is_not_an_independent_conflicting_total():
+    df=frame(['us-gaap_SalesRevenueNet','us-gaap_Revenues'],[31_624_000_000,32_361_000_000])
+    df['parent_concept']=['us-gaap_Revenues','us-gaap_OperatingIncomeLoss']
+    df['label']=['Net sales','Total revenue']
+    assert fg._match_revenue_row(df,'2020-12-31 (FY)')==(1,False)
+
+
+def test_total_including_other_income_is_not_automatic_revenue_authority():
+    df=frame(['us-gaap_SalesRevenueNet','us-gaap_Revenues'],[29_106_000_000,32_584_000_000])
+    df['parent_concept']=['us-gaap_Revenues','us-gaap_OperatingIncomeLoss']
+    df['label']=['Sales and other operating revenues','Total Revenues and Other Income']
+    assert fg._match_revenue_row(df,'2020-12-31 (FY)')==(None,True)
+
+
+def test_absent_value_is_not_a_conflicting_reported_amount():
+    df=frame(['us-gaap_SalesRevenueNet','us-gaap_Revenues'],[None,37_666_000_000])
+    assert fg._match_revenue_row(df,'2020-12-31 (FY)')==(1,False)
+
+
+def test_missing_parent_total_does_not_fall_back_to_its_sales_child():
+    df=frame(['us-gaap_SalesRevenueNet','us-gaap_Revenues'],[90,None])
+    df['parent_concept']=['us-gaap_Revenues','us-gaap_OperatingIncomeLoss']
+    assert fg._match_revenue_row(df,'2020-12-31 (FY)')==(1,False)
