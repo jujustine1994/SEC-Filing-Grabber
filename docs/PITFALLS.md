@@ -586,6 +586,8 @@ LHX 財年轉換讓 2019-09-27 與 2020-04-03 都使用 FY2020Q1。只逐鏈檢�
 
 ## 陷阱十八：overflow 邊界與 Excel 限制也會騙過驗收
 
-營收修正後，以 `us-gaap_` 前綴猜 overflow，會把自訂概念或重複顯示名稱誤算成非營收模板回歸。必須用 `Other (as reported)` 的實際位置與概念 occurrence 分類。原始 USD fact 的 unitRef 也不能只認 `usd` 字串；要讀 instance 的 unit 定義，COST 的 USD unitRef 是 `iso4217_USD`。
+營收修正後，以 `us-gaap_` 前綴猜 overflow，會把自訂概念或重複顯示名稱誤算成非營收模板回歸。`Other (as reported)` 的實際位置與概念 occurrence 比前綴可靠，但仍須先驗證來源模板身份：舊合併器按名稱判斷，會把同名 Revenue 構成列提升到固定區，讓邊界法又把 19 筆 overflow 誤算為主 Revenue 改動，且推移後面 BS／CF 固定列。修正以原表前 N 個模板 slots／NG 零模板 slots 分類後，另用 `verify_fixed_financial_rows.py` 驗固定區完整順序；不能只比名稱與日期而漏掉列位置。
+
+原始 USD fact 的 unitRef 也不能只認 `usd` 字串；要讀 instance 的 unit 定義，COST 的 USD unitRef 是 `iso4217_USD`。
 
 MAR 兩個 segment 名称各 31 字，只差大小寫，openpyxl 自動加號後長達 32 字；ZIP 與 openpyxl 可讀不等於 Excel 可開。必須測真正 Excel 開啟並重算。MSFT／AFL 各一個旧期間只有 YYYY-MM，月份覆寫公式仍會產生標籤，但缺完整期末日不能用 ISO 日期 oracle 宣稱來源期間認證；本輪列為 INCONCLUSIVE，未改保存日期。

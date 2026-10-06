@@ -30,6 +30,8 @@ edgartools 的 `standard_concept=Revenue` 同時包含總計與管理費、產�
 
 Excel writer 在輸出時分配不超過 31 字且不分大小寫唯一的分頁名，為碰撞後綴預留長度。只複製 `StatementTable` 的輸出名稱，索引使用同一份名稱；不改來源表或資料庫。
 
+合併三表時固定列身份由來源表前 N 個模板 slots 決定；名稱符合模板仍需位於模板區。NG 表沒有固定模板 slots。構成列即使顯示名稱也叫 Revenue／Cash，不可插入固定區推移 BS／CF；一律保留在底部 overflow。`verify_fixed_financial_rows.py` 獨立檢查輸出的固定列順序。
+
 ## File Map
 
 > 2026-08-12 目錄結構整理：17 個 `.py` 全部搬進 `src/`（下表路徑已更新），
