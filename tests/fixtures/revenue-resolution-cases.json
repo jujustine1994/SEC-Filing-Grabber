@@ -1,0 +1,3910 @@
+[
+  {
+    "ticker": "CMG",
+    "accession": "0001058090-17-000009",
+    "column": "2016-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1058090/000105809017000009/cmg-20161231.xml",
+    "instance_sha256": "cf11adf922927ac8a1e6f8e2d602a439a5edd4d56090d51a52762fbbe1b67c08",
+    "facts": [
+      {
+        "concept": "us-gaap_FoodAndBeverageRevenue",
+        "namespace": "http://fasb.org/us-gaap/2015-01-31",
+        "start": "2016-01-01",
+        "end": "2016-12-31",
+        "value": "3904384000"
+      }
+    ],
+    "expected_value": 3904384000,
+    "rows": [
+      {
+        "concept": "us-gaap_FoodAndBeverageRevenue",
+        "label": "Revenue",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 0,
+        "value": 3904384000.0
+      },
+      {
+        "concept": "us-gaap_FoodAndBeverageCostOfSales",
+        "label": "Cost of Revenue",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_OperatingCostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 2,
+        "value": 1365580000.0
+      },
+      {
+        "concept": "us-gaap_CostOfGoodsSoldDirectLabor",
+        "label": "Cost of Revenue",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_OperatingCostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 3,
+        "value": 1105001000.0
+      },
+      {
+        "concept": "us-gaap_OtherCostAndExpenseOperating",
+        "label": "Other Expense",
+        "standard_concept": "OtherExpenseIS",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_OperatingCostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 5,
+        "value": 641953000.0
+      },
+      {
+        "concept": "us-gaap_PreOpeningCosts",
+        "label": "Other Operating Expense",
+        "standard_concept": "OtherOperatingExpense",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_OperatingCostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 8,
+        "value": 17162000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnSalesOfAssetsAndAssetImpairmentCharges",
+        "label": "Loss on disposal and impairment of assets",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_OperatingCostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 9,
+        "value": 23877000.0
+      },
+      {
+        "concept": "us-gaap_CostsAndExpenses",
+        "label": "Total operating expenses",
+        "standard_concept": "CostsSubtotal",
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_OperatingCostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 10,
+        "value": 3869817000.0
+      },
+      {
+        "concept": "us-gaap_OtherNonoperatingIncomeExpense",
+        "label": "Interest and other income, net",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_OperatingCostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 12,
+        "value": 4172000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_OperatingCostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 13,
+        "value": 38739000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_OperatingCostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 14,
+        "value": -15801000.0
+      },
+      {
+        "concept": "us-gaap_OtherComprehensiveIncomeAvailableforsaleSecuritiesAdjustmentNetOfTaxPortionAttributableToParent",
+        "label": "Unrealized gain (loss) on investments, net of income taxes of $(849), $946, and $0",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_OtherComprehensiveIncomeLossNetOfTaxPortionAttributableToParent",
+        "parent_abstract_concept": "us-gaap_OtherComprehensiveIncomeLossNetOfTaxPortionAttributableToParentAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 19,
+        "value": 1402000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1058090/000105809017000009/cmg-20161231.xml",
+        "path": "output\\CMG-0001058090-17-000009-cmg-20161231.xml",
+        "sha256": "cf11adf922927ac8a1e6f8e2d602a439a5edd4d56090d51a52762fbbe1b67c08"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1058090/000105809017000009/cmg-20161231_cal.xml",
+        "path": "output\\CMG-0001058090-17-000009-cmg-20161231_cal.xml",
+        "sha256": "5e9a39a200df5e6799fcce73a5caa2deae8feb6648f52eef22d1bcd62074b6e0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1058090/000105809017000009/cmg-20161231_lab.xml",
+        "path": "output\\CMG-0001058090-17-000009-cmg-20161231_lab.xml",
+        "sha256": "55690a50ffc16009ea7cdd8ada281487a597b84663e68fea8d9755f916139a01"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1058090/000105809017000009/cmg-20161231_pre.xml",
+        "path": "output\\CMG-0001058090-17-000009-cmg-20161231_pre.xml",
+        "sha256": "85d27d7d0b5b65c01cc376010efa59426c39a18db3d42f57e04e62dd6dab1df8"
+      }
+    ]
+  },
+  {
+    "ticker": "HCA",
+    "accession": "0001193125-18-056057",
+    "column": "2017-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312518056057/hca-20171231.xml",
+    "instance_sha256": "43804091b18778d01546473eb91ae15949825f3f57ca5a231fcacc3a2384c8ba",
+    "facts": [
+      {
+        "concept": "us-gaap_HealthCareOrganizationPatientServiceRevenueLessProvisionForBadDebts",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2017-01-01",
+        "end": "2017-12-31",
+        "value": "43614000000"
+      }
+    ],
+    "expected_value": 43614000000,
+    "rows": [
+      {
+        "concept": "us-gaap_HealthCareOrganizationPatientServiceRevenue",
+        "label": "Revenues before provision for doubtful accounts",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_HealthCareOrganizationPatientServiceRevenueLessProvisionForBadDebts",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 0,
+        "value": 47653000000.0
+      },
+      {
+        "concept": "us-gaap_HealthCareOrganizationPatientServiceRevenueProvisionforBadDebts",
+        "label": "Provision for doubtful accounts",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_HealthCareOrganizationPatientServiceRevenueLessProvisionForBadDebts",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 3,
+        "value": 4039000000.0
+      },
+      {
+        "concept": "us-gaap_HealthCareOrganizationPatientServiceRevenueLessProvisionForBadDebts",
+        "label": "Revenues",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 6,
+        "value": 43614000000.0
+      },
+      {
+        "concept": "us-gaap_OtherCostAndExpenseOperating",
+        "label": "Other operating expenses",
+        "standard_concept": "OtherExpenseIS",
+        "parent_concept": "hca_ExpensesIncludingEquityInEarningsOfAffiliates",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 18,
+        "value": 8051000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "hca_ExpensesIncludingEquityInEarningsOfAffiliates",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 36,
+        "value": 1690000000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnDispositionOfAssets",
+        "label": "Losses (gains) on sales of facilities",
+        "standard_concept": "GainLossOnAssetSalesCF",
+        "parent_concept": "hca_ExpensesIncludingEquityInEarningsOfAffiliates",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 38,
+        "value": -8000000.0
+      },
+      {
+        "concept": "hca_LegalClaimCostsBenefits",
+        "label": "Legal claim costs (benefits)",
+        "standard_concept": null,
+        "parent_concept": "hca_ExpensesIncludingEquityInEarningsOfAffiliates",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 45,
+        "value": null
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 54,
+        "value": 4381000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 60,
+        "value": 1638000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Net income attributable to noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 71,
+        "value": 527000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312518056057/hca-20171231.xml",
+        "path": "output\\HCA-0001193125-18-056057-hca-20171231.xml",
+        "sha256": "43804091b18778d01546473eb91ae15949825f3f57ca5a231fcacc3a2384c8ba"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312518056057/hca-20171231_cal.xml",
+        "path": "output\\HCA-0001193125-18-056057-hca-20171231_cal.xml",
+        "sha256": "a558b4f75c9680bf7af76529a95a557cc3b49a8b36da8da98d462e1befce19e4"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312518056057/hca-20171231_lab.xml",
+        "path": "output\\HCA-0001193125-18-056057-hca-20171231_lab.xml",
+        "sha256": "222c6de46bb1cf5995d4d78760519e1f0440b33b7417848094d3c7beffcd85e3"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312518056057/hca-20171231_pre.xml",
+        "path": "output\\HCA-0001193125-18-056057-hca-20171231_pre.xml",
+        "sha256": "8460df851b604d669961218714a3271a51effd23a7435b5bb9c81b69f9684cc0"
+      }
+    ]
+  },
+  {
+    "ticker": "HCA",
+    "accession": "0001193125-15-065975",
+    "column": "2014-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312515065975/hca-20141231.xml",
+    "instance_sha256": "06cf42948354e579e1e03362106ad5287ebc3b6e8c31f6ae0997301bb78c3023",
+    "facts": [
+      {
+        "concept": "us-gaap_SalesRevenueServicesNet",
+        "namespace": "http://fasb.org/us-gaap/2014-01-31",
+        "start": "2014-01-01",
+        "end": "2014-12-31",
+        "value": "36918000000"
+      }
+    ],
+    "expected_value": 36918000000,
+    "rows": [
+      {
+        "concept": "us-gaap_SalesRevenueServicesGross",
+        "label": "Revenues before the provision for doubtful accounts",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_SalesRevenueServicesNet",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 0,
+        "value": 40087000000.0
+      },
+      {
+        "concept": "us-gaap_ProvisionForDoubtfulAccounts",
+        "label": "Provision for doubtful accounts",
+        "standard_concept": "ProvisionForDoubtfulAccountsCF",
+        "parent_concept": "us-gaap_SalesRevenueServicesNet",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 3,
+        "value": 3169000000.0
+      },
+      {
+        "concept": "us-gaap_SalesRevenueServicesNet",
+        "label": "Revenues",
+        "standard_concept": "Revenue",
+        "parent_concept": "hca_IncomeBeforeIncomeTaxesAfterEquityInEarningsOfAffiliates",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 6,
+        "value": 36918000000.0
+      },
+      {
+        "concept": "us-gaap_OtherCostAndExpenseOperating",
+        "label": "Other operating expenses",
+        "standard_concept": "OtherExpenseIS",
+        "parent_concept": "hca_ExpensesIncludingEquityInEarningsOfAffiliates",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 18,
+        "value": 6755000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "hca_ExpensesIncludingEquityInEarningsOfAffiliates",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 40,
+        "value": 1743000000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnDispositionOfAssets",
+        "label": "Losses (gains) on sales of facilities",
+        "standard_concept": "GainLossOnAssetSalesCF",
+        "parent_concept": "hca_ExpensesIncludingEquityInEarningsOfAffiliates",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 45,
+        "value": -29000000.0
+      },
+      {
+        "concept": "us-gaap_LegalFees",
+        "label": "Legal claim costs",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "hca_ExpensesIncludingEquityInEarningsOfAffiliates",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 50,
+        "value": 78000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 64,
+        "value": 1108000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Net income attributable to noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 75,
+        "value": 498000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312515065975/hca-20141231.xml",
+        "path": "output\\HCA-0001193125-15-065975-hca-20141231.xml",
+        "sha256": "06cf42948354e579e1e03362106ad5287ebc3b6e8c31f6ae0997301bb78c3023"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312515065975/hca-20141231_cal.xml",
+        "path": "output\\HCA-0001193125-15-065975-hca-20141231_cal.xml",
+        "sha256": "300d6921c3948c8b204cdb7f4e6a379eaff018d75021d8c20202d0d21fe4ffa8"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312515065975/hca-20141231_lab.xml",
+        "path": "output\\HCA-0001193125-15-065975-hca-20141231_lab.xml",
+        "sha256": "8df6ce4de9be19e9e737238c464cf735eaec1b051d98ed28e3fb4aac8eeb1680"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/860730/000119312515065975/hca-20141231_pre.xml",
+        "path": "output\\HCA-0001193125-15-065975-hca-20141231_pre.xml",
+        "sha256": "a4a03c445f08fac1606dafa7559353652470281404cb7838f1d8fd71bb9e9c67"
+      }
+    ]
+  },
+  {
+    "ticker": "NEM",
+    "accession": "0000950123-09-024448",
+    "column": "2009-06-30 (Q2)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/nem-20090630.xml",
+    "instance_sha256": "fe2f314b19968287a5bbb0c324bc15b1ff38cdb23859b6d3c978290f49d29fac",
+    "facts": [
+      {
+        "concept": "us-gaap_RevenueMineralSales",
+        "namespace": "http://xbrl.us/us-gaap/2009-01-31",
+        "start": "2009-04-01",
+        "end": "2009-06-30",
+        "value": "1602000000"
+      }
+    ],
+    "expected_value": 1602000000,
+    "rows": [
+      {
+        "concept": "us-gaap_GoldProductsAndServicesRevenue",
+        "label": "Revenue",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_RevenueMineralSales",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 1,
+        "value": 1373000000.0
+      },
+      {
+        "concept": "nem_SalesCopperNet",
+        "label": "Sales - copper, net",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_RevenueMineralSales",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 2,
+        "value": 229000000.0
+      },
+      {
+        "concept": "us-gaap_RevenueMineralSales",
+        "label": "Total revenues,\nnet",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 3,
+        "value": 1602000000.0
+      },
+      {
+        "concept": "us-gaap_CostOfGoldProductsAndServices",
+        "label": "Cost of Revenue",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 5,
+        "value": 635000000.0
+      },
+      {
+        "concept": "nem_CostCopperProductsServices",
+        "label": "Costs applicable\nto sales - copper",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 6,
+        "value": 61000000.0
+      },
+      {
+        "concept": "nem_ExplorationCostsRelatedToMiningActivities",
+        "label": "Exploration",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 9,
+        "value": 51000000.0
+      },
+      {
+        "concept": "us-gaap_CostsAndExpenses",
+        "label": "Total costs and\nexpenses",
+        "standard_concept": "CostsSubtotal",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 4,
+        "index": 13,
+        "value": 1129000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest expense,\nnet",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_OtherNonoperatingIncomeExpense",
+        "parent_abstract_concept": "nem_OtherIncomeExpenseAbstract",
+        "weight": -1.0,
+        "level": 5,
+        "index": 16,
+        "value": 23000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "label": "Income from continuing operations before income tax (expense)\nbenefit and other items",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": 1.0,
+        "level": 3,
+        "index": 18,
+        "value": 459000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "label": "Income from continuing operations",
+        "standard_concept": "ProfitLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": 1.0,
+        "level": 3,
+        "index": 21,
+        "value": 320000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Less: Net income attributable to noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": -1.0,
+        "level": 4,
+        "index": 24,
+        "value": 144000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/defnref.xml",
+        "path": "output\\NEM-0000950123-09-024448-defnref.xml",
+        "sha256": "6b749ab2405431709be117f7e41181297a317c780bb0783b174bd27cfbdc6e95"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/nem-20090630.xml",
+        "path": "output\\NEM-0000950123-09-024448-nem-20090630.xml",
+        "sha256": "fe2f314b19968287a5bbb0c324bc15b1ff38cdb23859b6d3c978290f49d29fac"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/nem-20090630_cal.xml",
+        "path": "output\\NEM-0000950123-09-024448-nem-20090630_cal.xml",
+        "sha256": "6ed97a45275a30ff64d4db63474242b06c94d9e50ab164e168a9e87dbb396a3d"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/nem-20090630_lab.xml",
+        "path": "output\\NEM-0000950123-09-024448-nem-20090630_lab.xml",
+        "sha256": "fc894516361473b87c3ad4e3a292e58b6978b87ad2f08a64ed62dff74e1c4fd8"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/nem-20090630_pre.xml",
+        "path": "output\\NEM-0000950123-09-024448-nem-20090630_pre.xml",
+        "sha256": "50aa5e018ce22e065f42b3b11deb7e857081218970ba8bb401e336e256546cc2"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R1.xml",
+        "path": "output\\NEM-0000950123-09-024448-R1.xml",
+        "sha256": "33422f36277bafb67c0d1edbb328822ad49986aabae6df0f4636960cc4373823"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R10.xml",
+        "path": "output\\NEM-0000950123-09-024448-R10.xml",
+        "sha256": "3c94276312da80c1741e7e4f07a38622e9286e8ec048a730ab19f09104deedab"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R11.xml",
+        "path": "output\\NEM-0000950123-09-024448-R11.xml",
+        "sha256": "88e0105809d973aeb68fc2d0c36d6f547bb8eb528c6a3ddeca2a53552bd45d75"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R12.xml",
+        "path": "output\\NEM-0000950123-09-024448-R12.xml",
+        "sha256": "7d7c74037b89c54bccce90666c44694d90370a5d6c6f387e69811bc8a8fd4cc6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R13.xml",
+        "path": "output\\NEM-0000950123-09-024448-R13.xml",
+        "sha256": "c20be813e18ff06316d976ae2e9837addae6feefa19495670f56b0a68080c7af"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R14.xml",
+        "path": "output\\NEM-0000950123-09-024448-R14.xml",
+        "sha256": "167dae2c5040da294619b2b50770bc36c1f0f2c4b7436735915f6690b69c3194"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R15.xml",
+        "path": "output\\NEM-0000950123-09-024448-R15.xml",
+        "sha256": "954f3c4b9ee2464229488fb4e8848d9f55fc837995093a850973ef6038534bd7"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R16.xml",
+        "path": "output\\NEM-0000950123-09-024448-R16.xml",
+        "sha256": "b0a3fd081a596560f10c135af2c3af0ca06238fcb584488a54fdced0748912c2"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R17.xml",
+        "path": "output\\NEM-0000950123-09-024448-R17.xml",
+        "sha256": "96e568b62e18c0467c4ec76c8ac76af6afddeeae912c080d95fdcbd7f805cada"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R18.xml",
+        "path": "output\\NEM-0000950123-09-024448-R18.xml",
+        "sha256": "7b6d271a9168132d7218b55d811f26dab0710027c3c0afb8e87ccf82575f69ea"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R19.xml",
+        "path": "output\\NEM-0000950123-09-024448-R19.xml",
+        "sha256": "8c73765ebbaa828b96f58d1767b409671f163fcd8bff0089dfad01dfc34a02de"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R2.xml",
+        "path": "output\\NEM-0000950123-09-024448-R2.xml",
+        "sha256": "73844392d1ab409fd5cf99dcb5a8bc5a7520d5199bcb279c153652a3a48ab5b4"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R20.xml",
+        "path": "output\\NEM-0000950123-09-024448-R20.xml",
+        "sha256": "b35a62bcb2ec8558083096ad984810763a526ae43ec82ce434560bf3c79d97bc"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R21.xml",
+        "path": "output\\NEM-0000950123-09-024448-R21.xml",
+        "sha256": "18cfd076c691e5aa81610977f72ff81363b0c738ad44579c2a4a5437e5237fb7"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R22.xml",
+        "path": "output\\NEM-0000950123-09-024448-R22.xml",
+        "sha256": "7433f0b10687a6a1a573671e3b260494986dffdd2af4bdcc05365cbb204a4f37"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R23.xml",
+        "path": "output\\NEM-0000950123-09-024448-R23.xml",
+        "sha256": "c6db16b9ea389addcc7a382c7c4fed9b9a3b03eadd21916a6c2ee56160ed99d6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R24.xml",
+        "path": "output\\NEM-0000950123-09-024448-R24.xml",
+        "sha256": "142380a96df88b1d6ad0ea17b7adbe51d9af3fec76c627c56dd67f59921a73e4"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R25.xml",
+        "path": "output\\NEM-0000950123-09-024448-R25.xml",
+        "sha256": "537132e567efd8d222db6daecd3ce62e90dfb0a8db974247b904dbded4ff4880"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R26.xml",
+        "path": "output\\NEM-0000950123-09-024448-R26.xml",
+        "sha256": "3116b509f605ee8b9c22511e844d8c853f843e941c9961db6475f16c7a418a52"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R27.xml",
+        "path": "output\\NEM-0000950123-09-024448-R27.xml",
+        "sha256": "6ffbb7851dd8000bb895c74ac9ad3dc0359e1b322b240e094c1fb5f88045ffbc"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R28.xml",
+        "path": "output\\NEM-0000950123-09-024448-R28.xml",
+        "sha256": "4e8ef47850f23a6f7fe73ac2679f74ac67f90d06100ee09e5f4a378a9ba667c8"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R29.xml",
+        "path": "output\\NEM-0000950123-09-024448-R29.xml",
+        "sha256": "e557e6bc6742aff51132cda9228fd47824ce4a0f0590546b5263e5cf1050f83a"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R3.xml",
+        "path": "output\\NEM-0000950123-09-024448-R3.xml",
+        "sha256": "f7da89ca9d815b8cabd1a0de3231b118a1ee855dcd0357d75bb3f80ab23cd50a"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R30.xml",
+        "path": "output\\NEM-0000950123-09-024448-R30.xml",
+        "sha256": "16f860a2d2e6dbdc5801054aeab36aa832a48787038dfa301d67e2a1fa5efb45"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R31.xml",
+        "path": "output\\NEM-0000950123-09-024448-R31.xml",
+        "sha256": "e33dca331d8b4a3addf9eafd45650f976c55f53448f8436eccf67026f274ff23"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R32.xml",
+        "path": "output\\NEM-0000950123-09-024448-R32.xml",
+        "sha256": "1e3cf869ac197b4bbe88dc7b6d98a441a6cca03ab185f01f5d2ea3e691bb2f78"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R33.xml",
+        "path": "output\\NEM-0000950123-09-024448-R33.xml",
+        "sha256": "feb59c468124e40eb9e653f891e4c5bbe8d1df7389188d5ede2ace42610085e4"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R4.xml",
+        "path": "output\\NEM-0000950123-09-024448-R4.xml",
+        "sha256": "e701bbed5c27d7ff72c38854283ada402776a053da625106f880c2a6df642959"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R5.xml",
+        "path": "output\\NEM-0000950123-09-024448-R5.xml",
+        "sha256": "dc5b0c00b2a2263e652173269127ed6e8495ba2a79c17f3acb338daddd7f7498"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R6.xml",
+        "path": "output\\NEM-0000950123-09-024448-R6.xml",
+        "sha256": "cf103d054f9ad6fe78314a84340300785cfe8cf425d448b72e78c43bae97a9cf"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R7.xml",
+        "path": "output\\NEM-0000950123-09-024448-R7.xml",
+        "sha256": "df633d741d542bb1a47bb0d81bc474bf1243b3157361f438028ad93693c8cc89"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R8.xml",
+        "path": "output\\NEM-0000950123-09-024448-R8.xml",
+        "sha256": "69cc052233f9636ee675930b8c5b9bf801e59e3c8e15ef6cd21fefdde16bc3a6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1164727/000095012309024448/R9.xml",
+        "path": "output\\NEM-0000950123-09-024448-R9.xml",
+        "sha256": "d1d109fda4fd5d54504bbc1f5ea754e8ed1843f6d3a5cb0ece9644c76af4d97f"
+      }
+    ]
+  },
+  {
+    "ticker": "BK",
+    "accession": "0001193125-10-042948",
+    "column": "2009-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231.xml",
+    "instance_sha256": "fe94898cbfd33e389a4ae6da3bcb6beeb93dab7ee167d59a242f3c45547f8919",
+    "facts": [
+      {
+        "concept": "us-gaap_NoninterestIncome",
+        "namespace": "http://xbrl.us/us-gaap/2009-01-31",
+        "start": "2009-01-01",
+        "end": "2009-12-31",
+        "value": "4772000000"
+      },
+      {
+        "concept": "us-gaap_InterestIncomeExpenseNet",
+        "namespace": "http://xbrl.us/us-gaap/2009-01-31",
+        "start": "2009-01-01",
+        "end": "2009-12-31",
+        "value": "2915000000"
+      }
+    ],
+    "expected_value": 7687000000,
+    "rows": [
+      {
+        "concept": "us-gaap_ClearingFeesRevenue",
+        "label": "Revenue",
+        "standard_concept": "Revenue",
+        "parent_concept": "bk_SecuritiesServicingFees",
+        "parent_abstract_concept": "bk_SecuritiesServicingFeesAbstract",
+        "weight": 1.0,
+        "level": 6,
+        "index": 4,
+        "value": 962000000.0
+      },
+      {
+        "concept": "bk_SecuritiesServicingFees",
+        "label": "Total securities servicing fees",
+        "standard_concept": null,
+        "parent_concept": "bk_TotalFeeRevenue",
+        "parent_abstract_concept": "bk_SecuritiesServicingFeesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 5,
+        "value": 4998000000.0
+      },
+      {
+        "concept": "bk_AssetAndWealthManagementFees",
+        "label": "Asset and wealth management fees",
+        "standard_concept": null,
+        "parent_concept": "bk_TotalFeeRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 6,
+        "value": 2639000000.0
+      },
+      {
+        "concept": "bk_FinancingRelatedFees",
+        "label": "Financing-related fees",
+        "standard_concept": null,
+        "parent_concept": "bk_TotalFeeRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 10,
+        "value": 215000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestIncomeOtherOperatingIncome",
+        "label": "Other",
+        "standard_concept": "OtherOperatingExpense",
+        "parent_concept": "bk_TotalFeeRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 12,
+        "value": 111000000.0
+      },
+      {
+        "concept": "bk_TotalFeeRevenue",
+        "label": "Total fee revenue",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 13,
+        "value": 10141000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestIncome",
+        "label": "Total fee and other revenue",
+        "standard_concept": "NonInterestIncome",
+        "parent_concept": "bk_IncomeLossFromContinuingOperationsBeforeIncomeTaxes",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 17,
+        "value": 4772000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "label": "Net Interest Income",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLossAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 19,
+        "value": 3507000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest Expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLossAbstract",
+        "weight": -1.0,
+        "level": 5,
+        "index": 20,
+        "value": 592000000.0
+      },
+      {
+        "concept": "us-gaap_InterestIncomeExpenseNet",
+        "label": "Net interest revenue",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLoss",
+        "parent_abstract_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLossAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 21,
+        "value": 2915000000.0
+      },
+      {
+        "concept": "us-gaap_ProvisionForLoanLeaseAndOtherLosses",
+        "label": "Net Cash from Operating Activities",
+        "standard_concept": "NetCashFromOperatingActivities",
+        "parent_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLoss",
+        "parent_abstract_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLossAbstract",
+        "weight": -1.0,
+        "level": 5,
+        "index": 22,
+        "value": 332000000.0
+      },
+      {
+        "concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLoss",
+        "label": "Net interest revenue after provision for credit losses",
+        "standard_concept": "NetInterestIncomeAfterProvision",
+        "parent_concept": "bk_IncomeLossFromContinuingOperationsBeforeIncomeTaxes",
+        "parent_abstract_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLossAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 23,
+        "value": 2583000000.0
+      },
+      {
+        "concept": "us-gaap_LaborAndRelatedExpense",
+        "label": "Cost of Revenue",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "bk_NoninterestExpenseSubtotal",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 25,
+        "value": 4700000000.0
+      },
+      {
+        "concept": "us-gaap_ProfessionalFees",
+        "label": "Professional Fees",
+        "standard_concept": "ProfessionalFees",
+        "parent_concept": "bk_NoninterestExpenseSubtotal",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 26,
+        "value": 1017000000.0
+      },
+      {
+        "concept": "us-gaap_ExpenseRelatedToDistributionOrServicingAndUnderwritingFees",
+        "label": "Distribution and servicing",
+        "standard_concept": null,
+        "parent_concept": "bk_NoninterestExpenseSubtotal",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 28,
+        "value": 426000000.0
+      },
+      {
+        "concept": "bk_NoninterestExpenseSubcustodianAndClearingFees",
+        "label": "Sub-custodian and clearing",
+        "standard_concept": null,
+        "parent_concept": "bk_NoninterestExpenseSubtotal",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 30,
+        "value": 320000000.0
+      },
+      {
+        "concept": "us-gaap_EquipmentExpense",
+        "label": "Non-Interest Expense",
+        "standard_concept": "NonInterestExpense",
+        "parent_concept": "bk_NoninterestExpenseSubtotal",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 31,
+        "value": 309000000.0
+      },
+      {
+        "concept": "us-gaap_OtherNoninterestExpense",
+        "label": "Other",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "bk_NoninterestExpenseSubtotal",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 33,
+        "value": 837000000.0
+      },
+      {
+        "concept": "bk_NoninterestExpenseSubtotal",
+        "label": "Subtotal",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 34,
+        "value": 8754000000.0
+      },
+      {
+        "concept": "us-gaap_OtherRestructuringCosts",
+        "label": "Restructuring charges",
+        "standard_concept": "RestructuringExpenseBenefit",
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 36,
+        "value": 150000000.0
+      },
+      {
+        "concept": "bk_PostMergerIntegrationCosts",
+        "label": "The Bank of New York Mellon Corporation",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "bk_MergerAndIntegrationExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 38,
+        "value": 233000000.0
+      },
+      {
+        "concept": "bk_CorporateTrustPostMergerIntegrationCosts",
+        "label": "Acquired Corporate Trust Business",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "bk_MergerAndIntegrationExpenseAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 39,
+        "value": 0.0
+      },
+      {
+        "concept": "us-gaap_NoninterestExpense",
+        "label": "Total noninterest expense",
+        "standard_concept": "NonInterestExpense",
+        "parent_concept": "bk_IncomeLossFromContinuingOperationsBeforeIncomeTaxes",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": -1.0,
+        "level": 5,
+        "index": 40,
+        "value": 9563000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision (benefit) for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "parent_abstract_concept": "bk_IncomeAbstract",
+        "weight": -1.0,
+        "level": 4,
+        "index": 43,
+        "value": -1395000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "label": "Income (loss) from continuing operations",
+        "standard_concept": "ProfitLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeAmountsAttributableToReportingEntityDisclosuresAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 44,
+        "value": -813000000.0
+      },
+      {
+        "concept": "us-gaap_DiscontinuedOperationTaxEffectOfDiscontinuedOperation",
+        "label": "Provision (benefit) for income taxes",
+        "standard_concept": "ExtraordinaryItemsIncomeExpense(PostTax)",
+        "parent_concept": "us-gaap_IncomeLossFromDiscontinuedOperationsNetOfTax",
+        "parent_abstract_concept": "us-gaap_IncomeLossFromDiscontinuedOperationsNetOfTaxAbstract",
+        "weight": -1.0,
+        "level": 6,
+        "index": 47,
+        "value": -151000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Net (income) loss attributable to noncontrolling interests, net of tax",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLossAvailableToCommonStockholdersBasic",
+        "parent_abstract_concept": "us-gaap_IncomeAmountsAttributableToReportingEntityDisclosuresAbstract",
+        "weight": -1.0,
+        "level": 5,
+        "index": 53,
+        "value": 1000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "label": "Income (loss) from continuing operations",
+        "standard_concept": "ProfitLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeAmountsAttributableToReportingEntityDisclosuresAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 73,
+        "value": -813000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Net (income) loss attributable to noncontrolling interests, net of tax",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLossAvailableToCommonStockholdersBasic",
+        "parent_abstract_concept": "us-gaap_IncomeAmountsAttributableToReportingEntityDisclosuresAbstract",
+        "weight": -1.0,
+        "level": 5,
+        "index": 74,
+        "value": 1000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231.xml",
+        "path": "output\\BK-0001193125-10-042948-bk-20091231.xml",
+        "sha256": "fe94898cbfd33e389a4ae6da3bcb6beeb93dab7ee167d59a242f3c45547f8919"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231_cal.xml",
+        "path": "output\\BK-0001193125-10-042948-bk-20091231_cal.xml",
+        "sha256": "337fe6b103ed26c8a45e961390287b4ddf3002ba001793311d35fe3736f32eaf"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231_lab.xml",
+        "path": "output\\BK-0001193125-10-042948-bk-20091231_lab.xml",
+        "sha256": "ad646168f79b6afb9319647d61f7109825b256919e4938a829f5d18ef7613fda"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/bk-20091231_pre.xml",
+        "path": "output\\BK-0001193125-10-042948-bk-20091231_pre.xml",
+        "sha256": "33a37dd8e83f25cdd7a7293926a58d21e8cd968f16a00754326478e8b7d32497"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/defnref.xml",
+        "path": "output\\BK-0001193125-10-042948-defnref.xml",
+        "sha256": "ebeb9eaa655ca65def21ee5a6c8d2dd7c95665908a186ad76e969ace0700d68a"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R1.xml",
+        "path": "output\\BK-0001193125-10-042948-R1.xml",
+        "sha256": "cc4ed32fbe1bf582b2550249da94af0db14a69bee525fd464edd7b25107cb916"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R10.xml",
+        "path": "output\\BK-0001193125-10-042948-R10.xml",
+        "sha256": "31a11b595566cfb180fd521865c76feb7696bfb491644e61fb3e11d7d99bdf6b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R11.xml",
+        "path": "output\\BK-0001193125-10-042948-R11.xml",
+        "sha256": "c1813fdb0965eb6d9a90fbdc72e0c172ede83d728e3f734140a3be4f67c7d856"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R12.xml",
+        "path": "output\\BK-0001193125-10-042948-R12.xml",
+        "sha256": "bfc9b10a59ad3651d55ad373c6f58e1350ae629b07280ce379ba26d9ab09a56b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R13.xml",
+        "path": "output\\BK-0001193125-10-042948-R13.xml",
+        "sha256": "20edfeb0aa5533406a69b2714fe9328c82f22406290344bbcdde98611114248b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R14.xml",
+        "path": "output\\BK-0001193125-10-042948-R14.xml",
+        "sha256": "0e9446df9fe8911d95093207ecc1836ed392f4351bcd4b0fe1a0a0b9be304109"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R15.xml",
+        "path": "output\\BK-0001193125-10-042948-R15.xml",
+        "sha256": "6e10eee80a338c693a3813989354f0f4e90be5bce77466c61f7aa60695528a49"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R16.xml",
+        "path": "output\\BK-0001193125-10-042948-R16.xml",
+        "sha256": "ffb285b993f40fb0b0bbbcec35a17296482c82ad292c28c5bbaab613a932fd9e"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R17.xml",
+        "path": "output\\BK-0001193125-10-042948-R17.xml",
+        "sha256": "44e3ba2f061a8380cd5ca0f8d9725db4e1df25531d4f7012cde11802e2a462f8"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R18.xml",
+        "path": "output\\BK-0001193125-10-042948-R18.xml",
+        "sha256": "7ea6ff086addef8bc3e8c941f2cdedcc1473e45132420a77cb4d90249ec4434c"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R19.xml",
+        "path": "output\\BK-0001193125-10-042948-R19.xml",
+        "sha256": "e75060ab0ba790a6e8fb088195c34480af585c5ab11d75688c5d100647a60c27"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R2.xml",
+        "path": "output\\BK-0001193125-10-042948-R2.xml",
+        "sha256": "e880cc30e0bb9f80da886bd0908f9b816aeafdabc2d9b396d89dca54a5ec3e1c"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R20.xml",
+        "path": "output\\BK-0001193125-10-042948-R20.xml",
+        "sha256": "258c5da203243c6fb94d20d1ee973e663c67aaf321cfe531a0dc04c6d9c5c0c8"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R21.xml",
+        "path": "output\\BK-0001193125-10-042948-R21.xml",
+        "sha256": "ad8f20529fa87b7183884c42f9bce16c0e1ad3e6074fc1a1614ed85cfa3382e0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R22.xml",
+        "path": "output\\BK-0001193125-10-042948-R22.xml",
+        "sha256": "02df6a28baa20827de63b55d61a5ee57b67defd13e2932fff7274476c240d92d"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R23.xml",
+        "path": "output\\BK-0001193125-10-042948-R23.xml",
+        "sha256": "e9116d8dbcfb7986212e77348c1fec659a42baad9cb636c5b744598eee41219c"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R24.xml",
+        "path": "output\\BK-0001193125-10-042948-R24.xml",
+        "sha256": "fb8090265a0f2c2f0e74bb46c8554482ebf453d7121fa5e4a4594b4503f7e7d6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R25.xml",
+        "path": "output\\BK-0001193125-10-042948-R25.xml",
+        "sha256": "1a3feebf0112417fcb6daddf82222a051ae94bc1ebc540bbdc05a00115cff05e"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R26.xml",
+        "path": "output\\BK-0001193125-10-042948-R26.xml",
+        "sha256": "b439362c2af82bd56f7ef6b404d9e63a6d893f88044a158d23d33a8a95a15ddb"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R27.xml",
+        "path": "output\\BK-0001193125-10-042948-R27.xml",
+        "sha256": "58e9f14caf3d55982c93b4914069198d217a79c7d82c4d9d8d8e38a7796fdb26"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R28.xml",
+        "path": "output\\BK-0001193125-10-042948-R28.xml",
+        "sha256": "f854133fabccb1955cbecd828a1e4183ad7e0b78effe52dbb30c13665bb9439c"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R29.xml",
+        "path": "output\\BK-0001193125-10-042948-R29.xml",
+        "sha256": "fcc23d137c27a685277ca7e04d63b431b6b729ce411097985361d02caf5b21d9"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R3.xml",
+        "path": "output\\BK-0001193125-10-042948-R3.xml",
+        "sha256": "291100c08671cedd9f7463dbb435a9a504eab43aea476bec19fb9d2c3db97b08"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R30.xml",
+        "path": "output\\BK-0001193125-10-042948-R30.xml",
+        "sha256": "f4e87f50d649a19e177d853c0c735f4e61a4a0f0dd7c3ff18e908c91d524e21a"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R31.xml",
+        "path": "output\\BK-0001193125-10-042948-R31.xml",
+        "sha256": "8d9fb34e1814b10b70e0d62fde2c44eb6e4ba68544a5d33c087a6d7af5a7344b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R32.xml",
+        "path": "output\\BK-0001193125-10-042948-R32.xml",
+        "sha256": "11d213889573a9cd6e26ed5568df30566a97c914c2dd305ae49eaa53ec5ca53d"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R33.xml",
+        "path": "output\\BK-0001193125-10-042948-R33.xml",
+        "sha256": "6071868beb21d8688f42cb42502225c20203f7c9e1bb851d869f65f6c32691d6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R34.xml",
+        "path": "output\\BK-0001193125-10-042948-R34.xml",
+        "sha256": "651a8896dc763f4f6899d84811d0ca09ca86bdda9604c12d82ca0d796d4c30ee"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R35.xml",
+        "path": "output\\BK-0001193125-10-042948-R35.xml",
+        "sha256": "805f549cbb177dd4dffe500dc3cb20bf7227eac1174ee3deb034ce6f8d595528"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R36.xml",
+        "path": "output\\BK-0001193125-10-042948-R36.xml",
+        "sha256": "412de5380b018047b15bd842527cae2d53a330ae3abdfe9169cf52165854692b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R37.xml",
+        "path": "output\\BK-0001193125-10-042948-R37.xml",
+        "sha256": "a47c7ad434c3679634180d555d324c08d611e6e516e4716a064a95b5886c8ea9"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R4.xml",
+        "path": "output\\BK-0001193125-10-042948-R4.xml",
+        "sha256": "4706eb3eac6b52293514508ea4bde8ad4eff795de57d54b26424763b4799030b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R5.xml",
+        "path": "output\\BK-0001193125-10-042948-R5.xml",
+        "sha256": "fd45b286f92d253f4821f708d5de2a75b763bad65cbeec3be196b8e5162fbaf6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R6.xml",
+        "path": "output\\BK-0001193125-10-042948-R6.xml",
+        "sha256": "c7e8641a343c4bb2dbe28158782461ba8e867b6601c601ccedf765de03d69157"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R7.xml",
+        "path": "output\\BK-0001193125-10-042948-R7.xml",
+        "sha256": "a55afe6c27a69fc8da5647ad77b9422ac29f74f88690d58b8e43533d02b14eda"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R8.xml",
+        "path": "output\\BK-0001193125-10-042948-R8.xml",
+        "sha256": "58a3551eac759e243bc7fd963f3922b703477d69f57fdcf17fc8be18c2288518"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000119312510042948/R9.xml",
+        "path": "output\\BK-0001193125-10-042948-R9.xml",
+        "sha256": "20e0d9e3665daafd619727200b890a6dbde1cb02aeeef53f7daa473d956516ee"
+      }
+    ]
+  },
+  {
+    "ticker": "MS",
+    "accession": "0001193125-18-060831",
+    "column": "2017-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/895421/000119312518060831/ms-20171231.xml",
+    "instance_sha256": "ead5635547e8a77ff00865d28e1780a41eb330febe7d9568e7dd9a4686097c75",
+    "facts": [
+      {
+        "concept": "us-gaap_RevenuesNetOfInterestExpense",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2017-01-01",
+        "end": "2017-12-31",
+        "value": "37945000000"
+      }
+    ],
+    "expected_value": 37945000000,
+    "rows": [
+      {
+        "concept": "us-gaap_InvestmentBankingRevenue",
+        "label": "Investment banking",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 2,
+        "value": 6003000000.0
+      },
+      {
+        "concept": "us-gaap_FeesAndCommissions",
+        "label": "Revenue",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 7,
+        "value": 4061000000.0
+      },
+      {
+        "concept": "us-gaap_InvestmentAdvisoryManagementAndAdministrativeFees",
+        "label": "Asset management",
+        "standard_concept": "ManagementFeeRevenue",
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 8,
+        "value": 11797000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestIncomeOtherOperatingIncome",
+        "label": "Other",
+        "standard_concept": "OtherOperatingExpense",
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 9,
+        "value": 848000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestIncome",
+        "label": "Total non-interest revenues",
+        "standard_concept": "NonInterestIncome",
+        "parent_concept": "us-gaap_RevenuesNetOfInterestExpense",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 11,
+        "value": 34645000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "label": "Interest income",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 17,
+        "value": 8997000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest Expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 23,
+        "value": 5697000000.0
+      },
+      {
+        "concept": "us-gaap_InterestIncomeExpenseNet",
+        "label": "Net interest",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "us-gaap_RevenuesNetOfInterestExpense",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 29,
+        "value": 3300000000.0
+      },
+      {
+        "concept": "us-gaap_RevenuesNetOfInterestExpense",
+        "label": "Net revenues",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 35,
+        "value": 37945000000.0
+      },
+      {
+        "concept": "us-gaap_FloorBrokerageExchangeAndClearanceFees",
+        "label": "Brokerage, clearing and exchange fees",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 47,
+        "value": 2093000000.0
+      },
+      {
+        "concept": "us-gaap_ProfessionalFees",
+        "label": "Professional Fees",
+        "standard_concept": "ProfessionalFees",
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 50,
+        "value": 2169000000.0
+      },
+      {
+        "concept": "us-gaap_OtherNoninterestExpense",
+        "label": "Other",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 51,
+        "value": 2385000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestExpense",
+        "label": "Total non-interest expenses",
+        "standard_concept": "NonInterestExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 52,
+        "value": 27542000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income from continuing operations before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 53,
+        "value": 10403000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 58,
+        "value": 4168000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "label": "Income from continuing operations",
+        "standard_concept": "ProfitLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 64,
+        "value": 6235000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNonredeemableNoncontrollingInterest",
+        "label": "Net income applicable to noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 80,
+        "value": 105000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/895421/000119312518060831/ms-20171231.xml",
+        "path": "output\\MS-0001193125-18-060831-ms-20171231.xml",
+        "sha256": "ead5635547e8a77ff00865d28e1780a41eb330febe7d9568e7dd9a4686097c75"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/895421/000119312518060831/ms-20171231_cal.xml",
+        "path": "output\\MS-0001193125-18-060831-ms-20171231_cal.xml",
+        "sha256": "dd28ce9a998bd1dd5ec64a3e54d9195bcc9ee1447a797329571bdc38382f8e67"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/895421/000119312518060831/ms-20171231_lab.xml",
+        "path": "output\\MS-0001193125-18-060831-ms-20171231_lab.xml",
+        "sha256": "a94576a3a40abf6df7e201664ed1a81a8a19d73d8e9b4d578b34713d5ba21b39"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/895421/000119312518060831/ms-20171231_pre.xml",
+        "path": "output\\MS-0001193125-18-060831-ms-20171231_pre.xml",
+        "sha256": "68bcb2f1bda6fc8cbbfa2b890d8276d63ea7b7a865f394632e9c9ad885cdaa1b"
+      }
+    ]
+  },
+  {
+    "ticker": "COP",
+    "accession": "0001193125-18-049729",
+    "column": "2017-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1163165/000119312518049729/cop-20171231.xml",
+    "instance_sha256": "3373dee16bb34049cf26cbee78e4e084c5aeb06657439b2430ac80ad2ed85111",
+    "facts": [
+      {
+        "concept": "us-gaap_SalesRevenueNet",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2017-01-01",
+        "end": "2017-12-31",
+        "value": "29106000000"
+      }
+    ],
+    "expected_value": 29106000000,
+    "rows": [
+      {
+        "concept": "us-gaap_SalesRevenueNet",
+        "label": "Sales and other operating revenues",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_Revenues",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 1,
+        "value": 29106000000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnSaleOfPropertyPlantEquipment",
+        "label": "Gain on dispositions",
+        "standard_concept": "GainLossOnDispositions",
+        "parent_concept": "us-gaap_Revenues",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 53,
+        "value": 2177000000.0
+      },
+      {
+        "concept": "us-gaap_Revenues",
+        "label": "Total Revenues and Other Income",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 65,
+        "value": 32584000000.0
+      },
+      {
+        "concept": "us-gaap_CostOfPurchasedOilAndGas",
+        "label": "Purchased commodities",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 72,
+        "value": 12475000000.0
+      },
+      {
+        "concept": "us-gaap_OperatingCostsAndExpenses",
+        "label": "Production and operating expenses",
+        "standard_concept": "TotalOperatingExpenses",
+        "parent_concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 78,
+        "value": 5173000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDebtExpense",
+        "label": "Interest and debt expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 152,
+        "value": 1098000000.0
+      },
+      {
+        "concept": "cop_OperatingExpensesIncludingNonoperatingIncomeExpenseAndInterestAndDebtExpense",
+        "label": "Total Costs and Expenses",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 171,
+        "value": 35199000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income (loss) before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 177,
+        "value": -2615000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Less: net income attributable to noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 205,
+        "value": -62000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000119312518049729/cop-20171231.xml",
+        "path": "output\\COP-0001193125-18-049729-cop-20171231.xml",
+        "sha256": "3373dee16bb34049cf26cbee78e4e084c5aeb06657439b2430ac80ad2ed85111"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000119312518049729/cop-20171231_cal.xml",
+        "path": "output\\COP-0001193125-18-049729-cop-20171231_cal.xml",
+        "sha256": "0c30d19f680a5fc7a77811c4fef9ccdae50866d5112f29994cdc30596df2e6e2"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000119312518049729/cop-20171231_lab.xml",
+        "path": "output\\COP-0001193125-18-049729-cop-20171231_lab.xml",
+        "sha256": "fc994f55473987b09b614669dd55da2537c6a6ecc4729d1aff7b11b5e5301c10"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1163165/000119312518049729/cop-20171231_pre.xml",
+        "path": "output\\COP-0001193125-18-049729-cop-20171231_pre.xml",
+        "sha256": "944c9c468b84caa74b1ade6f67776ba9ca5df2c6ad1c13b35385c44b31ee7a27"
+      }
+    ]
+  },
+  {
+    "ticker": "OXY",
+    "accession": "0000797468-16-000039",
+    "column": "2016-09-30 (Q3)",
+    "url": "https://www.sec.gov/Archives/edgar/data/797468/000079746816000039/oxy-20160930.xml",
+    "instance_sha256": "fe36e66401c702f7a53a31198692c1512249b39950b68cfa5e4d0f53a7fb3406",
+    "facts": [
+      {
+        "concept": "us-gaap_SalesRevenueNet",
+        "namespace": "http://fasb.org/us-gaap/2016-01-31",
+        "start": "2016-07-01",
+        "end": "2016-09-30",
+        "value": "2648000000"
+      }
+    ],
+    "expected_value": 2648000000,
+    "rows": [
+      {
+        "concept": "us-gaap_SalesRevenueNet",
+        "label": "Net sales",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_Revenues",
+        "parent_abstract_concept": "oxy_RevenuesAndOtherIncomeAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 2,
+        "value": 2648000000.0
+      },
+      {
+        "concept": "oxy_InterestDividendsAndOtherIncome",
+        "label": "Interest, dividends and other income",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_Revenues",
+        "parent_abstract_concept": "oxy_RevenuesAndOtherIncomeAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 7,
+        "value": 25000000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnSaleOfOilAndGasProperty",
+        "label": "Gain on disposal of assets, net",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_Revenues",
+        "parent_abstract_concept": "oxy_RevenuesAndOtherIncomeAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 8,
+        "value": 60000000.0
+      },
+      {
+        "concept": "us-gaap_Revenues",
+        "label": "TOTAL REVENUES AND OTHER INCOME",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "oxy_RevenuesAndOtherIncomeAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 9,
+        "value": 2733000000.0
+      },
+      {
+        "concept": "us-gaap_CostOfGoodsSoldExcludingDepreciationDepletionAndAmortization",
+        "label": "Cost of sales",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "oxy_CostsAndOtherDeductions",
+        "parent_abstract_concept": "oxy_CostsAndOtherDeductionsAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 11,
+        "value": 1338000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDebtExpense",
+        "label": "Interest and debt expense, net",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "oxy_CostsAndOtherDeductions",
+        "parent_abstract_concept": "oxy_CostsAndOtherDeductionsAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 17,
+        "value": 68000000.0
+      },
+      {
+        "concept": "oxy_CostsAndOtherDeductions",
+        "label": "TOTAL COSTS AND OTHER DEDUCTIONS",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "oxy_CostsAndOtherDeductionsAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 18,
+        "value": 3059000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "label": "Loss before income taxes and other items",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 19,
+        "value": -326000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "label": "Loss from continuing operations",
+        "standard_concept": "ProfitLoss",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 23,
+        "value": -238000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/797468/000079746816000039/oxy-20160930.xml",
+        "path": "output\\OXY-0000797468-16-000039-oxy-20160930.xml",
+        "sha256": "fe36e66401c702f7a53a31198692c1512249b39950b68cfa5e4d0f53a7fb3406"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/797468/000079746816000039/oxy-20160930_cal.xml",
+        "path": "output\\OXY-0000797468-16-000039-oxy-20160930_cal.xml",
+        "sha256": "e6db4789e87e15511cfea16d304ea0ede154a086e7dda443fdee5ad55a459328"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/797468/000079746816000039/oxy-20160930_lab.xml",
+        "path": "output\\OXY-0000797468-16-000039-oxy-20160930_lab.xml",
+        "sha256": "ce26de8fd54107689fd80974a3e176a284ebda8306a35cde745f02f0f74ba4a0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/797468/000079746816000039/oxy-20160930_pre.xml",
+        "path": "output\\OXY-0000797468-16-000039-oxy-20160930_pre.xml",
+        "sha256": "eb5ff622c3a133490ed0f346622ed2900a7539bbea9a0625b0eb36cbdfbb6617"
+      }
+    ]
+  },
+  {
+    "ticker": "TGT",
+    "accession": "0001047469-10-002121",
+    "column": "2010-01-30 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/tgt-20100130.xml",
+    "instance_sha256": "414e3b3ddc10eee991819c3478333e220606022c4929ff0c1579c3d18a91dfd6",
+    "facts": [
+      {
+        "concept": "us-gaap_Revenues",
+        "namespace": "http://xbrl.us/us-gaap/2009-01-31",
+        "start": "2009-02-01",
+        "end": "2010-01-30",
+        "value": "65357000000"
+      }
+    ],
+    "expected_value": 65357000000,
+    "rows": [
+      {
+        "concept": "us-gaap_SalesRevenueNet",
+        "label": "Sales",
+        "standard_concept": "Revenue",
+        "parent_concept": null,
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": null,
+        "level": 1,
+        "index": 1,
+        "value": 63435000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndFeeIncomeLoansConsumerInstallmentCreditCard",
+        "label": "Credit card revenues",
+        "standard_concept": null,
+        "parent_concept": null,
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": null,
+        "level": 1,
+        "index": 2,
+        "value": 1922000000.0
+      },
+      {
+        "concept": "us-gaap_Revenues",
+        "label": "Total revenues",
+        "standard_concept": "Revenue",
+        "parent_concept": null,
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": null,
+        "level": 1,
+        "index": 3,
+        "value": 65357000000.0
+      },
+      {
+        "concept": "us-gaap_CostOfGoodsAndServicesSold",
+        "label": "Cost of sales",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": null,
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": null,
+        "level": 1,
+        "index": 4,
+        "value": 44062000000.0
+      },
+      {
+        "concept": "tgt_EarningsBeforeInterestExpenseIncomeTaxes",
+        "label": "Earnings before interest expense and income taxes",
+        "standard_concept": null,
+        "parent_concept": null,
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": null,
+        "level": 1,
+        "index": 8,
+        "value": 4673000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpenseOther",
+        "label": "Other interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": null,
+        "parent_abstract_concept": "tgt_InterestExpenseNetAbstract",
+        "weight": null,
+        "level": 2,
+        "index": 11,
+        "value": 707000000.0
+      },
+      {
+        "concept": "us-gaap_InvestmentIncomeInterest",
+        "label": "Interest income",
+        "standard_concept": "InterestAndDividendIncome",
+        "parent_concept": null,
+        "parent_abstract_concept": "tgt_InterestExpenseNetAbstract",
+        "weight": null,
+        "level": 2,
+        "index": 12,
+        "value": 3000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Net interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": null,
+        "parent_abstract_concept": "tgt_InterestExpenseNetAbstract",
+        "weight": null,
+        "level": 2,
+        "index": 13,
+        "value": 801000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "label": "Earnings before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": null,
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": null,
+        "level": 1,
+        "index": 14,
+        "value": 3872000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": null,
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": null,
+        "level": 1,
+        "index": 15,
+        "value": 1384000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/defnref.xml",
+        "path": "output\\TGT-0001047469-10-002121-defnref.xml",
+        "sha256": "62f1f598c439150d1bc5e5db055e05b3bdf1042dd5da17ad7e82ce62a6bad6d5"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R1.xml",
+        "path": "output\\TGT-0001047469-10-002121-R1.xml",
+        "sha256": "7cba08857c1a743260583319ab04a0cc96cafcdf4460241fdabdcbab683350d5"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R10.xml",
+        "path": "output\\TGT-0001047469-10-002121-R10.xml",
+        "sha256": "418d1b906f55c4ddf71a426cccb461947d7b4b4b9071365b09aa36eff12fd6be"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R11.xml",
+        "path": "output\\TGT-0001047469-10-002121-R11.xml",
+        "sha256": "fbb34f304b804547df4a4a57561df20a741d76e1572e1e9cba91b90eebba63d0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R12.xml",
+        "path": "output\\TGT-0001047469-10-002121-R12.xml",
+        "sha256": "24b179494eed47db119adf44eff5f97fbc4ba748888ff7b107f7a0eb9c7e6963"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R13.xml",
+        "path": "output\\TGT-0001047469-10-002121-R13.xml",
+        "sha256": "50bb5ff5cfd38b6d1d27d8e0eb266232063db6a207f45d5bf973a1e7750f5d3e"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R14.xml",
+        "path": "output\\TGT-0001047469-10-002121-R14.xml",
+        "sha256": "c649f9ccda109cbf75939f2bb99a3f6efcb01e5d28d4b817e2414ab8bd0f443b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R15.xml",
+        "path": "output\\TGT-0001047469-10-002121-R15.xml",
+        "sha256": "01b3468ff604d1997f70d663f12d39e137137f71296911c718b537e392b9dd9a"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R16.xml",
+        "path": "output\\TGT-0001047469-10-002121-R16.xml",
+        "sha256": "492925dc0d2e2e33bd2bd2d21720f8a566c9c60b42914ac255b4dc7ed7a5b9f5"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R17.xml",
+        "path": "output\\TGT-0001047469-10-002121-R17.xml",
+        "sha256": "ecc9f6a04e1d72a740a547433ef0b2d0093238c897f82e9d77bf211613d3e95a"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R18.xml",
+        "path": "output\\TGT-0001047469-10-002121-R18.xml",
+        "sha256": "40093248e265f45fb14764bcacebc68b0827b419c61595130bb32ed35ca637c6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R19.xml",
+        "path": "output\\TGT-0001047469-10-002121-R19.xml",
+        "sha256": "74660f816f40036469a1ca12f8fb3f51ddaa5d20de6e158d3282b13d56fdb22f"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R2.xml",
+        "path": "output\\TGT-0001047469-10-002121-R2.xml",
+        "sha256": "76d08e39892ca291051acf5c3443d8312cedb206ec56b5a51417e998786f52e7"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R20.xml",
+        "path": "output\\TGT-0001047469-10-002121-R20.xml",
+        "sha256": "9723f9c9dff3a20868bfbec590ae9943ec039e1f778edc6dd7c191e739c88a9c"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R21.xml",
+        "path": "output\\TGT-0001047469-10-002121-R21.xml",
+        "sha256": "37d1f5a6212ce887e3aec368685cd002adf7675e1a6a18733c67c2e4896aec49"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R22.xml",
+        "path": "output\\TGT-0001047469-10-002121-R22.xml",
+        "sha256": "fa03210210a114149849b9e0159147129e4db62ccca21c7a544e136ad3b4cef3"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R23.xml",
+        "path": "output\\TGT-0001047469-10-002121-R23.xml",
+        "sha256": "8c98d75724098a02251fcf879c69932fd7c8bb6c87c9bf704e713e95f00507ff"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R24.xml",
+        "path": "output\\TGT-0001047469-10-002121-R24.xml",
+        "sha256": "1c2daadc9cb1a4cb5ea0e222dc6442043346d5254b38001c7645a4ffb63e4fd7"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R25.xml",
+        "path": "output\\TGT-0001047469-10-002121-R25.xml",
+        "sha256": "4a20e9e19f390c01cee516d134cd2f69c3c2e3f1eaa74f89d088d114147b6cb3"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R26.xml",
+        "path": "output\\TGT-0001047469-10-002121-R26.xml",
+        "sha256": "aa58e6a54d0a4ddaa38aceb0747cc3ca98520137b306f247ed7235da798873d9"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R27.xml",
+        "path": "output\\TGT-0001047469-10-002121-R27.xml",
+        "sha256": "63c7e8aa7c5872c022e22f467eac95636b8c91b1cf1babdb9fd26aa45466f39e"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R28.xml",
+        "path": "output\\TGT-0001047469-10-002121-R28.xml",
+        "sha256": "dd2fb6ad85d892ca510acf4cd3e72d97f4882f036f9e3755ac6dbc55167ad39f"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R29.xml",
+        "path": "output\\TGT-0001047469-10-002121-R29.xml",
+        "sha256": "40f599cdb2e6f73b46eef7c8058c36a5d25a7dd97c4ee9c2ae73cf297762803b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R3.xml",
+        "path": "output\\TGT-0001047469-10-002121-R3.xml",
+        "sha256": "b8dba0854130274706526b56075e1b812c926372f6f43526dbaaa4c350aabe70"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R30.xml",
+        "path": "output\\TGT-0001047469-10-002121-R30.xml",
+        "sha256": "bd43392a287c9ce93dd6d26f818a4940c8c33f27f09e442b97a7814fa2790242"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R31.xml",
+        "path": "output\\TGT-0001047469-10-002121-R31.xml",
+        "sha256": "cefa94e3c0859bdac0a47e2f83b1f662b1b9cb3d5c948e4417a34122a6ac735d"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R32.xml",
+        "path": "output\\TGT-0001047469-10-002121-R32.xml",
+        "sha256": "cac38401ae74753eef7f3fdb77f70ebde432d7002e7f6db4a40e46154a72705b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R33.xml",
+        "path": "output\\TGT-0001047469-10-002121-R33.xml",
+        "sha256": "c9f792ba7221a0d18f3b5a4f925491ac9164b91915be67ba79ec8d1bf184deac"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R34.xml",
+        "path": "output\\TGT-0001047469-10-002121-R34.xml",
+        "sha256": "7720ab413c7a7f4f3b8619ba50ded9038fb7b2ea832478c27b1809e1a2204363"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R35.xml",
+        "path": "output\\TGT-0001047469-10-002121-R35.xml",
+        "sha256": "967503367c5b3ff9f63af689f8a4691cfebda13676e6ec3590f2f7614f0abaf4"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R36.xml",
+        "path": "output\\TGT-0001047469-10-002121-R36.xml",
+        "sha256": "7d556ad35bc4e8aa01d5f3d18ec6c15ce44dca3b95d86b669b1937d4f298226a"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R37.xml",
+        "path": "output\\TGT-0001047469-10-002121-R37.xml",
+        "sha256": "c0098826754cec9d6fedb57ab3543e378a5efcc07d9922cae53bb3a76537d7b0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R4.xml",
+        "path": "output\\TGT-0001047469-10-002121-R4.xml",
+        "sha256": "7a5e71320a19be266eff5db63ca1160849f6d38441ff2a2addda06b79fdad246"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R5.xml",
+        "path": "output\\TGT-0001047469-10-002121-R5.xml",
+        "sha256": "92c6c030f8aea00a914f488132dfd43d5df5d0fdca80429429e76be80e52c9ab"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R6.xml",
+        "path": "output\\TGT-0001047469-10-002121-R6.xml",
+        "sha256": "9c5de2cbc7064e5eba0921d59fca0b4bcf601668db0a4cf1c599d4b51ad8cc83"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R7.xml",
+        "path": "output\\TGT-0001047469-10-002121-R7.xml",
+        "sha256": "9965ae660de0a852fa84c9f07fa73010addb5996113633a276887e43b99d6569"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R8.xml",
+        "path": "output\\TGT-0001047469-10-002121-R8.xml",
+        "sha256": "2c97b7c24930669e1699e8a19c869356fcfa7c882457326466471e5fe9ef6cad"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/R9.xml",
+        "path": "output\\TGT-0001047469-10-002121-R9.xml",
+        "sha256": "82d3d5d75aa471672e9a2ee89a2e68126683b95d65e666ab8128de7c8b69c638"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/tgt-20100130.xml",
+        "path": "output\\TGT-0001047469-10-002121-tgt-20100130.xml",
+        "sha256": "414e3b3ddc10eee991819c3478333e220606022c4929ff0c1579c3d18a91dfd6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/tgt-20100130_cal.xml",
+        "path": "output\\TGT-0001047469-10-002121-tgt-20100130_cal.xml",
+        "sha256": "393d3ac521c1598fd64f4974d532e129fd3d3fb3ffefe0eb8a573e2a90a1ecb2"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/tgt-20100130_lab.xml",
+        "path": "output\\TGT-0001047469-10-002121-tgt-20100130_lab.xml",
+        "sha256": "cbf79c7c952f02eeefe046bca98f8fbb657532d7509793b9cf4a22ef0b223d64"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/27419/000104746910002121/tgt-20100130_pre.xml",
+        "path": "output\\TGT-0001047469-10-002121-tgt-20100130_pre.xml",
+        "sha256": "74c02a67ccb79e364e4dae81857a1267f37263db2949208f08b8d8984e56545c"
+      }
+    ]
+  },
+  {
+    "ticker": "WFC",
+    "accession": "0000072971-18-000272",
+    "column": "2017-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231.xml",
+    "instance_sha256": "f06af1a87415fc12ead5e753fcf74b54f56e22ce28f823c13b76cb57cf5d2592",
+    "facts": [
+      {
+        "concept": "us-gaap_InterestIncomeExpenseNet",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2017-01-01",
+        "end": "2017-12-31",
+        "value": "49557000000"
+      },
+      {
+        "concept": "us-gaap_NoninterestIncome",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2017-01-01",
+        "end": "2017-12-31",
+        "value": "38832000000"
+      }
+    ],
+    "expected_value": 88389000000,
+    "rows": [
+      {
+        "concept": "us-gaap_InterestAndDividendIncomeSecuritiesTradingOrMeasuredAtFairValue",
+        "label": "Trading assets",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 1,
+        "value": 2928000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDividendIncomeSecurities",
+        "label": "Investment securities",
+        "standard_concept": "InterestAndDividendIncome",
+        "parent_concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 2,
+        "value": 10664000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndFeeIncomeLoansHeldForSaleMortgages",
+        "label": "Mortgages held for sale",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 3,
+        "value": 786000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndFeeIncomeNonmortgageLoansAndLeasesHeldForSale",
+        "label": "Loans held for sale",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 4,
+        "value": 12000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndFeeIncomeLoansAndLeasesHeldInPortfolio",
+        "label": "Loans",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 5,
+        "value": 41388000000.0
+      },
+      {
+        "concept": "us-gaap_OtherInterestAndDividendIncome",
+        "label": "Other interest income",
+        "standard_concept": "InterestIncome",
+        "parent_concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 6,
+        "value": 3131000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "label": "Total interest income",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 7,
+        "value": 58909000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpenseDeposits",
+        "label": "Deposits",
+        "standard_concept": "InterestExpenseDeposits",
+        "parent_concept": "us-gaap_InterestExpense",
+        "parent_abstract_concept": "us-gaap_InterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 9,
+        "value": 3013000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpenseShortTermBorrowings",
+        "label": "Short-term borrowings",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_InterestExpense",
+        "parent_abstract_concept": "us-gaap_InterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 10,
+        "value": 758000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpenseLongTermDebt",
+        "label": "Long-term debt",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_InterestExpense",
+        "parent_abstract_concept": "us-gaap_InterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 12,
+        "value": 5157000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpenseOther",
+        "label": "Other interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_InterestExpense",
+        "parent_abstract_concept": "us-gaap_InterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 14,
+        "value": 424000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Total interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_InterestExpenseAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 16,
+        "value": 9352000000.0
+      },
+      {
+        "concept": "us-gaap_InterestIncomeExpenseNet",
+        "label": "Net interest income",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 17,
+        "value": 49557000000.0
+      },
+      {
+        "concept": "us-gaap_ProvisionForLoanLeaseAndOtherLosses",
+        "label": "Provision for credit losses",
+        "standard_concept": "NetCashFromOperatingActivities",
+        "parent_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 22,
+        "value": 2528000000.0
+      },
+      {
+        "concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLoss",
+        "label": "Net interest income after provision for credit losses",
+        "standard_concept": "NetInterestIncomeAfterProvision",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 29,
+        "value": 47029000000.0
+      },
+      {
+        "concept": "wfc_FeesAndCommissionsDepositorsAccounts",
+        "label": "Service charges on deposit accounts",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 31,
+        "value": 5111000000.0
+      },
+      {
+        "concept": "us-gaap_FeesAndCommissionsFiduciaryAndTrustActivities",
+        "label": "Trust and investment fees",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 36,
+        "value": 14495000000.0
+      },
+      {
+        "concept": "us-gaap_FeesAndCommissionsCreditAndDebitCards",
+        "label": "Card fees",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 41,
+        "value": 3960000000.0
+      },
+      {
+        "concept": "us-gaap_FeesAndCommissionsOther",
+        "label": "Other fees",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 46,
+        "value": 3557000000.0
+      },
+      {
+        "concept": "wfc_FeesAndCommissionMortgageBanking",
+        "label": "Mortgage banking",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 81,
+        "value": 4350000000.0
+      },
+      {
+        "concept": "us-gaap_InsuranceServicesRevenue",
+        "label": "Insurance",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 86,
+        "value": 1049000000.0
+      },
+      {
+        "concept": "us-gaap_OperatingLeasesIncomeStatementLeaseRevenue",
+        "label": "Lease income",
+        "standard_concept": "RentalAndLeasingRevenue",
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 106,
+        "value": 1907000000.0
+      },
+      {
+        "concept": "wfc_NoninterestIncomeOtherLoss",
+        "label": "Other",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 111,
+        "value": 1603000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestIncome",
+        "label": "Total noninterest income",
+        "standard_concept": "NonInterestIncome",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 116,
+        "value": 38832000000.0
+      },
+      {
+        "concept": "us-gaap_OtherNoninterestExpense",
+        "label": "Other",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 134,
+        "value": 17588000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestExpense",
+        "label": "Total noninterest expense",
+        "standard_concept": "NonInterestExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 135,
+        "value": 58484000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income before income tax expense",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 141,
+        "value": 27377000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "label": "Net income before noncontrolling interests",
+        "standard_concept": "ProfitLoss",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 153,
+        "value": 22460000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Less: Net income from noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 158,
+        "value": 277000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231.xml",
+        "path": "output\\WFC-0000072971-18-000272-wfc-20171231.xml",
+        "sha256": "f06af1a87415fc12ead5e753fcf74b54f56e22ce28f823c13b76cb57cf5d2592"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_cal.xml",
+        "path": "output\\WFC-0000072971-18-000272-wfc-20171231_cal.xml",
+        "sha256": "de1f309b127a353aae2ea2f64022a9d88f6cc46567b852d1e7f714e2010fc292"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_lab.xml",
+        "path": "output\\WFC-0000072971-18-000272-wfc-20171231_lab.xml",
+        "sha256": "a257dcf74d532071480af4e5ed684671f9efc81a1110c9324089b05607c182d0"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/72971/000007297118000272/wfc-20171231_pre.xml",
+        "path": "output\\WFC-0000072971-18-000272-wfc-20171231_pre.xml",
+        "sha256": "4e9f9634164cd0b0be178df5604557ecaa0be1833d93a8481ac27e0c2ece706e"
+      }
+    ]
+  },
+  {
+    "ticker": "MPC",
+    "accession": "0001510295-18-000024",
+    "column": "2017-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029518000024/mpc-20171231.xml",
+    "instance_sha256": "312f91d9110489c16a011d8635aae40d9cd845d71e85c412f45ef1fa7605b7f6",
+    "facts": [
+      {
+        "concept": "us-gaap_RefiningAndMarketingRevenue",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2017-01-01",
+        "end": "2017-12-31",
+        "value": "74104000000"
+      },
+      {
+        "concept": "us-gaap_RevenueFromRelatedParties",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2017-01-01",
+        "end": "2017-12-31",
+        "value": "629000000"
+      }
+    ],
+    "expected_value": 74733000000,
+    "rows": [
+      {
+        "concept": "us-gaap_RefiningAndMarketingRevenue",
+        "label": "Sales and other operating revenues (including consumer excise taxes)",
+        "standard_concept": "Revenue",
+        "parent_concept": "mpc_RevenuesAndOtherIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 1,
+        "value": 74104000000.0
+      },
+      {
+        "concept": "us-gaap_RevenueFromRelatedParties",
+        "label": "Sales to related parties",
+        "standard_concept": "Revenue",
+        "parent_concept": "mpc_RevenuesAndOtherIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 18,
+        "value": 629000000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnDispositionOfAssets",
+        "label": "Net gain on disposal of assets",
+        "standard_concept": "GainLossOnAssetSalesCF",
+        "parent_concept": "mpc_RevenuesAndOtherIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 29,
+        "value": 10000000.0
+      },
+      {
+        "concept": "mpc_RevenuesAndOtherIncome",
+        "label": "Total revenues and other income",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 31,
+        "value": 75369000000.0
+      },
+      {
+        "concept": "us-gaap_RefiningAndMarketingCosts",
+        "label": "Cost of revenues (excludes items below)",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 33,
+        "value": 58760000000.0
+      },
+      {
+        "concept": "us-gaap_CostsAndExpensesRelatedParty",
+        "label": "Purchases from related parties",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 34,
+        "value": 570000000.0
+      },
+      {
+        "concept": "us-gaap_ExciseAndSalesTaxes",
+        "label": "Consumer excise taxes",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 38,
+        "value": 7759000000.0
+      },
+      {
+        "concept": "us-gaap_CostsAndExpenses",
+        "label": "Total costs and expenses",
+        "standard_concept": "CostsSubtotal",
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 47,
+        "value": 71400000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDebtExpense",
+        "label": "Net interest and other financial income (costs)",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 54,
+        "value": -625000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 55,
+        "value": 3344000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "(Benefit) provision for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 56,
+        "value": -460000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToRedeemableNoncontrollingInterest",
+        "label": "Redeemable noncontrolling interest",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_MinorityInterestInNetIncomeLossOfConsolidatedEntitiesAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 59,
+        "value": 65000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNonredeemableNoncontrollingInterest",
+        "label": "Noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_MinorityInterestInNetIncomeLossOfConsolidatedEntitiesAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 60,
+        "value": 307000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029518000024/mpc-20171231.xml",
+        "path": "output\\MPC-0001510295-18-000024-mpc-20171231.xml",
+        "sha256": "312f91d9110489c16a011d8635aae40d9cd845d71e85c412f45ef1fa7605b7f6"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029518000024/mpc-20171231_cal.xml",
+        "path": "output\\MPC-0001510295-18-000024-mpc-20171231_cal.xml",
+        "sha256": "d74f2631b708bd41f9fbfb87f14970a759bcf80eceafa603fd6775422316e72e"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029518000024/mpc-20171231_lab.xml",
+        "path": "output\\MPC-0001510295-18-000024-mpc-20171231_lab.xml",
+        "sha256": "41b92e1a2583f482388af72ff348654e4f932bdfc2dd6b9264ca0dccf0426e66"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1510295/000151029518000024/mpc-20171231_pre.xml",
+        "path": "output\\MPC-0001510295-18-000024-mpc-20171231_pre.xml",
+        "sha256": "ce6d99857fd169e71602335ee47d632fb114b28b2d4d47730e3e8cfad18f8f7c"
+      }
+    ]
+  },
+  {
+    "ticker": "AXP",
+    "accession": "0001193125-17-047588",
+    "column": "2016-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/4962/000119312517047588/axp-20161231.xml",
+    "instance_sha256": "d0570598b54ded1aa72d474d2f33584123c02e41ef6cf8c2054bc266579babe2",
+    "facts": [
+      {
+        "concept": "axp_TotalRevenuesNetOfInterestExpense",
+        "namespace": "http://americanexpress.com/20161231",
+        "start": "2016-01-01",
+        "end": "2016-12-31",
+        "value": "32119000000"
+      }
+    ],
+    "expected_value": 32119000000,
+    "rows": [
+      {
+        "concept": "us-gaap_MerchantDiscountFees",
+        "label": "Discount revenue",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 2,
+        "value": 18680000000.0
+      },
+      {
+        "concept": "us-gaap_FeesAndCommissionsCreditCards",
+        "label": "Net card fees",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 3,
+        "value": 2886000000.0
+      },
+      {
+        "concept": "us-gaap_FeesAndCommissionsOther",
+        "label": "Other fees and commissions",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 4,
+        "value": 2753000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestIncomeOtherOperatingIncome",
+        "label": "Other",
+        "standard_concept": "OtherOperatingExpense",
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 5,
+        "value": 2029000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestIncome",
+        "label": "Total non-interest revenues",
+        "standard_concept": "NonInterestIncome",
+        "parent_concept": "axp_TotalRevenuesNetOfInterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestIncomeAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 8,
+        "value": 26348000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndFeeIncomeLoansAndLeases",
+        "label": "Interest on loans",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 16,
+        "value": 7205000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDividendIncomeSecurities",
+        "label": "Interest and dividends on investment securities",
+        "standard_concept": "InterestAndDividendIncome",
+        "parent_concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 17,
+        "value": 131000000.0
+      },
+      {
+        "concept": "us-gaap_InterestIncomeDepositsWithFinancialInstitutions",
+        "label": "Deposits with banks and other",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 18,
+        "value": 139000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "label": "Total interest income",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_InterestAndDividendIncomeOperatingAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 19,
+        "value": 7475000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpenseDeposits",
+        "label": "Deposits",
+        "standard_concept": "InterestExpenseDeposits",
+        "parent_concept": "us-gaap_InterestExpense",
+        "parent_abstract_concept": "us-gaap_InterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 27,
+        "value": 598000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpenseLongTermDebt",
+        "label": "Long-term debt and other",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_InterestExpense",
+        "parent_abstract_concept": "us-gaap_InterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 28,
+        "value": 1106000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Total interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_InterestExpenseAbstract",
+        "weight": -1.0,
+        "level": 4,
+        "index": 29,
+        "value": 1704000000.0
+      },
+      {
+        "concept": "us-gaap_InterestIncomeExpenseNet",
+        "label": "Net interest income",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "axp_TotalRevenuesNetOfInterestExpense",
+        "parent_abstract_concept": "us-gaap_InterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 36,
+        "value": 5771000000.0
+      },
+      {
+        "concept": "axp_TotalRevenuesNetOfInterestExpense",
+        "label": "Total revenues net of interest expense",
+        "standard_concept": null,
+        "parent_concept": "axp_TotalRevenuesNetOfInterestExpenseAfterProvisionsForLosses",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 37,
+        "value": 32119000000.0
+      },
+      {
+        "concept": "us-gaap_ProvisionForDoubtfulAccounts",
+        "label": "Provisions",
+        "standard_concept": "ProvisionForDoubtfulAccountsCF",
+        "parent_concept": "us-gaap_ProvisionForLoanLeaseAndOtherLosses",
+        "parent_abstract_concept": "us-gaap_ProvisionForLoanLeaseAndOtherLossesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 50,
+        "value": 696000000.0
+      },
+      {
+        "concept": "us-gaap_ProvisionForLoanAndLeaseLosses",
+        "label": "Card member loans",
+        "standard_concept": "ProvisionForCreditLosses",
+        "parent_concept": "us-gaap_ProvisionForLoanLeaseAndOtherLosses",
+        "parent_abstract_concept": "us-gaap_ProvisionForLoanLeaseAndOtherLossesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 51,
+        "value": 1235000000.0
+      },
+      {
+        "concept": "us-gaap_ProvisionForOtherLosses",
+        "label": "Other",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_ProvisionForLoanLeaseAndOtherLosses",
+        "parent_abstract_concept": "us-gaap_ProvisionForLoanLeaseAndOtherLossesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 52,
+        "value": 95000000.0
+      },
+      {
+        "concept": "us-gaap_ProvisionForLoanLeaseAndOtherLosses",
+        "label": "Total provisions for losses",
+        "standard_concept": "NetCashFromOperatingActivities",
+        "parent_concept": "axp_TotalRevenuesNetOfInterestExpenseAfterProvisionsForLosses",
+        "parent_abstract_concept": "us-gaap_ProvisionForLoanLeaseAndOtherLossesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 53,
+        "value": 2026000000.0
+      },
+      {
+        "concept": "axp_TotalRevenuesNetOfInterestExpenseAfterProvisionsForLosses",
+        "label": "Total revenues net of interest expense after provisions for losses",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 59,
+        "value": 30093000000.0
+      },
+      {
+        "concept": "us-gaap_OtherNoninterestExpense",
+        "label": "Other,net",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 66,
+        "value": 5162000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestExpense",
+        "label": "Total",
+        "standard_concept": "NonInterestExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 69,
+        "value": 21997000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "label": "Pretax income",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 71,
+        "value": 8096000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Income tax provision",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 83,
+        "value": 2688000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/4962/000119312517047588/axp-20161231.xml",
+        "path": "output\\AXP-0001193125-17-047588-axp-20161231.xml",
+        "sha256": "d0570598b54ded1aa72d474d2f33584123c02e41ef6cf8c2054bc266579babe2"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/4962/000119312517047588/axp-20161231_cal.xml",
+        "path": "output\\AXP-0001193125-17-047588-axp-20161231_cal.xml",
+        "sha256": "1a63d8f53d132311e8273f9bf19085f7b05d30736656aed131a5fa8ab0328c4f"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/4962/000119312517047588/axp-20161231_lab.xml",
+        "path": "output\\AXP-0001193125-17-047588-axp-20161231_lab.xml",
+        "sha256": "0293538a78d6931978f207f555eb13b587aa56f5da83376e42ac20b3f52dc09f"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/4962/000119312517047588/axp-20161231_pre.xml",
+        "path": "output\\AXP-0001193125-17-047588-axp-20161231_pre.xml",
+        "sha256": "93f27d7123d1c2999bc224f1504c6a36f482c867b58608292e52351a1cec6fcd"
+      }
+    ]
+  },
+  {
+    "ticker": "GS",
+    "accession": "0001193125-13-085474",
+    "column": "2012-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/886982/000119312513085474/gs-20121231.xml",
+    "instance_sha256": "85c5a6ddcd37784eaa5bca4fe42990d5a568436d5e5afbed89c92d53afc19a80",
+    "facts": [
+      {
+        "concept": "gs_NetRevenuesIncludingNetInterestIncome",
+        "namespace": "http://goldmansachs.com/20121231",
+        "start": "2012-01-01",
+        "end": "2012-12-31",
+        "value": "34163000000"
+      }
+    ],
+    "expected_value": 34163000000,
+    "rows": [
+      {
+        "concept": "gs_CommissionsAndFees",
+        "label": "Commissions and fees",
+        "standard_concept": null,
+        "parent_concept": "gs_NonInterestRevenues",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 3,
+        "value": 3161000000.0
+      },
+      {
+        "concept": "gs_NonInterestRevenues",
+        "label": "Total non-interest revenues",
+        "standard_concept": null,
+        "parent_concept": "gs_NetRevenuesIncludingNetInterestIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 6,
+        "value": 30283000000.0
+      },
+      {
+        "concept": "gs_InterestIncome",
+        "label": "Interest income",
+        "standard_concept": null,
+        "parent_concept": "gs_NetInterestIncomeExpense",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 7,
+        "value": 11381000000.0
+      },
+      {
+        "concept": "gs_InterestExpenseIS",
+        "label": "Interest expense",
+        "standard_concept": null,
+        "parent_concept": "gs_NetInterestIncomeExpense",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 9,
+        "value": 7501000000.0
+      },
+      {
+        "concept": "gs_NetInterestIncomeExpense",
+        "label": "Net interest income",
+        "standard_concept": null,
+        "parent_concept": "gs_NetRevenuesIncludingNetInterestIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 11,
+        "value": 3880000000.0
+      },
+      {
+        "concept": "gs_NetRevenuesIncludingNetInterestIncome",
+        "label": "Net revenues, including net interest income",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 17,
+        "value": 34163000000.0
+      },
+      {
+        "concept": "gs_BrokerageClearingExchangeAndDistributionFees",
+        "label": "Brokerage, clearing, exchange and distribution fees",
+        "standard_concept": null,
+        "parent_concept": "gs_NonCompensationExpenses",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 30,
+        "value": 2208000000.0
+      },
+      {
+        "concept": "gs_ProfessionalFeesIS",
+        "label": "Professional fees",
+        "standard_concept": null,
+        "parent_concept": "gs_NonCompensationExpenses",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 35,
+        "value": 867000000.0
+      },
+      {
+        "concept": "us-gaap_OtherNoninterestExpense",
+        "label": "Other expenses",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "gs_NonCompensationExpenses",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 37,
+        "value": 2435000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestExpense",
+        "label": "Total operating expenses",
+        "standard_concept": "NonInterestExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 40,
+        "value": 22956000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Pre-tax earnings",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 46,
+        "value": 11207000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 56,
+        "value": 3732000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/886982/000119312513085474/gs-20121231.xml",
+        "path": "output\\GS-0001193125-13-085474-gs-20121231.xml",
+        "sha256": "85c5a6ddcd37784eaa5bca4fe42990d5a568436d5e5afbed89c92d53afc19a80"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/886982/000119312513085474/gs-20121231_cal.xml",
+        "path": "output\\GS-0001193125-13-085474-gs-20121231_cal.xml",
+        "sha256": "bb5459556ff054cd2918d2bce4bf64a805b6a189ae96d91f5019770bd68fa19b"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/886982/000119312513085474/gs-20121231_lab.xml",
+        "path": "output\\GS-0001193125-13-085474-gs-20121231_lab.xml",
+        "sha256": "a446409d89a6cd27a9bdd5f1c3b0c60beb9b800b01ebe9dbb520d57ae183b16f"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/886982/000119312513085474/gs-20121231_pre.xml",
+        "path": "output\\GS-0001193125-13-085474-gs-20121231_pre.xml",
+        "sha256": "5d6e03e3e7543efe9e18988e7a9a48506a21d991f1b87efad1c0f5dfc88065bb"
+      }
+    ]
+  },
+  {
+    "ticker": "BK",
+    "accession": "0001390777-25-000046",
+    "column": "2024-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1390777/000139077725000046/bk-20241231_htm.xml",
+    "instance_sha256": "b6d0c53b7ef0b541d01fac2790e94103b9ef8b259a2aba848465973ef4db5277",
+    "facts": [
+      {
+        "concept": "bk_TotalRevenuesIncludingRevenueGeneratedByVariableInterestEntities",
+        "namespace": "http://www.bnymellon.com/20241231",
+        "start": "2024-01-01",
+        "end": "2024-12-31",
+        "value": "18619000000"
+      }
+    ],
+    "expected_value": 18619000000,
+    "rows": [
+      {
+        "concept": "bk_SecuritiesServicingAndTreasuryServicesFees",
+        "label": "Investment services fees",
+        "standard_concept": null,
+        "parent_concept": "bk_TotalFeeRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 1,
+        "value": 9419000000.0
+      },
+      {
+        "concept": "bk_InvestmentManagementandPerformanceFees",
+        "label": "Investment management and performance fees",
+        "standard_concept": null,
+        "parent_concept": "bk_TotalFeeRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 2,
+        "value": 3139000000.0
+      },
+      {
+        "concept": "bk_ForeignExchangeRevenue",
+        "label": "Foreign exchange revenue",
+        "standard_concept": null,
+        "parent_concept": "bk_TotalFeeRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 3,
+        "value": 688000000.0
+      },
+      {
+        "concept": "bk_FinancingRelatedFees",
+        "label": "Financing-related fees",
+        "standard_concept": null,
+        "parent_concept": "bk_TotalFeeRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 4,
+        "value": 216000000.0
+      },
+      {
+        "concept": "bk_DistributionAndServicing",
+        "label": "Distribution and servicing fees",
+        "standard_concept": null,
+        "parent_concept": "bk_TotalFeeRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 5,
+        "value": 158000000.0
+      },
+      {
+        "concept": "bk_TotalFeeRevenue",
+        "label": "Total fee revenue",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestIncome",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 6,
+        "value": 13620000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestIncome",
+        "label": "Total fee and other revenue (a)",
+        "standard_concept": "NonInterestIncome",
+        "parent_concept": "bk_TotalRevenuesIncludingRevenueGeneratedByVariableInterestEntities",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 10,
+        "value": 14307000000.0
+      },
+      {
+        "concept": "us-gaap_InterestAndDividendIncomeOperating",
+        "label": "Interest income",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLossAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 19,
+        "value": 25607000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpenseOperating",
+        "label": "Interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_InterestIncomeExpenseNet",
+        "parent_abstract_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLossAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 20,
+        "value": 21295000000.0
+      },
+      {
+        "concept": "us-gaap_InterestIncomeExpenseNet",
+        "label": "Net interest income",
+        "standard_concept": "NetInterestIncome",
+        "parent_concept": "bk_TotalRevenuesIncludingRevenueGeneratedByVariableInterestEntities",
+        "parent_abstract_concept": "us-gaap_InterestIncomeExpenseAfterProvisionForLoanLossAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 23,
+        "value": 4312000000.0
+      },
+      {
+        "concept": "bk_TotalRevenuesIncludingRevenueGeneratedByVariableInterestEntities",
+        "label": "Total revenue (a)",
+        "standard_concept": null,
+        "parent_concept": "bk_IncomeLossFromContinuingOperationsBeforeIncomeTaxes",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 29,
+        "value": 18619000000.0
+      },
+      {
+        "concept": "us-gaap_ProvisionForLoanLeaseAndOtherLosses",
+        "label": "Provision for credit losses",
+        "standard_concept": "NetCashFromOperatingActivities",
+        "parent_concept": "bk_IncomeLossFromContinuingOperationsBeforeIncomeTaxes",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 32,
+        "value": 70000000.0
+      },
+      {
+        "concept": "us-gaap_ProfessionalFees",
+        "label": "Professional, legal and other purchased services",
+        "standard_concept": "ProfessionalFees",
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 41,
+        "value": 1503000000.0
+      },
+      {
+        "concept": "us-gaap_ExpenseRelatedToDistributionOrServicingAndUnderwritingFees",
+        "label": "Distribution and servicing",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 44,
+        "value": 361000000.0
+      },
+      {
+        "concept": "us-gaap_OtherNoninterestExpense",
+        "label": "Other",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "us-gaap_NoninterestExpense",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 54,
+        "value": 436000000.0
+      },
+      {
+        "concept": "us-gaap_NoninterestExpense",
+        "label": "Total noninterest expense",
+        "standard_concept": "NonInterestExpense",
+        "parent_concept": "bk_IncomeLossFromContinuingOperationsBeforeIncomeTaxes",
+        "parent_abstract_concept": "us-gaap_NoninterestExpenseAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 55,
+        "value": 12701000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for income taxes (a)",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "bk_IncomeAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 60,
+        "value": 1305000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Net (income) loss attributable to noncontrolling interests related to consolidated investment management funds",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "bk_IncomeAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 74,
+        "value": -13000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000139077725000046/bk-20241231_cal.xml",
+        "path": "output\\BK-0001390777-25-000046-bk-20241231_cal.xml",
+        "sha256": "903d1d5942a2582df2b1c38202b9918be9133bcb051555196ea2139ebbcc650c"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000139077725000046/bk-20241231_htm.xml",
+        "path": "output\\BK-0001390777-25-000046-bk-20241231_htm.xml",
+        "sha256": "b6d0c53b7ef0b541d01fac2790e94103b9ef8b259a2aba848465973ef4db5277"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000139077725000046/bk-20241231_lab.xml",
+        "path": "output\\BK-0001390777-25-000046-bk-20241231_lab.xml",
+        "sha256": "5574c62d11c03e1b80f281ed5de67591cc9f743077b12e4d8b724a33fe714853"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1390777/000139077725000046/bk-20241231_pre.xml",
+        "path": "output\\BK-0001390777-25-000046-bk-20241231_pre.xml",
+        "sha256": "25f49df97cbf43db79bba6a8c3d87bd8f5075a951eccebd559edf779a121d42d"
+      }
+    ]
+  },
+  {
+    "ticker": "DUK",
+    "accession": "0001326160-26-000014",
+    "column": "2025-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231_htm.xml",
+    "instance_sha256": "a3281e6fd364f61a8c362ad04b65bdaf825e39ab80c4a1c4ff15fe3cea158525",
+    "facts": [
+      {
+        "concept": "us-gaap_RegulatedAndUnregulatedOperatingRevenue",
+        "namespace": "http://fasb.org/us-gaap/2025",
+        "start": "2025-01-01",
+        "end": "2025-12-31",
+        "value": "32237000000"
+      }
+    ],
+    "expected_value": 32237000000,
+    "rows": [
+      {
+        "concept": "us-gaap_RegulatedOperatingRevenueElectricNonNuclear",
+        "label": "Regulated electric",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_RegulatedAndUnregulatedOperatingRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 1,
+        "value": 29060000000.0
+      },
+      {
+        "concept": "us-gaap_RegulatedOperatingRevenueGas",
+        "label": "Regulated natural gas",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_RegulatedAndUnregulatedOperatingRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 3,
+        "value": 2870000000.0
+      },
+      {
+        "concept": "us-gaap_UnregulatedOperatingRevenue",
+        "label": "Nonregulated electric and other",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_RegulatedAndUnregulatedOperatingRevenue",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 6,
+        "value": 307000000.0
+      },
+      {
+        "concept": "us-gaap_RegulatedAndUnregulatedOperatingRevenue",
+        "label": "Total operating revenues",
+        "standard_concept": "ElectricUtilityRevenue",
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_RevenuesAbstract",
+        "weight": 1.0,
+        "level": 5,
+        "index": 8,
+        "value": 32237000000.0
+      },
+      {
+        "concept": "us-gaap_CostOfGoodsAndServicesSold",
+        "label": "Cost of sales",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 25,
+        "value": 13032000000.0
+      },
+      {
+        "concept": "us-gaap_UtilitiesOperatingExpenseMaintenanceOperationsAndOtherCostsAndExpenses",
+        "label": "Operation, maintenance and other",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 74,
+        "value": 6698000000.0
+      },
+      {
+        "concept": "us-gaap_CostDepreciationAmortizationAndDepletion",
+        "label": "Depreciation and amortization",
+        "standard_concept": "DepreciationExpense",
+        "parent_concept": "us-gaap_CostsAndExpenses",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": 1.0,
+        "level": 4,
+        "index": 108,
+        "value": 6324000000.0
+      },
+      {
+        "concept": "us-gaap_CostsAndExpenses",
+        "label": "Total operating expenses",
+        "standard_concept": "CostsSubtotal",
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_CostsAndExpensesAbstract",
+        "weight": -1.0,
+        "level": 5,
+        "index": 204,
+        "value": 23656000000.0
+      },
+      {
+        "concept": "us-gaap_GainLossOnDispositionOfAssets1",
+        "label": "Gains on Sales of Other Assets and Other, net",
+        "standard_concept": "NonoperatingIncomeExpense",
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": 1.0,
+        "level": 3,
+        "index": 233,
+        "value": 45000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest Expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": -1.0,
+        "level": 3,
+        "index": 279,
+        "value": 3634000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income From Continuing Operations Before Income Taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": 1.0,
+        "level": 4,
+        "index": 309,
+        "value": 5712000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "label": "Income From Continuing Operations",
+        "standard_concept": "ProfitLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": 1.0,
+        "level": 3,
+        "index": 347,
+        "value": 5070000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Less: Net Income Attributable to Noncontrolling Interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": -1.0,
+        "level": 3,
+        "index": 361,
+        "value": 103000000.0
+      },
+      {
+        "concept": "us-gaap_PreferredStockRedemptionPremium",
+        "label": "Less: Preferred Redemption Costs",
+        "standard_concept": "PreferredDividendExpense",
+        "parent_concept": "us-gaap_NetIncomeLossAvailableToCommonStockholdersBasic",
+        "parent_abstract_concept": "us-gaap_StatementLineItems",
+        "weight": -1.0,
+        "level": 4,
+        "index": 384,
+        "value": 0.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231_cal.xml",
+        "path": "output\\DUK-0001326160-26-000014-duk-20251231_cal.xml",
+        "sha256": "727ad11405b153d86f5910b8cc8310c19a3aa254dd018fa52538a688cc8130cc"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231_htm.xml",
+        "path": "output\\DUK-0001326160-26-000014-duk-20251231_htm.xml",
+        "sha256": "a3281e6fd364f61a8c362ad04b65bdaf825e39ab80c4a1c4ff15fe3cea158525"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231_lab.xml",
+        "path": "output\\DUK-0001326160-26-000014-duk-20251231_lab.xml",
+        "sha256": "a0c41fb05b603c35f47fe3003e749193fbc96748deb5554573aa4b0ff1ce4f0c"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1326160/000132616026000014/duk-20251231_pre.xml",
+        "path": "output\\DUK-0001326160-26-000014-duk-20251231_pre.xml",
+        "sha256": "f32d5a4d1a68ca478a21e6bc84ad32fbf5024d8809322add26d573a455d54221"
+      }
+    ]
+  },
+  {
+    "ticker": "APH",
+    "accession": "0001558370-18-000871",
+    "column": "2017-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/820313/000155837018000871/aph-20171231.xml",
+    "instance_sha256": "d703fc2c47516cee4593a1c6431b752b005d9e16e5e13dac18cdad92da3531e2",
+    "facts": [
+      {
+        "concept": "us-gaap_SalesRevenueGoodsNet",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2017-01-01",
+        "end": "2017-12-31",
+        "value": "7011300000"
+      }
+    ],
+    "expected_value": 7011300000,
+    "rows": [
+      {
+        "concept": "us-gaap_SalesRevenueGoodsNet",
+        "label": "Net sales",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_GrossProfit",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 1,
+        "value": 7011300000.0
+      },
+      {
+        "concept": "us-gaap_CostOfGoodsSold",
+        "label": "Cost of sales",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_GrossProfit",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 11,
+        "value": 4701400000.0
+      },
+      {
+        "concept": "us-gaap_BusinessCombinationAcquisitionRelatedCosts",
+        "label": "Acquisition-related expenses",
+        "standard_concept": "RestructuringExpenseBenefit",
+        "parent_concept": "us-gaap_OperatingIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 13,
+        "value": 4000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 24,
+        "value": -92300000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest",
+        "label": "Income before income taxes",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 26,
+        "value": 1352400000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 27,
+        "value": -691700000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Less: Net income attributable to noncontrolling interests",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 35,
+        "value": -10200000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/820313/000155837018000871/aph-20171231.xml",
+        "path": "output\\APH-0001558370-18-000871-aph-20171231.xml",
+        "sha256": "d703fc2c47516cee4593a1c6431b752b005d9e16e5e13dac18cdad92da3531e2"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/820313/000155837018000871/aph-20171231_cal.xml",
+        "path": "output\\APH-0001558370-18-000871-aph-20171231_cal.xml",
+        "sha256": "f38780de8773ee1e19fffb6d6e698e07acef2729c1021fa9643766ef78d25a51"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/820313/000155837018000871/aph-20171231_lab.xml",
+        "path": "output\\APH-0001558370-18-000871-aph-20171231_lab.xml",
+        "sha256": "99339241ebf4f4b251ea600f838fa4e4017908a09a941ea5f852e5f600c99c86"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/820313/000155837018000871/aph-20171231_pre.xml",
+        "path": "output\\APH-0001558370-18-000871-aph-20171231_pre.xml",
+        "sha256": "5eb1d8cc1165bad0788321fd4f87324eafba7e2ce416250a98a9cd47d37d8b4b"
+      }
+    ]
+  },
+  {
+    "ticker": "FIS",
+    "accession": "0001136893-18-000011",
+    "column": "2017-12-31 (FY)",
+    "url": "https://www.sec.gov/Archives/edgar/data/1136893/000113689318000011/fis-20171231.xml",
+    "instance_sha256": "4f4e8893441a56c01153e8b29aae2db7e8a18c4566ace7743213cdea813fe593",
+    "facts": [
+      {
+        "concept": "us-gaap_SalesRevenueServicesNet",
+        "namespace": "http://fasb.org/us-gaap/2017-01-31",
+        "start": "2017-01-01",
+        "end": "2017-12-31",
+        "value": "9123000000"
+      }
+    ],
+    "expected_value": 9123000000,
+    "rows": [
+      {
+        "concept": "us-gaap_SalesRevenueServicesNet",
+        "label": "Processing and services revenues (for related party activity, see note 17)",
+        "standard_concept": "Revenue",
+        "parent_concept": "us-gaap_GrossProfit",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 0,
+        "value": 9123000000.0
+      },
+      {
+        "concept": "us-gaap_CostOfServices",
+        "label": "Cost of revenues (for related party activity, see note 17)",
+        "standard_concept": "CostOfGoodsAndServicesSold",
+        "parent_concept": "us-gaap_GrossProfit",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 6,
+        "value": 6181000000.0
+      },
+      {
+        "concept": "us-gaap_InvestmentIncomeInterest",
+        "label": "Interest income",
+        "standard_concept": "InterestAndDividendIncome",
+        "parent_concept": "fis_InterestExpenseandNonoperatingIncomeExpenseInterestExpense",
+        "parent_abstract_concept": "us-gaap_NonoperatingIncomeExpenseAbstract",
+        "weight": 1.0,
+        "level": 3,
+        "index": 11,
+        "value": 22000000.0
+      },
+      {
+        "concept": "us-gaap_InterestExpense",
+        "label": "Interest expense",
+        "standard_concept": "InterestExpense",
+        "parent_concept": "fis_InterestExpenseandNonoperatingIncomeExpenseInterestExpense",
+        "parent_abstract_concept": "us-gaap_NonoperatingIncomeExpenseAbstract",
+        "weight": -1.0,
+        "level": 3,
+        "index": 12,
+        "value": -359000000.0
+      },
+      {
+        "concept": "fis_InterestExpenseandNonoperatingIncomeExpenseInterestExpense",
+        "label": "Total other income (expense)",
+        "standard_concept": null,
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "parent_abstract_concept": "us-gaap_NonoperatingIncomeExpenseAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 15,
+        "value": -456000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsBeforeIncomeTaxesMinorityInterestAndIncomeLossFromEquityMethodInvestments",
+        "label": "Earnings from continuing operations before income taxes and equity method investment earnings",
+        "standard_concept": "PretaxIncomeLoss",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 2,
+        "index": 16,
+        "value": 1036000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeTaxExpenseBenefit",
+        "label": "Provision (benefit) for income taxes",
+        "standard_concept": "IncomeTaxes",
+        "parent_concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 2,
+        "index": 17,
+        "value": -319000000.0
+      },
+      {
+        "concept": "us-gaap_IncomeLossFromContinuingOperationsIncludingPortionAttributableToNoncontrollingInterest",
+        "label": "Earnings from continuing operations, net of tax",
+        "standard_concept": "ProfitLoss",
+        "parent_concept": "us-gaap_ProfitLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": 1.0,
+        "level": 1,
+        "index": 21,
+        "value": 1352000000.0
+      },
+      {
+        "concept": "us-gaap_NetIncomeLossAttributableToNoncontrollingInterest",
+        "label": "Net earnings attributable to noncontrolling interest",
+        "standard_concept": "MinorityInterestIncomeExpense",
+        "parent_concept": "us-gaap_NetIncomeLoss",
+        "parent_abstract_concept": "us-gaap_IncomeStatementAbstract",
+        "weight": -1.0,
+        "level": 1,
+        "index": 28,
+        "value": -33000000.0
+      }
+    ],
+    "sources": [
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1136893/000113689318000011/fis-20171231.xml",
+        "path": "output\\FIS-0001136893-18-000011-fis-20171231.xml",
+        "sha256": "4f4e8893441a56c01153e8b29aae2db7e8a18c4566ace7743213cdea813fe593"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1136893/000113689318000011/fis-20171231_cal.xml",
+        "path": "output\\FIS-0001136893-18-000011-fis-20171231_cal.xml",
+        "sha256": "d4f419d8701367fe7e06f9d797c24bb4fa99488ae2b204fe0cf0be9b1e704eea"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1136893/000113689318000011/fis-20171231_lab.xml",
+        "path": "output\\FIS-0001136893-18-000011-fis-20171231_lab.xml",
+        "sha256": "fec3236666126d236bbe3fa2635205f65564df7994bb9d4270c584c26816c764"
+      },
+      {
+        "url": "https://www.sec.gov/Archives/edgar/data/1136893/000113689318000011/fis-20171231_pre.xml",
+        "path": "output\\FIS-0001136893-18-000011-fis-20171231_pre.xml",
+        "sha256": "05fb01908c5ab6e56e145db6eb1dcf39233b87d99aca298ebb0329374d6cca00"
+      }
+    ]
+  }
+]
