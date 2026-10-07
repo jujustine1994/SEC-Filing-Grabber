@@ -234,3 +234,25 @@ def test_a_missing_current_period_does_not_trigger_the_retry_path():
 
     assert ledger.network_blamed is False
     assert ledger.give_up_retrying is False
+
+
+def test_summary_separates_mixed_data_reasons_and_network_failures():
+    from fetch_ledger import MissingCurrentPeriod, MissingStandalonePeriod, AmbiguousRevenueTotal
+    import i18n
+    from net_retry import NetworkDownError
+    previous = i18n.get_lang()
+    try:
+        i18n.set_lang('en')
+        ledger = FetchLedger(probe=lambda: True)
+        ledger.record('2025-03-31', MissingCurrentPeriod())
+        ledger.record('2025-06-30', MissingStandalonePeriod())
+        ledger.record('2025-09-30', AmbiguousRevenueTotal())
+        ledger.record('2025-12-31', NetworkDownError())
+        summary = ledger.summary()
+        assert 'current-period columns' in summary
+        assert 'standalone quarter' in summary
+        assert 'revenue totals' in summary
+        assert 'network' in summary
+        assert all(date in summary for date in ['2025-03-31','2025-06-30','2025-09-30','2025-12-31'])
+    finally:
+        i18n.set_lang(previous)
