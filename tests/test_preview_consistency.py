@@ -49,6 +49,8 @@ def app(ticker):
     obj._sheet_panel_ticker='OLD'
     obj._scan_btn=MagicMock();obj._scan_hint_label=MagicMock()
     obj._scan_running=True;obj._build_sheet_panel=MagicMock()
+    obj.is_running=False;obj._compare_running=False
+    obj._database_connected=lambda:True
     return obj
 
 
@@ -64,3 +66,10 @@ def test_ticker_change_clears_old_sheet_exclusions():
     obj._invalidate_sheet_preview()
     assert obj._sheet_check_vars=={}
     assert obj._sheet_panel_ticker is None
+
+
+def test_completed_scan_cannot_unlock_buttons_during_an_active_fetch():
+    obj=app('NEW')
+    obj.is_running=True
+    obj._finish_preview_scan()
+    assert obj._scan_btn.config.call_args.kwargs['state']=='disabled'
