@@ -1,0 +1,470 @@
+{
+  "financial_code_commit": "2147332",
+  "gui_code_commit": "3f3615a",
+  "fixed_financial_tables_checked": 483,
+  "fixed_layout_failures": 0,
+  "expected_reclassified_companies": ["EXC", "FICO", "MPC", "UNP"],
+  "scope": "Saved parsed SEC filings; cached read-only with frozen official metadata. No source writes or LLM calls; not a fresh live SEC audit.",
+  "full_run": {
+    "companies": 215,
+    "elapsed_seconds": 2896.7214964999876,
+    "batch_exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "database_files": 29277,
+    "database_bytes": 3204105955,
+    "database_unchanged": true,
+    "added": [],
+    "removed": [],
+    "changed": []
+  },
+  "comparison": {
+    "companies": 215,
+    "changed_companies": 4,
+    "fixed_changes": [],
+    "overflow_changes": [
+      {
+        "sheet": "Data_Financials(Q)",
+        "concept": "Revenue from contract with customer excluding assessed tax",
+        "count": 10
+      },
+      {
+        "sheet": "Data_Financials(Q)",
+        "concept": "Sales and other operating revenues",
+        "count": 2
+      },
+      {
+        "sheet": "Data_Financials(Y)",
+        "concept": "Revenue from Contract with Customer, Excluding Assessed Tax",
+        "count": 2
+      },
+      {
+        "sheet": "Data_Financials(Y)",
+        "concept": "Revenue from contract with customer excluding assessed tax",
+        "count": 3
+      },
+      {
+        "sheet": "Data_Financials(Y)",
+        "concept": "Sales and other operating revenues, excluding consumer excise taxes",
+        "count": 1
+      },
+      {
+        "sheet": "Data_Financials_NG(Q)",
+        "concept": "Revenue from contract with customer excluding assessed tax",
+        "count": 10
+      },
+      {
+        "sheet": "Data_Financials_NG(Q)",
+        "concept": "Sales and other operating revenues, excluding consumer excise taxes",
+        "count": 2
+      },
+      {
+        "sheet": "Data_Financials_NG(Y)",
+        "concept": "Revenue from Contract with Customer, Excluding Assessed Tax",
+        "count": 2
+      },
+      {
+        "sheet": "Data_Financials_NG(Y)",
+        "concept": "Revenue from contract with customer excluding assessed tax",
+        "count": 3
+      },
+      {
+        "sheet": "Data_Financials_NG(Y)",
+        "concept": "Sales and other operating revenues, excluding consumer excise taxes",
+        "count": 1
+      }
+    ],
+    "label_changes": {
+      "Data_Financials_NG(Y)": 65,
+      "Data_Financials_NG(Q)": 130
+    },
+    "header_changes": {
+      "Data_Financials_NG(Y)": 195,
+      "Data_Financials_NG(Q)": 390
+    },
+    "gaps": {
+      "MissingStandalonePeriod": 230,
+      "MissingCurrentPeriod": 86
+    },
+    "ambiguous_revenue_by_company": {}
+  },
+  "overflow_value_bags": {
+    "companies": 215,
+    "changed_companies": [],
+    "keys_checked": 403499,
+    "identity": "raw source concept, quarter/year, exact end (otherwise source period label); nonempty values including zero and multiplicity across GAAP/NG"
+  },
+  "preview": {
+    "companies": 215,
+    "status_counts": {
+      "pass": 206,
+      "estimated": 9
+    },
+    "mismatches": 0,
+    "estimated_companies": [
+      "COHR",
+      "CRM",
+      "FICO",
+      "HON",
+      "ICE",
+      "LHX",
+      "LULU",
+      "ONTO",
+      "ORCL"
+    ],
+    "scope": "Latest saved filing, segments excluded. Previous accepted pipeline baseline; final primary Q/Y identities unchanged. Execution year/form filters can change actual output range."
+  },
+  "tk_event_probe": {
+    "ticker_change_clears_exclusions": true,
+    "button_starts_worker_and_locks_scan": true,
+    "stale_worker_result_discarded": true,
+    "current_result_applied": true,
+    "estimated_identity_visible": true,
+    "button_restored_after_queue": true,
+    "active_fetch_lock_retained": true
+  },
+  "unit_tests": {
+    "passed": 1845,
+    "slow_deselected": 65,
+    "warnings": 5,
+    "seconds": 266.75
+  },
+  "excel_month_fixture": {
+    "cases": [
+      {
+        "input": 1,
+        "label": "FY2025Q2",
+        "valid": true
+      },
+      {
+        "input": 2,
+        "label": "FY2025Q1",
+        "valid": true
+      },
+      {
+        "input": 3,
+        "label": "FY2026Q1",
+        "valid": true
+      },
+      {
+        "input": 4,
+        "label": "FY2026Q1",
+        "valid": true
+      },
+      {
+        "input": 5,
+        "label": "FY2025Q4",
+        "valid": true
+      },
+      {
+        "input": 6,
+        "label": "FY2025Q4",
+        "valid": true
+      },
+      {
+        "input": 7,
+        "label": "FY2025Q4",
+        "valid": true
+      },
+      {
+        "input": 8,
+        "label": "FY2025Q3",
+        "valid": true
+      },
+      {
+        "input": 9,
+        "label": "FY2025Q3",
+        "valid": true
+      },
+      {
+        "input": 10,
+        "label": "FY2025Q3",
+        "valid": true
+      },
+      {
+        "input": 11,
+        "label": "FY2025Q2",
+        "valid": true
+      },
+      {
+        "input": 12,
+        "label": "FY2025Q2",
+        "valid": true
+      },
+      {
+        "input": 0,
+        "valid": false,
+        "fiscalBlank": true,
+        "calendarUnchanged": true
+      },
+      {
+        "input": 13,
+        "valid": false,
+        "fiscalBlank": true,
+        "calendarUnchanged": true
+      },
+      {
+        "input": -1,
+        "valid": false,
+        "fiscalBlank": true,
+        "calendarUnchanged": true
+      },
+      {
+        "input": 1.5,
+        "valid": false,
+        "fiscalBlank": true,
+        "calendarUnchanged": true
+      },
+      {
+        "input": "abc",
+        "valid": false,
+        "fiscalBlank": true,
+        "calendarUnchanged": true
+      },
+      {
+        "input": "",
+        "valid": false,
+        "fiscalBlank": true,
+        "calendarUnchanged": true
+      }
+    ],
+    "scope": "Owned new synthetic workbook, real Excel COM recalculation; 12 valid months and six invalid inputs."
+  },
+  "real_excel_cohorts": {
+    "core": {
+      "companies": [
+        "AAOI",
+        "AAPL",
+        "ARM",
+        "CMG",
+        "COP",
+        "COST"
+      ],
+      "results": {
+        "AAOI": {
+          "cells_checked": 18098,
+          "ratio_cells": 3068,
+          "header_cells": 553,
+          "errors": [],
+          "inconclusive_override_headers": []
+        },
+        "AAPL": {
+          "cells_checked": 20202,
+          "ratio_cells": 4071,
+          "header_cells": 841,
+          "errors": [],
+          "inconclusive_override_headers": []
+        },
+        "ARM": {
+          "cells_checked": 3615,
+          "ratio_cells": 708,
+          "header_cells": 159,
+          "errors": [],
+          "inconclusive_override_headers": []
+        },
+        "CMG": {
+          "cells_checked": 21035,
+          "ratio_cells": 3835,
+          "header_cells": 667,
+          "errors": [],
+          "inconclusive_override_headers": []
+        },
+        "COP": {
+          "cells_checked": 43174,
+          "ratio_cells": 4071,
+          "header_cells": 1427,
+          "errors": [],
+          "inconclusive_override_headers": []
+        },
+        "COST": {
+          "cells_checked": 21228,
+          "ratio_cells": 3953,
+          "header_cells": 769,
+          "errors": [],
+          "inconclusive_override_headers": []
+        }
+      },
+      "cells_checked": 127352,
+      "ratio_cells": 19706,
+      "header_cells": 4416,
+      "inconclusive_partial_date_columns": 0
+    },
+    "tax": {
+      "companies": [
+        "MPC",
+        "UNP",
+        "NEM",
+        "JNJ",
+        "LHX"
+      ],
+      "results": {
+        "MPC": {
+          "cells_checked": 23626,
+          "ratio_cells": 3599,
+          "header_cells": 871,
+          "errors": [],
+          "inconclusive_override_headers": []
+        },
+        "UNP": {
+          "cells_checked": 22219,
+          "ratio_cells": 4071,
+          "header_cells": 759,
+          "errors": [],
+          "inconclusive_override_headers": [
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2010Q2",
+              "column": 8,
+              "fiscal": "FY2010FQ2",
+              "calendar": "2010Q2",
+              "end": "2010-06"
+            }
+          ]
+        },
+        "NEM": {
+          "cells_checked": 43724,
+          "ratio_cells": 4130,
+          "header_cells": 1465,
+          "errors": [],
+          "inconclusive_override_headers": [
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2010Q2",
+              "column": 9,
+              "fiscal": "FY2010FQ2",
+              "calendar": "2010Q2",
+              "end": "2010-06"
+            }
+          ]
+        },
+        "JNJ": {
+          "cells_checked": 27904,
+          "ratio_cells": 4071,
+          "header_cells": 793,
+          "errors": [],
+          "inconclusive_override_headers": []
+        },
+        "LHX": {
+          "cells_checked": 25697,
+          "ratio_cells": 3953,
+          "header_cells": 770,
+          "errors": [],
+          "inconclusive_override_headers": [
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2011Q2",
+              "column": 7,
+              "fiscal": "FY2011FQ2",
+              "calendar": "2010Q3",
+              "end": "2010-07"
+            },
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2012Q2",
+              "column": 11,
+              "fiscal": "FY2012FQ2",
+              "calendar": "2011Q3",
+              "end": "2011-07"
+            },
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2013Q2",
+              "column": 15,
+              "fiscal": "FY2013FQ2",
+              "calendar": "2012Q3",
+              "end": "2012-07"
+            },
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2014Q2",
+              "column": 19,
+              "fiscal": "FY2014FQ2",
+              "calendar": "2013Q3",
+              "end": "2013-07"
+            },
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2015Q2",
+              "column": 23,
+              "fiscal": "FY2015FQ2",
+              "calendar": "2014Q3",
+              "end": "2014-07"
+            },
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2016Q2",
+              "column": 27,
+              "fiscal": "FY2016FQ2",
+              "calendar": "2015Q3",
+              "end": "2015-07"
+            },
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2017Q2",
+              "column": 31,
+              "fiscal": "FY2017FQ2",
+              "calendar": "2016Q3",
+              "end": "2016-07"
+            },
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2018Q2",
+              "column": 35,
+              "fiscal": "FY2018FQ2",
+              "calendar": "2017Q3",
+              "end": "2017-07"
+            },
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2020Q2",
+              "column": 43,
+              "fiscal": "FY2020FQ2",
+              "calendar": "2019Q3",
+              "end": "2019-07"
+            },
+            {
+              "sheet": "Data_Financials(Q)",
+              "label": "FY2020Q4",
+              "column": 45,
+              "fiscal": "FY2020FQ4",
+              "calendar": "2020Q1",
+              "end": "2020-01"
+            }
+          ]
+        }
+      },
+      "cells_checked": 143170,
+      "ratio_cells": 19824,
+      "header_cells": 4658,
+      "inconclusive_partial_date_columns": 12
+    }
+  },
+  "source_regressions": {
+    "revenue_new_cases": 25,
+    "revenue_previous_cases": 7,
+    "fiscal_cf_cells": 15,
+    "failures": 0,
+    "scope": "Against existing independent original SEC source evidence; not all cells certified against XML."
+  }
+}
