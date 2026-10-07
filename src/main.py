@@ -3313,6 +3313,7 @@ class SECFetcherApp:
         self._scan_running = False
         if self._scan_btn:
             self._scan_btn.config(state='normal', text=t('gui.btn.scan'))
+        self._sync_run_buttons()
         if self._scan_hint_label:
             self._scan_hint_label.config(text='')
 
