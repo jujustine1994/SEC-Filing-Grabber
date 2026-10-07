@@ -176,7 +176,7 @@ STRINGS: dict[str, str] = {
     "meta.Oldest Period End": '最舊一期的期末日',
     "meta.Key Rows Complete": '9 個關鍵科目中有幾個「最近 4 期至少一期有值」',
     "meta.Key Rows Missing": '最近 4 期全空的關鍵科目',
-    "meta.Fetch Gaps": '抓取缺漏（這次有幾期沒抓到，多半是 SEC 偶發失敗，單獨重抓通常補得回來）',
+    "meta.Fetch Gaps": '資料缺口（依原因區分連線、解析缺當期欄、無法可靠拆季與營收衝突；不一定是整期缺失）',
     "meta.Data Source": '資料來源（即時抓取＝已連上 SEC；離線資料＝連不上，可能漏最新一季）',
 
     # ── Data_NonGAAP 列名（Excel B 欄）。key 是 A 欄的英文機器鍵 ────────
@@ -575,7 +575,7 @@ STRINGS: dict[str, str] = {
     "err.output_locked_other": '輸出檔正被其他程式鎖定（可能是 Excel）：{name}\n請先關閉該檔案再重試。',
     "err.output_unwritable": '輸出檔無法寫入：{name}（{exc}）',
     "err.backup_failed": '[excel_writer] 備份失敗（{exc}），仍會寫入 {name}',
-    "fetch.gaps_data": '⚠ 有 {n} 期沒抓到（{periods}）。SEC 連得上，是這幾期的申報資料本身讀不出來，重抓結果會一樣。',
+    "fetch.gaps_data": '⚠ {n} 筆申報資料讀取缺口（{periods}），需核對來源與解析，不能保證重抓可補齊。',
     "fetch.gaps_ellipsis": ' 等',
     "fetch.gaps_network": '⚠ 有 {n} 期沒抓到（{periods}）。抓取期間連不上 SEC，多半是網路問題——網路穩定後重抓一次通常就補得回來。',
     # Excel TEXT() 的月份格式碼。"m" 出數字（後面自己接「月」），
@@ -638,3 +638,9 @@ STRINGS: dict[str, str] = {
 STRINGS.update({"gui.db.connect":"\u9023\u63a5\u8cc7\u6599\u5eab","gui.db.create":"\u65b0\u5efa\u8cc7\u6599\u5eab","gui.db.migrate":"\u642c\u9077\u820a\u8cc7\u6599\u5eab","gui.db.snapshot":"\u5efa\u7acb\u5feb\u7167","gui.db.disconnected":"\u8cc7\u6599\u5eab\u672a\u9023\u63a5\u3002\u8acb\u5230\u9032\u968e\u8a2d\u5b9a\u9023\u63a5\u3001\u65b0\u5efa\u6216\u642c\u9077\u8cc7\u6599\u5eab\u3002","gui.db.completed":"\u8cc7\u6599\u5eab\u64cd\u4f5c\u5b8c\u6210\uff1a","gui.frame.filing_cache":"SEC \u8ca1\u5831\u8cc7\u6599\u5eab"})
 
 STRINGS["fetch.persistence_failed"] = "\u6709 {n} \u4efd\u8ca1\u5831\u672a\u80fd\u4fdd\u5b58\u5230\u8cc7\u6599\u5eab\uff1b\u672c\u6b21\u5831\u8868\u53ef\u80fd\u5df2\u7522\u751f\uff0c\u8acb\u4fee\u5fa9\u4fdd\u5b58\u554f\u984c\u5f8c\u91cd\u65b0\u66f4\u65b0\u3002"
+
+STRINGS.update({
+    "fetch.gaps_current": "⚠ {n} 筆解析缺當期欄（{periods}），其他期間可能仍有資料；需核對原申報。",
+    "fetch.gaps_standalone": "⚠ {n} 筆無法可靠拆出單季（{periods}），累計資料仍保留，未把累計當單季。",
+    "fetch.gaps_revenue": "⚠ {n} 筆營收總計衝突（{periods}），營收留空，原始候選仍保留。"
+})

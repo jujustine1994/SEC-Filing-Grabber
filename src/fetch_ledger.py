@@ -166,9 +166,18 @@ class FetchLedger:
         persistence = t("fetch.persistence_failed", n=len(self.persistence_errors)) if self.persistence_errors else ""
         if not self.gaps:
             return persistence
-        names = [g.where for g in self.gaps]
-        shown = t("xls.meta.sep").join(names[:_MAX_LISTED])
-        if len(names) > _MAX_LISTED:
-            shown += t("fetch.gaps_ellipsis")
-        key = "fetch.gaps_network" if self.network_blamed else "fetch.gaps_data"
-        return (persistence + " " if persistence else "") + t(key, n=len(names), periods=shown)
+        groups = {}
+        specific = {'MissingCurrentPeriod':'fetch.gaps_current',
+                    'MissingStandalonePeriod':'fetch.gaps_standalone',
+                    'AmbiguousRevenueTotal':'fetch.gaps_revenue'}
+        for gap in self.gaps:
+            key = ('fetch.gaps_network' if gap.kind == 'network' else
+                   specific.get(gap.exc_name, 'fetch.gaps_data'))
+            groups.setdefault(key, []).append(gap.where)
+        messages = [persistence] if persistence else []
+        for key, names in groups.items():
+            shown = t('xls.meta.sep').join(names[:_MAX_LISTED])
+            if len(names) > _MAX_LISTED:
+                shown += t('fetch.gaps_ellipsis')
+            messages.append(t(key, n=len(names), periods=shown))
+        return ' '.join(messages)

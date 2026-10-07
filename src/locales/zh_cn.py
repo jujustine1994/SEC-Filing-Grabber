@@ -173,7 +173,7 @@ STRINGS: dict[str, str] = {
     'meta.Oldest Period End': '最旧一期的期末日',
     'meta.Key Rows Complete': '9 个关键科目中有几个「最近 4 期至少一期有值」',
     'meta.Key Rows Missing': '最近 4 期全空的关键科目',
-    "meta.Fetch Gaps": '抓取缺漏（这次有几期没抓到，多半是 SEC 偶发失败，单独重抓通常补得回来）',
+    "meta.Fetch Gaps": '数据缺口（区分连接、解析缺当期列、无法可靠拆季与营收冲突；不一定是整期缺失）',
     "meta.Data Source": '数据来源（实时抓取＝已连上 SEC；离线数据＝连不上，可能漏最新一季）',
     'nongaap.Non-GAAP Core': 'Non-GAAP 核心指标',
     'nongaap.GAAP to Non-GAAP Reconciliation': 'GAAP 到 Non-GAAP 调节表',
@@ -442,7 +442,7 @@ STRINGS: dict[str, str] = {
     'err.output_locked_other': '输出档正被其他程序锁定（可能是 Excel）：{name}\n请先关闭该文件再重试。',
     'err.output_unwritable': '输出档无法写入：{name}（{exc}）',
     'err.backup_failed': '[excel_writer] 备份失败（{exc}），仍会写入 {name}',
-    'fetch.gaps_data': '⚠ 有 {n} 期没抓到（{periods}）。SEC 连得上，是这几期的申报数据本身读不出来，重抓结果会一样。',
+    'fetch.gaps_data': '⚠ {n} 笔申报数据读取缺口（{periods}），需核对来源与解析，不能保证重抓可补齐。',
     'fetch.gaps_ellipsis': ' 等',
     'fetch.gaps_network': '⚠ 有 {n} 期没抓到（{periods}）。抓取期间连不上 SEC，多半是网络问题——网络稳定后重抓一次通常就补得回来。',
     # Excel TEXT() 的月份格式碼。"m" 出數字（後面自己接「月」），
@@ -597,3 +597,9 @@ STRINGS: dict[str, str] = {
 STRINGS.update({"gui.db.connect":"\u8fde\u63a5\u6570\u636e\u5e93","gui.db.create":"\u65b0\u5efa\u6570\u636e\u5e93","gui.db.migrate":"\u8fc1\u79fb\u65e7\u6570\u636e\u5e93","gui.db.snapshot":"\u521b\u5efa\u5feb\u7167","gui.db.disconnected":"\u6570\u636e\u5e93\u672a\u8fde\u63a5\u3002\u8bf7\u5230\u9ad8\u7ea7\u8bbe\u7f6e\u8fde\u63a5\u3001\u65b0\u5efa\u6216\u8fc1\u79fb\u6570\u636e\u5e93\u3002","gui.db.completed":"\u6570\u636e\u5e93\u64cd\u4f5c\u5b8c\u6210\uff1a","gui.frame.filing_cache":"SEC \u8d22\u62a5\u6570\u636e\u5e93"})
 
 STRINGS["fetch.persistence_failed"] = "\u6709 {n} \u4efd\u8d22\u62a5\u672a\u80fd\u4fdd\u5b58\u5230\u6570\u636e\u5e93\uff1b\u672c\u6b21\u62a5\u8868\u53ef\u80fd\u5df2\u751f\u6210\uff0c\u8bf7\u4fee\u590d\u4fdd\u5b58\u95ee\u9898\u540e\u91cd\u65b0\u66f4\u65b0\u3002"
+
+STRINGS.update({
+    "fetch.gaps_current": "⚠ {n} 笔解析缺当期列（{periods}），其他期间可能仍有数据；需核对原申报。",
+    "fetch.gaps_standalone": "⚠ {n} 笔无法可靠拆出单季（{periods}），累计数据仍保留，未把累计当单季。",
+    "fetch.gaps_revenue": "⚠ {n} 笔营收总计冲突（{periods}），营收留空，原始候选仍保留。"
+})

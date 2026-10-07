@@ -190,7 +190,7 @@ STRINGS: dict[str, str] = {
     "meta.Oldest Period End": '最古の期の末日',
     "meta.Key Rows Complete": '主要9科目のうち「直近4期に1期以上値がある」ものの数',
     "meta.Key Rows Missing": '直近4期がすべて空の主要科目',
-    'meta.Fetch Gaps': '取得漏れ（今回取得できなかった期。多くは SEC の一時的な失敗で、個別に再取得すれば回復します）',
+    'meta.Fetch Gaps': 'データ不足（接続、当期列の不足、単独四半期への変換不可、収益合計の競合を区別。期全体の不足とは限りません）',
     'meta.Data Source': 'データ取得元（ライブ＝SEC に接続済み／オフライン＝接続不可、最新期が欠けている可能性）',
 
     # ── Data_NonGAAP ────────────────────────────────────────────────────
@@ -292,7 +292,7 @@ STRINGS: dict[str, str] = {
     "err.output_locked_other": '出力ファイルが他のプログラムにロックされています（Excel の可能性）：{name}\n閉じてから再実行してください。',
     "err.output_unwritable": '出力ファイルに書き込めません：{name}（{exc}）',
     "err.backup_failed": '[excel_writer] バックアップ失敗（{exc}）。{name} への書き込みは続行します',
-    "fetch.gaps_data": '⚠ {n} 期分を取得できませんでした（{periods}）。SEC には接続できているため、該当期の提出書類自体が読み取れません。再実行しても結果は同じです。',
+    "fetch.gaps_data": '⚠ 提出データの読み取りに {n} 件の不足（{periods}）。ソースと解析を確認してください。再取得で直るとは限りません。',
     "fetch.gaps_ellipsis": ' ほか',
     "fetch.gaps_network": '⚠ {n} 期分を取得できませんでした（{periods}）。実行中に SEC へ接続できなかったため、ネットワークの問題と思われます——回線が安定してから再実行すれば通常は補えます。',
 
@@ -648,3 +648,9 @@ STRINGS: dict[str, str] = {
 STRINGS.update({"gui.db.connect":"\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u63a5\u7d9a","gui.db.create":"\u65b0\u898f\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9","gui.db.migrate":"\u65e7\u30c7\u30fc\u30bf\u79fb\u884c","gui.db.snapshot":"\u30b9\u30ca\u30c3\u30d7\u30b7\u30e7\u30c3\u30c8","gui.db.disconnected":"\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u672a\u63a5\u7d9a\u3002\u8a73\u7d30\u8a2d\u5b9a\u3067\u63a5\u7d9a\u30fb\u4f5c\u6210\u30fb\u79fb\u884c\u3057\u3066\u304f\u3060\u3055\u3044\u3002","gui.db.completed":"\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u64cd\u4f5c\u5b8c\u4e86\uff1a","gui.frame.filing_cache":"SEC \u8ca1\u52d9\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9"})
 
 STRINGS["fetch.persistence_failed"] = "{n} \u4ef6\u306e\u8ca1\u5831\u3092\u30c7\u30fc\u30bf\u30d9\u30fc\u30b9\u306b\u4fdd\u5b58\u3067\u304d\u307e\u305b\u3093\u3067\u3057\u305f\u3002\u4fdd\u5b58\u306e\u554f\u984c\u3092\u4fee\u5fa9\u3057\u3066\u518d\u66f4\u65b0\u3057\u3066\u304f\u3060\u3055\u3044\u3002"
+
+STRINGS.update({
+    "fetch.gaps_current": "⚠ 当期列の不足 {n} 件（{periods}）。他の期のデータは残る場合があります。原提出を確認してください。",
+    "fetch.gaps_standalone": "⚠ 単独四半期への変換不可 {n} 件（{periods}）。累計値を保持し、単独四半期とは表示しません。",
+    "fetch.gaps_revenue": "⚠ 収益合計の競合 {n} 件（{periods}）。収益は空欄、元候補は保持しています。"
+})

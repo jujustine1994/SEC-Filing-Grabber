@@ -192,7 +192,7 @@ STRINGS: dict[str, str] = {
     "meta.Oldest Period End": 'End date of the oldest period on file',
     "meta.Key Rows Complete": 'How many of the 9 key lines have a value in at least one of the last 4 periods',
     "meta.Key Rows Missing": 'Key lines that are empty across all of the last 4 periods',
-    'meta.Fetch Gaps': 'Fetch gaps (periods missed this run; usually transient SEC failures, a single re-fetch normally recovers them)',
+    'meta.Fetch Gaps': 'Data gaps by cause: connection, missing current-period columns, unverified standalone quarters, or conflicting revenue totals; not necessarily whole missing periods',
     'meta.Data Source': 'Data source (Live = SEC reachable; Offline cache = unreachable, the latest period may be missing)',
 
     # ── Data_NonGAAP ────────────────────────────────────────────────────
@@ -294,7 +294,7 @@ STRINGS: dict[str, str] = {
     "err.output_locked_other": 'The output file is locked by another program (possibly Excel): {name}\nPlease close it and try again.',
     "err.output_unwritable": 'Cannot write the output file: {name} ({exc})',
     "err.backup_failed": '[excel_writer] Backup failed ({exc}); writing {name} anyway',
-    "fetch.gaps_data": '! {n} period(s) could not be fetched ({periods}). SEC was reachable, so the filings themselves could not be read - re-running will give the same result.',
+    "fetch.gaps_data": '! {n} filing data read gaps ({periods}). Check source and parsing; re-fetching is not guaranteed to repair them.',
     "fetch.gaps_ellipsis": ' and more',
     "fetch.gaps_network": '! {n} period(s) could not be fetched ({periods}). SEC was unreachable during the run, so this is most likely a network problem - re-running once you have a stable connection usually fills them in.',
 
@@ -632,3 +632,9 @@ STRINGS: dict[str, str] = {
 STRINGS.update({"gui.db.connect":"Connect database","gui.db.create":"Create database","gui.db.migrate":"Migrate database","gui.db.snapshot":"Create snapshot","gui.db.disconnected":"Database disconnected. Connect, create, or migrate it in advanced settings.","gui.db.completed":"Database operation completed: ","gui.frame.filing_cache":"SEC financial database"})
 
 STRINGS["fetch.persistence_failed"] = "Could not persist {n} filings to the database. Reports may exist; fix the storage issue and update again."
+
+STRINGS.update({
+    "fetch.gaps_current": "! {n} missing current-period columns ({periods}); other periods may remain. Check the original filing.",
+    "fetch.gaps_standalone": "! {n} unverified standalone quarter conversions ({periods}); cumulative data retained, not presented as a standalone quarter.",
+    "fetch.gaps_revenue": "! {n} conflicting revenue totals ({periods}); revenue blank, source candidates retained."
+})
