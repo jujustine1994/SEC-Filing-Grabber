@@ -80,6 +80,23 @@ def test_formula_shape(builder):
     assert "D5" in f, "必須以第 5 列的真實期末日為錨"
 
 
+@pytest.mark.parametrize('month', [0,13,-1,1.5,'abc',None])
+def test_invalid_editable_month_cannot_create_a_fiscal_identity(month):
+    assert fi.fiscal_quarter_of('2026-06-30',month)==''
+    assert fi.fiscal_year_of('2026-06-30',month)==''
+
+
+def test_excel_month_input_rejects_values_outside_whole_months():
+    wb, _ = _workbook_with_headers(['FY2026Q2'],['2026-06-30'])
+    fi.apply_fiscal_year_input(wb,12)
+    rules=[dv for dv in wb['Index'].data_validations.dataValidation if 'B4' in dv]
+    assert len(rules)==1
+    rule=rules[0]
+    assert rule.type=='whole' and rule.operator=='between'
+    assert (rule.formula1,rule.formula2)==('1','12')
+    assert rule.showErrorMessage and rule.errorStyle=='stop'
+
+
 @pytest.mark.parametrize("builder", [fi.period_label_formula, fi.fiscal_quarter_formula])
 def test_formulas_reference_the_user_editable_cell(builder):
     assert fi.FY_START_DEFINED_NAME in builder("D")
