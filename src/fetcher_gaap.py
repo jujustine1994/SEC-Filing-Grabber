@@ -1747,9 +1747,15 @@ _NONGAAP_KEYWORDS: frozenset[str] = frozenset({
 })
 
 
-def _is_nongaap_label(label: str) -> bool:
+def _is_nongaap_label(label: str, concept: str = '') -> bool:
     """Return True if label looks like a Non-GAAP / adjusted metric."""
-    low = label.lower()
+    low = unicodedata.normalize('NFKC', label).casefold()
+    known_revenue = {name for tier in _REVENUE_CONCEPT_TIERS for name in tier}
+    if re.fullmatch(r'us-gaap[_:](?:' + '|'.join(sorted(known_revenue)) + ')', concept):
+        # Reported GAAP revenue net of assessed/excise/sales taxes is not an
+        # adjusted performance measure. Remove only the complete tax clause;
+        # other adjustments (SBC, discontinued operations, etc.) still classify.
+        low = re.sub(r'\b(?:excluding|excl\.)\s+(?:assessed|(?:consumer\s+)?excise|sales[ -]based|sales)\s+tax(?:es)?\b', '', low)
     return any(kw in low for kw in _NONGAAP_KEYWORDS)
 
 
@@ -1778,7 +1784,7 @@ def _collect_overflow(
             continue
         raw = str(row.get("label", "") or "")
         display = unicodedata.normalize("NFKC", raw)
-        out = ng_out if _is_nongaap_label(display) else gaap_out
+        out = ng_out if _is_nongaap_label(display, key) else gaap_out
         if key not in out:
             out[key] = {"label": display, "periods": {}}
         val = _to_python_val(row.get(data_col))
