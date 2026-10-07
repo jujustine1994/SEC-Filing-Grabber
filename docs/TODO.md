@@ -20,6 +20,8 @@
 
 ## ★ 最優先（2026-09-18 CTH 指定）
 
+> **2026-10-07 優先序補充（CTH）**：優先處理跨公司共通規則、GUI 與實際使用流程；KR、KHC 等個別例外保留待辦，不因單一公司案例排到最前。只有證明暴露共通規則漏洞時才提高優先級。已完成的 GUI／分類修復與驗收移至 CHANGELOG。
+
 P1. **中斷續跑的保證要守住，而且要有人定期驗證**
    本地資料庫抓滿一次要 11 小時，所以「半夜斷掉不能白費」是這套東西能不能
    用的前提，不是加分項。2026-09-18 實測確認三種中斷點都能自動接續：
@@ -223,10 +225,9 @@ G8. **用「比較欄」當 fallback 補洞** ← **CTH 已決策，放最後做
 G13. **期間欄挑錯／財季算錯——BS 那半已修，IS 那半還開著**
 
 
-   **2026-10-06 進度**：已校正有可信年報錨點的財季及 Excel 預設標籤；G14 的累計冒充單季與不可靠拆季基準已加防護，紀錄移至 CHANGELOG。**本項仍未完成**：G13(a) 原 accession facts 恢復、缺年度錨點／缺 DEI 的最新週制季度、LHX 等 transition duration 身份表示，以及 GUI 月份預覽與完整 pipeline 一致性。KR 第一季快取缺當期欄位，不能只改標籤補值；詳見 [本輪驗證紀錄](superpowers/fiscal-verification-results.md)。
+   **2026-10-06 進度**：已校正有可信年報錨點的財季及 Excel 預設標籤；G14 的累計冒充單季與不可靠拆季基準已加防護，紀錄移至 CHANGELOG。**本項仍未完成**：G13(a) 原 accession facts 恢復、缺年度錨點／缺 DEI 的最新週制季度，以及 LHX 等 transition duration 身份表示。KR 第一季快取缺當期欄位，不能只改標籤補值；詳見 [本輪驗證紀錄](superpowers/fiscal-verification-results.md)。個別例外非目前最高優先。
    - KHC 2015 predecessor/successor 併購年度需獨立 context 核對，不能只以相同期末日當作可比全年，G13 未全解。
    - Excel 月份覆寫新增限制：MSFT `2011-12`、AFL `2010-06` 舊期間只保存年月，無完整期末日；兩欄覆寫表頭列 INCONCLUSIVE。需獨立定義不完整日期處理／恢復來源，不得直接補寫保存日期。
-   - 原始 GAAP 構成列的 overflow 分頁分類：既有 `_is_nongaap_label` 以 `excluding` 等字串辨識 Non-GAAP，會把 UNP「Revenue ... excluding assessed tax」、MPC「... excluding consumer excise taxes」放到 NG 頁。營收改选總計後顯露此既有分類漏洞，值仍保留；應另以原概念／稅額排除語意修正，不把 NG 分頁位置當成來源口徑證據。
    （2026-09-04 查明成因，2026-09-20 修掉 BS 借標籤那條，見
    `docs/CHANGELOG.md` 2026-09-20）
 

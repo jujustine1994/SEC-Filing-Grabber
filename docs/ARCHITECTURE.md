@@ -44,6 +44,16 @@ Excel writer 在輸出時分配不超過 31 字且不分大小寫唯一的分頁
 
 合併三表時固定列身份由來源表前 N 個模板 slots 決定；名稱符合模板仍需位於模板區。NG 表沒有固定模板 slots。構成列即使顯示名稱也叫 Revenue／Cash，不可插入固定區推移 BS／CF；一律保留在底部 overflow。`verify_fixed_financial_rows.py` 獨立檢查輸出的固定列順序。
 
+## GUI 預覽與期間輸出（2026-10-07）
+
+正式 pipeline 與快速掃描共用 `_period_records`、`build_period_map` 的期間身份規則：讀同 accession 的 cover focus、已核對更正、官方 report date、年報鏈、衝突及身份碰撞。6-K 的 SEC report date 可能是發布日，期間身份使用同份文件的期末日。快速掃描不為身份下載歷史申報，只讀相同深度的相容保存資料（預設 80 季報／20 年報，GUI 季報深度沿用設定）。輸入不完整或無可信身份時，月份推算明示「估計」，不視為來源認證。掃描顯示最新申報；執行時季／年選擇與年份篩選可另縮小輸出。
+
+GUI queue 的掃描結果帶 ticker，只有仍與輸入代號相同才更新分頁面板。切換代號立即清空舊排除項；過期成功／失敗結果不覆蓋新公司的畫面或跳出無關錯誤。
+
+Excel `Index!B4` 僅接受 1–12 的整數，貼上無效內容即使繞過 validation，財季公式也留空並顯示輸入提示；日曆季獨立於該設定。預設保留 pipeline 的期間標籤，覆寫只按日期更新主季／年表的顯示，不重算拆季、財務值、比率或 metadata。不完整日期保留原標籤，不能補寫來源日數。`FetchLedger.summary` 依原因分組，GUI 與 Excel 共用提示，混合缺口不全部歸因網路；缺口計數是紀錄，不保證都是不同的完整期間。
+
+GAAP overflow 分類對已識別原始 GAAP revenue concept 的完整 assessed／excise／sales tax 排除語句採有限例外；原始概念與數值不改。額外 adjusted、SBC、終止營業等排除仍可列 NG，未知自訂概念不憑「稅」字取得 GAAP 身份。此分類仍是呈現規則，不是所有自訂科目的會計口徑認證。
+
 ## File Map
 
 > 2026-08-12 目錄結構整理：17 個 `.py` 全部搬進 `src/`（下表路徑已更新），
