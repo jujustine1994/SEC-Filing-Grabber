@@ -43,7 +43,6 @@ def test_incomplete_preview_inputs_are_explicitly_estimated(monkeypatch):
 def app(ticker):
     obj=main.SECFetcherApp.__new__(main.SECFetcherApp)
     obj.ticker_var=SimpleNamespace(get=lambda:ticker)
-    obj.TICKER_PH='Ticker'
     obj._sheet_panel_frame=MagicMock()
     obj._SHEET_PANEL_TITLE_BASE='Sheets'
     obj._sheet_check_vars={'OLD':False}

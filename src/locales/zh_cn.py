@@ -420,6 +420,7 @@ STRINGS: dict[str, str] = {
     'gui.msg.period_range_reversed': '起始期间（{start}）不可晚于结束期间（{end}）',
     'gui.status.batch_done': '完成：共处理 {total} 家公司',
     'gui.status.latest_data': '最新资料：{label}（期末 {end}）｜送件日 {filed}',
+    'gui.status.latest_estimated': '最新资料：估计 {label}（期末 {end}）｜送件日 {filed}；财季待完整抓取确认',
     'gui.status.processing': '处理中：{ticker} ({i}/{total})',
     'gui.wl.added': '✓ 已加入 {ticker} 到「{group}」',
     'gui.wl.already_added': '{ticker} 已在 Watchlist 中',

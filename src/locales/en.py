@@ -448,6 +448,7 @@ STRINGS: dict[str, str] = {
     'gui.status.idle': 'Waiting to start...',
     'gui.status.network_down': 'Network down, stopped',
     'gui.status.latest_data': 'Latest: {label} (period end {end}) | filed {filed}',
+    'gui.status.latest_estimated': 'Latest: estimated {label} (period end {end}) | filed {filed}; confirm fiscal identity with a full fetch',
     'gui.status.latest_unknown': 'Latest: fiscal quarter could not be determined',
     'gui.status.looking_up': 'Looking up...',
     'gui.status.preparing': 'Preparing...',

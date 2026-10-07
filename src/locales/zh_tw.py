@@ -551,6 +551,7 @@ STRINGS: dict[str, str] = {
     "gui.msg.period_range_reversed": '起始期間（{start}）不可晚於結束期間（{end}）',
     "gui.status.batch_done": '完成：共處理 {total} 間公司',
     "gui.status.latest_data": '最新資料：{label}（期末 {end}）｜送件日 {filed}',
+    "gui.status.latest_estimated": '最新資料：估計 {label}（期末 {end}）｜送件日 {filed}；財季待完整抓取確認',
     "gui.status.processing": '處理中：{ticker} ({i}/{total})',
     "gui.wl.added": '✓ 已加入 {ticker} 到「{group}」',
     "gui.wl.already_added": '{ticker} 已在 Watchlist 中',

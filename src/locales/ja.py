@@ -462,6 +462,7 @@ STRINGS: dict[str, str] = {
     "gui.status.idle": '開始待ち...',
     "gui.status.network_down": 'ネットワーク切断のため停止',
     "gui.status.latest_data": '最新データ：{label}（期末 {end}）｜提出日 {filed}',
+    "gui.status.latest_estimated": '最新データ：推定 {label}（期末 {end}）｜提出日 {filed}；完全取得で会計期を確認',
     "gui.status.latest_unknown": '最新データ：会計四半期を判定できません',
     "gui.status.looking_up": '検索中...',
     "gui.status.preparing": '準備中...',

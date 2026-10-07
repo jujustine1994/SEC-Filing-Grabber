@@ -671,6 +671,7 @@ class SECFetcherApp:
         # 快速掃描只 disable 自己那顆按鈕、沒有旗標，`_sync_run_buttons()`
         # 統一放行時會在掃描途中把它誤放開（連帶蓋掉「掃描中」字樣）。
         self._scan_running = False
+        self._sheet_panel_ticker = None
         # Runtime state for popups
         self._wl_found_name = ""
         self._wl_list_container = None
@@ -937,6 +938,8 @@ class SECFetcherApp:
         self.tab1_preview_label = ttk.Label(out_frame, text="", foreground="#555555", font=("", 10))
         self.tab1_preview_label.grid(row=5, column=0, sticky="w", pady=(6, 0))
         self._update_tab1_preview()
+
+        self.ticker_var.trace_add('write', lambda *_: self._invalidate_sheet_preview())
 
         # 設為預設：這裡改的資料夾/檔名格式只影響這次執行，不再像過去那樣
         # 一改就悄悄寫回全域 config（Tab2 批次完全看不到那個變化卻共用它）。
@@ -3149,6 +3152,7 @@ class SECFetcherApp:
         if start_year is not None and end_year is not None and start_year > end_year:
             messagebox.showerror(t("gui.dlg.error_title"), t("gui.msg.year_range_reversed", start=start_year, end=end_year))
             return
+        self._invalidate_sheet_preview()
         excluded = {
             name for name, var in self._sheet_check_vars.items()
             if not var.get() and name not in self._FIXED_SHEETS
@@ -3237,6 +3241,8 @@ class SECFetcherApp:
         ttk.Button(win, text=t("gui.btn.close"), command=win.destroy).pack(pady=(12, 16))
 
     def _run_preview_scan(self):
+        if self._scan_running:
+            return
         if not self._ensure_database():
             return
         """Start background preview scan for the current ticker."""
@@ -3280,10 +3286,10 @@ class SECFetcherApp:
         t_start = time.time()
         try:
             from fetcher_gaap import preview_sheets
-            result = preview_sheets(ticker, identity)
+            result = preview_sheets(ticker, identity, max_filings=self.cfg.get('max_filings', 80))
             elapsed = time.time() - t_start
             _write_log(f"{ticker} scan OK, elapsed {format_elapsed(elapsed)}", "OK")
-            self.msg_queue.put(("preview_scan_done", result))
+            self.msg_queue.put(("preview_scan_done", (ticker, result)))
         except Exception as e:
             elapsed = time.time() - t_start
             # 不把 str(e) 原文丟給使用者——edgartools 的 CompanyNotFoundError 訊息
@@ -3293,6 +3299,35 @@ class SECFetcherApp:
             _write_log(f"{ticker} scan FAILED, elapsed {format_elapsed(elapsed)} "
                        f"-> {type(e).__name__}: {e}", "ERROR")
             self.msg_queue.put(("preview_scan_error", (ticker, type(e).__name__)))
+
+    def _invalidate_sheet_preview(self):
+        current = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
+        if self._sheet_panel_ticker and current != self._sheet_panel_ticker:
+            self._sheet_check_vars = {}
+            self._sheet_panel_ticker = None
+            if self._sheet_panel_frame:
+                self._sheet_panel_frame.grid_remove()
+                self._sheet_panel_frame.configure(text=self._SHEET_PANEL_TITLE_BASE)
+
+    def _finish_preview_scan(self):
+        self._scan_running = False
+        if self._scan_btn:
+            self._scan_btn.config(state='normal', text=t('gui.btn.scan'))
+        if self._scan_hint_label:
+            self._scan_hint_label.config(text='')
+
+    def _show_preview_result(self, ticker, result):
+        self._finish_preview_scan()
+        current = self._get_ph_value(self.ticker_var, self.TICKER_PH).upper()
+        if current != ticker:
+            return
+        self._build_sheet_panel(result['sheets'])
+        self._sheet_panel_ticker = ticker
+        if self._sheet_panel_frame:
+            label, end, fdate = result['latest_label'], result['latest_period_end'], result['filing_date']
+            key = 'gui.status.latest_estimated' if result.get('label_estimated', True) else 'gui.status.latest_data'
+            info = t(key, label=label, end=end, filed=fdate) if label else t('gui.status.latest_unknown')
+            self._sheet_panel_frame.configure(text=f'{self._SHEET_PANEL_TITLE_BASE} ｜ {info}')
 
     _FIXED_SHEETS = frozenset({"Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"})
 
@@ -3740,25 +3775,13 @@ class SECFetcherApp:
                             self.settings_test_label.config(text=t("gui.msg.failed", reason=str(err)[:60]), foreground="red")
 
                 elif msg_type == "preview_scan_done":
-                    self._build_sheet_panel(data["sheets"])
-                    if self._sheet_panel_frame:
-                        label, end, fdate = data["latest_label"], data["latest_period_end"], data["filing_date"]
-                        info = (t("gui.status.latest_data", label=label, end=end, filed=fdate)
-                                if label else t("gui.status.latest_unknown"))
-                        self._sheet_panel_frame.configure(text=f"{self._SHEET_PANEL_TITLE_BASE} ｜ {info}")
-                    self._scan_running = False
-                    if self._scan_btn:
-                        self._scan_btn.config(state="normal", text=t("gui.btn.scan"))
-                    if self._scan_hint_label:
-                        self._scan_hint_label.config(text="")
+                    self._show_preview_result(*data)
 
                 elif msg_type == "preview_scan_error":
-                    self._scan_running = False
-                    if self._scan_btn:
-                        self._scan_btn.config(state="normal", text=t("gui.btn.scan"))
-                    if self._scan_hint_label:
-                        self._scan_hint_label.config(text="")
+                    self._finish_preview_scan()
                     ticker, exc_name = data
+                    if ticker != self._get_ph_value(self.ticker_var, self.TICKER_PH).upper():
+                        continue
                     if exc_name in ("CompanyNotFoundError", "ValueError"):
                         msg = t("gui.msg.ticker_not_found", ticker=ticker)
                     else:

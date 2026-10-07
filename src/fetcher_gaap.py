@@ -497,6 +497,31 @@ def _reported_label(fin, column, *, annual=False):
     return reported_label(cover_focus(fin), column, annual=annual)
 
 
+def _period_records(filings, load_obj=None):
+    """Shared production/preview identity inputs; never invent missing focus.
+
+    A preview may inject a cache-only loader. Completeness means the same
+    bounded filings were readable, not that every period has certified focus.
+    """
+    load_obj = load_obj or _filing_obj
+    records, complete = [], True
+    for filing in filings:
+        try:
+            filed = getattr(filing, 'filing_date', None)
+            if isinstance(filed, _date) and filed < _XBRL_CUTOFF:
+                continue
+            focus = corrected_focus(_cache_key(filing), cover_focus(_financials_of(load_obj(filing))))
+            end = str(getattr(filing, 'report_date', '') or '')[:10]
+            if str(getattr(filing, 'form', '')) == '6-K':
+                end = focus[0] if focus else ''
+            if not end and focus:
+                end = focus[0]
+            records.append((end, str(getattr(filing, 'form', '')), focus))
+        except Exception:
+            complete = False
+    return records, complete
+
+
 @contextmanager
 def _reported_period_scope():
     token=_reported_periods_var.set({})
@@ -3596,23 +3621,7 @@ def _fetch_gaap_impl(ticker: str, identity: str,
     # Apply year range filter
     filings_q = _filter_filings_by_year(filings_q, start_year, end_year)
     filings_k = _filter_filings_by_year(filings_k, start_year, end_year)
-    records=[]
-    for filing in [*filings_k[:max_annual_filings], *filings_q[:max_filings]]:
-        try:
-            filed=getattr(filing,'filing_date',None)
-            if isinstance(filed,_date) and filed<_XBRL_CUTOFF:
-                continue
-            focus=cover_focus(_financials_of(_filing_obj(filing)))
-            focus=corrected_focus(_cache_key(filing), focus)
-            end=str(getattr(filing, 'report_date', '') or '')[:10]
-            if str(getattr(filing,'form',''))=='6-K':
-                end=focus[0] if focus else ''  # SEC report date may be release date.
-            if not end and focus: end=focus[0]
-            records.append((end,str(getattr(filing,'form','')),focus))
-        except Exception:
-            # Existing builders own gap reporting; missing identity does not
-            # turn a parse failure into an invented fiscal period.
-            continue
+    records, _ = _period_records([*filings_k[:max_annual_filings], *filings_q[:max_filings]])
     # Offline listing stubs lack official report dates. Mixing a partial cover
     # map with legacy labels can deduplicate away older years (EXC/HD). Keep
     # one naming policy for this whole fetch; the existing offline warning
@@ -3745,7 +3754,8 @@ def _fetch_gaap_impl(ticker: str, identity: str,
     return tables
 
 
-def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
+def preview_sheets(ticker: str, identity: str, *, max_filings: int = 80,
+                   max_annual_filings: int = 20) -> dict[str, Any]:
     """Quick scan: fetch only the latest 10-Q to detect segment sheet names
     and report the newest quarter currently available on EDGAR.
 
@@ -3765,7 +3775,7 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
     from fiscal_input import fiscal_quarter_of  # 延後 import：fiscal_input -> excel_formatter -> fetcher_gaap 會循環匯入
 
     fixed = ["Data_Financials(Q)", "Data_Financials(Y)", "Data_Meta"]
-    empty = {"sheets": fixed, "latest_label": "", "latest_period_end": "", "filing_date": ""}
+    empty = {"sheets": fixed, "latest_label": "", "latest_period_end": "", "filing_date": "", "label_estimated": True}
 
     set_identity(identity)
     company = Company(ticker)
@@ -3799,7 +3809,8 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
     # 不用 `_detect_fy_end_month()` 的理由沒變——那個要 `filing.obj()` 解全文，
     # 快速掃描用不起。但預覽的成本上限是「不要解全文」，**不是「不要問清單」**，
     # 而清單裡的 `period_of_report` 就已經夠準（J11，2026-09-20）。
-    fy_end_month = _fy_end_month_from_annuals(_list_filings(company, annual_form))
+    annuals = _list_filings(company, annual_form)
+    fy_end_month = _fy_end_month_from_annuals(annuals)
     if fy_end_month is None:
         # 年報一份都沒有（剛上市、只交過一份 10-Q）才退回屬性——比直接用 12 月好。
         raw_fy = str(getattr(company, "fiscal_year_end", "") or "").strip()
@@ -3808,6 +3819,29 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
                         else 12)
     start_month = fy_end_month % 12 + 1
     latest_label = fiscal_quarter_of(period_end, start_month)
+
+    def cache_only(filing):
+        entry = filing_cache.load_filing(ticker, _cache_key(filing), company.cik,
+                                       require_keys=(*filing_cache.CORE_STATEMENT_KEYS, 'cover'))
+        if entry is None:
+            raise LookupError('Preview identity input not saved')
+        return filing_cache.cached_filing(entry)
+
+    records, complete = _period_records([*annuals[:max_annual_filings], *filings_q[:max_filings]], cache_only)
+    # FPI SEC report dates can be release dates. Use its document end, as the
+    # formal pipeline does, when the latest saved cover establishes it.
+    if str(getattr(latest, 'form', '')) == '6-K':
+        try:
+            focus = corrected_focus(_cache_key(latest), cover_focus(_financials_of(cache_only(latest))))
+            if focus:
+                period_end = focus[0]
+                latest_label = fiscal_quarter_of(period_end, start_month)
+        except LookupError:
+            pass
+    authority = build_period_map(records) if complete else {}
+    authoritative_label = authority.get((period_end, False))
+    if authoritative_label:
+        latest_label = authoritative_label
 
     try:
         seg_tables = _build_segment_tables([latest], max_filings=1)
@@ -3824,4 +3858,5 @@ def preview_sheets(ticker: str, identity: str) -> dict[str, Any]:
         "latest_label": latest_label,
         "latest_period_end": period_end,
         "filing_date": filing_date,
+        "label_estimated": not bool(authoritative_label),
     }
