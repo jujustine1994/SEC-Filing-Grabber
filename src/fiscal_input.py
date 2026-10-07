@@ -37,6 +37,7 @@ from datetime import date, timedelta
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.workbook.defined_name import DefinedName
+from openpyxl.worksheet.datavalidation import DataValidation
 
 # 輸入格寫在 Index 上，字型／字級必須跟 excel_formatter 建的表格一致，
 # 否則同一頁會混兩種字體。常數只有一份，在 excel_formatter。
@@ -101,11 +102,19 @@ def _fiscal_year(d: date, start_month: int) -> int:
 
 def fiscal_quarter_of(period_end: str | None, start_month: int) -> str:
     """期末日 + 財年起始月 → `FY2026Q2`。算不出來回空字串。"""
+    if not _valid_start_month(start_month):
+        return ''
+    start_month = int(start_month)
     d = _anchor(period_end)
     if d is None:
         return ""
     quarter = (d.month - start_month) % 12 // 3 + 1
     return f"FY{_fiscal_year(d, start_month)}Q{quarter}"
+
+
+def _valid_start_month(month):
+    return (isinstance(month, (int, float)) and not isinstance(month, bool)
+            and 1 <= month <= 12 and float(month).is_integer())
 
 
 # ── 零下載規則：發布日 + EDGAR fiscal_year_end → 財季（B5）──────────────────
@@ -204,6 +213,9 @@ def quarter_label_from_announcement(
 
 def fiscal_year_of(period_end: str | None, start_month: int) -> str:
     """年報用：期末日 + 財年起始月 → `FY2025`。"""
+    if not _valid_start_month(start_month):
+        return ''
+    start_month = int(start_month)
     d = _anchor(period_end)
     return f"FY{_fiscal_year(d, start_month)}" if d else ""
 
@@ -302,9 +314,17 @@ def _quarter_expr(d: str) -> str:
     return f"(INT(MOD(MONTH({d})-{FY_START_DEFINED_NAME},12)/3)+1)"
 
 
-def _guard(col: str, body: str) -> str:
+def _valid_month_expr() -> str:
+    n = FY_START_DEFINED_NAME
+    return f'IFERROR(AND(ISNUMBER({n}),{n}=INT({n}),{n}>=1,{n}<=12),FALSE)'
+
+
+def _guard(col: str, body: str, *, fiscal: bool = True) -> str:
     """沒有期末日就留空，不要讓使用者看到 #VALUE!。"""
-    return f'=IF({col}{ROW_PERIOD_END}="","",{body})'
+    condition = f'{col}{ROW_PERIOD_END}=""'
+    if fiscal:
+        condition = f'OR({condition},NOT({_valid_month_expr()}))'
+    return f'=IF({condition},"",{body})'
 
 
 def period_label_formula(col: str, annual: bool = False) -> str:
@@ -329,7 +349,7 @@ def fiscal_quarter_formula(col: str) -> str:
 def calendar_quarter_formula(col: str) -> str:
     """第 4 列的日曆季 `2026Q2`。只看期末日，不引用財年起始月。"""
     d = _date_expr(col)
-    return _guard(col, f'YEAR({d})&"Q"&(INT((MONTH({d})-1)/3)+1)')
+    return _guard(col, f'YEAR({d})&"Q"&(INT((MONTH({d})-1)/3)+1)', fiscal=False)
 
 
 # ── 套用 ────────────────────────────────────────────────────────────────────
@@ -361,7 +381,7 @@ def _fy_span_formula() -> str:
     """
     n = FY_START_DEFINED_NAME
     fmt = _xl_str(t("xls.fy_input.span_month_format"))
-    return (f'=IF({n}="","",{_xl_str(t("xls.fy_input.span_prefix"))}'
+    return (f'=IF(NOT({_valid_month_expr()}),{_xl_str(t("xls.fy_input.invalid"))},{_xl_str(t("xls.fy_input.span_prefix"))}'
             f'&TEXT(DATE(2000,{n},1),{fmt})&{_xl_str(t("xls.fy_input.span_sep"))}'
             f'&TEXT(DATE(2000,{n}+11,1),{fmt})&{_xl_str(t("xls.fy_input.span_suffix"))})')
 
@@ -401,6 +421,13 @@ def _write_input_block(ws, start_month: int, row: int = 4) -> None:
     cell.font = _font(bold=True, size=INDEX_INPUT_SIZE, color="FFBF8F00")
     cell.alignment = Alignment(horizontal="center")
     cell.number_format = "0"
+    validation = DataValidation(type='whole', operator='between', formula1='1',
+                                formula2='12', allow_blank=False)
+    validation.errorStyle = 'stop'
+    validation.showErrorMessage = True
+    validation.error = t('xls.fy_input.invalid')
+    ws.add_data_validation(validation)
+    validation.add(cell)
 
     span = ws.cell(row=row, column=3, value=_fy_span_formula())
     span.font = _font(size=INDEX_TABLE_SIZE, color="FF666666")

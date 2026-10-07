@@ -245,7 +245,7 @@ STRINGS: dict[str, str] = {
     "xls.index.dq_clean": '没有侦测到缺漏',
     'xls.index.missing': '✗  缺失',
     'xls.fy_input.label': '财年起始月（可修改）',
-    'xls.fy_input.note': '⚠ 请核对：财年起始月是程序从 10-K 自动判读的，可能出错。把上面 B4 改成正确的月份（1-12），Data_Financials(Q)/(Y) 第 1、3、4 列的期间标签会自动更新。核对方法：看 Data_Financials 第 5 列的期末结算日（来自 XBRL，一定正确），对照公司财报上写的财季。\u3000※ 财季是 3 个月一段，所以 B4 改 1~2 个月常常看不出变化（例如 2、3、4 月开始，4 月底结束的那季都算 Q1），这是正确的不是没生效——右边的财年区间会即时反映你改的月份。\u3000※ 本页表格的「最早/最新期间」、Data_Ratios、Data_Meta 是程序算好的静态值，改这格不会跟着变。',
+    'xls.fy_input.note': "请核对公司财季。B4 仅接受 1–12 的整数起始月，修改后更新主季／年表的期间显示，不重新拆季或改动财务数值。默认保留抓取流程的期间标签；覆盖月份后按日期推算。第 5 行保留来源期末日供核对，缺完整日期者保留原标签。Index 期间摘要、比率与 Data_Meta 不随此格重算。只改 1–2 个月时财季可能相同，右侧财年区间会显示变更。",
     'xls.fy_input.span_prefix': '财年 ',
     'xls.fy_input.span_sep': ' 月 – ',
     'xls.fy_input.span_suffix': ' 月',
@@ -603,4 +603,8 @@ STRINGS.update({
     "fetch.gaps_current": "⚠ {n} 笔解析缺当期列（{periods}），其他期间可能仍有数据；需核对原申报。",
     "fetch.gaps_standalone": "⚠ {n} 笔无法可靠拆出单季（{periods}），累计数据仍保留，未把累计当单季。",
     "fetch.gaps_revenue": "⚠ {n} 笔营收总计冲突（{periods}），营收留空，原始候选仍保留。"
+})
+
+STRINGS.update({
+    "xls.fy_input.invalid": "请输入 1–12 的整数月份。",
 })

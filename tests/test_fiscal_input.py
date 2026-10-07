@@ -199,7 +199,8 @@ def test_fiscal_span_gives_feedback_for_every_single_month_change():
     fi.apply_fiscal_year_input(wb, fy_end_month=1)
     span = str(wb["Index"]["C4"].value)
     assert span.startswith("=")
-    assert span.count(fi.FY_START_DEFINED_NAME) == 3   # 條件 + 起月 + 迄月
+    assert f'DATE(2000,{fi.FY_START_DEFINED_NAME},1)' in span
+    assert f'DATE(2000,{fi.FY_START_DEFINED_NAME}+11,1)' in span
     assert "財年" in span
 
 

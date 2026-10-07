@@ -269,16 +269,7 @@ STRINGS: dict[str, str] = {
     "xls.index.missing": '✗  missing',
     "xls.fy_input.label": 'Fiscal year start month (editable)',
     "xls.fy_input.note": (
-        '⚠ Please check: the fiscal year start month is read automatically from the 10-K and can be '
-        'wrong. Change B4 above to the correct month (1-12) and the period labels in rows 1, 3 and 4 '
-        'of Data_Financials(Q)/(Y) update automatically. '
-        'How to check: look at the period end date in row 5 of Data_Financials (it comes from XBRL '
-        'and is always right) and compare it with the fiscal quarter the company reports. '
-        '  ※ A fiscal quarter spans 3 months, so changing B4 by 1-2 months often shows no change '
-        '(periods starting in February, March or April and ending in late April are all Q1). That is '
-        'correct, not a failure — the fiscal year span on the right reflects your change immediately. '
-        '  ※ The earliest/latest period in the table on this page, Data_Ratios and Data_Meta are '
-        'static values computed in Python; they do not follow this cell.'
+        "Check the company fiscal periods. B4 accepts a whole start month from 1 to 12. It changes financial Q/Y period display, not financial values or quarter conversion. Defaults preserve pipeline period labels; overrides infer labels from dates. Row 5 retains source end dates for checking; incomplete dates keep their original labels. Index period summaries, ratios and Data_Meta remain static. Changing by 1–2 months may keep the same quarter; the fiscal span shows the month change."
     ),
     "xls.fy_input.span_prefix": 'FY ',
     "xls.fy_input.span_sep": ' – ',
@@ -638,4 +629,8 @@ STRINGS.update({
     "fetch.gaps_current": "! {n} missing current-period columns ({periods}); other periods may remain. Check the original filing.",
     "fetch.gaps_standalone": "! {n} unverified standalone quarter conversions ({periods}); cumulative data retained, not presented as a standalone quarter.",
     "fetch.gaps_revenue": "! {n} conflicting revenue totals ({periods}); revenue blank, source candidates retained."
+})
+
+STRINGS.update({
+    "xls.fy_input.invalid": "Enter a whole month from 1 to 12.",
 })
