@@ -8,6 +8,9 @@ from __future__ import annotations
 
 
 STRINGS: dict[str, str] = {
+    'acct.Equity Method Income/(Loss)': '權益法投資收益／(損失)',
+    'acct.Net Income from Continuing Operations': '繼續營業稅後淨利',
+    'acct.Discontinued Operations, net of tax': '停業單位損益（稅後）',
     # ── 三表科目（Excel B 欄）。key 是 A 欄的英文機器鍵 ──────────────
     "acct.Income Statement": '損益表',
     "acct.Revenue": '營業收入',

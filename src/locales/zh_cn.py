@@ -12,6 +12,9 @@ from __future__ import annotations
 
 
 STRINGS: dict[str, str] = {
+    'acct.Equity Method Income/(Loss)': '权益法投资收益／(损失)',
+    'acct.Net Income from Continuing Operations': '持续经营税后净利润',
+    'acct.Discontinued Operations, net of tax': '终止经营损益（税后）',
     'acct.Income Statement': '损益表',
     'acct.Revenue': '营业收入',
     'acct.Cost of Revenue': '营业成本',

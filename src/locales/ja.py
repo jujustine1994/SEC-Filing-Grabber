@@ -13,6 +13,9 @@ from __future__ import annotations
 
 
 STRINGS: dict[str, str] = {
+    'acct.Equity Method Income/(Loss)': '持分法による投資損益',
+    'acct.Net Income from Continuing Operations': '継続事業の当期純利益',
+    'acct.Discontinued Operations, net of tax': '非継続事業損益（税引後）',
     # ── 損益計算書 ──────────────────────────────────────────────────────
     "acct.Income Statement": '損益計算書',
     "acct.Revenue": '売上高',

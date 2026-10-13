@@ -319,7 +319,7 @@ def test_build_is_table_has_all_template_concept_rows():
     gaap_tbl, _ = _build_is_table([filing], max_filings=1)
     from fetcher_gaap import IS_TEMPLATE
     # 2026-08-03 依 49 家實測新增 Total Costs and Expenses、Net Income incl. NCI
-    assert len(gaap_tbl.concepts) == len(IS_TEMPLATE) == 24
+    assert len(gaap_tbl.concepts) == len(IS_TEMPLATE) == 27
 
 def test_build_is_table_quarter_labels_format():
     # fy_end_month 預設 12，期末日 2025-12-27 就是 Q4——季編號由日期反推，

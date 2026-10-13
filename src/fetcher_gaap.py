@@ -926,6 +926,9 @@ IS_TEMPLATE: list[_T] = [
     ("Diluted EPS",                None,                             "EarningsPerShareDiluted",                                "IS", "first", None, None),
     ("Basic Shares",               "SharesAverage",                  "WeightedAverageNumberOfSharesOutstandingBasic",          "IS", "first", None, None),
     ("Diluted Shares",             "SharesFullyDilutedAverage",      "WeightedAverageNumberOfDilutedSharesOutstanding",        "IS", "first", None, None),
+    ("Equity Method Income/(Loss)", None,                            r"^us-gaap_IncomeLossFromEquityMethodInvestments$",          "IS", "first", None, None),
+    ("Net Income from Continuing Operations", None,                 r"^us-gaap_IncomeLossFromContinuingOperations$",             "IS", "first", None, None),
+    ("Discontinued Operations, net of tax", None,                    r"^us-gaap_IncomeLossFromDiscontinuedOperationsNetOfTax(?:AttributableToReportingEntity)?$", "IS", "first", None, None),
 ]
 
 BS_TEMPLATE: list[_T] = [
@@ -1424,6 +1427,42 @@ def _revenue_label(label) -> str:
     label = unicodedata.normalize('NFKC', str(label))
     label = re.sub(r'\s*\((?:[a-z]|(?:see\s+)?note\s+\d+[a-z]?)\)\s*$', '', label, flags=re.I)
     return ' '.join(re.sub(r'[^\w\s]', ' ', label).casefold().split())
+
+
+def _exact_total_row(df, column, concepts, labels=()):
+    """Original consolidated totals only; conflicting/missing totals do not fall back."""
+    rows = df[_consolidated_mask(df)]
+    raw = rows['concept'].astype(str).str.replace(':', '_', regex=False)
+    selected = rows[raw.isin({'us-gaap_' + c for c in concepts})
+                    | rows['label'].map(_revenue_label).isin(labels)]
+    if selected.empty:
+        return None, False
+    vals = [_to_python_val(v) for v in selected[column]]
+    if any(v is None for v in vals) or len(set(vals)) != 1:
+        return None, True
+    return selected.index[0], True
+
+
+def _cost_total_row(df, column):
+    idx, present = _exact_total_row(df, column,
+        ('CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfGoodsSold'),
+        ('total cost of sales', 'total cost of revenue', 'total cost of revenues'))
+    if present:
+        return idx
+    # Keep existing industry matches, but never mistake a calculation child or
+    # an explicit excluding-D&A component for the complete cost of revenue.
+    _, std, fallback, _, match, hint, label_fb = IS_TEMPLATE[_COGS_IDX]
+    idx = _match_is_row(df, std, fallback, match=match, label_hint=hint, label_fallback=label_fb)
+    if idx is not None:
+        row = df.loc[idx]
+        raw = str(row.get('concept', ''))
+        parent = str(row.get('parent_concept', ''))
+        if 'ExcludingDepreciation' in raw or parent in ('us-gaap_CostOfGoodsAndServicesSold', 'us-gaap_CostOfRevenue'):
+            return None
+    return idx
+
+
+_NONADDITIVE_IS = frozenset({'Basic Shares', 'Diluted Shares', 'Basic EPS', 'Diluted EPS'})
 
 
 def _revenue_concept_words(concept) -> str:
@@ -2002,7 +2041,7 @@ def _build_is_table(
         for i, (row_name, std_concept, fallback, source, match, label_hint, lbl_fb) in enumerate(IS_TEMPLATE):
             # Revenue always uses its deterministic resolver, including custom concepts.
             # Other rows retain concept_override or structural_absence handling.
-            if row_name in is_overrides and i != _REVENUE_IDX:
+            if row_name in is_overrides and i not in (_REVENUE_IDX, _COGS_IDX):
                 ov = is_overrides[row_name]
                 if ov.get("fix_type") == "structural_absence":
                     row_vals[i] = None
@@ -2029,6 +2068,8 @@ def _build_is_table(
                     idx, ambiguous = _match_revenue_row(df, q_col)
                     if ambiguous:
                         _note_gap(_filing_ref(filing), AmbiguousRevenueTotal(_col_to_period_end(q_col)))
+                elif i == _COGS_IDX:
+                    idx = _cost_total_row(df, q_col)
                 else:
                     idx = _match_is_row(df, std_concept, fallback, label_fallback=lbl_fb,
                                         match=match, label_hint=label_hint)
@@ -2256,15 +2297,18 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
             if source == "DERIVED":
                 row_vals[i] = None
                 continue
-            if row_name in bs_overrides:
+            if row_name in bs_overrides and i != _TL_IDX:
                 ov = bs_overrides[row_name]
                 if ov.get("fix_type") == "structural_absence":
                     row_vals[i] = None
                     continue
                 row_vals[i] = _apply_row_override(df, bs_col, ov)
                 continue
-            idx = _match_is_row(df, std_concept, fallback, label_fallback=lbl_fb,
-                                match=match, label_hint=label_hint)
+            if i == _TL_IDX:
+                idx, _ = _exact_total_row(df, bs_col, ('Liabilities',), ('total liabilities',))
+            else:
+                idx = _match_is_row(df, std_concept, fallback, label_fallback=lbl_fb,
+                                    match=match, label_hint=label_hint)
             val = _to_python_val(df.loc[idx, bs_col]) if idx is not None else None
             row_vals[i] = val
             if idx is not None:
@@ -2272,6 +2316,25 @@ def _build_bs_table(filings, max_filings: int, bs_overrides: dict | None = None,
                 if i not in row_labels:
                     raw = str(df.loc[idx, "label"] or "")
                     row_labels[i] = unicodedata.normalize("NFKC", raw)
+
+        # Derive total liabilities only from a complete, same-period equity
+        # scope. Parent equity alone is insufficient when NCI is present.
+        _, liability_present = _exact_total_row(df, bs_col, ('Liabilities',), ('total liabilities',))
+        if row_vals.get(_TL_IDX) is None and not liability_present:
+            total_idx, _ = _exact_total_row(df, bs_col, ('LiabilitiesAndStockholdersEquity',))
+            equity_idx, equity_present = _exact_total_row(df, bs_col,
+                ('StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest',))
+            if not equity_present:
+                nci = df[_consolidated_mask(df)]['concept'].astype(str).str.contains(
+                    r'MinorityInterest|NoncontrollingInterest', case=False, na=False).any()
+                if not nci:
+                    equity_idx, _ = _exact_total_row(df, bs_col, ('StockholdersEquity',))
+            if total_idx is not None and equity_idx is not None:
+                total = _to_python_val(df.loc[total_idx, bs_col])
+                equity = _to_python_val(df.loc[equity_idx, bs_col])
+                if total is not None and equity is not None:
+                    row_vals[_TL_IDX] = total - equity
+                    row_labels[_TL_IDX] = 'Derived: liabilities and equity minus complete equity'
 
         # ── Post-processing: non-current subtotals ──────────────────────────
         # 多數公司不直接標記 AssetsNoncurrent / LiabilitiesNoncurrent，用
@@ -3055,6 +3118,9 @@ def _synthesize_q4(q_tbl: StatementTable, ann_tbl: StatementTable,
             col_vals = []
             for r in range(n_template_rows):
                 fy_val = ann_tbl.values[r][fy_i] if r < len(ann_tbl.values) else None
+                if q_tbl.concepts[r] in _NONADDITIVE_IS:
+                    col_vals.append(None)
+                    continue
                 if r in point_in_time_idx:
                     col_vals.append(fy_val)      # 餘額：年報上的期末值就是 Q4 的值
                     continue

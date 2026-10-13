@@ -15,6 +15,9 @@ from __future__ import annotations
 
 
 STRINGS: dict[str, str] = {
+    'acct.Equity Method Income/(Loss)': 'Equity method income/(loss)',
+    'acct.Net Income from Continuing Operations': 'Net income from continuing operations',
+    'acct.Discontinued Operations, net of tax': 'Discontinued operations, net of tax',
     # ── Income statement ────────────────────────────────────────────────
     "acct.Income Statement": 'Income statement',
     "acct.Revenue": 'Net revenue from operations',

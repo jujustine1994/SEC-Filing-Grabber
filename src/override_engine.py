@@ -63,7 +63,7 @@ SYNONYM_MAP: dict[str, list[str]] = {
         "IncomeLossPerDilutedShare",
     ],
     "Total Assets": ["Assets", "TotalAssets"],
-    "Total Liabilities": ["Liabilities", "TotalLiabilities", "LiabilitiesAndStockholdersEquity"],
+    "Total Liabilities": ["Liabilities", "TotalLiabilities"],
     "Total Equity — Parent": [
         "Equity", "StockholdersEquity", "ShareholdersEquity",
         "StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest",
@@ -153,6 +153,11 @@ def e1_fuzzy_match(df: pd.DataFrame, target_std_name: str) -> str | None:
     for _, row in df.iterrows():
         sc = str(row.get("standard_concept") or "")
         lb = str(row.get("label") or "")
+        if target_std_name == 'Total Liabilities':
+            raw = str(row.get('concept', '')).replace(':', '_')
+            if raw != 'us-gaap_Liabilities' and not (
+                    sc == 'Liabilities' and re.fullmatch(r'(?:total )?liabilities', lb.strip(), re.I)):
+                continue
         for syn in synonyms:
             s = syn.lower()
             if s in sc.lower() or s in lb.lower():

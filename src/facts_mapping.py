@@ -97,7 +97,7 @@ BS_MAPPING: dict[str, dict] = {
     'Pension & Retirement Oblig.': {"concepts": ['PensionAndOtherPostretirementDefinedBenefitPlansLiabilitiesNoncurrent'], "kind": 'instant'},  # 5/6 家（覆蓋 83%、命中 1.00）
     'Other Non-current Liabilities': {"concepts": ['OtherLiabilitiesNoncurrent'], "kind": 'instant'},  # 39/45 家（覆蓋 87%、命中 1.00）
     'Total Non-current Liabilities': {"concepts": ['LiabilitiesNoncurrent'], "kind": 'instant'},  # 5/49 家（覆蓋 10%、命中 1.00）
-    'Total Liabilities': {"concepts": ['Liabilities', 'LiabilitiesAndStockholdersEquity'], "kind": 'instant'},  # 42/51 家（覆蓋 82%、命中 0.99）
+    'Total Liabilities': {"concepts": ['Liabilities'], "kind": 'instant'},  # Equity-inclusive totals are not liabilities.
     'Preferred Stock': {"concepts": ['PreferredStockValue', 'LossContingencyAccrualAtCarryingValue', 'FinanceLeaseLiabilityPaymentsDueAfterYearFive'], "kind": 'instant'},  # 30/34 家（覆蓋 88%、命中 1.00）
     'Common Stock & APIC': {"concepts": ['CommonStockValue', 'CommonStocksIncludingAdditionalPaidInCapital'], "kind": 'instant'},  # 39/51 家（覆蓋 76%、命中 1.00）
     'Additional Paid-in Capital': {"concepts": ['AdditionalPaidInCapitalCommonStock', 'AdditionalPaidInCapital'], "kind": 'instant'},  # 20/39 家（覆蓋 51%、命中 1.00）
