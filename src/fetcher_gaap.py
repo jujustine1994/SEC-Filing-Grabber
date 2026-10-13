@@ -922,8 +922,8 @@ IS_TEMPLATE: list[_T] = [
     # 上面的 Net Income 只認 NetIncomeLoss（歸屬母公司），這一列補的是合併數。
     ("Net Income incl. NCI",       None,                             "^us-gaap_ProfitLoss$",                                   "IS", "first", None, None),
     ("SBC",                        "StockBasedCompensationExpense",  "ShareBasedCompensation",                                 "CF", "first", None, None),
-    ("Basic EPS",                  None,                             "EarningsPerShareBasic",                                  "IS", "first", None, None),
-    ("Diluted EPS",                None,                             "EarningsPerShareDiluted",                                "IS", "first", None, None),
+    ("Basic EPS",                  None,                             r"(?:^|[_:])EarningsPerShareBasic(?:AndDiluted)?$",          "IS", "first", None, None),
+    ("Diluted EPS",                None,                             r"(?:^|[_:])EarningsPerShare(?:Diluted|BasicAndDiluted)$",     "IS", "first", None, None),
     ("Basic Shares",               "SharesAverage",                  "WeightedAverageNumberOfSharesOutstandingBasic",          "IS", "first", None, None),
     ("Diluted Shares",             "SharesFullyDilutedAverage",      "WeightedAverageNumberOfDilutedSharesOutstanding",        "IS", "first", None, None),
     ("Equity Method Income/(Loss)", None,                            r"^us-gaap_IncomeLossFromEquityMethodInvestments$",          "IS", "first", None, None),
@@ -1444,7 +1444,12 @@ def _exact_total_row(df, column, concepts, labels=()):
 
 
 def _cost_total_row(df, column):
-    idx, present = _exact_total_row(df, column,
+    # A GAAP goods-only cost can be a child of total goods/services cost.
+    # Exclude calculation children before comparing recognized totals.
+    parents = df.get('parent_concept', pd.Series('', index=df.index)).astype(str).str.replace(':', '_', regex=False)
+    total_scope = {'us-gaap_CostOfGoodsAndServicesSold', 'us-gaap_CostOfRevenue', 'us-gaap_CostOfGoodsSold'}
+    totals_df = df[~parents.isin(total_scope)]
+    idx, present = _exact_total_row(totals_df, column,
         ('CostOfGoodsAndServicesSold', 'CostOfRevenue', 'CostOfGoodsSold'),
         ('total cost of sales', 'total cost of revenue', 'total cost of revenues'))
     if present:
@@ -1452,12 +1457,12 @@ def _cost_total_row(df, column):
     # Keep existing industry matches, but never mistake a calculation child or
     # an explicit excluding-D&A component for the complete cost of revenue.
     _, std, fallback, _, match, hint, label_fb = IS_TEMPLATE[_COGS_IDX]
-    idx = _match_is_row(df, std, fallback, match=match, label_hint=hint, label_fallback=label_fb)
+    idx = _match_is_row(totals_df, std, fallback, match=match, label_hint=hint, label_fallback=label_fb)
     if idx is not None:
         row = df.loc[idx]
         raw = str(row.get('concept', ''))
-        parent = str(row.get('parent_concept', ''))
-        if 'ExcludingDepreciation' in raw or parent in ('us-gaap_CostOfGoodsAndServicesSold', 'us-gaap_CostOfRevenue'):
+        parent = str(row.get('parent_concept', '')).replace(':', '_')
+        if 'ExcludingDepreciation' in raw or parent in total_scope:
             return None
     return idx
 
@@ -3552,7 +3557,8 @@ def fetch_gaap_statements(ticker: str, identity: str,
                            end_year: int | None = None,
                            fetch_quarterly: bool = True,
                            fetch_annual: bool = True,
-                           excluded_sheets: set[str] | None = None) -> list[StatementTable]:
+                           excluded_sheets: set[str] | None = None,
+                           quarter_source_pack: str | None = None) -> list[StatementTable]:
     """Fetch quarterly and/or annual GAAP statements for a ticker.
 
     Args:
@@ -3581,7 +3587,7 @@ def fetch_gaap_statements(ticker: str, identity: str,
             return fetch_gaap_statements(
                 ticker, identity, max_filings, max_annual_filings, ai_config,
                 start_year, end_year, fetch_quarterly, fetch_annual,
-                excluded_sheets,
+                excluded_sheets, quarter_source_pack,
             )
 
     # 解析快取涵蓋整趟（G9）。開在這裡而不是上面那個 `_ledger() is None` 分支
@@ -3608,7 +3614,48 @@ def fetch_gaap_statements(ticker: str, identity: str,
             )
         return retry_tables, retry_led
 
-    return _fetch_with_retry(tables, led, _retry_once)
+    tables = _fetch_with_retry(tables, led, _retry_once)
+    return _finish_quarter_sources(tables, ticker, quarter_source_pack)
+
+
+def _finish_quarter_sources(tables, ticker, source_pack=None):
+    """Supplement standalone cells and report nonadditive gaps, never write sources."""
+    from quarterly_source import read_quarter_source_pack, supplement_quarter_table
+    records = read_quarter_source_pack(source_pack, filing_cache.cached_cik(ticker)) if source_pack else {}
+    trace = []
+    for i, table in enumerate(tables):
+        if table.sheet_name != 'Data_Financials(Q)':
+            continue
+        if records:
+            table, trace = supplement_quarter_table(table, records)
+            tables[i] = table
+        for col, period in enumerate(table.quarter_labels):
+            if not str(period).endswith('Q4'):
+                continue
+            missing = [name for name in _NONADDITIVE_IS if name in table.concepts
+                       and table.values[table.concepts.index(name)][col] is None]
+            if missing:
+                _note_gap(period + ' shares/EPS', MissingStandalonePeriod(period))
+        for item in trace:
+            if item['status'].endswith('conflict'):
+                _note_gap(item['period'] + ' official quarter scope', MissingStandalonePeriod(item['period']))
+    if trace:
+        columns = ['Period', 'Metric', 'Status', 'Base-unit Value', 'SEC URL', 'Accession', 'SHA256', 'Table', 'Column', 'Original Label', 'Reported Value', 'Comparative']
+        keys = ['period', 'metric', 'status', 'value', 'url', 'accession', 'sha256', 'table', 'column', 'raw_label', 'reported_value', 'is_comparative']
+        tables.append(StatementTable('Data_QuarterSources', columns, [''] * len(columns),
+            [str(i + 1) for i in range(len(trace))],
+            [[str(item.get(key, '')) for key in keys] for item in trace], ticker=ticker))
+    if _ledger() is not None:
+        _patch_meta_gap_note(tables, _ledger())
+    if records:
+        for i, meta in enumerate(tables):
+            if meta.sheet_name == 'Data_Meta':
+                name = meta.values[meta.concepts.index('Company Name')][0]
+                month = int(meta.values[meta.concepts.index('Fiscal Year End Month')][0])
+                tables[i] = _build_meta_table(ticker, name, tables, month,
+                    gap_note=_ledger().summary() if _ledger() is not None else '')
+                tables[i].ticker = ticker
+    return tables
 
 
 def _fetch_gaap_impl(ticker: str, identity: str,

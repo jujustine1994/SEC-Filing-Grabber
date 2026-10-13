@@ -91,12 +91,35 @@ def test_income_bridge_preserves_distinct_reported_concepts():
 
 def test_eps_selects_total_not_continuing_operations():
     df = frame([
-        ('us-gaap_IncomeLossFromContinuingOperationsPerBasicShare', None, 'Continuing basic EPS', 1.42),
+        ('custom_EarningsPerShareBasicFromContinuingOperations', None, 'Continuing basic EPS', 1.42),
         ('us-gaap_EarningsPerShareBasic', None, 'Basic earnings per share', 1.41),
-        ('us-gaap_IncomeLossFromContinuingOperationsPerDilutedShare', None, 'Continuing diluted EPS', 1.40),
+        ('custom_EarningsPerShareDilutedFromContinuingOperations', None, 'Continuing diluted EPS', 1.40),
         ('us-gaap_EarningsPerShareDiluted', None, 'Diluted earnings per share', 1.39),
     ])
     with patch.object(fg, '_filing_obj', side_effect=lambda f: f.obj()):
         table, _ = fg._build_is_table([filing(df)], 1)
     assert value(table, 'Basic EPS') == 1.41
     assert value(table, 'Diluted EPS') == 1.39
+
+
+def test_cost_total_does_not_conflict_with_product_cost_child():
+    # MSFT historical layout: both product cost and the complete goods/services
+    # total use recognized GAAP concepts; their calculation scopes differ.
+    df = frame([
+        ('us-gaap_CostOfGoodsSold', 'CostOfGoodsAndServicesSold', 'Product', 40),
+        ('example_CostOfServices', None, 'Service and other', 5),
+        ('us-gaap_CostOfRevenue', 'CostOfGoodsAndServicesSold', 'Total cost of revenue', 45),
+    ])
+    df['parent_concept'] = ['us-gaap_CostOfRevenue', 'us-gaap_CostOfRevenue', 'us-gaap_GrossProfit']
+    with patch.object(fg, '_filing_obj', side_effect=lambda f: f.obj()):
+        table, _ = fg._build_is_table([filing(df)], 1)
+    assert value(table, 'Cost of Revenue') == 45
+
+
+@pytest.mark.parametrize('parent', ['us-gaap:CostOfRevenue', 'us-gaap_CostOfGoodsSold'])
+def test_cost_fallback_cannot_reintroduce_excluded_child(parent):
+    df = frame([('custom_DirectCost', 'CostOfGoodsAndServicesSold', 'Cost of sales', 40)])
+    df['parent_concept'] = parent
+    with patch.object(fg, '_filing_obj', side_effect=lambda f: f.obj()):
+        table, _ = fg._build_is_table([filing(df)], 1)
+    assert value(table, 'Cost of Revenue') is None

@@ -175,6 +175,8 @@ def cmd_gaap(args: argparse.Namespace) -> int:
 
     reset_offline_tracking()
     with collect_gaps() as gaps:
+        source_options = ({'quarter_source_pack': args.quarter_source_pack}
+                          if getattr(args, 'quarter_source_pack', None) else {})
         tables = _gaap_tables(
             ticker=args.ticker,
             identity=identity,
@@ -183,6 +185,7 @@ def cmd_gaap(args: argparse.Namespace) -> int:
             end_year=end_year,
             fetch_quarterly=not args.annual_only,
             fetch_annual=not args.quarterly_only,
+            **source_options,
         )
     # 一期都沒抓到就不寫檔——空殼 Excel 會蓋掉使用者原本好好的舊檔。
     # tables 本身不會是空 list（結構表仍在），所以要看有沒有實質資料。
@@ -851,6 +854,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     g = sub.add_parser("gaap", parents=[common], help="抓 GAAP 三表 + 比率 + segment")
     g.add_argument("--xlsx", metavar="PATH", help="輸出 Excel 路徑")
+    g.add_argument("--quarter-source-pack", metavar="DIR", help="讀取既有 SEC 來源包的官方單季股數／EPS；不寫回資料庫")
     scope = g.add_mutually_exclusive_group()
     scope.add_argument("--quarterly-only", action="store_true", help="只抓 10-Q")
     scope.add_argument("--annual-only", action="store_true", help="只抓 10-K")

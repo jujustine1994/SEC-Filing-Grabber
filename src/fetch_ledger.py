@@ -45,7 +45,7 @@ class MissingCurrentPeriod(Exception):
 
 
 class MissingStandalonePeriod(MissingCurrentPeriod):
-    """A cumulative cash flow cannot be converted to a verified standalone quarter."""
+    """No verified standalone quarter for a cumulative flow or nonadditive metric."""
 
 
 class AmbiguousRevenueTotal(MissingCurrentPeriod):
