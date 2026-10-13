@@ -1,0 +1,3 @@
+*.plan.json
+*.xlsx.inspect.ndjson
+*_preview.png

@@ -1,0 +1,14 @@
+{
+  "status": "PASS",
+  "formula_count": 6671,
+  "strict_plan": true,
+  "sheet_count": 4,
+  "native": {
+    "status": "PASS",
+    "numeric_formula_results": 6489,
+    "blank_formula_results": 182,
+    "max_source_difference": 4.547473508864641e-13,
+    "error_count": 0
+  },
+  "sha256": "dbdb2ca9edaeeeb76217f8043bdbe1830c5ab3fc8ddbc3b0da63680a7dd5748f"
+}

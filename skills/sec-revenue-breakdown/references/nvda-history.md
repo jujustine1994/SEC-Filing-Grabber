@@ -25,3 +25,11 @@ Excel builder 在執行前遵循可用 spreadsheets skill：讀 API 與樣式規
 - Verified 代表指定來源完整性/數值核對通過，不等於已找到所有公開細節。全歷史 Coverage 必須列出未取得可用拆分，仍需補查敘述型數字與未解析版型。
 
 回歸核對：最新版 FY2027Q1 Hyperscale 43,050 / ACIE 32,196；Inactive Q1 原報 37,869 / 37,377。FY2027Q2 Hyperscale 48,710 / ACIE 40,313。Data Center + Edge 分別等於季度總額；市場產品 OP 未披露時留空。
+# NVDA 公司專用核對提醒
+
+- market platform 和 reportable segment 是兩套拆分。Compute & Networking 的部門 OP 不可套到 Data Center、Compute 或 Networking。
+- FY2027Q1 開始出現 Hyperscale、AI Clouds / Industrial / Enterprise、Edge Computing；不能假設能與 Gaming 等舊分類直接對接。
+- FY2027Q2 重分類一家公司並重編比較期；QoQ 用同份當期文件的可比前期值，另外保留原始發布值。
+- FY2027Q1 的 Hyperscale/ACIE 原報分類與 Q2 客戶重編分類需保留兩個版本，即使名稱相同。Q1 原報 Hyperscale 37,869、ACIE 37,377；Q2 對 Q1 的重編值是 43,050、32,196（USD millions）。前者在 Inactive Segments / original presentation，後者放最新分類。
+- 部門 OP 可能排除未分攤費用；兩部門 OP 相加不必等於合併 GAAP OP。non-GAAP OP 必須另列。
+- 公司 IR PDF 是官方公司來源但不是 SEC。缺少 SEC 對應附件時明確標示來源層級，不能稱其為 SEC 文件。

@@ -1,0 +1,17 @@
+{
+  "flat": {
+    "status": "PASS",
+    "whitespace_nodes": 5,
+    "sha256": "b5d4a061a104d6c95545a25fac6264a2d6621a13460ebc78b97f5571e0581e6e"
+  },
+  "hierarchy": {
+    "status": "PASS",
+    "whitespace_nodes": 9,
+    "sha256": "ee185aa34cb972b95b8fc4b98a899d771dd2950a5efd2e2b6534d0e48f24e009"
+  },
+  "segment-op": {
+    "status": "PASS",
+    "whitespace_nodes": 9,
+    "sha256": "389419941e415d4e6d1f3a1a05d9ef3f220b308ae821b2ce7b01cd6d086a3db9"
+  }
+}

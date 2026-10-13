@@ -1,0 +1,142 @@
+{
+  "date": "2026-10-09T04:28:12.160865",
+  "status": "PASS",
+  "unit_tests": 19,
+  "input_sha256": {
+    "C:\\Users\\CTH\\.claude\\project-rules\\financial-assistant\\research-data\\NVDA\\output\\NVDA_segment_history_v2\\breakdown.json": "ecdbfb1e65fbf1fc7f630b774f60c2b901c06a4db350a255b31d7a62327bdfc7",
+    "C:\\Users\\CTH\\.claude\\project-rules\\financial-assistant\\research-data\\NVDA\\output\\NVDA_segment_history_v2\\views.json": "eba13d0ef2566ecc1d67243d210d1034d84e0262e2c2d5b92cbe7122137451f7",
+    "C:\\Users\\CTH\\.claude\\project-rules\\financial-assistant\\research-data\\NVDA\\output\\NVDA_history_sources\\manifest.json": "7700f409e84657cd9bed2c60590a4a7fbfad3da139ad8797853d8216981647ac"
+  },
+  "source_files_sha256_verified": 646,
+  "templates": {
+    "flat": {
+      "status": "PASS",
+      "whitespace_nodes": 5,
+      "sha256": "b5d4a061a104d6c95545a25fac6264a2d6621a13460ebc78b97f5571e0581e6e"
+    },
+    "hierarchy": {
+      "status": "PASS",
+      "whitespace_nodes": 9,
+      "sha256": "ee185aa34cb972b95b8fc4b98a899d771dd2950a5efd2e2b6534d0e48f24e009"
+    },
+    "segment-op": {
+      "status": "PASS",
+      "whitespace_nodes": 9,
+      "sha256": "389419941e415d4e6d1f3a1a05d9ef3f220b308ae821b2ce7b01cd6d086a3db9"
+    }
+  },
+  "nvda": {
+    "status": "PASS",
+    "formula_count": 6671,
+    "strict_plan": true,
+    "sheet_count": 4,
+    "native": {
+      "status": "PASS",
+      "numeric_formula_results": 6489,
+      "blank_formula_results": 182,
+      "max_source_difference": 4.547473508864641e-13,
+      "error_count": 0
+    },
+    "sha256": "dbdb2ca9edaeeeb76217f8043bdbe1830c5ab3fc8ddbc3b0da63680a7dd5748f"
+  },
+  "c_isolated_import": {
+    "status": "PASS",
+    "mapped_rows": 14,
+    "numeric_revenue_matches": 255,
+    "import_result": "IMPORT OK - values and formats",
+    "formal_and_sources_unchanged": true,
+    "raw_B_values_only": true,
+    "no_external_links": true
+  },
+  "synthetic": {
+    "flat": {
+      "status": "PASS",
+      "formula_count": 17,
+      "strict_plan": true,
+      "sheet_count": 4,
+      "native": {
+        "status": "PASS",
+        "numeric_formula_results": 17,
+        "blank_formula_results": 0,
+        "max_source_difference": 0,
+        "error_count": 0
+      },
+      "synthetic_arithmetic_checks": 5,
+      "sha256": "b7c19693ac89e31e6a0075fd279c4f83f5aa42ad1d068e1808af3db19e758775"
+    },
+    "hierarchy": {
+      "status": "PASS",
+      "formula_count": 17,
+      "strict_plan": true,
+      "sheet_count": 4,
+      "native": {
+        "status": "PASS",
+        "numeric_formula_results": 17,
+        "blank_formula_results": 0,
+        "max_source_difference": 0,
+        "error_count": 0
+      },
+      "synthetic_arithmetic_checks": 5,
+      "sha256": "1aaad8b7399f689d2457332a158aa00304716d94bfb4ea3fdc141f3f7517defd"
+    },
+    "segment-op": {
+      "status": "PASS",
+      "formula_count": 17,
+      "strict_plan": true,
+      "sheet_count": 4,
+      "native": {
+        "status": "PASS",
+        "numeric_formula_results": 17,
+        "blank_formula_results": 0,
+        "max_source_difference": 0,
+        "error_count": 0
+      },
+      "synthetic_arithmetic_checks": 5,
+      "sha256": "4e69ffa6a1252f61d0b618084876a4ddb56603c38af614a8202e8ddf222ebba5"
+    }
+  },
+  "public_cli": {
+    "status": "PASS",
+    "formula_count": 17,
+    "strict_plan": true,
+    "sheet_count": 4,
+    "template_id": "flat",
+    "template_sha256": "b5d4a061a104d6c95545a25fac6264a2d6621a13460ebc78b97f5571e0581e6e",
+    "author_exit_code": 0,
+    "formulas_installed": 17,
+    "whitespace_nodes_preserved": 16,
+    "source_integrity": {
+      "verified_count": 0,
+      "checked": false
+    },
+    "input_sha256": {
+      "C:\\Users\\CTH\\.claude\\skills\\sec-revenue-breakdown\\.runtime\\fixtures\\flat-breakdown.json": "8a66b80cdff0068bb28c6d51b80b8f2c3d66f78d0460c9b665e8567cef001a06",
+      "C:\\Users\\CTH\\.claude\\skills\\sec-revenue-breakdown\\.runtime\\fixtures\\flat-views.json": "3e8614d2542b49e42fbc493065e6b7b9512f23cfcc0472a21e639f7bfa801463",
+      "C:\\Users\\CTH\\.claude\\skills\\sec-revenue-breakdown\\.runtime\\fixtures\\flat-manifest.json": "7b041a9ff469d105567f41f60e62a335e581b01fd9961bb1f84fe846fbc7f62a"
+    },
+    "acceptance": "structural only; native Excel calculation still required"
+  },
+  "public_cli_native": {
+    "status": "PASS",
+    "formula_count": 17,
+    "strict_plan": true,
+    "sheet_count": 4,
+    "native": {
+      "status": "PASS",
+      "numeric_formula_results": 17,
+      "blank_formula_results": 0,
+      "max_source_difference": 0,
+      "error_count": 0
+    },
+    "synthetic_arithmetic_checks": 5,
+    "sha256": "233e8f2808dbf883838b4583874393c5efb2247ddb9a320cd7241b6f9ed361e5"
+  },
+  "formula_tamper_rejected": true,
+  "limitations": [
+    "Second real company end-to-end not tested",
+    "Original strings, footnotes and some period-start dates remain missing in source research",
+    "Company classification still requires cited evidence selections; not automatic inference",
+    "Non-GAAP remains pending",
+    "Formal company workbook replacement not performed"
+  ]
+}

@@ -1,6 +1,23 @@
 # SEC Financial Tools 與 skill 的分工
 
+## SEC 下載細節
+
+用本 skill 的 `scripts/collect_sources.py`，只有 Python 標準函式庫依賴。指定公司 CIK、申報日期範圍及輸出資料夾。CIK 從 SEC 公司搜尋或 ticker 對照確認，不能猜。
+
+歷年模式納入 `10-K405`／修訂版。2004-08-23 之前的 8-K 項目編號不一致（包含 Item 9、12、空白），全部保留為候選後確認是否財報，不僅依 Item 2.02 篩選，也不把所有舊 8-K 視為財報。SEC 清單的 primaryDocument 可能空白或已失效，此時取得 accession 的 SEC 完整申報 `.txt`，不能猜現代文件名。Plain-text / SGML 表格需另外解析，不可因 HTML extractor 找不到表格就認定未披露。歷史清單與實際已抽取、已核對的期間覆蓋分開回報。
+
+```powershell
+python <skill目錄>/scripts/collect_sources.py --cik 1045810 --start 2024-11-01 --end 2026-10-05 --out output/NVDA_sec_sources
+```
+
+User-Agent 從 `SEC_IDENTITY` 環境變數或 SEC Financial Tools 使用者設定讀取，不能把姓名、email 或 API key 寫進報告。工具保留申報索引、10-Q/10-K 主文件、8-K 主文件及所有 EX-99 附件；manifest 含 SEC URL、accession、日期、雜湊。固定日期、使用相同 manifest 可重跑；`--refresh` 明確更新申報清單，普通重跑沿用清單並驗證檔案完整性。SEC 阻擋或來源不完整時報告缺口，不能宣稱成功。
+
+申報日期範圍不是財務季度範圍。取得後，依文件內的財報期間選出要求的季度，確定最新 10-Q/10-K 及其 earnings 8-K。範圍不足時擴大，不以湊足八個檔案代替八季。年報 Q4 可能要用全年減前三季累計。
+
+
 本機專案位置是 `C:/Users/CTH/Documents/Code/SEC Financial Tools`。其他機器需重新定位 repo，不假設固定使用者路徑。本機 Python 是 `C:/Users/CTH/venvs/SEC Financial Tools/Scripts/python.exe`，工具也可用其他 Python 3 執行。
+
+公司任務的資料夾命名、B 證據／SEC 原文／法說資料／逐字稿保存與去重，以 `C:/Users/CTH/.claude/project-rules/financial-assistant/financial_paths.json` 的 PUBLIC_WORKBOOK「公司作業資料夾的預設配置」及「B 來源蒐集與保存」為準，按需讀取；已有明確公司路徑直接沿用，不另建公司目錄。明確要求 B 包含所需官方資料的取得與分析，先核對既有來源、缺少才補抓。公司 IR／法說直接披露可支持分類；實績與 guidance 分開，來源未核對不升為 verified。以下三層資料與補充入口保留，不另抄一份存放規則。
 
 ## 三層資料
 
