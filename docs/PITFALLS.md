@@ -2,6 +2,16 @@
 
 遇到問題時記錄在這裡。
 
+## 2026-10-13｜A 的 Q4 非加總指標與總額語意
+
+**已確認根因**：`_synthesize_q4` 對 IS 非餘額列全面做全年減前三季，包含 weighted shares／EPS；AMD cached pipeline FY2024Q4 重現 basic −3,235m、diluted −3,275m。`_match_is_row` 的 Liabilities 子字串＋last 能選到 liabilities and equity；AMD FY2026Q2 誤取84,464m，正確負債17,240m。成本標準化會讓 excluding-D&A 子項與正式總額都叫 CostOfGoodsAndServicesSold，first 選到5,073m而非5,333m。稅前原標籤明示 before equity income；權益法、繼續營業淨利與停業稅後損益原概念存在但缺固定機器鍵。
+
+**已驗證處理**：非加總 Q4 留空／官方單季原文補值；負債與成本改原始完整概念／名稱及計算父子範圍；新增三個橋接鍵，保留公司原文及空白。不得改負數正號、用 NI/EPS 回推股數、全年減前三季 EPS／股數，或對所有公司任意加攤銷。C 補正通過不等於來源工具通過，正式 A 不因候選通過就覆寫。
+
+**回歸發現**：MSFT goods-only 成本也是 GAAP concept，必須先排除其成本父項才能比較總額；不排除會造成11格新空白。父項冒號與底線須一致正規化，回退也用同一組排除。HTML 期間不能靠重複日期猜全年／單季，股數不能任意套金額單位；EPS 分區、橋接子項／歸屬範圍與 equity loss 正負號均需完整語意及回歸。原文補值按實際可解析來源留 accession／Comparative，後續比較值不能暗稱首次披露值。
+
+**範圍與剩餘缺口**：AMD32季官方交接數字逐格核對；其他公司只作 AAPL/NVDA/MSFT/MRVL 抽樣與離線回歸，不宣稱全庫每格已審計。FY2010Q2、2013-03-31、早期 Q4 及 FY2017Q1 口徑缺口保留，2017 A／B ASC606 不強行對齊。詳細來源與證據見 [验收](superpowers/a-financial-quality-2026-10-13.md)。
+
 ---
 
 ## 地雷一：edgartools v5.29 DataFrame 結構與舊文件不符

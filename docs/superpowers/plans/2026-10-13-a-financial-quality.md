@@ -8,9 +8,9 @@
 
 **Tech:** Existing Python/pandas/lxml/openpyxl pipeline, offline pytest, read-only cached audit.
 
-- [ ] Reproduce AMD cached pipeline and preserve before snapshots for AMD/AAPL/NVDA/MSFT/MRVL.
-- [ ] Add failing tests for nonadditive Q4, total-vs-component cost, liabilities/equity scope and bridge concepts.
-- [ ] Repair deterministic selection; block stale/fuzzy liability overrides. Run targeted regression; commit this unit only.
-- [ ] Test and implement generic optional source-pack quarterly supplement, including hashes, issuer, quarter-vs-year, units, conflicts and missing values. Commit separately.
-- [ ] Generate candidate with production writer. Independently verify source bytes/table cells against handoff and candidate workbook, compare peer snapshots and run full offline suite.
-- [ ] Update ARCHITECTURE/CLI/PITFALLS/CHANGELOG/TODO and evidence with exact coverage, remaining gaps and C handoff. Commit only task files.
+- [x] Reproduce AMD cached pipeline and preserve before snapshots for AMD/AAPL/NVDA/MSFT/MRVL.
+- [x] Add failing tests for nonadditive Q4, total-vs-component cost, liabilities/equity scope and bridge concepts.
+- [x] Repair deterministic selection; block stale/fuzzy liability overrides. Run targeted regression; commit this unit only (f2745db).
+- [x] Test and implement generic optional source-pack quarterly supplement, including hashes, issuer, quarter-vs-year, units, conflicts and missing values. Independent review findings reproduced and fixed.
+- [x] Generate candidate with production writer. Independently verify 32 periods/389 cells, peer snapshots, 1,880 offline tests, native Excel 81 headers/0 errors and saved numeric values.
+- [x] Update ARCHITECTURE/CLI/PITFALLS/CHANGELOG/TODO and evidence with exact coverage, remaining gaps and C handoff; only task files enter commits.

@@ -1,5 +1,17 @@
 # SEC Financial Fetcher — Architecture
 
+## A 財務資料品質（2026-10-13）
+
+IS 固定機器鍵由 24 增為 27 列，在既有股數列之後加入 `Equity Method Income/(Loss)`、`Net Income from Continuing Operations`、`Discontinued Operations, net of tax`。原始申報標籤仍在 C 欄；新增科目缺值保持空白，不把權益法收益包含進所有公司的 Pre-tax Income，也不推定未列停業損益為零。下游應按 A 欄機器鍵映射，不能沿用固定 BS／CF 行號。
+
+Cost of Revenue 先認原始 GAAP／完整總成本名稱，排除同成本父項下的計算子項；不同總額衝突或總額缺值不回退子項。只有沒有正式總額時保留既有產業匹配，但排除明確 excluding-D&A 成本及成本計算子項，不對所有公司額外加攤銷。Total Liabilities 只認完整負債概念／名稱，忽略舊負債 override；無已識別總負債時，可用同一期負債權益合計減完整權益。存在 NCI 時須有完整含 NCI 權益，不用 parent equity 猜合併範圍。facts 與 fuzzy 候選也不再把權益合計列當負債。
+
+Q4 的加權平均股數與 EPS 不作全年減前三季；沒有官方單季值即留空，並記入 MissingStandalonePeriod。EPS 原始概念使用完整 local name，避免繼續營業子科目被子字串匹配成總 EPS。流量 Q4 與 BS／CF 餘額規則仍各自處理。
+
+`fetch_gaap_statements(..., quarter_source_pack=...)`／CLI `--quarter-source-pack DIR` 可選擇只讀既有 SEC 來源包。`quarterly_source.py` 驗 issuer、SEC URL/accession、SHA256 與路徑；以 HTML colspan 對齊 Three Months Ended 與日期，拒絕未支持的 rowspan、混合股數單位、Non-GAAP、EPS 子區與橋接子項／歸屬子範圍。只在六個既有當期損益錨點都有值且一致時補空格。最早可解析官方表被採用；若來自後續官方比較欄，保留 Comparative、發布日與實際 accession，不宣稱是首次原報口徑。正式單季取值與每個填值的原標籤、原值、單位後值、URL、雜湊及表／欄定位留在 `Data_QuarterSources`；不改 filing JSON、parser version 或資料庫連接。新來源包／版面仍須獨立原文核對，不以本次 AMD 通過推定所有公司已認證。
+
+候選及下游接法見 [本次驗收](superpowers/a-financial-quality-2026-10-13.md)。正式 AMD A／B／C 未替換，C 的官方補正仍保留。
+
 ## 永久資料庫架構（2026-10-05）
 
 目前正式資料庫在程式專案外的 Windows Documents/SEC財報資料庫。`database.py` 集中解析 Known Folder、驗證 UUID 與連接；`database_io.py` 用跨程序可重入鎖提交財報／metadata，財報替換前保存 SHA-256 歷史；`database_transfer.py` 只複製並核對搬遷、快照與還原。`filing_cache.py` 保留讀取與 DataFrame 相容介面，但不再管理可丟棄快取；clear_ticker/clear_all 全部拒絕。

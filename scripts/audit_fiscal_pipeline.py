@@ -42,13 +42,13 @@ def document_period(entry):
     return next(iter(dates)) if len(dates)==1 else ''
 
 
-def audit(ticker, output, *, require_official_metadata=False):
+def audit(ticker, output, *, require_official_metadata=False, metadata_dir=None, quarter_source_pack=None):
     filings=[]
     meta=local_db.read_meta(ticker) or {}
     cik=meta.get('cik')
     if not isinstance(cik,int) or isinstance(cik,bool) or cik<=0:
         raise RuntimeError('Company CIK unavailable; audit cannot verify cache identity')
-    evidence=output.parent/(ticker+'-sec-listing.json')
+    evidence=(Path(metadata_dir) if metadata_dir else output.parent)/(ticker+'-sec-listing.json')
     if require_official_metadata and not evidence.exists():
         raise RuntimeError('Official SEC filing metadata required')
     official={r['accession_number']:r['reportDate'] for r in json.loads(evidence.read_text(encoding='utf-8'))} if evidence.exists() else {}
@@ -89,7 +89,8 @@ def audit(ticker, output, *, require_official_metadata=False):
          patch.object(fg,'run_diagnosis',return_value={}), \
          patch.object(fg,'_fetch_shares_outstanding',return_value={}), \
          fg.collect_gaps(fg.FetchLedger(probe=lambda:True)) as ledger:
-        tables=fg.fetch_gaap_statements(ticker,'Cached audit audit@example.com')
+        options = {'quarter_source_pack': str(quarter_source_pack)} if quarter_source_pack else {}
+        tables=fg.fetch_gaap_statements(ticker,'Cached audit audit@example.com', **options)
     quarterly=next(t for t in tables if t.sheet_name=='Data_Financials(Q)')
     metadata_mode='official-required' if require_official_metadata else 'official-complete' if metadata_complete else 'offline-cover-limited'
     result=dict(ticker=ticker,mode='cached-read-only',metadata_mode=metadata_mode,metadata_complete=metadata_complete,max_filings=80,max_annual_filings=20,

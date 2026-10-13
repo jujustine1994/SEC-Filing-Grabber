@@ -26,6 +26,14 @@
 `gaap` 另有 `--xlsx` / `--quarterly-only` / `--annual-only`；`press-release`
 另有 `--raw`（改吐新聞稿全文，除錯用）。
 
+### 官方單季來源包補值（2026-10-13）
+
+`gaap AMD --quarter-source-pack "既有 sec_sources 目錄" --xlsx "獨立候選 A.xlsx"` 會只讀來源包 `manifest.json` 與已下載的 SEC 8-K EX-99.1 HTML；檔案缺少／雜湊或 issuer 錯誤會報錯，不重新下載。包需包含 `cik` 與各來源的 `filename`、`url`、`accession`、`form`、`document_type`、`filing_date`、`sha256`；公司 CIK 由目前資料庫取得。來源包不作為資料庫連接設定。
+
+支援明確 Three Months Ended／日期／共同 millions 或 thousands 單位的完整 GAAP 損益表；拒絕不支持的欄位跨度、股數單位或 EPS 子區。補值要求同日的營收、毛利、營業利益、稅前、稅、淨利全部與既有 A 一致，只填空格，衝突保留既有值並記缺口。`Data_QuarterSources` 保存逐格定位，包含官方比較期身分；原文驗證腳本是 `scripts/verify_quarter_source_pack.py`。不同公司或新來源仍須核對原文，不是通用版面保證。
+
+未給來源包時，Q4 股數／EPS 保持空白並明示缺口；**不再以全年減 Q1／Q2／Q3 產生這四個指標**。GUI／compare 也共用此安全規則，目前沒有自動搜尋／下載 Q4 官方新聞稿的流程。流量仍可拆季；不要把報表有 Q4 欄解讀為所有 Q4 指標都是全年差額。
+
 `press-release` 吐的是**解析後的表格**不是原文：ARLO 一季原文 450K 字元，
 篩完 4.4K。
 
@@ -84,8 +92,8 @@
 - `fiscal_labels`：`{ticker: {日曆季: 那家自己的財季標籤}}`。各家財年不同時
   的對帳依據——同一欄 NVDA 是 FY2026Q2、AMD 是 FY2025Q2
 - `period_ends`：每家每一欄的實際期末日
-- `synthetic_q4`：**推算出來的 Q4**。SEC 沒有 Q4 的 10-Q，季報表裡的 Q4 一律是
-  「年報 − Q1 − Q2 − Q3」算的，要標出來
+- `synthetic_q4`：**含推算的 Q4**。流量可用年報減前三季，BS／CF 餘額取期末；
+  加權股數／EPS 不相減，缺官方單季值留空。此欄是期間層級標記，不能當每格取值來源。
 - `failures`：哪幾家整家抓失敗（回傳碼 1）
 
 ⚠ 指標名是**英文機器鍵**，跟 Excel A 欄同一套。打錯會當場擋下（回傳碼 2），

@@ -1,0 +1,93 @@
+{
+  "status": "PASS",
+  "checks": 389,
+  "official_periods": 32,
+  "database_unchanged": true,
+  "database_hash_scope": [
+    "AMD",
+    "AAPL",
+    "NVDA",
+    "MSFT",
+    "MRVL",
+    "metadata",
+    "database.json"
+  ],
+  "database_files": 330,
+  "candidate": "C:\\Users\\CTH\\Documents\\Code\\SEC Financial Tools\\output\\amd-quality\\accepted\\AMD A candidate.xlsx",
+  "candidate_sha256": "7508e7d810da8f8847f8ffa9cbae1a2664b5d06bd9f0bccfdb689660b226adb9",
+  "pre_excel_candidate_sha256": "f102183429b5c6ea61325c096042c479c2210f5ecbfd2dcabdd3a403f2fb15ab",
+  "native_excel": {
+    "status": "PASS",
+    "candidate": "C:\\Users\\CTH\\Documents\\Code\\SEC Financial Tools\\output\\amd-quality\\accepted\\AMD A candidate.xlsx",
+    "native_excel_recalculated": true,
+    "period_headers_checked": 81,
+    "formula_errors": 0,
+    "sheets": 7
+  },
+  "post_excel_checks": 389,
+  "gaps": [
+    {
+      "where": "2013-03-31",
+      "kind": "data",
+      "exc_name": "MissingCurrentPeriod"
+    },
+    {
+      "where": "FY2010Q2",
+      "kind": "data",
+      "exc_name": "MissingStandalonePeriod"
+    },
+    {
+      "where": "FY2010Q4 shares/EPS",
+      "kind": "data",
+      "exc_name": "MissingStandalonePeriod"
+    },
+    {
+      "where": "FY2011Q4 shares/EPS",
+      "kind": "data",
+      "exc_name": "MissingStandalonePeriod"
+    },
+    {
+      "where": "FY2012Q4 shares/EPS",
+      "kind": "data",
+      "exc_name": "MissingStandalonePeriod"
+    },
+    {
+      "where": "FY2013Q4 shares/EPS",
+      "kind": "data",
+      "exc_name": "MissingStandalonePeriod"
+    },
+    {
+      "where": "FY2014Q4 shares/EPS",
+      "kind": "data",
+      "exc_name": "MissingStandalonePeriod"
+    },
+    {
+      "where": "FY2015Q4 shares/EPS",
+      "kind": "data",
+      "exc_name": "MissingStandalonePeriod"
+    },
+    {
+      "where": "FY2017Q1 official quarter scope",
+      "kind": "data",
+      "exc_name": "MissingStandalonePeriod"
+    }
+  ],
+  "offline_tests": {
+    "passed": 1880,
+    "failures": 0,
+    "junit_sha256": "c65957280dad4986e08f7ef07ca857e5c26176f8bfc9346077db6de438809d96"
+  },
+  "peer_changed_cells": {
+    "AAPL": 64,
+    "NVDA": 128,
+    "MSFT": 74,
+    "MRVL": 20
+  },
+  "comparative_source_periods": [
+    "FY2020Q2",
+    "FY2020Q3"
+  ],
+  "official_source_checks": "C:\\Users\\CTH\\Documents\\Code\\SEC Financial Tools\\output\\amd-quality\\accepted\\official-checks.json",
+  "peer_source_checks": "C:\\Users\\CTH\\Documents\\Code\\SEC Financial Tools\\output\\amd-quality\\accepted\\peer-checks.json",
+  "basis": "Existing cached-input pipeline; official original releases independently check parsed standalone tables; sampled peers, not an all-company official audit"
+}
